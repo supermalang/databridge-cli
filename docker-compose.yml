@@ -21,10 +21,8 @@ services:
       - "traefik.http.routers.kobo-reporter.entrypoints=websecure"
       - "traefik.http.routers.kobo-reporter.tls.certresolver=letsencrypt"
       - "traefik.http.services.kobo-reporter.loadbalancer.server.port=8000"
-      - "traefik.http.routers.kobo-reporter.middlewares=kobo-auth"
-      - "traefik.http.middlewares.kobo-auth.basicauth.users=${BASIC_AUTH_USERS}"
     networks:
-      - traefik-public
+      - xayma_webservers
 
   terminal:
     image: tsl0922/ttyd:latest
@@ -51,11 +49,11 @@ services:
       - "traefik.http.routers.kobo-terminal.entrypoints=websecure"
       - "traefik.http.routers.kobo-terminal.tls.certresolver=letsencrypt"
       - "traefik.http.services.kobo-terminal.loadbalancer.server.port=7681"
-      - "traefik.http.routers.kobo-terminal.middlewares=kobo-auth,kobo-terminal-strip"
+      - "traefik.http.routers.kobo-terminal.middlewares=kobo-terminal-strip"
       - "traefik.http.middlewares.kobo-terminal-strip.stripprefix.prefixes=/terminal"
     networks:
-      - traefik-public
+      - xayma_webservers
 
 networks:
-  traefik-public:
+  xayma_webservers:
     external: true
