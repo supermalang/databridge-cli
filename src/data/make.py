@@ -23,10 +23,10 @@ def cli():
 @cli.command("fetch-questions")
 def cmd_fetch_questions():
     """Fetch form schema from Kobo/Ona and write questions into config.yml."""
-    from src.data.extract import KoboClient
+    from src.data.extract import get_client
     from src.data.questions import fetch_and_write_questions
     cfg = load_config(CONFIG_PATH)
-    fetch_and_write_questions(KoboClient(cfg), cfg, CONFIG_PATH)
+    fetch_and_write_questions(get_client(cfg), cfg, CONFIG_PATH)
 
 @cli.command("generate-template")
 @click.option("--out", default=None, help="Output path. Defaults to report.template in config.yml.")
@@ -43,13 +43,13 @@ def cmd_generate_template(out):
 @click.option("--sample", default=None, type=int, help="Limit to first N submissions.")
 def cmd_download(sample):
     """Download submissions, apply filters, export to configured destination."""
-    from src.data.extract import KoboClient
+    from src.data.extract import get_client
     from src.data.transform import load_data, apply_filters, export_data
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
         sys.exit(1)
-    client = KoboClient(cfg)
+    client = get_client(cfg)
     log.info("Downloading submissions ...")
     raw = client.get_submissions(sample_size=sample)
     log.info("Transforming data ...")

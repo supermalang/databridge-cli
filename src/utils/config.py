@@ -16,6 +16,9 @@ def load_config(path: Path = CONFIG_PATH) -> Dict:
     for key in REQUIRED_KEYS:
         if key not in cfg:
             raise ValueError(f"Missing key '{key}' in {path}")
+    platform = cfg.get("api", {}).get("platform", "kobo").lower()
+    if platform not in ("kobo", "ona"):
+        raise ValueError(f"api.platform must be 'kobo' or 'ona', got '{platform}'")
     return cfg
 
 def write_config(cfg: Dict, path: Path = CONFIG_PATH) -> None:

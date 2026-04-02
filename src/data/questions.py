@@ -16,9 +16,10 @@ SKIP_TYPES = {"start","end","deviceid","simserial","phonenumber","audit","calcul
 SKIP_PREFIXES = ("_","meta/","formhub/","__")
 
 def fetch_and_write_questions(client, cfg: Dict, config_path: Path) -> None:
-    log.info(f"Fetching schema for UID '{cfg['form']['uid']}' ...")
+    platform = cfg.get("api", {}).get("platform", "kobo").lower()
+    log.info(f"Fetching schema for UID '{cfg['form']['uid']}' ({platform}) ...")
     asset = client.get_form_schema()
-    questions = _parse_schema(asset)
+    questions = _parse_schema(asset, platform)
     if not questions:
         raise ValueError("No questions found. Check form UID and token permissions.")
     existing = {q["kobo_key"]: q for q in cfg.get("questions", [])}
@@ -38,8 +39,11 @@ def fetch_and_write_questions(client, cfg: Dict, config_path: Path) -> None:
         log.info(f"  {cat:<15} {count} question(s)")
     log.info("Next: edit config.yml, then run: python3 src/data/make.py download")
 
-def _parse_schema(asset: Dict) -> List[Dict]:
-    survey = asset.get("content", {}).get("survey", [])
+def _parse_schema(asset: Dict, platform: str = "kobo") -> List[Dict]:
+    if platform == "ona":
+        survey = asset if isinstance(asset, list) else asset.get("children", [])
+    else:
+        survey = asset.get("content", {}).get("survey", [])
     questions: List[Dict] = []
     group_stack: List[str] = []
     for item in survey:

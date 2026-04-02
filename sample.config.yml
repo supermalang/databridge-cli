@@ -2,8 +2,11 @@
 # Single source of truth. Copy to config.yml and fill in your values.
 
 api:
+  platform: kobo            # kobo | ona
   url: https://kf.kobotoolbox.org/api/v2
-  # For Ona: url: https://api.ona.io/api/v1
+  # For Ona:
+  #   platform: ona
+  #   url: https://api.ona.io/api/v1
   token: env:KOBO_TOKEN
 
 form:
