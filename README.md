@@ -109,6 +109,85 @@ form:
 
 You can also set an optional `api.timeout` (in seconds, default 120) for slow connections or large forms.
 
+**The full config file has the following sections:**
+
+#### Questions
+Auto-populated by the `fetch-questions` command. Each question has:
+- `kobo_key` — the field path in the API response (e.g., `group_name/field_name`)
+- `label` — human-readable label from the form
+- `type` — field type (select_one, integer, text, etc.)
+- `category` — auto-assigned: `categorical`, `quantitative`, `qualitative`, `geographical`, `date`, or `undefined`
+- `export_label` — column name in the exported data (editable)
+- `repeat_group` — name of the repeat group if the field belongs to one, otherwise `null`
+
+> After running `fetch-questions`, review the questions and adjust `category` and `export_label` as needed before downloading data.
+
+#### Filters
+Apply filters to downloaded data using [pandas query syntax](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.query.html):
+```yaml
+filters:
+  - "Age > 0"
+  - "Region != 'Test'"
+  - "submission_date >= '2025-01-01'"
+```
+
+> Filters are applied sequentially. Filtered-out submissions also remove their repeat group entries.
+
+#### Charts
+Define charts to embed in the Word report. Each chart maps to a `{{ chart_<name> }}` placeholder in the template:
+```yaml
+charts:
+  - name: satisfaction_overview
+    title: Overall satisfaction
+    type: horizontal_bar
+    questions: [Satisfaction]
+    options:
+      top_n: 10
+      width_inches: 5.5
+
+  - name: age_distribution
+    title: Age distribution
+    type: histogram
+    questions: [Age]
+    options:
+      bins: 12
+```
+
+Supported chart types: `bar`, `horizontal_bar`, `stacked_bar`, `pie`, `donut`, `line`, `area`, `histogram`, `scatter`, `box_plot`, `heatmap`, `treemap`, `waterfall`, `funnel`, `table`
+
+#### Export
+Configure the output format and destination:
+```yaml
+export:
+  format: csv   # csv | json | xlsx | mysql | postgres | supabase
+  output_dir: data/processed
+  database:
+    host: localhost
+    port: 5432
+    name: kobo_reports
+    user: env:DB_USER
+    password: env:DB_PASSWORD
+    table: submissions
+    # supabase_url: https://yourproject.supabase.co
+    # supabase_key: env:SUPABASE_KEY
+```
+
+> For file exports (csv, json, xlsx), data is written to `output_dir`. For database exports, configure the `database` section. Use the `env:` prefix to reference environment variables.
+
+#### Report
+Configure the Word report generation:
+```yaml
+report:
+  template: templates/report_template.docx
+  output_dir: reports
+  title: Monitoring Report
+  period: Q1 2025
+```
+
+The template is a `.docx` file with Jinja2-style placeholders: `{{ report_title }}`, `{{ period }}`, `{{ n_submissions }}`, `{{ generated_at }}`, `{{ chart_<name> }}`, etc. Run `generate-template` to create a starter template automatically.
+
+---
+
 You can edit `config.yml` in two ways:
 1. **From the browser** — use the **Config** tab in the web UI (includes syntax highlighting and YAML validation on save)
 2. **From disk** — edit the file directly; changes are picked up immediately since the file is volume-mounted

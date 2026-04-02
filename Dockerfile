@@ -23,15 +23,16 @@ from pathlib import Path
 from typing import AsyncGenerator, Dict, Optional
 
 import aiofiles, yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-BASE_DIR    = Path("/app")
-CONFIG_PATH = BASE_DIR / "config.yml"
-REPORTS_DIR = BASE_DIR / "reports"
-STATIC_DIR  = Path(__file__).parent / "static"
+BASE_DIR      = Path("/app")
+CONFIG_PATH   = BASE_DIR / "config.yml"
+REPORTS_DIR   = BASE_DIR / "reports"
+TEMPLATES_DIR = BASE_DIR / "templates"
+STATIC_DIR    = Path(__file__).parent / "static"
 
 app = FastAPI(title="kobo-reporter", docs_url=None, redoc_url=None)
 _last_status: Dict = {"command": None, "status": "idle", "finished_at": None}
@@ -153,6 +154,97 @@ async def delete_report(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
     path.unlink()
     return {"ok": True}
+
+# ── Templates ──────────────────────────────────────────────
+@app.get("/api/templates")
+async def list_templates():
+    TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+    files = []
+    for f in sorted(TEMPLATES_DIR.glob("*.docx"), key=lambda x: x.stat().st_mtime, reverse=True):
+        s = f.stat()
+        files.append({"name": f.name, "size_kb": round(s.st_size/1024,1),
+                       "modified": datetime.fromtimestamp(s.st_mtime).strftime("%Y-%m-%d %H:%M")})
+    return {"files": files}
+
+@app.get("/api/templates/download/{filename}")
+async def download_template(filename: str):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = TEMPLATES_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(path=path, filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+@app.post("/api/templates/upload")
+async def upload_template(file: UploadFile):
+    if not file.filename or not file.filename.endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only .docx files are allowed")
+    safe_name = Path(file.filename).name
+    if "/" in safe_name or ".." in safe_name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+    dest = TEMPLATES_DIR / safe_name
+    content = await file.read()
+    async with aiofiles.open(dest, "wb") as f:
+        await f.write(content)
+    return {"ok": True, "name": safe_name, "size_kb": round(len(content)/1024,1)}
+
+@app.delete("/api/templates/{filename}")
+async def delete_template(filename: str):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = TEMPLATES_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    path.unlink()
+    return {"ok": True}
+
+@app.get("/api/templates/active")
+async def get_active_template():
+    if not CONFIG_PATH.exists():
+        return {"active": None}
+    async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        content = await f.read()
+    cfg = yaml.safe_load(content) or {}
+    tpl = cfg.get("report", {}).get("template", "")
+    return {"active": Path(tpl).name if tpl else None}
+
+@app.post("/api/templates/set-active/{filename}")
+async def set_active_template(filename: str):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = TEMPLATES_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Template file not found")
+    if not CONFIG_PATH.exists():
+        raise HTTPException(status_code=400, detail="config.yml not found")
+    async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        content = await f.read()
+    cfg = yaml.safe_load(content) or {}
+    if "report" not in cfg:
+        cfg["report"] = {}
+    cfg["report"]["template"] = f"templates/{filename}"
+    async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
+    return {"ok": True, "template": filename}
+
+@app.get("/api/templates/preview/{filename}")
+async def preview_template(filename: str):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = TEMPLATES_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        from docxtpl import DocxTemplate
+        tpl = DocxTemplate(str(path))
+        placeholders = sorted(tpl.get_undeclared_template_variables())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse template: {e}")
+    charts = [p for p in placeholders if p.startswith("chart_")]
+    variables = [p for p in placeholders if not p.startswith("chart_")]
+    return {"filename": filename, "variables": variables, "charts": charts}
 PYEOF
 
 COPY <<'HTMLEOF' web/static/index.html
@@ -216,6 +308,17 @@ header h1{font-size:16px;font-weight:600}
 .file-table tr:last-child td{border-bottom:none}.file-table tr:hover td{background:var(--bg)}
 .file-name{font-weight:500;color:var(--teal-dark)}
 .empty-state{text-align:center;color:var(--muted);padding:40px;font-size:13px}
+.badge-active{display:inline-block;background:#d1fae5;color:#065f46;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;margin-left:8px;vertical-align:middle}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000}
+.modal{background:var(--surface);border-radius:var(--radius);box-shadow:0 8px 30px rgba(0,0,0,.2);width:480px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column}
+.modal-header{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border)}
+.modal-header h3{font-size:14px;flex:1}
+.modal-header button{background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);padding:0 4px}
+.modal-body{padding:18px;overflow-y:auto;font-size:13px;line-height:1.8}
+.modal-body h4{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px}
+.modal-body h4:first-child{margin-top:0}
+.placeholder-list{list-style:none;padding:0}
+.placeholder-list li{font-family:'Menlo','Monaco',monospace;font-size:12px;padding:3px 8px;background:var(--bg);border-radius:4px;margin-bottom:4px;color:var(--teal-dark)}
 .terminal-pane{height:100%;display:flex;flex-direction:column}
 .terminal-pane iframe{flex:1;border:none}
 .terminal-note{padding:8px 16px;background:#1a1a18;color:#888;font-size:11px;font-family:monospace}
@@ -236,6 +339,7 @@ header h1{font-size:16px;font-weight:600}
       <div class="tab active" data-tab="dashboard">Dashboard</div>
       <div class="tab" data-tab="config">Config</div>
       <div class="tab" data-tab="reports">Reports</div>
+      <div class="tab" data-tab="templates">Templates</div>
       <div class="tab" data-tab="terminal">Terminal</div>
     </div>
     <div class="tab-content active" id="tab-dashboard" style="overflow:hidden;">
@@ -302,6 +406,19 @@ header h1{font-size:16px;font-weight:600}
         <div id="reports-container"><p class="empty-state">Loading…</p></div>
       </div>
     </div>
+    <div class="tab-content" id="tab-templates">
+      <div class="reports-pane">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <h2>Word templates</h2>
+          <button class="btn btn-ghost btn-sm" onclick="loadTemplates()">↺ Refresh</button>
+          <label class="btn btn-primary btn-sm" style="margin-left:auto;cursor:pointer;">
+            ↑ Upload .docx
+            <input type="file" accept=".docx" style="display:none" onchange="uploadTemplate(this)">
+          </label>
+        </div>
+        <div id="templates-container"><p class="empty-state">Loading…</p></div>
+      </div>
+    </div>
     <div class="tab-content" id="tab-terminal">
       <div class="terminal-pane">
         <div class="terminal-note">Web terminal · /app · python3 src/data/make.py --help</div>
@@ -321,6 +438,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
     document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
     if(tab.dataset.tab==='config'&&!editor.getValue())loadConfig();
     if(tab.dataset.tab==='reports')loadReports();
+    if(tab.dataset.tab==='templates')loadTemplates();
     if(tab.dataset.tab==='terminal'&&!terminalLoaded){
       document.getElementById('terminal-frame').src='/terminal/';
       terminalLoaded=true;
@@ -391,6 +509,56 @@ async function loadReports(){
 async function deleteReport(name){
   if(!confirm('Delete '+name+'?'))return;
   await fetch('/api/reports/'+encodeURIComponent(name),{method:'DELETE'});loadReports();
+}
+async function loadTemplates(){
+  const c=document.getElementById('templates-container');c.innerHTML='<p class="empty-state">Loading…</p>';
+  const [data,activeData]=await Promise.all([fetch('/api/templates').then(r=>r.json()),fetch('/api/templates/active').then(r=>r.json())]);
+  const active=activeData.active||'';
+  if(!data.files.length){c.innerHTML='<p class="empty-state">No templates yet. Upload a .docx file or run Generate Template.</p>';return;}
+  c.innerHTML='<table class="file-table"><thead><tr><th>File</th><th>Size</th><th>Modified</th><th></th></tr></thead><tbody>'+
+    data.files.map(f=>{
+      const isActive=f.name===active;
+      const badge=isActive?'<span class="badge-active">Active</span>':'';
+      const activeBtn=isActive?'<button class="btn btn-ghost btn-sm" disabled style="opacity:.5">✓ Active</button>':`<button class="btn btn-ghost btn-sm" onclick="setActiveTemplate('${f.name}')">Set as active</button>`;
+      return `<tr><td><span class="file-name">${f.name}</span>${badge}</td><td style="color:var(--muted)">${f.size_kb} KB</td><td style="color:var(--muted)">${f.modified}</td><td style="text-align:right;display:flex;gap:6px;justify-content:flex-end;">${activeBtn}<button class="btn btn-ghost btn-sm" onclick="previewTemplate('${f.name}')">Preview</button><a href="/api/templates/download/${encodeURIComponent(f.name)}" download><button class="btn btn-primary btn-sm">↓ Download</button></a><button class="btn btn-danger btn-sm" onclick="deleteTemplate('${f.name}')">Delete</button></td></tr>`;
+    }).join('')+
+    '</tbody></table>';
+}
+async function uploadTemplate(input){
+  if(!input.files.length)return;
+  const form=new FormData();form.append('file',input.files[0]);
+  const res=await fetch('/api/templates/upload',{method:'POST',body:form});
+  const data=await res.json();
+  input.value='';
+  if(res.ok){toast('Uploaded '+data.name,'ok');loadTemplates();}
+  else{toast(data.detail||'Upload failed','err');}
+}
+async function previewTemplate(name){
+  const res=await fetch('/api/templates/preview/'+encodeURIComponent(name));
+  const data=await res.json();
+  if(!res.ok){toast(data.detail||'Preview failed','err');return;}
+  let body='';
+  if(data.variables.length){
+    body+='<h4>Variables</h4><ul class="placeholder-list">'+data.variables.map(v=>`<li>{{ ${v} }}</li>`).join('')+'</ul>';
+  }
+  if(data.charts.length){
+    body+='<h4>Charts</h4><ul class="placeholder-list">'+data.charts.map(v=>`<li>{{ ${v} }}</li>`).join('')+'</ul>';
+  }
+  if(!data.variables.length&&!data.charts.length) body='<p class="empty-state">No placeholders found in this template.</p>';
+  const overlay=document.createElement('div');overlay.className='modal-overlay';
+  overlay.innerHTML=`<div class="modal"><div class="modal-header"><h3>${name}</h3><button onclick="this.closest('.modal-overlay').remove()">✕</button></div><div class="modal-body">${body}</div></div>`;
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.body.appendChild(overlay);
+}
+async function setActiveTemplate(name){
+  const res=await fetch('/api/templates/set-active/'+encodeURIComponent(name),{method:'POST'});
+  const data=await res.json();
+  if(res.ok){toast('Template "'+name+'" set as active','ok');loadTemplates();}
+  else{toast(data.detail||'Failed to set active','err');}
+}
+async function deleteTemplate(name){
+  if(!confirm('Delete template '+name+'?'))return;
+  await fetch('/api/templates/'+encodeURIComponent(name),{method:'DELETE'});loadTemplates();
 }
 function toast(msg,type='ok'){const el=document.createElement('div');el.className='toast '+type;el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),3000);}
 loadConfig();
