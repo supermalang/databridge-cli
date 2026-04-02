@@ -242,11 +242,12 @@ $ python3 src/data/make.py build-report --sample 50
 
 
 #### Web UI
-Once the services are running, open `https://your-app-domain.com` in a browser. The interface has four tabs:
+Once the services are running, open `https://your-app-domain.com` in a browser. The interface has five tabs:
 
 - **Dashboard** — Run the 4 pipeline steps with one click and view real-time logs streamed via SSE
 - **Config** — Edit `config.yml` with a CodeMirror YAML editor (syntax highlighting, validation on save)
 - **Reports** — Browse, download, and delete generated `.docx` reports
+- **Templates** — Manage Word templates: upload, download, generate, preview placeholders, and set the active template for report generation
 - **Terminal** — Full web terminal (ttyd) for direct CLI access at `/terminal`
 
 
@@ -263,6 +264,13 @@ The FastAPI backend exposes the following REST API:
 | `GET` | `/api/reports` | List generated reports |
 | `GET` | `/api/reports/download/{filename}` | Download a report file |
 | `DELETE` | `/api/reports/{filename}` | Delete a report file |
+| `GET` | `/api/templates` | List template files |
+| `GET` | `/api/templates/download/{filename}` | Download a template |
+| `POST` | `/api/templates/upload` | Upload a `.docx` template |
+| `DELETE` | `/api/templates/{filename}` | Delete a template |
+| `GET` | `/api/templates/active` | Get active template name |
+| `POST` | `/api/templates/set-active/{filename}` | Set active template in config |
+| `GET` | `/api/templates/preview/{filename}` | List template placeholders |
 
 
 # Repeat groups
