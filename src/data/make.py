@@ -53,9 +53,10 @@ def cmd_download(sample):
     log.info("Downloading submissions ...")
     raw = client.get_submissions(sample_size=sample)
     log.info("Transforming data ...")
-    df = apply_filters(load_data(raw, cfg), cfg)
+    df, repeat_tables = load_data(raw, cfg)
+    df, repeat_tables = apply_filters(df, cfg, repeat_tables)
     log.info(f"Exporting {len(df)} rows ...")
-    export_data(df, cfg)
+    export_data(df, cfg, repeat_tables)
 
 @cli.command("build-report")
 @click.option("--sample", default=None, type=int, help="Use only first N rows.")

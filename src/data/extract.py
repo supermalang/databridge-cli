@@ -4,6 +4,7 @@ import requests
 
 log = logging.getLogger(__name__)
 PAGINATION_LIMIT = 100
+DEFAULT_TIMEOUT = 120
 SUPPORTED_PLATFORMS = ("kobo", "ona")
 
 
@@ -22,6 +23,7 @@ class DataClient:
         if not self.base_url or not self.token:
             raise ValueError("api.url and api.token must be set in config.yml")
         self.headers = {"Authorization": f"Token {self.token}"}
+        self.timeout = api.get("timeout", DEFAULT_TIMEOUT)
         self.form_uid = cfg.get("form", {}).get("uid", "")
         if not self.form_uid:
             raise ValueError("form.uid must be set in config.yml")
@@ -34,7 +36,7 @@ class DataClient:
 
     def _get(self, endpoint: str, params: Dict = None) -> any:
         url = f"{self.base_url}/{endpoint}"
-        resp = requests.get(url, headers=self.headers, params=params or {}, timeout=30)
+        resp = requests.get(url, headers=self.headers, params=params or {}, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
 

@@ -15,16 +15,17 @@ kobo-reporter is a web-based report generation platform that connects to [Kobo T
 - YAML-based configuration editable from the browser (CodeMirror syntax-highlighted editor)
 - Real-time log streaming via Server-Sent Events (SSE)
 - Word (.docx) report generation with embedded charts
-- Docker Compose deployment with Traefik HTTPS and optional basic authentication
+- Platform selection: supports both **Kobo Toolbox** and **Ona**, with custom/self-hosted URLs
+- Automatic repeat group handling — repeat data is exported as separate linked tables
+- Docker Compose deployment with Traefik HTTPS
 - Web terminal (ttyd) for direct CLI access from the browser
-- Optional database export (Supabase)
-- Works with both Kobo Toolbox and Ona APIs
+- Export to CSV, JSON, XLSX, MySQL, PostgreSQL, or Supabase
 
 # Installation
 ## Prerequisites
 - [Docker](https://docs.docker.com/get-docker/)
 - [Docker Compose](https://docs.docker.com/compose/install/)
-- A running [Traefik](https://doc.traefik.io/traefik/) reverse proxy with the `traefik-public` Docker network created
+- A running [Traefik](https://doc.traefik.io/traefik/) reverse proxy with the `xayma_webservers` Docker network created
 - A [Kobo Toolbox](https://www.kobotoolbox.org/) or [Ona](https://ona.io/) API token
 
 ## The easy way
@@ -45,7 +46,7 @@ $ cp .env.example .env
 
 Create the external Docker network (if not already created):
 ```bash
-$ docker network create traefik-public
+$ docker network create xayma_webservers
 ```
 
 Then start the services:
@@ -68,19 +69,45 @@ Now open the `.env` file and configure it with the appropriate values:
 |---|---|---|
 | `KOBO_TOKEN` | Yes | Your Kobo Toolbox or Ona API token |
 | `APP_DOMAIN` | Yes | Domain name for Traefik routing (e.g. `kobo-reporter.yourdomain.com`) |
-| `BASIC_AUTH_USERS` | No | htpasswd-formatted credentials for basic authentication |
 | `DB_USER` | No | Database username (for optional database export) |
 | `DB_PASSWORD` | No | Database password (for optional database export) |
 | `SUPABASE_KEY` | No | Supabase API key (for optional database export) |
 
-- 🆘 *If you do not have a Kobo token, go to your Kobo Toolbox account settings to generate one.*
+- 🆘 *If you do not have a Kobo token, go to your Kobo Toolbox account settings to generate one. For Ona, go to Settings → API Access.*
 - 🆗 *If you do not export to a database you can ignore `DB_USER`, `DB_PASSWORD` and `SUPABASE_KEY`.*
-
-> ⚠️ *In the `.env` file, escape `$` characters in `BASIC_AUTH_USERS` by doubling them (`$$`). Generate the htpasswd string with: `htpasswd -nb username password`*
 
 
 ## Update the config file
-Create a `config.yml` file in the project root directory. This file is mounted into the container and defines the pipeline behavior: form URL, chart definitions, field mappings, filters, and export settings.
+Create the `config.yml` file from the sample:
+```bash
+$ cp sample.config.yml config.yml
+```
+
+Open `config.yml` and configure the API connection:
+
+```yaml
+api:
+  platform: kobo            # kobo | ona
+  url: https://kf.kobotoolbox.org/api/v2
+  token: env:KOBO_TOKEN
+
+form:
+  uid: aAbBcCdDeEfFgGhH     # your form ID
+  alias: monitoring_survey   # used for output file names
+```
+
+**Platform selection:**
+
+| Platform | `api.platform` | Example `api.url` |
+|----------|---------------|-------------------|
+| Kobo Toolbox | `kobo` | `https://kf.kobotoolbox.org/api/v2` |
+| Kobo (self-hosted) | `kobo` | `https://kobo.yourdomain.com/api/v2` |
+| Ona | `ona` | `https://api.ona.io/api/v1` |
+| Ona (self-hosted) | `ona` | `https://ona.yourdomain.com/api/v1` |
+
+- 🆘 *To find your form UID: on Kobo, go to your form's Settings → REST Services and copy the asset UID from the URL. On Ona, the form ID is the numeric ID visible in the form URL.*
+
+You can also set an optional `api.timeout` (in seconds, default 120) for slow connections or large forms.
 
 You can edit `config.yml` in two ways:
 1. **From the browser** — use the **Config** tab in the web UI (includes syntax highlighting and YAML validation on save)
@@ -89,16 +116,16 @@ You can edit `config.yml` in two ways:
 > The web UI validates YAML before saving — if the syntax is invalid, the save will be rejected with an error message.
 
 
-## Customize Traefik and basic auth
+## Customize Traefik
 > *This part is optional*
 
-The `docker-compose.yml` configures two Traefik routers:
+The `docker-compose.yml` configures two Traefik routers on the `xayma_webservers` external network:
 - **kobo-reporter** — serves the web UI on your `APP_DOMAIN`
 - **kobo-terminal** — serves the web terminal at the `/terminal` path
 
-Both use HTTPS via Let's Encrypt (`certresolver=letsencrypt`) and share the same basic auth middleware. To disable authentication, comment out or remove the `basicauth` middleware labels in `docker-compose.yml`.
+Both use HTTPS via Let's Encrypt (`certresolver=letsencrypt`). To add basic authentication, add `basicauth` middleware labels to the services in `docker-compose.yml`.
 
-> ⚠️ *It is not recommended to disable basic auth for public-facing deployments.*
+> ⚠️ *It is recommended to add basic auth for public-facing deployments.*
 
 
 # Usage
@@ -157,6 +184,33 @@ The FastAPI backend exposes the following REST API:
 | `GET` | `/api/reports` | List generated reports |
 | `GET` | `/api/reports/download/{filename}` | Download a report file |
 | `DELETE` | `/api/reports/{filename}` | Delete a report file |
+
+
+# Repeat groups
+
+Forms with repeat groups (e.g., listing household members within a household survey) are automatically detected during `fetch-questions`. Repeat data is exported as **separate tables** linked to the main table.
+
+**Output structure:**
+
+| Table | Columns | Description |
+|-------|---------|-------------|
+| Main table | `_id`, all non-repeat questions | One row per submission |
+| Repeat table (one per group) | `_parent_index`, `_row_index`, repeat fields | One row per repeat entry |
+
+- `_parent_index` links back to the parent submission's `_id`
+- `_row_index` is the position within the repeat (0, 1, 2, ...)
+
+**Export behavior by format:**
+
+| Format | Main table | Repeat tables |
+|--------|-----------|---------------|
+| CSV | `alias_data.csv` | `alias_groupname.csv` (one file per group) |
+| JSON | `alias_data.json` | `alias_groupname.json` (one file per group) |
+| XLSX | `main` sheet | One sheet per group (in the same file) |
+| SQL | `submissions` table | `submissions_groupname` table |
+| Supabase | `submissions` table | `submissions_groupname` table |
+
+> Filters applied to the main table automatically remove orphaned repeat rows whose parent submission was filtered out.
 
 
 # Docker services
