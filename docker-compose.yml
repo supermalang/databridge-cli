@@ -34,11 +34,9 @@ services:
       - ./reports:/app/reports
       - ./templates:/app/templates
       - ./src:/app/src
-      - ./requirements.txt:/app/requirements.txt
     working_dir: /app
     entrypoint: >
-      sh -c "pip install -q -r requirements.txt &&
-             ttyd -p 7681 -t fontSize=14 -t theme=monokai bash"
+      sh -c "ttyd -p 7681 -t fontSize=14 -t theme=monokai bash"
     environment:
       - KOBO_TOKEN=${KOBO_TOKEN}
       - PYTHONPATH=/app
