@@ -411,10 +411,13 @@ header h1{font-size:16px;font-weight:600}
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <h2>Word templates</h2>
           <button class="btn btn-ghost btn-sm" onclick="loadTemplates()">↺ Refresh</button>
-          <label class="btn btn-primary btn-sm" style="margin-left:auto;cursor:pointer;">
-            ↑ Upload .docx
-            <input type="file" accept=".docx" style="display:none" onchange="uploadTemplate(this)">
-          </label>
+          <span style="margin-left:auto;display:flex;gap:8px;">
+            <button class="btn btn-ghost btn-sm" id="btn-generate-tpl" onclick="generateTemplate()">⚙ Generate template</button>
+            <label class="btn btn-primary btn-sm" style="cursor:pointer;">
+              ↑ Upload .docx
+              <input type="file" accept=".docx" style="display:none" onchange="uploadTemplate(this)">
+            </label>
+          </span>
         </div>
         <div id="templates-container"><p class="empty-state">Loading…</p></div>
       </div>
@@ -514,7 +517,7 @@ async function loadTemplates(){
   const c=document.getElementById('templates-container');c.innerHTML='<p class="empty-state">Loading…</p>';
   const [data,activeData]=await Promise.all([fetch('/api/templates').then(r=>r.json()),fetch('/api/templates/active').then(r=>r.json())]);
   const active=activeData.active||'';
-  if(!data.files.length){c.innerHTML='<p class="empty-state">No templates yet. Upload a .docx file or run Generate Template.</p>';return;}
+  if(!data.files.length){c.innerHTML='<div class="empty-state"><p>No templates yet.</p><p style="margin-top:8px">Generate a starter template from your config, then download and customize it in Word.</p><button class="btn btn-primary" style="margin-top:12px" onclick="generateTemplate()">⚙ Generate template</button></div>';return;}
   c.innerHTML='<table class="file-table"><thead><tr><th>File</th><th>Size</th><th>Modified</th><th></th></tr></thead><tbody>'+
     data.files.map(f=>{
       const isActive=f.name===active;
@@ -532,6 +535,34 @@ async function uploadTemplate(input){
   input.value='';
   if(res.ok){toast('Uploaded '+data.name,'ok');loadTemplates();}
   else{toast(data.detail||'Upload failed','err');}
+}
+async function generateTemplate(){
+  if(running){toast('A command is already running','err');return;}
+  const btn=document.getElementById('btn-generate-tpl');
+  if(btn){btn.disabled=true;btn.textContent='⚙ Generating…';}
+  running=true;setDot('running');
+  document.getElementById('status-label').textContent='generate-template';
+  const res=await fetch('/api/run/generate-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  const reader=res.body.getReader();const dec=new TextDecoder();let buf='',ok=false;
+  while(true){
+    const{done,value}=await reader.read();if(done)break;
+    buf+=dec.decode(value,{stream:true});
+    const parts=buf.split('\n\n');buf=parts.pop();
+    for(const part of parts){
+      const lines=part.trim().split('\n');let ev='message',data='';
+      for(const l of lines){if(l.startsWith('event: '))ev=l.slice(7);if(l.startsWith('data: '))data=l.slice(6);}
+      if(!data)continue;const p=JSON.parse(data);
+      if(ev==='status'&&p.status!=='running'){
+        ok=p.status==='success';setDot(p.status);
+        document.getElementById('status-label').textContent=ok?'✓ done':'✗ error';
+        running=false;
+      }
+    }
+  }
+  running=false;
+  if(btn){btn.disabled=false;btn.textContent='⚙ Generate template';}
+  if(ok){toast('Template generated','ok');loadTemplates();}
+  else{toast('Generation failed — check logs on Dashboard','err');}
 }
 async function previewTemplate(name){
   const res=await fetch('/api/templates/preview/'+encodeURIComponent(name));
