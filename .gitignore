@@ -3,7 +3,7 @@ config.yml
 *.env
 data/raw/
 data/processed/
-reports/
+/reports/
 __pycache__/
 *.pyc
 .DS_Store

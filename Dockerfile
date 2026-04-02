@@ -401,8 +401,10 @@ HTMLEOF
 
 RUN mkdir -p data/raw data/processed data/processed/charts reports templates references
 
+COPY sample.config.yml ./sample.config.yml
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 EXPOSE 8000
 
-CMD ["uvicorn", "web.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "if [ -d config.yml ]; then rm -rf config.yml; fi && if [ ! -f config.yml ]; then cp sample.config.yml config.yml; fi && exec uvicorn web.main:app --host 0.0.0.0 --port 8000"]
