@@ -14,12 +14,15 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 PALETTE = ["#1D9E75","#378ADD","#D85A30","#BA7517","#7F77DD","#D4537E","#5DCAA5","#85B7EB","#F0997B","#C0DD97"]
-plt.rcParams.update({
+_rc = {
     "figure.facecolor":"white","axes.facecolor":"white","axes.edgecolor":"#CCCCCC",
     "axes.spines.top":False,"axes.spines.right":False,"axes.grid":True,
     "grid.color":"#EEEEEE","grid.linewidth":0.7,"font.family":"sans-serif","font.size":10,
-    "axes.titlesize":12,"axes.titleweight":"bold","axes.titleloc":"left","axes.titlepad":10,
-})
+    "axes.titlesize":12,"axes.titleweight":"bold","axes.titlepad":10,
+}
+if "axes.titleloc" in plt.rcParams:
+    _rc["axes.titleloc"] = "left"
+plt.rcParams.update(_rc)
 CHART_DIR = Path("data/processed/charts")
 
 def generate_chart(chart_cfg: Dict, df: pd.DataFrame, out_dir: Path = CHART_DIR) -> Optional[Path]:
