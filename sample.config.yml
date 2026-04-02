@@ -1,0 +1,62 @@
+# kobo-reporter · config.yml
+# Single source of truth. Copy to config.yml and fill in your values.
+
+api:
+  url: https://kf.kobotoolbox.org/api/v2
+  # For Ona: url: https://api.ona.io/api/v1
+  token: env:KOBO_TOKEN
+
+form:
+  uid: aAbBcCdDeEfFgGhH
+  alias: monitoring_survey
+
+# Auto-filled by fetch-questions — edit after
+questions: []
+
+# pandas .query() syntax — applied to all downloaded data
+filters: []
+# filters:
+#   - "Age > 0"
+#   - "Region != 'Test'"
+#   - "submission_date >= '2025-01-01'"
+
+# chart name -> {{ chart_<name> }} placeholder in Word template
+charts: []
+# charts:
+#   - name: satisfaction_overview
+#     title: Overall satisfaction
+#     type: horizontal_bar
+#     questions: [Satisfaction]
+#     options:
+#       top_n: 10
+#       width_inches: 5.5
+#
+#   - name: age_distribution
+#     title: Age distribution
+#     type: histogram
+#     questions: [Age]
+#     options:
+#       bins: 12
+#
+# Supported types: bar | horizontal_bar | stacked_bar | pie | donut |
+#   line | area | histogram | scatter | box_plot |
+#   heatmap | treemap | waterfall | funnel | table
+
+export:
+  format: csv   # csv | json | xlsx | mysql | postgres | supabase
+  output_dir: data/processed
+  database:
+    host: localhost
+    port: 5432
+    name: kobo_reports
+    user: env:DB_USER
+    password: env:DB_PASSWORD
+    table: submissions
+    # supabase_url: https://yourproject.supabase.co
+    # supabase_key: env:SUPABASE_KEY
+
+report:
+  template: templates/report_template.docx
+  output_dir: reports
+  title: Monitoring Report
+  period: Q1 2025

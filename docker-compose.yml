@@ -1,6 +1,5 @@
 services:
 
-  # ── Web UI + API ─────────────────────────────────────────────────────────────
   app:
     build: .
     container_name: kobo-reporter-app
@@ -22,13 +21,11 @@ services:
       - "traefik.http.routers.kobo-reporter.entrypoints=websecure"
       - "traefik.http.routers.kobo-reporter.tls.certresolver=letsencrypt"
       - "traefik.http.services.kobo-reporter.loadbalancer.server.port=8000"
-      # Basic auth (optional — comment out if not needed)
       - "traefik.http.routers.kobo-reporter.middlewares=kobo-auth"
       - "traefik.http.middlewares.kobo-auth.basicauth.users=${BASIC_AUTH_USERS}"
     networks:
       - traefik-public
 
-  # ── Web terminal (ttyd) ──────────────────────────────────────────────────────
   terminal:
     image: tsl0922/ttyd:latest
     container_name: kobo-reporter-terminal
@@ -38,18 +35,12 @@ services:
       - ./data:/app/data
       - ./reports:/app/reports
       - ./templates:/app/templates
-      - ./references:/app/references
-      # Mount app source so CLI is available in the terminal
       - ./src:/app/src
       - ./requirements.txt:/app/requirements.txt
-      - ./requirements.web.txt:/app/requirements.web.txt
     working_dir: /app
-    # Install deps and start ttyd with bash
-    # PYTHONPATH set so `python3 src/data/make.py` works from /app
     entrypoint: >
-      sh -c "pip install -q -r requirements.txt -r requirements.web.txt &&
-             ttyd -p 7681 -t fontSize=14 -t theme=monokai
-             bash"
+      sh -c "pip install -q -r requirements.txt &&
+             ttyd -p 7681 -t fontSize=14 -t theme=monokai bash"
     environment:
       - KOBO_TOKEN=${KOBO_TOKEN}
       - PYTHONPATH=/app
