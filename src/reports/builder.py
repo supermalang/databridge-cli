@@ -43,11 +43,19 @@ class ReportBuilder:
 
     def _generate_charts(self, tpl, df):
         CHART_DIR.mkdir(parents=True, exist_ok=True)
+        key_to_label = {
+            q["kobo_key"]: q.get("export_label") or q.get("label") or q["kobo_key"]
+            for q in self.cfg.get("questions", [])
+        }
         images = {}
         for c in self.charts_cfg:
             name = c.get("name")
             if not name: continue
-            png = generate_chart(c, df)
+            resolved = {**c, "questions": [
+                key_to_label.get(q, q) if q not in df.columns else q
+                for q in c.get("questions", [])
+            ]}
+            png = generate_chart(resolved, df)
             width = Inches(c.get("options",{}).get("width_inches",5.5))
             images[f"chart_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
         return images
