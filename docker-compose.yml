@@ -36,7 +36,7 @@ services:
       - ./src:/app/src
     working_dir: /app
     entrypoint: >
-      sh -c "ttyd -p 7681 -t fontSize=14 -t theme=monokai bash"
+      sh -c "ttyd -p 7681 --base-path /terminal -t fontSize=14 -t theme=monokai bash"
     environment:
       - KOBO_TOKEN=${KOBO_TOKEN}
       - PYTHONPATH=/app
@@ -47,8 +47,6 @@ services:
       - "traefik.http.routers.kobo-terminal.entrypoints=websecure"
       - "traefik.http.routers.kobo-terminal.tls.certresolver=letsencrypt"
       - "traefik.http.services.kobo-terminal.loadbalancer.server.port=7681"
-      - "traefik.http.routers.kobo-terminal.middlewares=kobo-terminal-strip"
-      - "traefik.http.middlewares.kobo-terminal-strip.stripprefix.prefixes=/terminal"
     networks:
       - xayma_webservers
 
