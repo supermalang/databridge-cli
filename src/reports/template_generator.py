@@ -33,9 +33,13 @@ def generate_template(cfg: Dict, out_path: Path) -> Path:
     quant=[q for q in cfg.get("questions",[]) if q.get("category")=="quantitative"]
     if quant:
         _divider(doc); _heading(doc,"Numeric Summary",1)
-        p=doc.add_paragraph()
-        r=p.add_run("{% for row in stats_table %}\n{{ row.label }}: n={{ row.n }}, mean={{ row.mean }}, median={{ row.median }}\n{% endfor %}")
-        r.font.size=Pt(9); r.font.color.rgb=RGBColor(0x1D,0x9E,0x75); r.font.italic=True
+        for text,sz,color,italic in [
+            ("{%p for row in stats_table %}",9,RGBColor(0x1D,0x9E,0x75),True),
+            ("{{ row.label }}: n={{ row.n }}, mean={{ row.mean }}, median={{ row.median }}",9,RGBColor(0x1D,0x9E,0x75),True),
+            ("{%p endfor %}",9,RGBColor(0x1D,0x9E,0x75),True),
+        ]:
+            p=doc.add_paragraph(); r=p.add_run(text)
+            r.font.size=Pt(sz); r.font.color.rgb=color; r.font.italic=italic
     _divider(doc); _heading(doc,"Placeholder Reference",1)
     _note(doc,"Delete this section before sharing."); _ref_table(doc,cfg)
     out_path.parent.mkdir(parents=True,exist_ok=True)
