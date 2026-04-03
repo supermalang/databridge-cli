@@ -63,3 +63,4 @@ report:
   output_dir: reports
   title: Monitoring Report
   period: Q1 2025
+  # split_by: Village   # export_label of a column — generates one report per unique value

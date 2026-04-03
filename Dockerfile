@@ -524,7 +524,7 @@ async function runCmd(command,opts={}){
   document.getElementById('status-label').textContent=command;
   document.getElementById('log-body').innerHTML='';
   document.getElementById('log-title').textContent='Running: '+command;
-  const body={};if(opts.sample)body.sample=opts.sample;
+  const body={};if(opts.sample)body.sample=opts.sample;if(opts.split_by)body.split_by=opts.split_by;
   const res=await fetch('/api/run/'+command,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const reader=res.body.getReader();const dec=new TextDecoder();let buf='';
   while(true){
@@ -670,4 +670,4 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 EXPOSE 8000
 
-CMD ["sh", "-c", "if [ -d config.yml ]; then rm -rf config.yml; fi && if [ ! -f config.yml ]; then cp sample.config.yml config.yml; fi && exec uvicorn web.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "if [ ! -f config.yml ]; then cp sample.config.yml config.yml; fi && exec uvicorn web.main:app --host 0.0.0.0 --port 8000"]

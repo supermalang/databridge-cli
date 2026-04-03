@@ -205,7 +205,7 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
 def _export_sql(df: pd.DataFrame, cfg: Dict, dialect: str, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
     from sqlalchemy import create_engine
     db = cfg.get("export", {}).get("database", {})
-    h, p = db.get("host", "localhost"), db.get("port", 5432 if dialect == "postgres" else 3306)
+    h, p = db.get("host", "localhost"), int(db.get("port", 5432 if dialect == "postgres" else 3306))
     n, u, pw, t = db.get("name"), db.get("user"), db.get("password", ""), db.get("table", "submissions")
     url = (f"postgresql+psycopg2://{u}:{pw}@{h}:{p}/{n}" if dialect == "postgres"
            else f"mysql+pymysql://{u}:{pw}@{h}:{p}/{n}?charset=utf8mb4")

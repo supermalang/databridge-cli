@@ -29,8 +29,6 @@ def fetch_and_write_questions(client, cfg: Dict, config_path: Path) -> None:
             prev = existing[q["kobo_key"]]
             q["category"] = prev.get("category", q["category"])
             q["export_label"] = prev.get("export_label", q["export_label"])
-            if prev.get("repeat_group"):
-                q["repeat_group"] = prev.get("repeat_group", q.get("repeat_group"))
         merged.append(q)
     cfg["questions"] = merged
     write_config(cfg, config_path)
