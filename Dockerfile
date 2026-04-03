@@ -32,6 +32,7 @@ BASE_DIR      = Path("/app")
 CONFIG_PATH   = BASE_DIR / "config.yml"
 REPORTS_DIR   = BASE_DIR / "reports"
 TEMPLATES_DIR = BASE_DIR / "templates"
+DATA_DIR      = BASE_DIR / "data" / "processed"
 STATIC_DIR    = Path(__file__).parent / "static"
 
 app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None)
@@ -154,6 +155,29 @@ async def delete_report(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
     path.unlink()
     return {"ok": True}
+
+# ── Data files ──────────────────────────────────────────────
+@app.get("/api/data")
+async def list_data_files():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    files = []
+    for f in sorted(DATA_DIR.glob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
+        if f.suffix.lower() in {".csv", ".json", ".xlsx"} and f.is_file():
+            s = f.stat()
+            files.append({"name": f.name, "size_kb": round(s.st_size/1024,1),
+                           "modified": datetime.fromtimestamp(s.st_mtime).strftime("%Y-%m-%d %H:%M")})
+    return {"files": files}
+
+@app.get("/api/data/download/{filename}")
+async def download_data_file(filename: str):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = DATA_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    ext = path.suffix.lower()
+    mime = {"csv":"text/csv","json":"application/json","xlsx":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}.get(ext[1:],"application/octet-stream")
+    return FileResponse(path=path, filename=filename, media_type=mime)
 
 # ── Templates ──────────────────────────────────────────────
 @app.get("/api/templates")
@@ -400,10 +424,15 @@ header h1{font-size:16px;font-weight:600}
     <div class="tab-content" id="tab-reports">
       <div class="reports-pane">
         <div style="display:flex;align-items:center;gap:12px;">
-          <h2>Generated reports</h2>
+          <h2>Reports</h2>
           <button class="btn btn-ghost btn-sm" onclick="loadReports()">↺ Refresh</button>
         </div>
         <div id="reports-container"><p class="empty-state">Loading…</p></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:24px;">
+          <h2>Data files</h2>
+          <button class="btn btn-ghost btn-sm" onclick="loadDataFiles()">↺ Refresh</button>
+        </div>
+        <div id="data-container"><p class="empty-state">Loading…</p></div>
       </div>
     </div>
     <div class="tab-content" id="tab-templates">
@@ -440,7 +469,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
     tab.classList.add('active');
     document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
     if(tab.dataset.tab==='config'&&!editor.getValue())loadConfig();
-    if(tab.dataset.tab==='reports')loadReports();
+    if(tab.dataset.tab==='reports'){loadReports();loadDataFiles();}
     if(tab.dataset.tab==='templates')loadTemplates();
     if(tab.dataset.tab==='terminal'&&!terminalLoaded){
       document.getElementById('terminal-frame').src='/terminal/';
@@ -488,6 +517,7 @@ async function runCmd(command,opts={}){
         document.getElementById('status-label').textContent=p.status==='success'?'✓ done':'✗ error';
         running=false;
         if(p.status==='success'&&command==='build-report')loadReports();
+        if(p.status==='success'&&command==='download')loadDataFiles();
       }
       else if(ev==='done')running=false;
     }
@@ -512,6 +542,14 @@ async function loadReports(){
 async function deleteReport(name){
   if(!confirm('Delete '+name+'?'))return;
   await fetch('/api/reports/'+encodeURIComponent(name),{method:'DELETE'});loadReports();
+}
+async function loadDataFiles(){
+  const c=document.getElementById('data-container');c.innerHTML='<p class="empty-state">Loading…</p>';
+  const data=await(await fetch('/api/data')).json();
+  if(!data.files.length){c.innerHTML='<p class="empty-state">No data files yet. Run Download data first.</p>';return;}
+  c.innerHTML='<table class="file-table"><thead><tr><th>File</th><th>Size</th><th>Generated</th><th></th></tr></thead><tbody>'+
+    data.files.map(f=>`<tr><td><span class="file-name">${f.name}</span></td><td style="color:var(--muted)">${f.size_kb} KB</td><td style="color:var(--muted)">${f.modified}</td><td style="text-align:right;"><a href="/api/data/download/${encodeURIComponent(f.name)}" download><button class="btn btn-primary btn-sm">↓ Download</button></a></td></tr>`).join('')+
+    '</tbody></table>';
 }
 async function loadTemplates(){
   const c=document.getElementById('templates-container');c.innerHTML='<p class="empty-state">Loading…</p>';
