@@ -34,7 +34,7 @@ REPORTS_DIR   = BASE_DIR / "reports"
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR    = Path(__file__).parent / "static"
 
-app = FastAPI(title="kobo-reporter", docs_url=None, redoc_url=None)
+app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None)
 _last_status: Dict = {"command": None, "status": "idle", "finished_at": None}
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -252,7 +252,7 @@ COPY <<'HTMLEOF' web/static/index.html
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>kobo-reporter</title>
+<title>databridge-cli</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 <style>
@@ -330,7 +330,7 @@ header h1{font-size:16px;font-weight:600}
 <body>
 <div class="layout">
   <header>
-    <h1>kobo-reporter</h1><span class="badge">v1.0</span>
+    <h1>databridge-cli</h1><span class="badge">v1.0</span>
     <span id="status-label" style="font-size:12px;color:rgba(255,255,255,.7);margin-left:8px;"></span>
     <div class="status-dot" id="status-dot"></div>
   </header>
