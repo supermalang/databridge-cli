@@ -59,21 +59,67 @@ charts: []
 #     options:
 #       freq: month           # day | week | month | year
 #
-# Supported types: bar | horizontal_bar | stacked_bar | pie | donut |
-#   line | area | histogram | scatter | box_plot |
-#   heatmap | treemap | waterfall | funnel | table
+#   - name: responses_by_gender_region
+#     title: Responses by region and gender
+#     type: grouped_bar
+#     questions: [Region, Gender]   # [category, group_by]
+#     options:
+#       top_n: 10
+#
+#   - name: beneficiaries_target
+#     title: Beneficiaries reached vs target
+#     type: bullet_chart
+#     questions: [Beneficiary_ID]   # numeric column (sum) or any column (count)
+#     options:
+#       target: 5000                # REQUIRED — your indicator target
+#       color: "#1D9E75"
+#
+#   - name: satisfaction_likert
+#     title: Satisfaction scale
+#     type: likert
+#     questions: [Satisfaction]     # column with scale responses
+#     options:
+#       scale: ["Very dissatisfied", "Dissatisfied", "Neutral", "Satisfied", "Very satisfied"]
+#       neutral: "Neutral"
+#
+#   - name: kpi_summary
+#     title: Key indicators
+#     type: scorecard
+#     questions: [Beneficiary_ID, Age, Household_Size]  # one card per question
+#     options:
+#       columns: 3        # cards per row
+#       stat: count       # count | mean | sum
+#       color: "#1D9E75"
+#
+#   - name: age_gender_pyramid
+#     title: Population pyramid
+#     type: pyramid
+#     questions: [Age_Group, Gender]  # [age_group, gender]
+#     options:
+#       male_value: "Male"
+#       female_value: "Female"
+#
+# Supported types: bar | horizontal_bar | stacked_bar | grouped_bar | pie | donut |
+#   line | area | histogram | scatter | box_plot | heatmap | treemap |
+#   waterfall | funnel | table | bullet_chart | likert | scorecard | pyramid
 #
 # Common options (all chart types):
 #   top_n          : max categories to show (default 15, pie/donut default 8)
-#   width_inches   : chart width in inches (default 5.5-8 depending on type)
+#   width_inches   : chart width in inches (default varies by type)
 #   height_inches  : chart height in inches
 #   color          : hex color for single-series charts (e.g. "#D85A30")
 #   xlabel / ylabel: axis label overrides
 # Per-type options:
-#   sort     (bar, horizontal_bar, waterfall): "value" | "label" | "none"
+#   sort      (bar, horizontal_bar, grouped_bar, waterfall): "value"|"label"|"none"
 #   normalize (stacked_bar): true → 100% stacked
 #   bins      (histogram): number of bins (default 15)
 #   freq      (line, area): "day" | "week" | "month" | "year"
+#   target    (bullet_chart): REQUIRED integer target value
+#   scale     (likert): ordered list of response labels
+#   neutral   (likert): label of the neutral/midpoint response
+#   stat      (scorecard): "count" | "mean" | "sum"
+#   columns   (scorecard): number of cards per row (default 3)
+#   male_value / female_value (pyramid): strings matching gender column values
 
 export:
   format: csv   # csv | json | xlsx | mysql | postgres | supabase

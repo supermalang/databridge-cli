@@ -305,10 +305,167 @@ def chart_table(df, q, title, out, opts):
     ax.set_title(title, pad=10)
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
+def chart_grouped_bar(df, q, title, out, opts):
+    if len(q) < 2: raise ValueError("grouped_bar needs 2 questions: [category, group_by]")
+    cat, grp = q[0], q[1]
+    n = opts.get("top_n", 12)
+    top_cats = df[cat].value_counts().head(n).index
+    pivot = pd.crosstab(df[cat], df[grp]).loc[lambda x: x.index.isin(top_cats)]
+    if opts.get("sort", "value") == "value":
+        pivot = pivot.loc[pivot.sum(axis=1).sort_values().index]
+    elif opts.get("sort") == "label":
+        pivot = pivot.sort_index()
+    xl, yl = _labels(opts, cat, "Count")
+    fig, ax = plt.subplots(figsize=_fs(opts, (9, 5)))
+    pivot.plot(kind="bar", ax=ax, color=PALETTE[:len(pivot.columns)], alpha=0.87, width=0.75)
+    ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl)
+    ax.legend(title=grp, bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=9)
+    plt.xticks(rotation=30, ha="right")
+    plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+
+
+def chart_bullet_chart(df, q, title, out, opts):
+    target = opts.get("target")
+    if target is None: raise ValueError("bullet_chart requires options.target")
+    target = float(target)
+    c = q[0]
+    achieved = float(pd.to_numeric(df[c], errors="coerce").sum()) if df[c].dtype.kind in "iuf" else float(df[c].notna().sum())
+    pct = achieved / target * 100 if target > 0 else 0
+    xl, _ = _labels(opts, "", "")
+    col = _color(opts)
+    fig, ax = plt.subplots(figsize=_fs(opts, (7, 1.6)))
+    # background track
+    ax.barh(0, target, color="#EEEEEE", height=0.5, zorder=1)
+    # achieved bar
+    ax.barh(0, achieved, color=col, height=0.5, alpha=0.87, zorder=2)
+    # target line
+    ax.axvline(target, color="#333333", linewidth=2, zorder=3)
+    # label
+    ax.text(achieved + target * 0.01, 0, f"{achieved:,.0f} / {target:,.0f}  ({pct:.1f}%)",
+            va="center", fontsize=10, fontweight="bold", color="#333333")
+    ax.set_xlim(0, target * 1.25)
+    ax.set_yticks([]); ax.set_xlabel(xl or c); ax.set_title(title)
+    ax.spines["left"].set_visible(False); ax.grid(False)
+    plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+
+
+def chart_likert(df, q, title, out, opts):
+    c = q[0]
+    scale = opts.get("scale")
+    if not scale:
+        # auto-detect: sort unique values
+        scale = sorted(df[c].dropna().unique().tolist(), key=lambda x: str(x))
+    neutral = opts.get("neutral", scale[len(scale) // 2] if scale else None)
+    xl, yl = _labels(opts, "% of responses", "")
+
+    counts = df[c].value_counts()
+    # Order by scale
+    ordered = pd.Series([counts.get(s, 0) for s in scale], index=scale)
+    total = ordered.sum()
+    if total == 0: raise ValueError("likert: no data")
+    pcts = ordered / total * 100
+
+    # Split at neutral
+    neutral_idx = list(scale).index(neutral) if neutral in scale else len(scale) // 2
+    neg_labels = scale[:neutral_idx]
+    neu_labels = [scale[neutral_idx]] if neutral in scale else []
+    pos_labels = scale[neutral_idx+1:] if neutral in scale else scale[neutral_idx:]
+
+    neg_colors = ["#D85A30", "#F0997B"][:len(neg_labels)]
+    neu_colors = ["#CCCCCC"]
+    pos_colors = ["#5DCAA5", "#1D9E75"][:len(pos_labels)]
+    colors = neg_colors + neu_colors + pos_colors
+
+    # Build cumulative lefts: negatives go left (negative x), positives go right
+    neg_total = pcts[neg_labels].sum()
+    fig, ax = plt.subplots(figsize=_fs(opts, (9, max(2.5, 1.5))))
+    left = -neg_total
+    for i, lbl in enumerate(neg_labels):
+        ax.barh(0, pcts[lbl], left=left, color=neg_colors[i % len(neg_colors)], height=0.5, label=lbl)
+        left += pcts[lbl]
+    for lbl, col in zip(neu_labels, neu_colors):
+        ax.barh(0, pcts[lbl], left=left, color=col, height=0.5, label=lbl)
+        left += pcts[lbl]
+    for i, lbl in enumerate(pos_labels):
+        ax.barh(0, pcts[lbl], left=left, color=pos_colors[i % len(pos_colors)], height=0.5, label=lbl)
+        left += pcts[lbl]
+
+    ax.axvline(0, color="#888888", linewidth=1, linestyle="--")
+    ax.set_yticks([]); ax.set_xlabel(xl); ax.set_title(title)
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.35), ncol=len(scale), fontsize=8)
+    ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{abs(v):.0f}%"))
+    plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+
+
+def chart_scorecard(df, q, title, out, opts):
+    stat = opts.get("stat", "count")
+    ncols = opts.get("columns", min(3, len(q)))
+    nrows = -(-len(q) // ncols)  # ceiling division
+    col = _color(opts)
+    text_col = _label_color(col)
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=_fs(opts, (ncols * 2.8, nrows * 2.0)))
+    axes = np.array(axes).flatten()
+
+    for i, col_name in enumerate(q):
+        ax = axes[i]
+        s = pd.to_numeric(df[col_name], errors="coerce")
+        if stat == "mean" and s.notna().any():
+            value = s.mean()
+            fmt = f"{value:,.1f}"
+        elif stat == "sum" and s.notna().any():
+            value = s.sum()
+            fmt = f"{value:,.0f}"
+        else:  # count (non-null)
+            value = df[col_name].notna().sum()
+            fmt = f"{int(value):,}"
+
+        ax.set_facecolor(col)
+        ax.set_xticks([]); ax.set_yticks([])
+        for spine in ax.spines.values(): spine.set_visible(False)
+        ax.text(0.5, 0.62, fmt, transform=ax.transAxes, ha="center", va="center",
+                fontsize=22, fontweight="bold", color=text_col)
+        ax.text(0.5, 0.25, col_name, transform=ax.transAxes, ha="center", va="center",
+                fontsize=9, color=text_col, alpha=0.85, wrap=True)
+
+    # hide unused axes
+    for j in range(len(q), len(axes)):
+        axes[j].set_visible(False)
+
+    fig.suptitle(title, fontsize=12, fontweight="bold", y=1.02)
+    plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+
+
+def chart_pyramid(df, q, title, out, opts):
+    if len(q) < 2: raise ValueError("pyramid needs 2 questions: [age_group, gender]")
+    age_col, gender_col = q[0], q[1]
+    uniq = df[gender_col].dropna().unique()
+    male_val = opts.get("male_value", uniq[0] if len(uniq) >= 1 else "Male")
+    female_val = opts.get("female_value", uniq[1] if len(uniq) >= 2 else "Female")
+    xl, yl = _labels(opts, "Count", age_col)
+
+    age_order = sorted(df[age_col].dropna().unique(), key=lambda x: str(x))
+    male = df[df[gender_col] == male_val][age_col].value_counts().reindex(age_order, fill_value=0)
+    female = df[df[gender_col] == female_val][age_col].value_counts().reindex(age_order, fill_value=0)
+
+    fig, ax = plt.subplots(figsize=_fs(opts, (8, max(4, len(age_order) * 0.45))))
+    ax.barh(age_order, -male.values, color=PALETTE[1], alpha=0.85, label=male_val)
+    ax.barh(age_order, female.values, color=PALETTE[5], alpha=0.85, label=female_val)
+    ax.axvline(0, color="#888888", linewidth=1)
+    max_val = max(male.max(), female.max()) if len(male) and len(female) else 1
+    ax.set_xlim(-max_val * 1.2, max_val * 1.2)
+    ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{abs(int(v))}"))
+    ax.set_xlabel(xl); ax.set_ylabel(yl); ax.set_title(title)
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.12), ncol=2, fontsize=9)
+    plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+
+
 CHART_DISPATCH = {
     "bar": chart_bar, "horizontal_bar": chart_horizontal_bar, "stacked_bar": chart_stacked_bar,
     "pie": chart_pie, "donut": chart_donut, "line": chart_line, "area": chart_area,
     "histogram": chart_histogram, "scatter": chart_scatter, "box_plot": chart_box_plot,
     "heatmap": chart_heatmap, "treemap": chart_treemap, "waterfall": chart_waterfall,
     "funnel": chart_funnel, "table": chart_table,
+    "grouped_bar": chart_grouped_bar, "bullet_chart": chart_bullet_chart,
+    "likert": chart_likert, "scorecard": chart_scorecard, "pyramid": chart_pyramid,
 }

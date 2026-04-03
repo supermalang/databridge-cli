@@ -36,7 +36,7 @@ databridge-cli/
 │   │   └── transform.py             ← flatten submissions, apply filters, multi-target export
 │   ├── reports/
 │   │   ├── builder.py                ← ReportBuilder — renders Word template via docxtpl
-│   │   ├── charts.py                 ← 15 chart types via matplotlib (CHART_DISPATCH dict)
+│   │   ├── charts.py                 ← 20 chart types via matplotlib (CHART_DISPATCH dict)
 │   │   └── template_generator.py    ← auto-generates starter .docx from config
 │   └── utils/
 │       └── config.py                 ← load_config(), write_config(), env: var resolution
@@ -153,18 +153,19 @@ On re-run, user-edited `category` and `export_label` values are preserved.
 
 ## Chart types (src/reports/charts.py)
 
-15 types registered in `CHART_DISPATCH`. All functions share the same signature:
+20 types registered in `CHART_DISPATCH`. All functions share the same signature:
 `fn(df, questions, title, out_path, opts)`
 
 | type | questions needed | notes |
 |---|---|---|
 | `bar` | 1 categorical | |
 | `horizontal_bar` | 1 categorical | best for long labels |
-| `stacked_bar` | 2 categorical | `[x_axis, stack_by]` |
+| `stacked_bar` | 2 categorical | `[x_axis, stack_by]`; option: `normalize: true` |
+| `grouped_bar` | 2 categorical | `[category, group_by]` — side-by-side groups |
 | `pie` | 1 categorical | |
 | `donut` | 1 categorical | |
-| `line` | 1–2 | date + numeric |
-| `area` | 1–2 | date + numeric |
+| `line` | 1–2 | date + numeric; option: `freq: month` |
+| `area` | 1–2 | date + numeric; option: `freq: month` |
 | `histogram` | 1 numeric | option: `bins` |
 | `scatter` | 2 numeric | |
 | `box_plot` | 1 categorical + 1 numeric | |
@@ -173,8 +174,13 @@ On re-run, user-edited `category` and `export_label` values are preserved.
 | `waterfall` | 1 categorical | |
 | `funnel` | 1 categorical | |
 | `table` | 1 categorical | renders as PNG |
+| `bullet_chart` | 1 numeric | option: `target` (required) — achieved vs target |
+| `likert` | 1 categorical | diverging bar; options: `scale`, `neutral` |
+| `scorecard` | 1+ any | KPI cards grid; options: `columns`, `stat: count\|mean\|sum` |
+| `pyramid` | age_group + gender | demographic pyramid; options: `male_value`, `female_value` |
 
-Common options: `top_n` (default 15), `width_inches` (default 5.5), `height_inches`, `bins`
+Common options: `top_n`, `width_inches`, `height_inches`, `color`, `xlabel`, `ylabel`
+Sort options (`bar`, `horizontal_bar`, `grouped_bar`, `waterfall`): `sort: value|label|none`
 
 To add a new chart type: add a function with the standard signature, add it to `CHART_DISPATCH`.
 
