@@ -4,17 +4,21 @@
 
 
 
-kobo-reporter
+databridge-cli
 ==============================
 
-kobo-reporter is a web-based report generation platform that connects to [Kobo Toolbox](https://www.kobotoolbox.org/) or [Ona](https://ona.io/) data collection services. It automates the full pipeline from fetching survey questions, generating Word templates, downloading submission data, to building Word (.docx) reports with embedded charts — all from a browser-based interface.
+**databridge-cli** is a web-based report generation platform that connects to [Kobo Toolbox](https://www.kobotoolbox.org/) or [Ona](https://ona.io/) data collection services. It automates the full pipeline from fetching survey questions, generating Word templates, downloading submission data, to building Word (.docx) reports with embedded charts — all from a browser-based interface.
 
 # Features
-- Web UI with dashboard, config editor, report manager, and embedded terminal
+- Web UI with dashboard, config editor, questions editor, report manager, and embedded terminal
 - 4-step automated pipeline: fetch questions → generate template → download data → build report
 - YAML-based configuration editable from the browser (CodeMirror syntax-highlighted editor)
+- **Questions tab** — inline `export_label` editing table: rename columns used in charts and templates without touching YAML
 - Real-time log streaming via Server-Sent Events (SSE)
-- Word (.docx) report generation with embedded charts
+- Word (.docx) report generation with embedded charts and text/number indicators
+- **21 chart types** including NGO-specific: grouped bar, bullet chart, Likert scale, scorecard, population pyramid, dot map
+- **Indicators** — text/number/percentage values rendered inline in Word (`{{ ind_<name> }}` placeholders)
+- **Split-by reports** — generate one report per unique value of any question (e.g., one per region)
 - Platform selection: supports both **Kobo Toolbox** and **Ona**, with custom/self-hosted URLs
 - Automatic repeat group handling — repeat data is exported as separate linked tables
 - Docker Compose deployment with Traefik HTTPS
@@ -29,7 +33,7 @@ kobo-reporter is a web-based report generation platform that connects to [Kobo T
 - A [Kobo Toolbox](https://www.kobotoolbox.org/) or [Ona](https://ona.io/) API token
 
 ## The easy way
-The easiest way to install kobo-reporter is to clone it from GitHub:
+The easiest way to install databridge-cli is to clone it from GitHub:
 ```bash
 $ git clone https://github.com/supermalang/databridge-cli.git
 ```
@@ -68,7 +72,7 @@ Now open the `.env` file and configure it with the appropriate values:
 | Variable | Required | Description |
 |---|---|---|
 | `KOBO_TOKEN` | Yes | Your Kobo Toolbox or Ona API token |
-| `APP_DOMAIN` | Yes | Domain name for Traefik routing (e.g. `kobo-reporter.yourdomain.com`) |
+| `APP_DOMAIN` | Yes | Domain name for Traefik routing (e.g. `databridge.yourdomain.com`) |
 | `DB_USER` | No | Database username (for optional database export) |
 | `DB_PASSWORD` | No | Database password (for optional database export) |
 | `SUPABASE_KEY` | No | Supabase API key (for optional database export) |
@@ -107,8 +111,6 @@ form:
 
 - 🆘 *To find your form UID: on Kobo, go to your form's Settings → REST Services and copy the asset UID from the URL. On Ona, the form ID is the numeric ID visible in the form URL.*
 
-You can also set an optional `api.timeout` (in seconds, default 120) for slow connections or large forms.
-
 **The full config file has the following sections:**
 
 #### Questions
@@ -117,10 +119,10 @@ Auto-populated by the `fetch-questions` command. Each question has:
 - `label` — human-readable label from the form
 - `type` — field type (select_one, integer, text, etc.)
 - `category` — auto-assigned: `categorical`, `quantitative`, `qualitative`, `geographical`, `date`, or `undefined`
-- `export_label` — column name in the exported data (editable)
+- `export_label` — column name in the exported data (editable — this is what charts and templates reference)
 - `repeat_group` — name of the repeat group if the field belongs to one, otherwise `null`
 
-> After running `fetch-questions`, review the questions and adjust `category` and `export_label` as needed before downloading data.
+> After running `fetch-questions`, use the **Questions tab** in the web UI to rename `export_label` values to short, clean column names. These names are used in chart `questions:` lists and template placeholders.
 
 #### Filters
 Apply filters to downloaded data using [pandas query syntax](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.query.html):
@@ -144,6 +146,8 @@ charts:
     options:
       top_n: 10
       width_inches: 5.5
+      color: "#378ADD"
+      sort: value           # value | label | none
 
   - name: age_distribution
     title: Age distribution
@@ -151,9 +155,88 @@ charts:
     questions: [Age]
     options:
       bins: 12
+
+  - name: community_by_region
+    title: Community breakdown by region
+    type: stacked_bar
+    questions: [Region, Community]
+    options:
+      normalize: true       # 100% stacked
+
+  - name: beneficiaries_target
+    title: Beneficiaries reached vs target
+    type: bullet_chart
+    questions: [Beneficiary_ID]
+    options:
+      target: 5000
+
+  - name: site_map
+    title: Survey site locations
+    type: dot_map
+    questions: [gps_latitude, gps_longitude]
+    options:
+      color_by: Region
 ```
 
-Supported chart types: `bar`, `horizontal_bar`, `stacked_bar`, `pie`, `donut`, `line`, `area`, `histogram`, `scatter`, `box_plot`, `heatmap`, `treemap`, `waterfall`, `funnel`, `table`
+**Supported chart types (21 total):**
+
+| Type | Questions needed | Notes |
+|------|-----------------|-------|
+| `bar` | 1 categorical | |
+| `horizontal_bar` | 1 categorical | Best for long labels |
+| `stacked_bar` | 2 categorical | `normalize: true` for 100% stacked |
+| `grouped_bar` | 2 categorical | `[category, group_by]` |
+| `pie` | 1 categorical | |
+| `donut` | 1 categorical | |
+| `line` | 1 date/numeric | `freq: day\|week\|month\|year` |
+| `area` | 1 date/numeric | `freq: day\|week\|month\|year` |
+| `histogram` | 1 numeric | `bins: N` |
+| `scatter` | 2 numeric | |
+| `box_plot` | 1 categorical + 1 numeric | |
+| `heatmap` | 2 categorical | |
+| `treemap` | 1 categorical | Requires `squarify` |
+| `waterfall` | 1 categorical | |
+| `funnel` | 1 categorical | |
+| `table` | 1 categorical | Renders as PNG |
+| `bullet_chart` | 1 numeric | `target: N` required |
+| `likert` | 1 categorical | `scale: [...]`, `neutral: "..."` |
+| `scorecard` | 1+ questions | One KPI card per question |
+| `pyramid` | 2 categorical | `[age_group, gender]` |
+| `dot_map` | 2 numeric | `[latitude, longitude]`, optional basemap |
+
+**Common chart options (all types):**
+- `top_n` — max categories to show (default 15, pie/donut default 8)
+- `width_inches` / `height_inches` — chart dimensions
+- `color` — hex color for single-series charts (e.g. `"#D85A30"`)
+- `xlabel` / `ylabel` — axis label overrides
+- `sort` — `value` (default) | `label` | `none` (bar, horizontal_bar, grouped_bar, waterfall)
+
+#### Indicators
+Define text/number values that appear inline in report text as `{{ ind_<name> }}` placeholders:
+```yaml
+indicators:
+  - name: total_beneficiaries
+    label: Total beneficiaries
+    question: Beneficiary_ID
+    stat: count              # count|sum|mean|median|min|max|percent|most_common
+    format: number           # number|decimal|percent|text
+
+  - name: pct_female
+    label: Female beneficiaries
+    question: Gender
+    stat: percent
+    filter_value: "Female"   # required for stat: percent
+    format: percent
+    decimals: 1
+
+  - name: top_region
+    label: Most represented region
+    question: Region
+    stat: most_common
+    format: text
+```
+
+In your Word template: `"This report covers {{ ind_total_beneficiaries }} beneficiaries. {{ ind_pct_female }} are female."`
 
 #### Export
 Configure the output format and destination:
@@ -182,9 +265,10 @@ report:
   output_dir: reports
   title: Monitoring Report
   period: Q1 2025
+  # split_by: Village   # generate one report per unique value of this column
 ```
 
-The template is a `.docx` file with Jinja2-style placeholders: `{{ report_title }}`, `{{ period }}`, `{{ n_submissions }}`, `{{ generated_at }}`, `{{ chart_<name> }}`, etc. Run `generate-template` to create a starter template automatically.
+The template is a `.docx` file with Jinja2-style placeholders: `{{ report_title }}`, `{{ period }}`, `{{ n_submissions }}`, `{{ generated_at }}`, `{{ chart_<name> }}`, `{{ ind_<name> }}`, etc. Run `generate-template` to create a starter template automatically.
 
 ---
 
@@ -199,8 +283,8 @@ You can edit `config.yml` in two ways:
 > *This part is optional*
 
 The `docker-compose.yml` configures two Traefik routers on the `xayma_webservers` external network:
-- **kobo-reporter** — serves the web UI on your `APP_DOMAIN`
-- **kobo-terminal** — serves the web terminal at the `/terminal` path
+- **databridge** — serves the web UI on your `APP_DOMAIN`
+- **databridge-terminal** — serves the web terminal at the `/terminal` path
 
 Both use HTTPS via Let's Encrypt (`certresolver=letsencrypt`). To add basic authentication, add `basicauth` middleware labels to the services in `docker-compose.yml`.
 
@@ -212,7 +296,7 @@ Both use HTTPS via Let's Encrypt (`certresolver=letsencrypt`). To add basic auth
 The CLI entry point runs inside the Docker container. You can execute commands from the **web UI Dashboard** (recommended), the **web terminal** at `/terminal`, or directly via `docker exec`:
 
 ```bash
-$ docker exec -it kobo-reporter-app python3 src/data/make.py [COMMAND] [OPTIONS]
+$ docker exec -it databridge-cli-app python3 src/data/make.py [COMMAND] [OPTIONS]
 ```
 
 The 4-step workflow:
@@ -220,9 +304,9 @@ The 4-step workflow:
 | Step | Command | Description | Options |
 |------|---------|-------------|---------|
 | 1 | `fetch-questions` | Fetch form schema from Kobo/Ona and write questions into `config.yml` | — |
-| 2 | `generate-template` | Build a starter Word template from chart definitions in `config.yml` | — |
+| 2 | `generate-template` | Build a starter Word template from chart and indicator definitions in `config.yml` | `--out <path>` |
 | 3 | `download` | Download form submissions, apply filters, and export data | `--sample N` |
-| 4 | `build-report` | Generate Word (.docx) report with embedded charts | `--sample N` |
+| 4 | `build-report` | Generate Word (.docx) report with embedded charts | `--sample N`, `--split-by <column>` |
 
 **Run the full pipeline:**
 ```bash
@@ -230,6 +314,11 @@ $ python3 src/data/make.py fetch-questions
 $ python3 src/data/make.py generate-template
 $ python3 src/data/make.py download
 $ python3 src/data/make.py build-report
+```
+
+**Generate one report per region:**
+```bash
+$ python3 src/data/make.py build-report --split-by Region
 ```
 
 **Test with a sample of 50 submissions:**
@@ -242,11 +331,12 @@ $ python3 src/data/make.py build-report --sample 50
 
 
 #### Web UI
-Once the services are running, open `https://your-app-domain.com` in a browser. The interface has five tabs:
+Once the services are running, open `https://your-app-domain.com` in a browser. The interface has six tabs:
 
-- **Dashboard** — Run the 4 pipeline steps with one click and view real-time logs streamed via SSE
+- **Dashboard** — Run the 4 pipeline steps with one click and view real-time logs streamed via SSE. Build Report supports split-by from a dropdown.
 - **Config** — Edit `config.yml` with a CodeMirror YAML editor (syntax highlighting, validation on save)
-- **Reports** — Browse, download, and delete generated `.docx` reports
+- **Questions** — Browse all fetched questions in a table and edit `export_label` inline. Save changes back to `config.yml` without touching YAML.
+- **Reports** — Browse, download, and delete generated `.docx` reports; also shows downloaded data files
 - **Templates** — Manage Word templates: upload, download, generate, preview placeholders, and set the active template for report generation
 - **Terminal** — Full web terminal (ttyd) for direct CLI access at `/terminal`
 
@@ -264,6 +354,10 @@ The FastAPI backend exposes the following REST API:
 | `GET` | `/api/reports` | List generated reports |
 | `GET` | `/api/reports/download/{filename}` | Download a report file |
 | `DELETE` | `/api/reports/{filename}` | Delete a report file |
+| `GET` | `/api/data` | List downloaded data files |
+| `GET` | `/api/data/download/{filename}` | Download a data file |
+| `GET` | `/api/questions` | Read questions list from `config.yml` |
+| `POST` | `/api/questions` | Save updated questions list to `config.yml` |
 | `GET` | `/api/templates` | List template files |
 | `GET` | `/api/templates/download/{filename}` | Download a template |
 | `POST` | `/api/templates/upload` | Upload a `.docx` template |
@@ -304,8 +398,8 @@ Forms with repeat groups (e.g., listing household members within a household sur
 
 | Service | Container | Port | Description |
 |---------|-----------|------|-------------|
-| `app` | `kobo-reporter-app` | 8000 | FastAPI backend + web UI (served via Traefik with HTTPS) |
-| `terminal` | `kobo-reporter-terminal` | 7681 | ttyd web shell accessible at `/terminal` path |
+| `app` | `databridge-cli-app` | 8000 | FastAPI backend + web UI (served via Traefik with HTTPS) |
+| `terminal` | `databridge-cli-terminal` | 7681 | ttyd web shell accessible at `/terminal` path |
 
 **Volume mounts** (shared by both services):
 
@@ -326,7 +420,7 @@ You can schedule the automatic execution of the pipeline by creating a cron task
 1. Display and copy the command to be executed by the cron task:
 
 ```bash
-$ echo "docker exec kobo-reporter-app python3 src/data/make.py fetch-questions && docker exec kobo-reporter-app python3 src/data/make.py download && docker exec kobo-reporter-app python3 src/data/make.py build-report"
+$ echo "docker exec databridge-cli-app python3 src/data/make.py fetch-questions && docker exec databridge-cli-app python3 src/data/make.py download && docker exec databridge-cli-app python3 src/data/make.py build-report"
 ```
 
 2. Edit the `crontab` file:
@@ -338,7 +432,7 @@ $ crontab -e
 
 Add at the end of the file the command you have copied from the previous step in this way and save and close the file:
 ```
-0 2 * * * docker exec kobo-reporter-app python3 src/data/make.py fetch-questions && docker exec kobo-reporter-app python3 src/data/make.py download && docker exec kobo-reporter-app python3 src/data/make.py build-report
+0 2 * * * docker exec databridge-cli-app python3 src/data/make.py fetch-questions && docker exec databridge-cli-app python3 src/data/make.py download && docker exec databridge-cli-app python3 src/data/make.py build-report
 ```
 This gives instruction to the cron daemon to run the full pipeline every day at 2:00 AM.
 
