@@ -33,6 +33,10 @@ charts: []
 #     options:
 #       top_n: 10
 #       width_inches: 5.5
+#       color: "#378ADD"      # override bar/line/histogram color
+#       sort: value           # value (default) | label | none
+#       xlabel: Response      # override x-axis label
+#       ylabel: "# of people" # override y-axis label
 #
 #   - name: age_distribution
 #     title: Age distribution
@@ -41,9 +45,35 @@ charts: []
 #     options:
 #       bins: 12
 #
+#   - name: community_by_region
+#     title: Community breakdown by region
+#     type: stacked_bar
+#     questions: [Region, Community]
+#     options:
+#       normalize: true       # 100% stacked (shows %, not counts)
+#
+#   - name: submissions_over_time
+#     title: Submissions over time
+#     type: line
+#     questions: [submission_date]
+#     options:
+#       freq: month           # day | week | month | year
+#
 # Supported types: bar | horizontal_bar | stacked_bar | pie | donut |
 #   line | area | histogram | scatter | box_plot |
 #   heatmap | treemap | waterfall | funnel | table
+#
+# Common options (all chart types):
+#   top_n          : max categories to show (default 15, pie/donut default 8)
+#   width_inches   : chart width in inches (default 5.5-8 depending on type)
+#   height_inches  : chart height in inches
+#   color          : hex color for single-series charts (e.g. "#D85A30")
+#   xlabel / ylabel: axis label overrides
+# Per-type options:
+#   sort     (bar, horizontal_bar, waterfall): "value" | "label" | "none"
+#   normalize (stacked_bar): true → 100% stacked
+#   bins      (histogram): number of bins (default 15)
+#   freq      (line, area): "day" | "week" | "month" | "year"
 
 export:
   format: csv   # csv | json | xlsx | mysql | postgres | supabase
