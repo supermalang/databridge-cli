@@ -200,6 +200,11 @@ Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
 {{ observations }}         ← intentionally left empty
 {{ recommendations }}      ← intentionally left empty
 
+{{ ind_<name> }}        ← one per indicator in config.yml indicators section
+                            e.g. {{ ind_total_beneficiaries }} → "4,832"
+                                 {{ ind_pct_female }}          → "58.3%"
+                                 {{ ind_top_region }}          → "Nouakchott"
+
 {{ chart_<n> }}         ← one per chart in config.yml
                             e.g. {{ chart_satisfaction_overview }}
 

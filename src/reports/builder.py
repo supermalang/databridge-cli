@@ -7,6 +7,7 @@ from docx.shared import Inches
 from docxtpl import DocxTemplate, InlineImage
 from src.data.transform import load_processed_data
 from src.reports.charts import generate_chart, CHART_DIR
+from src.reports.indicators import compute_indicators
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class ReportBuilder:
             "generated_at": datetime.today().strftime("%d/%m/%Y %H:%M"),
             "summary_text": "", "observations": "", "recommendations": "",
             "stats_table": self._stats_table(df),
+            **compute_indicators(self.cfg.get("indicators", []), df),
             **self._generate_charts(tpl, df),
         }
         tpl.render(context)

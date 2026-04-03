@@ -40,6 +40,12 @@ def generate_template(cfg: Dict, out_path: Path) -> Path:
         ]:
             p=doc.add_paragraph(); r=p.add_run(text)
             r.font.size=Pt(sz); r.font.color.rgb=color; r.font.italic=italic
+    indicators=cfg.get("indicators",[])
+    if indicators:
+        _divider(doc); _heading(doc,"Key Indicators",1)
+        for ind in indicators:
+            name=ind.get("name",""); label=ind.get("label",name)
+            _meta(doc,label,f"{{{{ ind_{name} }}}}")
     _divider(doc); _heading(doc,"Placeholder Reference",1)
     _note(doc,"Delete this section before sharing."); _ref_table(doc,cfg)
     out_path.parent.mkdir(parents=True,exist_ok=True)
@@ -102,6 +108,8 @@ def _ref_table(doc,cfg):
         ("{{ observations }}","Observations — fill in Word"),
         ("{{ recommendations }}","Recommendations — fill in Word"),
     ]
+    for ind in cfg.get("indicators",[]):
+        rows.append((f"{{{{ ind_{ind.get('name','')} }}}}",f"Indicator: {ind.get('label',ind.get('name',''))}"))
     for c in cfg.get("charts",[]):
         rows.append((f"{{{{ chart_{c.get('name','')} }}}}",f"Chart: {c.get('title','')}"))
     table=doc.add_table(rows=1,cols=2); table.style="Table Grid"
