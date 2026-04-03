@@ -1,8 +1,9 @@
 """
-Chart generation — 15 types via matplotlib.
-bar, horizontal_bar, stacked_bar, pie, donut,
+Chart generation — 21 types via matplotlib.
+bar, horizontal_bar, stacked_bar, grouped_bar, pie, donut,
 line, area, histogram, scatter, box_plot,
-heatmap, treemap, waterfall, funnel, table
+heatmap, treemap, waterfall, funnel, table,
+bullet_chart, likert, scorecard, pyramid, dot_map
 
 New options supported across chart types:
   color        : hex string — overrides default palette color for single-series charts
@@ -11,6 +12,9 @@ New options supported across chart types:
   freq         : "day"|"week"|"month"|"year" — time grouping for line/area
   xlabel       : override x-axis label
   ylabel       : override y-axis label
+  basemap      : true/false — add OpenStreetMap tile basemap (dot_map, requires contextily)
+  color_by     : column name to color dots by category (dot_map)
+  size         : dot size in points (dot_map, default 20)
 """
 import logging
 from pathlib import Path
@@ -460,6 +464,67 @@ def chart_pyramid(df, q, title, out, opts):
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 
+def chart_dot_map(df, q, title, out, opts):
+    if len(q) < 2: raise ValueError("dot_map needs 2 questions: [latitude, longitude]")
+    lat_col, lon_col = q[0], q[1]
+    color_by = opts.get("color_by")
+    dot_size = opts.get("size", 20)
+    use_basemap = opts.get("basemap", False)
+
+    tmp = df[[lat_col, lon_col]].copy()
+    if color_by and color_by in df.columns:
+        tmp[color_by] = df[color_by]
+    tmp[lat_col] = pd.to_numeric(tmp[lat_col], errors="coerce")
+    tmp[lon_col] = pd.to_numeric(tmp[lon_col], errors="coerce")
+    tmp = tmp.dropna(subset=[lat_col, lon_col])
+    if tmp.empty: raise ValueError("dot_map: no valid GPS coordinates found")
+
+    fig, ax = plt.subplots(figsize=_fs(opts, (8, 7)))
+
+    if use_basemap:
+        try:
+            import contextily as ctx
+            import pyproj
+            # reproject to Web Mercator for contextily
+            transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+            xs, ys = transformer.transform(tmp[lon_col].values, tmp[lat_col].values)
+            if color_by and color_by in tmp.columns:
+                cats = tmp[color_by].astype(str)
+                unique_cats = cats.unique()
+                for i, cat in enumerate(unique_cats):
+                    mask = cats == cat
+                    ax.scatter(xs[mask], ys[mask], s=dot_size, color=PALETTE[i % len(PALETTE)],
+                               alpha=0.75, edgecolors="white", linewidth=0.4, label=cat, zorder=3)
+                ax.legend(title=color_by, bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
+            else:
+                ax.scatter(xs, ys, s=dot_size, color=_color(opts), alpha=0.75,
+                           edgecolors="white", linewidth=0.4, zorder=3)
+            ctx.add_basemap(ax, crs="EPSG:3857", source=ctx.providers.OpenStreetMap.Mapnik, zoom="auto")
+            ax.set_axis_off()
+        except ImportError:
+            log.warning("dot_map: contextily or pyproj not installed — falling back to plain map")
+            use_basemap = False
+
+    if not use_basemap:
+        if color_by and color_by in tmp.columns:
+            cats = tmp[color_by].astype(str)
+            for i, cat in enumerate(cats.unique()):
+                mask = cats == cat
+                ax.scatter(tmp[lon_col][mask], tmp[lat_col][mask], s=dot_size,
+                           color=PALETTE[i % len(PALETTE)], alpha=0.75,
+                           edgecolors="white", linewidth=0.4, label=cat)
+            ax.legend(title=color_by, bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
+        else:
+            ax.scatter(tmp[lon_col], tmp[lat_col], s=dot_size, color=_color(opts),
+                       alpha=0.75, edgecolors="white", linewidth=0.4)
+        xl, yl = _labels(opts, "Longitude", "Latitude")
+        ax.set_xlabel(xl); ax.set_ylabel(yl)
+        ax.set_facecolor("#F0F4F8")
+
+    ax.set_title(f"{title}  (n={len(tmp)})")
+    plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+
+
 CHART_DISPATCH = {
     "bar": chart_bar, "horizontal_bar": chart_horizontal_bar, "stacked_bar": chart_stacked_bar,
     "pie": chart_pie, "donut": chart_donut, "line": chart_line, "area": chart_area,
@@ -468,4 +533,5 @@ CHART_DISPATCH = {
     "funnel": chart_funnel, "table": chart_table,
     "grouped_bar": chart_grouped_bar, "bullet_chart": chart_bullet_chart,
     "likert": chart_likert, "scorecard": chart_scorecard, "pyramid": chart_pyramid,
+    "dot_map": chart_dot_map,
 }

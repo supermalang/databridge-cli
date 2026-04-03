@@ -99,6 +99,15 @@ charts: []
 #       male_value: "Male"
 #       female_value: "Female"
 #
+#   - name: site_map
+#     title: Survey site locations
+#     type: dot_map
+#     questions: [gps_latitude, gps_longitude]  # [lat, lon] columns
+#     options:
+#       basemap: false      # true = add OpenStreetMap tiles (requires contextily + pyproj)
+#       color_by: Region    # optional — color dots by a categorical column
+#       size: 20            # dot size in points
+#
 # Supported types: bar | horizontal_bar | stacked_bar | grouped_bar | pie | donut |
 #   line | area | histogram | scatter | box_plot | heatmap | treemap |
 #   waterfall | funnel | table | bullet_chart | likert | scorecard | pyramid

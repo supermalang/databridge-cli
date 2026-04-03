@@ -36,7 +36,7 @@ databridge-cli/
 │   │   └── transform.py             ← flatten submissions, apply filters, multi-target export
 │   ├── reports/
 │   │   ├── builder.py                ← ReportBuilder — renders Word template via docxtpl
-│   │   ├── charts.py                 ← 20 chart types via matplotlib (CHART_DISPATCH dict)
+│   │   ├── charts.py                 ← 21 chart types via matplotlib (CHART_DISPATCH dict)
 │   │   └── template_generator.py    ← auto-generates starter .docx from config
 │   └── utils/
 │       └── config.py                 ← load_config(), write_config(), env: var resolution
@@ -153,7 +153,7 @@ On re-run, user-edited `category` and `export_label` values are preserved.
 
 ## Chart types (src/reports/charts.py)
 
-20 types registered in `CHART_DISPATCH`. All functions share the same signature:
+21 types registered in `CHART_DISPATCH`. All functions share the same signature:
 `fn(df, questions, title, out_path, opts)`
 
 | type | questions needed | notes |
@@ -178,6 +178,7 @@ On re-run, user-edited `category` and `export_label` values are preserved.
 | `likert` | 1 categorical | diverging bar; options: `scale`, `neutral` |
 | `scorecard` | 1+ any | KPI cards grid; options: `columns`, `stat: count\|mean\|sum` |
 | `pyramid` | age_group + gender | demographic pyramid; options: `male_value`, `female_value` |
+| `dot_map` | lat + lon | GPS dot map; options: `basemap`, `color_by`, `size` |
 
 Common options: `top_n`, `width_inches`, `height_inches`, `color`, `xlabel`, `ylabel`
 Sort options (`bar`, `horizontal_bar`, `grouped_bar`, `waterfall`): `sort: value|label|none`

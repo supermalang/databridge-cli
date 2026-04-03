@@ -14,3 +14,6 @@ click>=8.1.0
 # psycopg2-binary>=2.9.0
 # pymysql>=1.1.0
 # supabase>=2.0.0
+# Uncomment for dot_map with OpenStreetMap basemap (basemap: true):
+# contextily>=1.6.0
+# pyproj>=3.6.0
