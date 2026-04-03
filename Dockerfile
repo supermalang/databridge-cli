@@ -76,6 +76,29 @@ class RunPayload(BaseModel):
     sample: Optional[int] = None
     split_by: Optional[str] = None
 
+class QuestionsPayload(BaseModel):
+    questions: list
+
+@app.get("/api/questions")
+async def get_questions():
+    if not CONFIG_PATH.exists(): return {"questions": []}
+    async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        content = await f.read()
+    cfg = yaml.safe_load(content) or {}
+    return {"questions": cfg.get("questions", [])}
+
+@app.post("/api/questions")
+async def save_questions(payload: QuestionsPayload):
+    if not CONFIG_PATH.exists():
+        raise HTTPException(status_code=400, detail="config.yml not found")
+    async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        content = await f.read()
+    cfg = yaml.safe_load(content) or {}
+    cfg["questions"] = payload.questions
+    async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
+    return {"ok": True, "saved": len(payload.questions)}
+
 @app.post("/api/run/{command}")
 async def run_command(command: str, payload: RunPayload):
     if command not in ALLOWED_COMMANDS:
@@ -336,6 +359,10 @@ header h1{font-size:16px;font-weight:600}
 .file-name{font-weight:500;color:var(--teal-dark)}
 .empty-state{text-align:center;color:var(--muted);padding:40px;font-size:13px}
 .badge-active{display:inline-block;background:#d1fae5;color:#065f46;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;margin-left:8px;vertical-align:middle}
+.badge-cat{display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:500}
+.badge-cat-categorical{background:#dbeafe;color:#1e40af}.badge-cat-quantitative{background:#dcfce7;color:#166534}
+.badge-cat-qualitative{background:#fef9c3;color:#854d0e}.badge-cat-geographical{background:#f3e8ff;color:#6b21a8}
+.badge-cat-date{background:#ffedd5;color:#9a3412}.badge-cat-undefined{background:#f1f5f9;color:#64748b}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000}
 .modal{background:var(--surface);border-radius:var(--radius);box-shadow:0 8px 30px rgba(0,0,0,.2);width:480px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column}
 .modal-header{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border)}
@@ -365,6 +392,7 @@ header h1{font-size:16px;font-weight:600}
     <div class="tabs-bar">
       <div class="tab active" data-tab="dashboard">Dashboard</div>
       <div class="tab" data-tab="config">Config</div>
+      <div class="tab" data-tab="questions">Questions</div>
       <div class="tab" data-tab="reports">Reports</div>
       <div class="tab" data-tab="templates">Templates</div>
       <div class="tab" data-tab="terminal">Terminal</div>
@@ -416,6 +444,20 @@ header h1{font-size:16px;font-weight:600}
           </div>
           <div class="log-body" id="log-body"><span class="log-empty">No commands run yet.</span></div>
         </div>
+      </div>
+    </div>
+    <div class="tab-content" id="tab-questions">
+      <div class="reports-pane">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <h2>Questions</h2>
+          <span style="color:var(--muted);font-size:12px;">Edit Export label to rename columns used in charts and templates.</span>
+          <span style="margin-left:auto;display:flex;gap:8px;">
+            <button class="btn btn-ghost btn-sm" onclick="loadQuestions()">↺ Refresh</button>
+            <button class="btn btn-primary btn-sm" onclick="saveQuestions()">Save changes</button>
+          </span>
+        </div>
+        <div id="questions-msg" style="display:none;margin:4px 0;font-size:12px;"></div>
+        <div id="questions-container"><p class="empty-state">Loading…</p></div>
       </div>
     </div>
     <div class="tab-content" id="tab-config">
@@ -480,6 +522,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
     tab.classList.add('active');
     document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
     if(tab.dataset.tab==='config'&&!editor.getValue())loadConfig();
+    if(tab.dataset.tab==='questions')loadQuestions();
     if(tab.dataset.tab==='reports'){loadReports();loadDataFiles();}
     if(tab.dataset.tab==='templates')loadTemplates();
     if(tab.dataset.tab==='terminal'&&!terminalLoaded){
@@ -518,6 +561,39 @@ async function loadSplitByOptions(){
     sel.value=configSplit||current||'';
   }catch(e){}
 }
+let _questions=[];
+async function loadQuestions(){
+  const c=document.getElementById('questions-container');
+  c.innerHTML='<p class="empty-state">Loading…</p>';
+  const data=await(await fetch('/api/questions')).json();
+  _questions=data.questions||[];
+  if(!_questions.length){c.innerHTML='<p class="empty-state">No questions yet. Run Fetch questions first.</p>';return;}
+  c.innerHTML='<table class="file-table"><thead><tr><th>kobo_key</th><th>Label</th><th>Type</th><th>Category</th><th style="min-width:180px;">Export label <span style="font-weight:normal;color:var(--muted)">(editable)</span></th></tr></thead><tbody>'+
+    _questions.map((q,i)=>`<tr>
+      <td style="color:var(--muted);font-size:11px;font-family:monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${q.kobo_key||''}">${q.kobo_key||''}</td>
+      <td style="font-size:12px;">${q.label||''}</td>
+      <td style="color:var(--muted);font-size:11px;">${q.type||''}</td>
+      <td><span class="badge-cat badge-cat-${q.category||'undefined'}">${q.category||''}</span></td>
+      <td><input class="export-label-input" data-idx="${i}" value="${(q.export_label||'').replace(/"/g,'&quot;')}" style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;" oninput="markDirty(this)"></td>
+    </tr>`).join('')+
+    '</tbody></table>';
+}
+function markDirty(input){
+  const i=parseInt(input.dataset.idx);
+  _questions[i].export_label=input.value;
+  input.style.borderColor='#f59e0b';
+}
+async function saveQuestions(){
+  const res=await fetch('/api/questions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({questions:_questions})});
+  const data=await res.json();
+  const msg=document.getElementById('questions-msg');
+  if(res.ok){
+    msg.textContent=`Saved ${data.saved} questions.`;msg.style.color='var(--teal)';msg.style.display='block';
+    document.querySelectorAll('.export-label-input').forEach(el=>el.style.borderColor='');
+    loadSplitByOptions();
+  }else{msg.textContent=data.detail||'Save failed';msg.style.color='#dc2626';msg.style.display='block';}
+  setTimeout(()=>msg.style.display='none',3000);
+}
 async function runCmd(command,opts={}){
   if(running){toast('Already running','err');return;}
   running=true;setDot('running');
@@ -544,6 +620,7 @@ async function runCmd(command,opts={}){
         running=false;
         if(p.status==='success'&&command==='build-report')loadReports();
         if(p.status==='success'&&command==='download')loadDataFiles();
+        if(p.status==='success'&&command==='fetch-questions'){loadQuestions();loadSplitByOptions();}
       }
       else if(ev==='done')running=false;
     }
