@@ -60,14 +60,15 @@ def cmd_download(sample):
 
 @cli.command("build-report")
 @click.option("--sample", default=None, type=int, help="Use only first N rows.")
-def cmd_build_report(sample):
+@click.option("--split-by", default=None, help="Column (export_label) to split reports by — one report per unique value.")
+def cmd_build_report(sample, split_by):
     """Build a Word report from previously downloaded data."""
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("charts"):
         click.echo("No charts in config.yml. Add chart configs first.", err=True)
         sys.exit(1)
     from src.reports.builder import ReportBuilder
-    ReportBuilder(cfg).build(sample_size=sample)
+    ReportBuilder(cfg).build(sample_size=sample, split_by=split_by)
 
 if __name__ == "__main__":
     cli()

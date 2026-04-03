@@ -16,8 +16,24 @@ class ReportBuilder:
         self.report_cfg = cfg.get("report", {})
         self.charts_cfg: List[Dict] = cfg.get("charts", [])
 
-    def build(self, sample_size: Optional[int] = None) -> Path:
+    def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None) -> List[Path]:
         df = load_processed_data(self.cfg, sample_size=sample_size)
+        split_col = split_by or self.report_cfg.get("split_by")
+        if split_col:
+            if split_col not in df.columns:
+                log.warning(f"split_by column '{split_col}' not found — building single report")
+                return [self._render(df, suffix="")]
+            unique_vals = sorted(df[split_col].dropna().unique())
+            log.info(f"Split by '{split_col}': {len(unique_vals)} value(s) → {len(unique_vals)} report(s)")
+            paths = []
+            for val in unique_vals:
+                safe = str(val).replace("/", "_").replace(" ", "_")
+                paths.append(self._render(df[df[split_col] == val], suffix=f"_{safe}"))
+            return paths
+        suffix = f"_sample{sample_size}" if sample_size else ""
+        return [self._render(df, suffix=suffix)]
+
+    def _render(self, df: "pd.DataFrame", suffix: str = "") -> Path:
         template_path = Path(self.report_cfg.get("template","templates/report_template.docx"))
         if not template_path.exists():
             raise FileNotFoundError(f"Template not found: {template_path}\nRun generate-template or see TEMPLATE_GUIDE.md")
@@ -35,7 +51,6 @@ class ReportBuilder:
         out_dir = Path(self.report_cfg.get("output_dir","reports"))
         out_dir.mkdir(parents=True, exist_ok=True)
         alias = self.cfg.get("form",{}).get("alias","form")
-        suffix = f"_sample{sample_size}" if sample_size else ""
         out_path = out_dir / f"{alias}_report{suffix}_{datetime.today().strftime('%Y%m%d')}.docx"
         tpl.save(out_path)
         log.info(f"Report saved → {out_path}")

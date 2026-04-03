@@ -69,11 +69,12 @@ ALLOWED_COMMANDS = {
     "fetch-questions":   [],
     "generate-template": [],
     "download":          ["--sample"],
-    "build-report":      ["--sample"],
+    "build-report":      ["--sample", "--split-by"],
 }
 
 class RunPayload(BaseModel):
     sample: Optional[int] = None
+    split_by: Optional[str] = None
 
 @app.post("/api/run/{command}")
 async def run_command(command: str, payload: RunPayload):
@@ -82,6 +83,8 @@ async def run_command(command: str, payload: RunPayload):
     cmd = [sys.executable, "src/data/make.py", command]
     if payload.sample and "--sample" in ALLOWED_COMMANDS[command]:
         cmd += ["--sample", str(payload.sample)]
+    if payload.split_by and "--split-by" in ALLOWED_COMMANDS[command]:
+        cmd += ["--split-by", payload.split_by]
     return StreamingResponse(
         _stream(command, cmd),
         media_type="text/event-stream",
@@ -397,7 +400,13 @@ header h1{font-size:16px;font-weight:600}
               <input type="number" id="sample-report" placeholder="all" min="1">
               <span style="font-size:11px;color:var(--muted)">rows</span>
             </div>
-            <button class="btn btn-primary" onclick="runCmd('build-report',{sample:getSample('sample-report')})">▶ Run</button>
+            <div class="sample-row" style="margin-top:6px;">
+              <label>Split by</label>
+              <select id="split-by-report" style="flex:1;padding:4px 6px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px;background:white;">
+                <option value="">— no split —</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="runCmd('build-report',{sample:getSample('sample-report'),split_by:getSplitBy()})">▶ Run</button>
           </div>
         </div>
         <div class="log-panel">
@@ -461,8 +470,10 @@ header h1{font-size:16px;font-weight:600}
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 <script>
 let terminalLoaded=false,running=false;
+loadSplitByOptions();
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>{
     document.querySelectorAll('.tab,.tab-content').forEach(el=>el.classList.remove('active'));
@@ -489,9 +500,24 @@ async function saveConfig(){
   const res=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:editor.getValue()})});
   const data=await res.json();
   showMsg(res.ok?'Saved ✓':(data.detail||'Failed'),res.ok?'ok':'err');
+  if(res.ok)loadSplitByOptions();
 }
 function showMsg(t,type){const el=document.getElementById('config-msg');el.textContent=t;el.className='config-msg '+type;el.style.display='inline-block';setTimeout(()=>el.style.display='none',3000);}
 function getSample(id){const v=parseInt(document.getElementById(id).value);return isNaN(v)?null:v;}
+function getSplitBy(){const v=document.getElementById('split-by-report').value;return v||null;}
+async function loadSplitByOptions(){
+  try{
+    const res=await fetch('/api/config');const data=await res.json();
+    const cfg=jsyaml.load(data.content||'');
+    const sel=document.getElementById('split-by-report');
+    const current=sel.value;
+    sel.innerHTML='<option value="">— no split —</option>';
+    const qs=(cfg&&cfg.questions)||[];
+    qs.forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;sel.appendChild(o);}});
+    const configSplit=cfg&&cfg.report&&cfg.report.split_by;
+    sel.value=configSplit||current||'';
+  }catch(e){}
+}
 async function runCmd(command,opts={}){
   if(running){toast('Already running','err');return;}
   running=true;setDot('running');
