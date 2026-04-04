@@ -89,6 +89,11 @@ class AITestPayload(BaseModel):
     model: str = "gpt-4o"
     base_url: Optional[str] = None
 
+class AISuggestPayload(BaseModel):
+    kind: str          # "chart" | "indicator"
+    prompt: str
+    questions: list = []
+
 @app.get("/api/questions")
 async def get_questions():
     if not CONFIG_PATH.exists(): return {"questions": []}
@@ -164,6 +169,83 @@ async def test_ai(payload: AITestPayload):
     except Exception as e:
         result = {"ok": False, "tokens_used": None, "quota": None, "message": str(e)}
     return result
+
+def _build_suggest_prompts(kind: str, prompt: str, questions: list):
+    labels = ", ".join(
+        q.get("export_label") or q.get("label") or q.get("kobo_key", "")
+        for q in questions if q
+    ) or "unknown"
+    if kind == "chart":
+        system = (
+            "You are a data visualization expert. Given available survey columns and a description, "
+            "return a single chart config as JSON with keys: name, title, type, questions (array), options (object). "
+            "Valid types: bar|horizontal_bar|stacked_bar|grouped_bar|pie|donut|line|area|histogram|scatter|"
+            "box_plot|heatmap|treemap|waterfall|funnel|table|bullet_chart|likert|scorecard|pyramid|dot_map. "
+            "Valid options keys: width_inches, color, top_n, sort, normalize, freq, bins, target, stat, "
+            "columns, male_value, female_value, color_by, xlabel, ylabel. "
+            "Return JSON only, no markdown fences."
+        )
+        user = f"Available columns: {labels}\nRequest: {prompt}"
+    else:
+        system = (
+            "You are a data analyst. Given survey columns and a description, return a single indicator "
+            "config as JSON with keys: name, label, question, stat, format, "
+            "filter_value (optional), decimals (optional). "
+            "Valid stat values: count|sum|mean|median|min|max|percent|most_common. "
+            "Valid format values: number|decimal|percent|text. "
+            "Return JSON only, no markdown fences."
+        )
+        user = f"Available columns: {labels}\nRequest: {prompt}"
+    return system, user
+
+@app.post("/api/ai/suggest")
+async def ai_suggest(payload: AISuggestPayload):
+    if not CONFIG_PATH.exists():
+        raise HTTPException(status_code=400, detail="config.yml not found")
+    async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        content = await f.read()
+    cfg = yaml.safe_load(content) or {}
+    ai_cfg = cfg.get("ai")
+    if not ai_cfg:
+        raise HTTPException(status_code=400, detail="No ai: section in config.yml. Configure AI first.")
+    api_key = ai_cfg.get("api_key", "")
+    if not api_key or str(api_key).startswith("env:"):
+        raise HTTPException(status_code=400, detail="AI api_key not resolved.")
+    provider = ai_cfg.get("provider", "openai").lower()
+    model = ai_cfg.get("model", "gpt-4o")
+    max_tokens = int(ai_cfg.get("max_tokens", 1000))
+    base_url = ai_cfg.get("base_url")
+    system_prompt, user_prompt = _build_suggest_prompts(payload.kind, payload.prompt, payload.questions)
+    try:
+        if provider == "anthropic":
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key)
+            msg = client.messages.create(model=model, max_tokens=max_tokens, system=system_prompt,
+                                         messages=[{"role": "user", "content": user_prompt}])
+            raw = msg.content[0].text
+        else:
+            from openai import OpenAI
+            kwargs = {"api_key": api_key}
+            if base_url:
+                kwargs["base_url"] = base_url
+            client = OpenAI(**kwargs)
+            resp = client.chat.completions.create(
+                model=model, max_tokens=max_tokens,
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                response_format={"type": "json_object"},
+            )
+            raw = resp.choices[0].message.content
+        import re as _re
+        try:
+            result = json.loads(raw)
+        except Exception:
+            m = _re.search(r'\{.*\}', raw, _re.DOTALL)
+            result = json.loads(m.group()) if m else {}
+        return {"ok": True, "result": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 class ChartPreviewPayload(BaseModel):
     chart: dict
@@ -1225,6 +1307,9 @@ async function loadPreviewFileOptions(){
 }
 function openChartModal(idx){
   _editChartIdx=idx;
+  switchChartView('form');
+  document.getElementById('cm-ai-prompt').value='';
+  document.getElementById('cm-ai-result').style.display='none';
   document.getElementById('chart-modal-title').textContent=idx===null?'Add chart':'Edit chart';
   updateChartForm();
   loadPreviewFileOptions();
@@ -1313,6 +1398,9 @@ function updateIndicatorForm(){
 }
 function openIndicatorModal(idx){
   _editIndIdx=idx;
+  switchIndicatorView('form');
+  document.getElementById('im-ai-prompt').value='';
+  document.getElementById('im-ai-result').style.display='none';
   document.getElementById('ind-modal-title').textContent=idx===null?'Add indicator':'Edit indicator';
   ['im-name','im-label','im-question','im-filterval','im-decimals'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('im-stat').value='count';
@@ -1345,6 +1433,91 @@ function saveIndicatorFromModal(){
   closeIndicatorModal();
 }
 loadConfig();
+function switchChartView(v){
+  document.getElementById('cm-form-view').style.display=v==='form'?'block':'none';
+  document.getElementById('cm-ai-view').style.display=v==='ai'?'block':'none';
+  document.getElementById('cm-btn-form').classList.toggle('active',v==='form');
+  document.getElementById('cm-btn-ai').classList.toggle('active',v==='ai');
+}
+async function askAiChart(){
+  const prompt=document.getElementById('cm-ai-prompt').value.trim();
+  if(!prompt){alert('Please describe the chart you want.');return;}
+  const btn=document.getElementById('cm-ai-btn');
+  const statusEl=document.getElementById('cm-ai-status');
+  btn.disabled=true;statusEl.textContent='Thinking…';statusEl.style.color='var(--muted)';
+  document.getElementById('cm-ai-result').style.display='none';
+  try{
+    const res=await fetch('/api/ai/suggest',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({kind:'chart',prompt,questions:_questions})});
+    const data=await res.json();
+    if(res.ok&&data.ok){
+      document.getElementById('cm-ai-result-pre').textContent=JSON.stringify(data.result,null,2);
+      document.getElementById('cm-ai-result').style.display='block';
+      statusEl.textContent='';window._aiChartSuggestion=data.result;
+    }else{statusEl.textContent='✗ '+(data.detail||'Failed');statusEl.style.color='#991b1b';}
+  }catch(e){statusEl.textContent='✗ '+e.message;statusEl.style.color='#991b1b';}
+  btn.disabled=false;
+}
+function acceptAiChart(){
+  const s=window._aiChartSuggestion||{};
+  if(s.type){document.getElementById('cm-type').value=s.type;updateChartForm();}
+  if(s.name)document.getElementById('cm-name').value=s.name;
+  if(s.title)document.getElementById('cm-title').value=s.title;
+  if(s.questions){const inputs=document.querySelectorAll('.cm-q-input');s.questions.forEach((q,i)=>{if(inputs[i])inputs[i].value=q;});}
+  const o=s.options||{};
+  if(o.width_inches)document.getElementById('cm-width').value=o.width_inches;
+  if(o.color)document.getElementById('cm-color').value=o.color;
+  if(o.top_n)document.getElementById('cm-topn').value=o.top_n;
+  if(o.sort)document.getElementById('cm-sort').value=o.sort;
+  if(o.normalize!==undefined)document.getElementById('cm-normalize').value=String(o.normalize);
+  if(o.freq)document.getElementById('cm-freq').value=o.freq;
+  if(o.bins)document.getElementById('cm-bins').value=o.bins;
+  if(o.target)document.getElementById('cm-target').value=o.target;
+  if(o.stat)document.getElementById('cm-stat-scorecard').value=o.stat;
+  if(o.columns)document.getElementById('cm-columns').value=o.columns;
+  if(o.male_value)document.getElementById('cm-male').value=o.male_value;
+  if(o.female_value)document.getElementById('cm-female').value=o.female_value;
+  if(o.color_by)document.getElementById('cm-colorby').value=o.color_by;
+  if(o.xlabel)document.getElementById('cm-xlabel').value=o.xlabel;
+  if(o.ylabel)document.getElementById('cm-ylabel').value=o.ylabel;
+  switchChartView('form');
+}
+function switchIndicatorView(v){
+  document.getElementById('im-form-view').style.display=v==='form'?'block':'none';
+  document.getElementById('im-ai-view').style.display=v==='ai'?'block':'none';
+  document.getElementById('im-btn-form').classList.toggle('active',v==='form');
+  document.getElementById('im-btn-ai').classList.toggle('active',v==='ai');
+}
+async function askAiIndicator(){
+  const prompt=document.getElementById('im-ai-prompt').value.trim();
+  if(!prompt){alert('Please describe the indicator you want.');return;}
+  const btn=document.getElementById('im-ai-btn');
+  const statusEl=document.getElementById('im-ai-status');
+  btn.disabled=true;statusEl.textContent='Thinking…';statusEl.style.color='var(--muted)';
+  document.getElementById('im-ai-result').style.display='none';
+  try{
+    const res=await fetch('/api/ai/suggest',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({kind:'indicator',prompt,questions:_questions})});
+    const data=await res.json();
+    if(res.ok&&data.ok){
+      document.getElementById('im-ai-result-pre').textContent=JSON.stringify(data.result,null,2);
+      document.getElementById('im-ai-result').style.display='block';
+      statusEl.textContent='';window._aiIndicatorSuggestion=data.result;
+    }else{statusEl.textContent='✗ '+(data.detail||'Failed');statusEl.style.color='#991b1b';}
+  }catch(e){statusEl.textContent='✗ '+e.message;statusEl.style.color='#991b1b';}
+  btn.disabled=false;
+}
+function acceptAiIndicator(){
+  const s=window._aiIndicatorSuggestion||{};
+  if(s.name)document.getElementById('im-name').value=s.name;
+  if(s.label)document.getElementById('im-label').value=s.label;
+  if(s.question)document.getElementById('im-question').value=s.question;
+  if(s.stat){document.getElementById('im-stat').value=s.stat;updateIndicatorForm();}
+  if(s.filter_value)document.getElementById('im-filterval').value=s.filter_value;
+  if(s.format)document.getElementById('im-format').value=s.format;
+  if(s.decimals!==undefined)document.getElementById('im-decimals').value=s.decimals;
+  switchIndicatorView('form');
+}
 function openAiTemplateModal(){document.getElementById('ai-tpl-modal').style.display='flex';}
 function closeAiTemplateModal(){document.getElementById('ai-tpl-modal').style.display='none';}
 async function runAiGenerateTemplate(){
@@ -1388,8 +1561,15 @@ async function runAiGenerateTemplate(){
 <!-- Chart modal -->
 <div id="chart-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeChartModal()">
   <div class="modal" style="width:660px;max-height:92vh;display:flex;flex-direction:column;">
-    <div class="modal-header"><h3 id="chart-modal-title">Add chart</h3><button onclick="closeChartModal()">✕</button></div>
-    <div class="modal-body" style="overflow-y:auto;flex:1;">
+    <div class="modal-header">
+      <h3 id="chart-modal-title">Add chart</h3>
+      <div class="config-view-toggle" style="margin-right:8px;">
+        <button class="view-btn active" id="cm-btn-form" onclick="switchChartView('form')">Form</button>
+        <button class="view-btn" id="cm-btn-ai" onclick="switchChartView('ai')">AI</button>
+      </div>
+      <button onclick="closeChartModal()">✕</button>
+    </div>
+    <div id="cm-form-view" style="overflow-y:auto;flex:1;padding:18px;">
       <div class="form-row"><label>Name</label><input id="cm-name" placeholder="e.g. satisfaction_overview"></div>
       <div class="form-row"><label>Title</label><input id="cm-title" placeholder="e.g. Overall satisfaction"></div>
       <div class="form-row"><label>Type</label>
@@ -1434,6 +1614,19 @@ async function runAiGenerateTemplate(){
         <div id="cm-preview-area" style="text-align:center;color:var(--muted);font-size:12px;min-height:40px;">Select a data file (or leave blank for auto-detect) and click Preview.</div>
       </div>
     </div>
+    <div id="cm-ai-view" style="display:none;padding:18px;overflow-y:auto;flex:1;">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Describe the chart you want in plain language. The AI will suggest a configuration based on your available columns.</p>
+      <textarea id="cm-ai-prompt" rows="4" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="e.g. Show satisfaction responses by region, horizontal bar, top 10, sorted by value"></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary btn-sm" id="cm-ai-btn" onclick="askAiChart()">✦ Ask AI</button>
+        <span id="cm-ai-status" style="font-size:12px;color:var(--muted);"></span>
+      </div>
+      <div id="cm-ai-result" style="display:none;margin-top:14px;border:1px solid var(--border);border-radius:var(--radius);padding:12px;background:var(--bg);font-size:12px;">
+        <div style="font-weight:600;margin-bottom:6px;color:var(--teal-dark);">AI suggestion — review then accept</div>
+        <pre id="cm-ai-result-pre" style="font-size:11px;color:var(--muted);white-space:pre-wrap;word-break:break-all;margin-bottom:10px;"></pre>
+        <button class="btn btn-primary btn-sm" onclick="acceptAiChart()">✓ Accept &amp; populate form</button>
+      </div>
+    </div>
     <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;">
       <button class="btn btn-ghost btn-sm" onclick="closeChartModal()">Cancel</button>
       <button class="btn btn-primary btn-sm" onclick="saveChartFromModal()">Save chart</button>
@@ -1443,8 +1636,15 @@ async function runAiGenerateTemplate(){
 <!-- Indicator modal -->
 <div id="indicator-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeIndicatorModal()">
   <div class="modal" style="width:480px;">
-    <div class="modal-header"><h3 id="ind-modal-title">Add indicator</h3><button onclick="closeIndicatorModal()">✕</button></div>
-    <div class="modal-body">
+    <div class="modal-header">
+      <h3 id="ind-modal-title">Add indicator</h3>
+      <div class="config-view-toggle" style="margin-right:8px;">
+        <button class="view-btn active" id="im-btn-form" onclick="switchIndicatorView('form')">Form</button>
+        <button class="view-btn" id="im-btn-ai" onclick="switchIndicatorView('ai')">AI</button>
+      </div>
+      <button onclick="closeIndicatorModal()">✕</button>
+    </div>
+    <div id="im-form-view" class="modal-body">
       <div class="form-row"><label>Name</label><input id="im-name" placeholder="e.g. total_beneficiaries"></div>
       <div class="form-row"><label>Label</label><input id="im-label" placeholder="e.g. Total beneficiaries"></div>
       <div class="form-row"><label>Question</label><input id="im-question" placeholder="export_label of column"></div>
@@ -1468,6 +1668,19 @@ async function runAiGenerateTemplate(){
         </select>
       </div>
       <div class="form-row"><label>Decimals</label><input id="im-decimals" type="number" placeholder="1" min="0" max="6" style="max-width:80px;"></div>
+    </div>
+    <div id="im-ai-view" style="display:none;padding:18px;">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Describe the indicator you need. The AI will suggest a configuration using your available columns.</p>
+      <textarea id="im-ai-prompt" rows="3" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="e.g. Percentage of female respondents, or most common region, or total count of beneficiaries"></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary btn-sm" id="im-ai-btn" onclick="askAiIndicator()">✦ Ask AI</button>
+        <span id="im-ai-status" style="font-size:12px;color:var(--muted);"></span>
+      </div>
+      <div id="im-ai-result" style="display:none;margin-top:14px;border:1px solid var(--border);border-radius:var(--radius);padding:12px;background:var(--bg);font-size:12px;">
+        <div style="font-weight:600;margin-bottom:6px;color:var(--teal-dark);">AI suggestion — review then accept</div>
+        <pre id="im-ai-result-pre" style="font-size:11px;color:var(--muted);white-space:pre-wrap;word-break:break-all;margin-bottom:10px;"></pre>
+        <button class="btn btn-primary btn-sm" onclick="acceptAiIndicator()">✓ Accept &amp; populate form</button>
+      </div>
     </div>
     <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="closeIndicatorModal()">Cancel</button>
