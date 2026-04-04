@@ -66,15 +66,19 @@ async def save_config(payload: ConfigPayload):
     return {"ok": True, "saved_at": datetime.now().isoformat()}
 
 ALLOWED_COMMANDS = {
-    "fetch-questions":   [],
-    "generate-template": [],
-    "download":          ["--sample"],
-    "build-report":      ["--sample", "--split-by"],
+    "fetch-questions":      [],
+    "generate-template":    [],
+    "ai-generate-template": ["--description", "--pages", "--language"],
+    "download":             ["--sample"],
+    "build-report":         ["--sample", "--split-by"],
 }
 
 class RunPayload(BaseModel):
     sample: Optional[int] = None
     split_by: Optional[str] = None
+    description: Optional[str] = None
+    pages: Optional[int] = None
+    language: Optional[str] = None
 
 class QuestionsPayload(BaseModel):
     questions: list
@@ -205,6 +209,12 @@ async def run_command(command: str, payload: RunPayload):
         cmd += ["--sample", str(payload.sample)]
     if payload.split_by and "--split-by" in ALLOWED_COMMANDS[command]:
         cmd += ["--split-by", payload.split_by]
+    if payload.description and "--description" in ALLOWED_COMMANDS[command]:
+        cmd += ["--description", payload.description]
+    if payload.pages and "--pages" in ALLOWED_COMMANDS[command]:
+        cmd += ["--pages", str(payload.pages)]
+    if payload.language and "--language" in ALLOWED_COMMANDS[command]:
+        cmd += ["--language", payload.language]
     return StreamingResponse(
         _stream(command, cmd),
         media_type="text/event-stream",
@@ -694,6 +704,7 @@ header h1{font-size:16px;font-weight:600}
           <button class="btn btn-ghost btn-sm" onclick="loadTemplates()">↺ Refresh</button>
           <span style="margin-left:auto;display:flex;gap:8px;">
             <button class="btn btn-ghost btn-sm" id="btn-generate-tpl" onclick="generateTemplate()">⚙ Generate template</button>
+            <button class="btn btn-primary btn-sm" onclick="openAiTemplateModal()">✦ AI Generate</button>
             <label class="btn btn-primary btn-sm" style="cursor:pointer;">
               ↑ Upload .docx
               <input type="file" accept=".docx" style="display:none" onchange="uploadTemplate(this)">
@@ -1334,6 +1345,45 @@ function saveIndicatorFromModal(){
   closeIndicatorModal();
 }
 loadConfig();
+function openAiTemplateModal(){document.getElementById('ai-tpl-modal').style.display='flex';}
+function closeAiTemplateModal(){document.getElementById('ai-tpl-modal').style.display='none';}
+async function runAiGenerateTemplate(){
+  const desc=document.getElementById('ai-tpl-desc').value.trim();
+  if(!desc){alert('Please enter a project description.');return;}
+  const pages=parseInt(document.getElementById('ai-tpl-pages').value)||10;
+  const language=document.getElementById('ai-tpl-lang').value.trim()||'English';
+  closeAiTemplateModal();
+  if(running){toast('A command is already running','err');return;}
+  running=true;setDot('running');
+  document.getElementById('status-label').textContent='ai-generate-template';
+  const logBody=document.getElementById('log-body');
+  logBody.innerHTML='';
+  document.getElementById('log-title').textContent='Running: ai-generate-template';
+  document.querySelectorAll('.tab,.tab-content').forEach(el=>el.classList.remove('active'));
+  document.querySelector('[data-tab="dashboard"]').classList.add('active');
+  document.getElementById('tab-dashboard').classList.add('active');
+  const res=await fetch('/api/run/ai-generate-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:desc,pages,language})});
+  const reader=res.body.getReader();const dec=new TextDecoder();let buf='';
+  while(true){
+    const{done,value}=await reader.read();if(done)break;
+    buf+=dec.decode(value,{stream:true});
+    const parts=buf.split('\n\n');buf=parts.pop();
+    for(const part of parts){
+      const lines=part.trim().split('\n');let ev='message',data='';
+      for(const l of lines){if(l.startsWith('event: '))ev=l.slice(7);if(l.startsWith('data: '))data=l.slice(6);}
+      if(!data)continue;const p=JSON.parse(data);
+      if(ev==='log')appendLog(p.line,p.level||'info');
+      if(ev==='status'&&p.status!=='running'){
+        setDot(p.status);
+        document.getElementById('status-label').textContent=p.status==='success'?'✓ done':'✗ error';
+        running=false;
+        if(p.status==='success')toast('AI template generated — check Templates tab','ok');
+        else toast('Generation failed — check logs','err');
+      }
+    }
+  }
+  running=false;
+}
 </script>
 <!-- Chart modal -->
 <div id="chart-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeChartModal()">
@@ -1422,6 +1472,31 @@ loadConfig();
     <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="closeIndicatorModal()">Cancel</button>
       <button class="btn btn-primary btn-sm" onclick="saveIndicatorFromModal()">Save indicator</button>
+    </div>
+  </div>
+</div>
+<div id="ai-tpl-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeAiTemplateModal()">
+  <div class="modal" style="width:520px;">
+    <div class="modal-header"><h3>AI Generate Template</h3><button onclick="closeAiTemplateModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row" style="align-items:flex-start;">
+        <label style="padding-top:4px;">Description</label>
+        <textarea id="ai-tpl-desc" rows="4" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="Humanitarian monitoring report for nutrition program in Sahel region. Covers beneficiary reach, food security indicators, and geographic distribution."></textarea>
+      </div>
+      <div class="form-row">
+        <label>Pages</label>
+        <input id="ai-tpl-pages" type="number" min="2" max="50" value="10" style="width:80px;">
+        <span style="font-size:11px;color:var(--muted);margin-left:4px;">target page count</span>
+      </div>
+      <div class="form-row">
+        <label>Language</label>
+        <input id="ai-tpl-lang" type="text" value="English" placeholder="English">
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px;">Requires <code>ai:</code> section in config.yml with a valid API key. Output saved as <code>ai_report_template.docx</code> in your templates folder.</p>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="closeAiTemplateModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="runAiGenerateTemplate()">✦ Generate</button>
     </div>
   </div>
 </div>

@@ -39,6 +39,25 @@ def cmd_generate_template(out):
     out_path = Path(out) if out else Path(cfg.get("report",{}).get("template","templates/report_template.docx"))
     generate_template(cfg, out_path)
 
+@cli.command("ai-generate-template")
+@click.option("--description", required=True, help="Project/report description for the AI.")
+@click.option("--pages", default=10, type=int, help="Target number of pages.")
+@click.option("--language", default="English", help="Report language.")
+@click.option("--out", default=None, help="Output path. Defaults to ai_<template> from config.yml.")
+def cmd_ai_generate_template(description, pages, language, out):
+    """AI-generate a structured Word template based on project description and config."""
+    from src.reports.ai_template_generator import ai_generate_template
+    cfg = load_config(CONFIG_PATH)
+    if not cfg.get("ai"):
+        click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
+        sys.exit(1)
+    if not out:
+        base = Path(cfg.get("report", {}).get("template", "templates/report_template.docx"))
+        out_path = base.with_name(f"ai_{base.stem}.docx")
+    else:
+        out_path = Path(out)
+    ai_generate_template(cfg, out_path, description, pages, language)
+
 @cli.command("download")
 @click.option("--sample", default=None, type=int, help="Limit to first N submissions.")
 def cmd_download(sample):
