@@ -17,7 +17,7 @@ COPY src/ ./src/
 RUN mkdir -p web/static && touch web/__init__.py
 
 COPY <<'PYEOF' web/main.py
-import asyncio, json, os, sys
+import asyncio, base64, json, os, sys, tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Dict, Optional
@@ -98,6 +98,41 @@ async def save_questions(payload: QuestionsPayload):
     async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
         await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
     return {"ok": True, "saved": len(payload.questions)}
+
+class ChartPreviewPayload(BaseModel):
+    chart: dict
+    data_file: Optional[str] = None
+
+@app.post("/api/charts/preview")
+async def preview_chart(payload: ChartPreviewPayload):
+    import pandas as pd
+    from src.reports.charts import generate_chart
+    if payload.data_file:
+        data_path = DATA_DIR / payload.data_file
+        if "/" in payload.data_file or ".." in payload.data_file:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        if not data_path.exists():
+            raise HTTPException(status_code=404, detail=f"Data file not found: {payload.data_file}")
+        ext = data_path.suffix.lower()
+        if ext == ".csv": df = pd.read_csv(data_path)
+        elif ext == ".json": df = pd.read_json(data_path)
+        elif ext == ".xlsx": df = pd.read_excel(data_path)
+        else: raise HTTPException(status_code=400, detail="Unsupported file type")
+    else:
+        candidates = sorted(DATA_DIR.glob("*_data.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not candidates:
+            candidates = sorted(DATA_DIR.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not candidates:
+            raise HTTPException(status_code=400, detail="No data file found. Run Download first.")
+        df = pd.read_csv(candidates[0])
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        cfg = {**payload.chart, "name": payload.chart.get("name") or "preview"}
+        png_path = generate_chart(cfg, df, out_dir=out_dir)
+        if not png_path or not png_path.exists():
+            raise HTTPException(status_code=400, detail="Chart generation failed — check column names and chart type")
+        img_b64 = base64.b64encode(png_path.read_bytes()).decode()
+    return {"image": img_b64}
 
 @app.post("/api/run/{command}")
 async def run_command(command: str, payload: RunPayload):
@@ -361,6 +396,15 @@ header h1{font-size:16px;font-weight:600}
 .filter-row{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
 .filter-row input{flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:monospace;}
 .filter-row button{padding:4px 8px;border:none;background:#fee2e2;color:#991b1b;border-radius:4px;cursor:pointer;font-size:12px;}
+.chart-card{border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:8px;background:var(--bg);}
+.chart-card-info{flex:1;font-size:13px;}
+.chart-card-name{font-weight:600;color:var(--teal-dark);}
+.chart-card-meta{font-size:11px;color:var(--muted);margin-top:2px;}
+.type-badge{display:inline-block;background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;margin-right:4px;}
+.ind-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.ind-row:last-child{border-bottom:none;}
+.ind-name{font-weight:600;color:var(--teal-dark);min-width:140px;font-size:12px;}
+.ind-meta{flex:1;font-size:11px;color:var(--muted);}
 .reports-pane{padding:20px;display:flex;flex-direction:column;gap:14px}
 .reports-pane h2{font-size:15px;font-weight:600}
 .file-table{width:100%;border-collapse:collapse}
@@ -526,6 +570,24 @@ header h1{font-size:16px;font-weight:600}
             <div class="form-row"><label>Split by</label><input id="cfg-report-splitby" type="text" placeholder="leave empty or enter column name"></div>
             <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('report')">Save</button></div>
           </div>
+          <div class="form-section" id="section-charts">
+            <div class="form-section-title">
+              Charts
+              <span style="font-weight:normal;font-size:11px;color:var(--muted);">Each chart → &#123;&#123; chart_&lt;name&gt; &#125;&#125; placeholder in Word template</span>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="openChartModal(null)">+ Add chart</button>
+            </div>
+            <div id="charts-list"><p class="empty-state" style="padding:12px 0 4px;">No charts configured.</p></div>
+            <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('charts')">Save</button></div>
+          </div>
+          <div class="form-section" id="section-indicators">
+            <div class="form-section-title">
+              Indicators
+              <span style="font-weight:normal;font-size:11px;color:var(--muted);">Text/number values → &#123;&#123; ind_&lt;name&gt; &#125;&#125; placeholders in template</span>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="openIndicatorModal(null)">+ Add indicator</button>
+            </div>
+            <div id="indicators-list"><p class="empty-state" style="padding:12px 0 4px;">No indicators configured.</p></div>
+            <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('indicators')">Save</button></div>
+          </div>
         </div>
         <div id="config-yaml-view" style="display:none;flex:1;overflow:hidden;">
           <div class="editor-wrap"><textarea id="config-editor"></textarea></div>
@@ -648,7 +710,11 @@ async function loadFormValues(){
   document.getElementById('cfg-report-outdir').value=rep.output_dir||'reports';
   document.getElementById('cfg-report-splitby').value=rep.split_by||'';
   _filters=Array.isArray(cfg.filters)?cfg.filters:[];
+  _charts=Array.isArray(cfg.charts)?cfg.charts:[];
+  _indicators=Array.isArray(cfg.indicators)?cfg.indicators:[];
   renderFilters();
+  renderChartsList();
+  renderIndicatorsList();
   toggleDbFields();
   loadQuestions();
 }
@@ -687,6 +753,10 @@ async function saveFormSection(section){
     cfg.report.output_dir=document.getElementById('cfg-report-outdir').value;
     const sb=document.getElementById('cfg-report-splitby').value.trim();
     if(sb)cfg.report.split_by=sb;else delete cfg.report.split_by;
+  }else if(section==='charts'){
+    cfg.charts=_charts.map(ch=>{const c={...ch};if(c.options&&!Object.keys(c.options).length)delete c.options;return c;});
+  }else if(section==='indicators'){
+    cfg.indicators=_indicators;
   }
   const newYaml=jsyaml.dump(cfg,{indent:2,lineWidth:-1});
   const saveRes=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:newYaml})});
@@ -925,8 +995,301 @@ async function deleteTemplate(name){
   await fetch('/api/templates/'+encodeURIComponent(name),{method:'DELETE'});loadTemplates();
 }
 function toast(msg,type='ok'){const el=document.createElement('div');el.className='toast '+type;el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),3000);}
+// ── Charts & Indicators ───────────────────────────────────────────────
+let _charts=[],_indicators=[],_editChartIdx=null,_editIndIdx=null;
+const CHART_META={
+  bar:{q:['categorical'],hint:'1 categorical column'},
+  horizontal_bar:{q:['categorical'],hint:'1 categorical column'},
+  pie:{q:['categorical'],hint:'1 categorical column'},
+  donut:{q:['categorical'],hint:'1 categorical column'},
+  treemap:{q:['categorical'],hint:'1 categorical column'},
+  waterfall:{q:['categorical'],hint:'1 categorical column'},
+  funnel:{q:['categorical'],hint:'1 categorical column'},
+  table:{q:['categorical'],hint:'1 categorical column'},
+  histogram:{q:['numeric'],hint:'1 numeric column'},
+  line:{q:['date/numeric'],hint:'1 date or numeric column'},
+  area:{q:['date/numeric'],hint:'1 date or numeric column'},
+  stacked_bar:{q:['x_axis','stack_by'],hint:'[x_axis, stack_by]'},
+  grouped_bar:{q:['category','group_by'],hint:'[category, group_by]'},
+  scatter:{q:['x_column','y_column'],hint:'[x_column, y_column]'},
+  box_plot:{q:['category','numeric'],hint:'[category, numeric]'},
+  heatmap:{q:['row_cat','col_cat'],hint:'[row_category, col_category]'},
+  bullet_chart:{q:['numeric'],hint:'1 numeric column — target option required'},
+  likert:{q:['scale_column'],hint:'1 column with scale responses'},
+  scorecard:{q:['col1','col2','col3'],hint:'one KPI card per column listed'},
+  pyramid:{q:['age_group','gender'],hint:'[age_group_col, gender_col]'},
+  dot_map:{q:['latitude','longitude'],hint:'[latitude_col, longitude_col]'},
+};
+const CHART_OPT_ROWS={
+  'cm-sort-row':['bar','horizontal_bar','grouped_bar','waterfall'],
+  'cm-normalize-row':['stacked_bar'],
+  'cm-freq-row':['line','area'],
+  'cm-bins-row':['histogram'],
+  'cm-target-row':['bullet_chart'],
+  'cm-stat-row':['scorecard'],
+  'cm-columns-row':['scorecard'],
+  'cm-male-row':['pyramid'],
+  'cm-female-row':['pyramid'],
+  'cm-colorby-row':['dot_map'],
+};
+function renderChartsList(){
+  const c=document.getElementById('charts-list');
+  if(!_charts.length){c.innerHTML='<p class="empty-state" style="padding:12px 0 4px;">No charts configured.</p>';return;}
+  c.innerHTML=_charts.map((ch,i)=>`<div class="chart-card">
+    <div class="chart-card-info">
+      <div class="chart-card-name"><span class="type-badge">${ch.type||''}</span>${ch.name||''}</div>
+      <div class="chart-card-meta">${ch.title||''} · columns: ${(ch.questions||[]).join(', ')||'—'}</div>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="openChartModal(${i})">Edit</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteChart(${i})">Delete</button>
+  </div>`).join('');
+}
+function deleteChart(i){if(!confirm('Delete chart "'+(_charts[i]||{}).name+'"?'))return;_charts.splice(i,1);renderChartsList();}
+function renderIndicatorsList(){
+  const c=document.getElementById('indicators-list');
+  if(!_indicators.length){c.innerHTML='<p class="empty-state" style="padding:12px 0 4px;">No indicators configured.</p>';return;}
+  c.innerHTML=_indicators.map((ind,i)=>`<div class="ind-row">
+    <span class="ind-name">${ind.name||''}</span>
+    <span class="ind-meta">${ind.label||''} · ${ind.stat||''} of ${ind.question||''} · format: ${ind.format||''}</span>
+    <button class="btn btn-ghost btn-sm" onclick="openIndicatorModal(${i})">Edit</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteIndicator(${i})">Delete</button>
+  </div>`).join('');
+}
+function deleteIndicator(i){if(!confirm('Delete indicator "'+(_indicators[i]||{}).name+'"?'))return;_indicators.splice(i,1);renderIndicatorsList();}
+function updateChartForm(){
+  const type=document.getElementById('cm-type').value;
+  const meta=CHART_META[type]||{q:['column'],hint:''};
+  document.getElementById('cm-type-hint').textContent=meta.hint||'';
+  // question inputs
+  const wrap=document.getElementById('cm-questions-wrap');
+  wrap.innerHTML=meta.q.map((lbl,i)=>`<div class="form-row"><label>${lbl}</label><input class="cm-q-input" data-qi="${i}" placeholder="column name"></div>`).join('');
+  // option rows visibility
+  Object.entries(CHART_OPT_ROWS).forEach(([rowId,types])=>{
+    const el=document.getElementById(rowId);
+    if(el)el.style.display=types.includes(type)?'flex':'none';
+  });
+}
+async function loadPreviewFileOptions(){
+  try{
+    const data=await(await fetch('/api/data')).json();
+    const sel=document.getElementById('cm-preview-file');
+    sel.innerHTML='<option value="">— auto-detect —</option>';
+    (data.files||[]).forEach(f=>{const o=document.createElement('option');o.value=f.name;o.textContent=f.name+' ('+f.size_kb+' KB)';sel.appendChild(o);});
+  }catch(e){}
+}
+function openChartModal(idx){
+  _editChartIdx=idx;
+  document.getElementById('chart-modal-title').textContent=idx===null?'Add chart':'Edit chart';
+  updateChartForm();
+  loadPreviewFileOptions();
+  // clear fields
+  ['cm-name','cm-title','cm-width','cm-color','cm-topn','cm-bins','cm-target','cm-columns','cm-male','cm-female','cm-colorby','cm-xlabel','cm-ylabel'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['cm-sort','cm-normalize','cm-freq','cm-stat-scorecard'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('cm-preview-area').innerHTML='Select a data file (or leave blank for auto-detect) and click Preview.';
+  document.getElementById('cm-preview-area').style.color='var(--muted)';
+  if(idx!==null){
+    const ch=_charts[idx];
+    document.getElementById('cm-type').value=ch.type||'bar';
+    updateChartForm();
+    document.getElementById('cm-name').value=ch.name||'';
+    document.getElementById('cm-title').value=ch.title||'';
+    // populate question inputs
+    const qInputs=document.querySelectorAll('.cm-q-input');
+    (ch.questions||[]).forEach((q,i)=>{if(qInputs[i])qInputs[i].value=q;});
+    const o=ch.options||{};
+    if(o.width_inches)document.getElementById('cm-width').value=o.width_inches;
+    if(o.color)document.getElementById('cm-color').value=o.color;
+    if(o.top_n)document.getElementById('cm-topn').value=o.top_n;
+    if(o.sort)document.getElementById('cm-sort').value=o.sort;
+    if(o.normalize)document.getElementById('cm-normalize').value=String(o.normalize);
+    if(o.freq)document.getElementById('cm-freq').value=o.freq;
+    if(o.bins)document.getElementById('cm-bins').value=o.bins;
+    if(o.target)document.getElementById('cm-target').value=o.target;
+    if(o.stat)document.getElementById('cm-stat-scorecard').value=o.stat;
+    if(o.columns)document.getElementById('cm-columns').value=o.columns;
+    if(o.male_value)document.getElementById('cm-male').value=o.male_value;
+    if(o.female_value)document.getElementById('cm-female').value=o.female_value;
+    if(o.color_by)document.getElementById('cm-colorby').value=o.color_by;
+    if(o.xlabel)document.getElementById('cm-xlabel').value=o.xlabel;
+    if(o.ylabel)document.getElementById('cm-ylabel').value=o.ylabel;
+  }
+  document.getElementById('chart-modal').style.display='flex';
+}
+function closeChartModal(){document.getElementById('chart-modal').style.display='none';}
+function buildChartFromModal(){
+  const type=document.getElementById('cm-type').value;
+  const questions=Array.from(document.querySelectorAll('.cm-q-input')).map(i=>i.value.trim()).filter(Boolean);
+  const opts={};
+  const w=document.getElementById('cm-width').value;if(w)opts.width_inches=parseFloat(w);
+  const col=document.getElementById('cm-color').value;if(col)opts.color=col;
+  const tn=document.getElementById('cm-topn').value;if(tn)opts.top_n=parseInt(tn);
+  const sort=document.getElementById('cm-sort').value;if(sort)opts.sort=sort;
+  const norm=document.getElementById('cm-normalize').value;if(norm)opts.normalize=(norm==='true');
+  const freq=document.getElementById('cm-freq').value;if(freq)opts.freq=freq;
+  const bins=document.getElementById('cm-bins').value;if(bins)opts.bins=parseInt(bins);
+  const tgt=document.getElementById('cm-target').value;if(tgt)opts.target=parseInt(tgt);
+  const stat=document.getElementById('cm-stat-scorecard').value;if(stat)opts.stat=stat;
+  const cols=document.getElementById('cm-columns').value;if(cols)opts.columns=parseInt(cols);
+  const male=document.getElementById('cm-male').value;if(male)opts.male_value=male;
+  const female=document.getElementById('cm-female').value;if(female)opts.female_value=female;
+  const cby=document.getElementById('cm-colorby').value;if(cby)opts.color_by=cby;
+  const xl=document.getElementById('cm-xlabel').value;if(xl)opts.xlabel=xl;
+  const yl=document.getElementById('cm-ylabel').value;if(yl)opts.ylabel=yl;
+  return{name:document.getElementById('cm-name').value.trim(),title:document.getElementById('cm-title').value.trim(),type,questions,options:Object.keys(opts).length?opts:undefined};
+}
+async function previewChart(){
+  const chart=buildChartFromModal();
+  if(!chart.name||!chart.questions.length){document.getElementById('cm-preview-area').innerHTML='<span style="color:#dc2626;">Enter a name and at least one column name first.</span>';return;}
+  const parea=document.getElementById('cm-preview-area');
+  parea.innerHTML='<span style="color:var(--muted);">Generating preview…</span>';
+  const dataFile=document.getElementById('cm-preview-file').value||null;
+  try{
+    const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart,data_file:dataFile})});
+    const data=await res.json();
+    if(res.ok){
+      parea.innerHTML=`<img src="data:image/png;base64,${data.image}" style="max-width:100%;border-radius:4px;border:1px solid var(--border);">`;
+    }else{
+      parea.innerHTML=`<span style="color:#dc2626;">${data.detail||'Preview failed'}</span>`;
+    }
+  }catch(e){parea.innerHTML=`<span style="color:#dc2626;">Error: ${e.message}</span>`;}
+}
+function saveChartFromModal(){
+  const ch=buildChartFromModal();
+  if(!ch.name){alert('Chart name is required');return;}
+  if(_editChartIdx===null)_charts.push(ch);
+  else _charts[_editChartIdx]=ch;
+  renderChartsList();
+  closeChartModal();
+}
+function updateIndicatorForm(){
+  const stat=document.getElementById('im-stat').value;
+  document.getElementById('im-filterval-row').style.display=stat==='percent'?'flex':'none';
+}
+function openIndicatorModal(idx){
+  _editIndIdx=idx;
+  document.getElementById('ind-modal-title').textContent=idx===null?'Add indicator':'Edit indicator';
+  ['im-name','im-label','im-question','im-filterval','im-decimals'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('im-stat').value='count';
+  document.getElementById('im-format').value='number';
+  updateIndicatorForm();
+  if(idx!==null){
+    const ind=_indicators[idx];
+    document.getElementById('im-name').value=ind.name||'';
+    document.getElementById('im-label').value=ind.label||'';
+    document.getElementById('im-question').value=ind.question||'';
+    document.getElementById('im-stat').value=ind.stat||'count';
+    document.getElementById('im-filterval').value=ind.filter_value||'';
+    document.getElementById('im-format').value=ind.format||'number';
+    document.getElementById('im-decimals').value=ind.decimals||'';
+    updateIndicatorForm();
+  }
+  document.getElementById('indicator-modal').style.display='flex';
+}
+function closeIndicatorModal(){document.getElementById('indicator-modal').style.display='none';}
+function saveIndicatorFromModal(){
+  const name=document.getElementById('im-name').value.trim();
+  if(!name){alert('Indicator name is required');return;}
+  const stat=document.getElementById('im-stat').value;
+  const ind={name,label:document.getElementById('im-label').value.trim(),question:document.getElementById('im-question').value.trim(),stat,format:document.getElementById('im-format').value};
+  const fv=document.getElementById('im-filterval').value.trim();if(fv)ind.filter_value=fv;
+  const dec=document.getElementById('im-decimals').value;if(dec!=='')ind.decimals=parseInt(dec);
+  if(_editIndIdx===null)_indicators.push(ind);
+  else _indicators[_editIndIdx]=ind;
+  renderIndicatorsList();
+  closeIndicatorModal();
+}
 loadConfig();
 </script>
+<!-- Chart modal -->
+<div id="chart-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeChartModal()">
+  <div class="modal" style="width:660px;max-height:92vh;display:flex;flex-direction:column;">
+    <div class="modal-header"><h3 id="chart-modal-title">Add chart</h3><button onclick="closeChartModal()">✕</button></div>
+    <div class="modal-body" style="overflow-y:auto;flex:1;">
+      <div class="form-row"><label>Name</label><input id="cm-name" placeholder="e.g. satisfaction_overview"></div>
+      <div class="form-row"><label>Title</label><input id="cm-title" placeholder="e.g. Overall satisfaction"></div>
+      <div class="form-row"><label>Type</label>
+        <select id="cm-type" onchange="updateChartForm()">
+          <option value="bar">bar</option><option value="horizontal_bar">horizontal_bar</option>
+          <option value="stacked_bar">stacked_bar</option><option value="grouped_bar">grouped_bar</option>
+          <option value="pie">pie</option><option value="donut">donut</option>
+          <option value="line">line</option><option value="area">area</option>
+          <option value="histogram">histogram</option><option value="scatter">scatter</option>
+          <option value="box_plot">box_plot</option><option value="heatmap">heatmap</option>
+          <option value="treemap">treemap</option><option value="waterfall">waterfall</option>
+          <option value="funnel">funnel</option><option value="table">table</option>
+          <option value="bullet_chart">bullet_chart</option><option value="likert">likert</option>
+          <option value="scorecard">scorecard</option><option value="pyramid">pyramid</option>
+          <option value="dot_map">dot_map</option>
+        </select>
+      </div>
+      <div id="cm-type-hint" style="font-size:11px;color:var(--muted);margin:-4px 0 10px 100px;font-style:italic;"></div>
+      <div id="cm-questions-wrap"></div>
+      <div class="modal-body"><h4>Options</h4></div>
+      <div class="form-row"><label>Width (in)</label><input id="cm-width" type="number" step="0.5" placeholder="5.5 (default)"></div>
+      <div class="form-row"><label>Color</label><input id="cm-color" type="text" placeholder="#1D9E75"></div>
+      <div class="form-row"><label>top_n</label><input id="cm-topn" type="number" placeholder="15 (default)"></div>
+      <div class="form-row" id="cm-sort-row"><label>Sort</label><select id="cm-sort"><option value="">default (value)</option><option value="value">value</option><option value="label">label</option><option value="none">none</option></select></div>
+      <div class="form-row" id="cm-normalize-row"><label>Normalize</label><select id="cm-normalize"><option value="">no</option><option value="true">yes (100% stacked)</option></select></div>
+      <div class="form-row" id="cm-freq-row"><label>Freq</label><select id="cm-freq"><option value="">auto</option><option value="day">day</option><option value="week">week</option><option value="month">month</option><option value="year">year</option></select></div>
+      <div class="form-row" id="cm-bins-row"><label>Bins</label><input id="cm-bins" type="number" placeholder="15"></div>
+      <div class="form-row" id="cm-target-row"><label>Target *</label><input id="cm-target" type="number" placeholder="required — your indicator target"></div>
+      <div class="form-row" id="cm-stat-row"><label>Stat</label><select id="cm-stat-scorecard"><option value="count">count</option><option value="mean">mean</option><option value="sum">sum</option></select></div>
+      <div class="form-row" id="cm-columns-row"><label>Columns</label><input id="cm-columns" type="number" placeholder="3 (cards per row)"></div>
+      <div class="form-row" id="cm-male-row"><label>Male value</label><input id="cm-male" placeholder="e.g. Male"></div>
+      <div class="form-row" id="cm-female-row"><label>Female value</label><input id="cm-female" placeholder="e.g. Female"></div>
+      <div class="form-row" id="cm-colorby-row"><label>Color by</label><input id="cm-colorby" placeholder="column name (optional)"></div>
+      <div class="form-row"><label>xlabel</label><input id="cm-xlabel" placeholder="optional axis label"></div>
+      <div class="form-row"><label>ylabel</label><input id="cm-ylabel" placeholder="optional axis label"></div>
+      <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <span style="font-size:12px;font-weight:600;">Preview</span>
+          <select id="cm-preview-file" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:260px;"><option value="">— auto-detect data file —</option></select>
+          <button class="btn btn-ghost btn-sm" onclick="previewChart()">▶ Preview</button>
+        </div>
+        <div id="cm-preview-area" style="text-align:center;color:var(--muted);font-size:12px;min-height:40px;">Select a data file (or leave blank for auto-detect) and click Preview.</div>
+      </div>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;">
+      <button class="btn btn-ghost btn-sm" onclick="closeChartModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveChartFromModal()">Save chart</button>
+    </div>
+  </div>
+</div>
+<!-- Indicator modal -->
+<div id="indicator-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeIndicatorModal()">
+  <div class="modal" style="width:480px;">
+    <div class="modal-header"><h3 id="ind-modal-title">Add indicator</h3><button onclick="closeIndicatorModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row"><label>Name</label><input id="im-name" placeholder="e.g. total_beneficiaries"></div>
+      <div class="form-row"><label>Label</label><input id="im-label" placeholder="e.g. Total beneficiaries"></div>
+      <div class="form-row"><label>Question</label><input id="im-question" placeholder="export_label of column"></div>
+      <div class="form-row"><label>Stat</label>
+        <select id="im-stat" onchange="updateIndicatorForm()">
+          <option value="count">count — non-null rows</option>
+          <option value="sum">sum</option><option value="mean">mean</option>
+          <option value="median">median</option><option value="min">min</option>
+          <option value="max">max</option>
+          <option value="percent">percent — % where value = filter</option>
+          <option value="most_common">most_common — top value</option>
+        </select>
+      </div>
+      <div class="form-row" id="im-filterval-row" style="display:none;"><label>Filter value</label><input id="im-filterval" placeholder="e.g. Female (required for percent)"></div>
+      <div class="form-row"><label>Format</label>
+        <select id="im-format">
+          <option value="number">number → 4,832</option>
+          <option value="decimal">decimal → 4.2</option>
+          <option value="percent">percent → 58.3%</option>
+          <option value="text">text</option>
+        </select>
+      </div>
+      <div class="form-row"><label>Decimals</label><input id="im-decimals" type="number" placeholder="1" min="0" max="6" style="max-width:80px;"></div>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="closeIndicatorModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveIndicatorFromModal()">Save indicator</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
 HTMLEOF
