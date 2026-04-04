@@ -8,6 +8,7 @@ from docxtpl import DocxTemplate, InlineImage
 from src.data.transform import load_processed_data
 from src.reports.charts import generate_chart, CHART_DIR
 from src.reports.indicators import compute_indicators
+from src.reports.narrator import generate_narrative
 
 log = logging.getLogger(__name__)
 
@@ -39,14 +40,26 @@ class ReportBuilder:
         if not template_path.exists():
             raise FileNotFoundError(f"Template not found: {template_path}\nRun generate-template or see TEMPLATE_GUIDE.md")
         tpl = DocxTemplate(template_path)
+        stats_table = self._stats_table(df)
+        indicators  = compute_indicators(self.cfg.get("indicators", []), df)
+
+        narrative = generate_narrative(
+            ai_cfg     = self.cfg.get("ai"),
+            report_cfg = self.report_cfg,
+            df         = df,
+            stats_table= stats_table,
+            indicators = indicators,
+            charts_cfg = self.charts_cfg,
+        )
+
         context = {
-            "report_title": self.report_cfg.get("title","Report"),
-            "period": self.report_cfg.get("period", datetime.today().strftime("%B %Y")),
+            "report_title":  self.report_cfg.get("title", "Report"),
+            "period":        self.report_cfg.get("period", datetime.today().strftime("%B %Y")),
             "n_submissions": len(df),
-            "generated_at": datetime.today().strftime("%d/%m/%Y %H:%M"),
-            "summary_text": "", "observations": "", "recommendations": "",
-            "stats_table": self._stats_table(df),
-            **compute_indicators(self.cfg.get("indicators", []), df),
+            "generated_at":  datetime.today().strftime("%d/%m/%Y %H:%M"),
+            **narrative,
+            "stats_table":   stats_table,
+            **indicators,
             **self._generate_charts(tpl, df),
         }
         tpl.render(context)

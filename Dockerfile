@@ -79,6 +79,12 @@ class RunPayload(BaseModel):
 class QuestionsPayload(BaseModel):
     questions: list
 
+class AITestPayload(BaseModel):
+    provider: str = "openai"
+    api_key: str = ""
+    model: str = "gpt-4o"
+    base_url: Optional[str] = None
+
 @app.get("/api/questions")
 async def get_questions():
     if not CONFIG_PATH.exists(): return {"questions": []}
@@ -98,6 +104,62 @@ async def save_questions(payload: QuestionsPayload):
     async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
         await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
     return {"ok": True, "saved": len(payload.questions)}
+
+@app.post("/api/ai/test")
+async def test_ai(payload: AITestPayload):
+    api_key = payload.api_key.strip()
+    if not api_key or api_key.startswith("env:"):
+        raise HTTPException(status_code=400, detail="API key not set or not resolved.")
+    provider = payload.provider.lower()
+    result = {"ok": False, "tokens_used": None, "quota": None, "message": ""}
+    try:
+        if provider == "anthropic":
+            try:
+                import anthropic
+            except ImportError:
+                raise HTTPException(status_code=400, detail="anthropic package not installed. Run: pip install anthropic>=0.20.0")
+            client = anthropic.Anthropic(api_key=api_key)
+            msg = client.messages.create(
+                model=payload.model,
+                max_tokens=10,
+                messages=[{"role": "user", "content": "Reply with OK"}],
+            )
+            used = getattr(msg.usage, "input_tokens", 0) + getattr(msg.usage, "output_tokens", 0)
+            result = {"ok": True, "tokens_used": used, "quota": None, "message": f"Connection OK · {used} tokens used · Quota info not available for Anthropic API"}
+        else:
+            try:
+                from openai import OpenAI
+            except ImportError:
+                raise HTTPException(status_code=400, detail="openai package not installed. Run: pip install openai>=1.0.0")
+            kwargs = {"api_key": api_key}
+            if payload.base_url:
+                kwargs["base_url"] = payload.base_url
+            client = OpenAI(**kwargs)
+            resp = client.chat.completions.create(
+                model=payload.model,
+                max_tokens=10,
+                messages=[{"role": "user", "content": "Reply with OK"}],
+            )
+            used = resp.usage.total_tokens if resp.usage else None
+            quota_msg = None
+            try:
+                import urllib.request
+                req = urllib.request.Request(
+                    "https://api.openai.com/v1/organization/usage/completions?start_time=0&limit=1",
+                    headers={"Authorization": f"Bearer {api_key}"}
+                )
+                with urllib.request.urlopen(req, timeout=4) as r:
+                    json.loads(r.read())
+                    quota_msg = "Quota endpoint reachable"
+            except Exception:
+                quota_msg = "Quota info not available for this provider/key"
+            result = {"ok": True, "tokens_used": used, "quota": quota_msg,
+                      "message": f"Connection OK · {used} tokens used · {quota_msg}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        result = {"ok": False, "tokens_used": None, "quota": None, "message": str(e)}
+    return result
 
 class ChartPreviewPayload(BaseModel):
     chart: dict
@@ -525,6 +587,23 @@ header h1{font-size:16px;font-weight:600}
           </div>
           <div class="form-section">
             <div class="form-section-title">
+              AI Narrative
+              <span style="font-weight:normal;font-size:11px;color:var(--muted);">Fills &#123;&#123; summary_text &#125;&#125;, &#123;&#123; observations &#125;&#125;, &#123;&#123; recommendations &#125;&#125; in Word reports</span>
+            </div>
+            <div class="form-row"><label>Provider</label><select id="cfg-ai-provider" onchange="updateAiProviderUI()"><option value="openai">OpenAI-compatible</option><option value="anthropic">Anthropic</option></select></div>
+            <div class="form-row"><label>Model</label><input id="cfg-ai-model" type="text" placeholder="gpt-4o"></div>
+            <div class="form-row"><label>API Key</label><input id="cfg-ai-key" type="text" placeholder="env:OPENAI_API_KEY"></div>
+            <div class="form-row" id="ai-base-url-row"><label>Base URL</label><input id="cfg-ai-baseurl" type="text" placeholder="optional — Azure, Groq, Mistral, Ollama…"></div>
+            <div class="form-row"><label>Language</label><input id="cfg-ai-language" type="text" placeholder="English"></div>
+            <div class="form-row"><label>Max tokens</label><input id="cfg-ai-maxtokens" type="number" placeholder="1500" min="100" max="8000"></div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <button class="btn btn-primary btn-sm" onclick="saveFormSection('ai')">Save</button>
+              <button class="btn btn-ghost btn-sm" id="btn-ai-test" onclick="testAiConnection()">▶ Test connection</button>
+              <span id="ai-test-result" style="font-size:12px;"></span>
+            </div>
+          </div>
+          <div class="form-section">
+            <div class="form-section-title">
               Questions
               <span style="font-weight:normal;font-size:11px;color:var(--muted);">Edit Export label to rename columns used in charts and templates.</span>
               <span style="margin-left:auto;display:flex;gap:8px;align-items:center;">
@@ -686,6 +765,39 @@ function toggleDbFields(){
   const fmt=document.getElementById('cfg-export-format').value;
   document.getElementById('db-fields').style.display=['mysql','postgres','supabase'].includes(fmt)?'block':'none';
 }
+function updateAiProviderUI(){
+  const p=document.getElementById('cfg-ai-provider').value;
+  document.getElementById('ai-base-url-row').style.display=p==='anthropic'?'none':'flex';
+  document.getElementById('cfg-ai-model').placeholder=p==='anthropic'?'claude-sonnet-4-6':'gpt-4o';
+  document.getElementById('cfg-ai-key').placeholder=p==='anthropic'?'env:ANTHROPIC_API_KEY':'env:OPENAI_API_KEY';
+}
+async function testAiConnection(){
+  const btn=document.getElementById('btn-ai-test');
+  const resultEl=document.getElementById('ai-test-result');
+  btn.disabled=true;btn.textContent='Testing…';
+  resultEl.textContent='';resultEl.style.color='';
+  const payload={
+    provider:document.getElementById('cfg-ai-provider').value,
+    api_key:document.getElementById('cfg-ai-key').value.trim(),
+    model:document.getElementById('cfg-ai-model').value.trim()||'gpt-4o',
+    base_url:document.getElementById('cfg-ai-baseurl').value.trim()||null,
+  };
+  try{
+    const res=await fetch('/api/ai/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(res.ok&&data.ok){
+      resultEl.textContent='✓ '+data.message;
+      resultEl.style.color='#065f46';
+    }else{
+      resultEl.textContent='✗ '+(data.detail||data.message||'Failed');
+      resultEl.style.color='#991b1b';
+    }
+  }catch(e){
+    resultEl.textContent='✗ '+e.message;
+    resultEl.style.color='#991b1b';
+  }
+  btn.disabled=false;btn.textContent='▶ Test connection';
+}
 async function loadFormValues(){
   const res=await fetch('/api/config');const data=await res.json();
   const cfg=jsyaml.load(data.content||'')||{};
@@ -709,6 +821,14 @@ async function loadFormValues(){
   document.getElementById('cfg-report-template').value=rep.template||'templates/report_template.docx';
   document.getElementById('cfg-report-outdir').value=rep.output_dir||'reports';
   document.getElementById('cfg-report-splitby').value=rep.split_by||'';
+  const ai=cfg.ai||{};
+  document.getElementById('cfg-ai-provider').value=ai.provider||'openai';
+  document.getElementById('cfg-ai-model').value=ai.model||'';
+  document.getElementById('cfg-ai-key').value=ai.api_key||'';
+  document.getElementById('cfg-ai-baseurl').value=ai.base_url||'';
+  document.getElementById('cfg-ai-language').value=ai.language||'';
+  document.getElementById('cfg-ai-maxtokens').value=ai.max_tokens||'';
+  updateAiProviderUI();
   _filters=Array.isArray(cfg.filters)?cfg.filters:[];
   _charts=Array.isArray(cfg.charts)?cfg.charts:[];
   _indicators=Array.isArray(cfg.indicators)?cfg.indicators:[];
@@ -757,6 +877,21 @@ async function saveFormSection(section){
     cfg.charts=_charts.map(ch=>{const c={...ch};if(c.options&&!Object.keys(c.options).length)delete c.options;return c;});
   }else if(section==='indicators'){
     cfg.indicators=_indicators;
+  }else if(section==='ai'){
+    const provider=document.getElementById('cfg-ai-provider').value;
+    const key=document.getElementById('cfg-ai-key').value.trim();
+    const model=document.getElementById('cfg-ai-model').value.trim();
+    const baseurl=document.getElementById('cfg-ai-baseurl').value.trim();
+    const lang=document.getElementById('cfg-ai-language').value.trim();
+    const maxtok=parseInt(document.getElementById('cfg-ai-maxtokens').value);
+    if(!key&&!model){delete cfg.ai;}else{
+      cfg.ai={provider};
+      if(model)cfg.ai.model=model;
+      if(key)cfg.ai.api_key=key;
+      if(baseurl)cfg.ai.base_url=baseurl;
+      if(lang)cfg.ai.language=lang;
+      if(!isNaN(maxtok))cfg.ai.max_tokens=maxtok;
+    }
   }
   const newYaml=jsyaml.dump(cfg,{indent:2,lineWidth:-1});
   const saveRes=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:newYaml})});

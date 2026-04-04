@@ -17,3 +17,7 @@ click>=8.1.0
 # Uncomment for dot_map with OpenStreetMap basemap (basemap: true):
 # contextily>=1.6.0
 # pyproj>=3.6.0
+# Uncomment for AI narrative generation (OpenAI-compatible: OpenAI, Azure, Groq, Mistral, Ollama):
+# openai>=1.0.0
+# Uncomment for AI narrative generation (Anthropic Claude):
+# anthropic>=0.20.0

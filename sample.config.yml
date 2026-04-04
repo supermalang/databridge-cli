@@ -182,3 +182,14 @@ report:
   title: Monitoring Report
   period: Q1 2025
   # split_by: Village   # export_label of a column — generates one report per unique value
+
+# AI narrative generation — fills {{ summary_text }}, {{ observations }}, {{ recommendations }}
+# ai:
+#   provider: openai          # openai | anthropic
+#   model: gpt-4o             # gpt-4o | claude-sonnet-4-6 | mistral-large | etc.
+#   api_key: env:OPENAI_API_KEY
+#   base_url: null            # optional: Azure, Groq, Mistral, Ollama endpoint
+#   language: English         # language for narrative output
+#   max_tokens: 1500
+#   # custom_prompt: |        # optional: override the system prompt entirely
+#   #   You are a humanitarian reporting assistant. ...
