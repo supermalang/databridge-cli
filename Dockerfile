@@ -483,7 +483,10 @@ header h1{font-size:16px;font-weight:600}
             <div class="form-section-title">
               Questions
               <span style="font-weight:normal;font-size:11px;color:var(--muted);">Edit Export label to rename columns used in charts and templates.</span>
-              <span style="margin-left:auto;display:flex;gap:8px;">
+              <span style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+                <span id="q-sel-count" style="display:none;font-size:11px;font-weight:normal;color:var(--muted);"></span>
+                <button id="btn-keep-sel" class="btn btn-ghost btn-sm" style="display:none;" onclick="keepSelected()">Keep selected</button>
+                <button id="btn-del-sel" class="btn btn-danger btn-sm" style="display:none;" onclick="deleteSelected()">Delete selected</button>
                 <button class="btn btn-ghost btn-sm" onclick="loadQuestions()">↺ Refresh</button>
                 <button class="btn btn-primary btn-sm" onclick="saveQuestions()">Save changes</button>
               </span>
@@ -712,9 +715,15 @@ async function loadQuestions(){
   c.innerHTML='<p class="empty-state">Loading…</p>';
   const data=await(await fetch('/api/questions')).json();
   _questions=data.questions||[];
+  updateSelectionUI();
   if(!_questions.length){c.innerHTML='<p class="empty-state">No questions yet. Run Fetch questions first.</p>';return;}
-  c.innerHTML='<table class="file-table"><thead><tr><th>kobo_key</th><th>Label</th><th>Type</th><th>Category</th><th style="min-width:180px;">Export label <span style="font-weight:normal;color:var(--muted)">(editable)</span></th></tr></thead><tbody>'+
-    _questions.map((q,i)=>`<tr>
+  c.innerHTML='<table class="file-table"><thead><tr>'+
+    '<th style="width:32px;"><input type="checkbox" id="q-check-all" onchange="toggleAllQuestions(this.checked)" title="Select all"></th>'+
+    '<th>kobo_key</th><th>Label</th><th>Type</th><th>Category</th>'+
+    '<th style="min-width:180px;">Export label <span style="font-weight:normal;color:var(--muted)">(editable)</span></th>'+
+    '</tr></thead><tbody>'+
+    _questions.map((q,i)=>`<tr id="qrow-${i}">
+      <td><input type="checkbox" class="q-check" data-idx="${i}" onchange="updateSelectionUI()"></td>
       <td style="color:var(--muted);font-size:11px;font-family:monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${q.kobo_key||''}">${q.kobo_key||''}</td>
       <td style="font-size:12px;">${q.label||''}</td>
       <td style="color:var(--muted);font-size:11px;">${q.type||''}</td>
@@ -722,6 +731,44 @@ async function loadQuestions(){
       <td><input class="export-label-input" data-idx="${i}" value="${(q.export_label||'').replace(/"/g,'&quot;')}" style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;" oninput="markDirty(this)"></td>
     </tr>`).join('')+
     '</tbody></table>';
+}
+function toggleAllQuestions(checked){
+  document.querySelectorAll('.q-check').forEach(cb=>cb.checked=checked);
+  updateSelectionUI();
+}
+function updateSelectionUI(){
+  const checked=document.querySelectorAll('.q-check:checked');
+  const n=checked.length;
+  const countEl=document.getElementById('q-sel-count');
+  const keepBtn=document.getElementById('btn-keep-sel');
+  const delBtn=document.getElementById('btn-del-sel');
+  if(!countEl)return;
+  if(n>0){
+    countEl.textContent=n+' selected';countEl.style.display='inline';
+    keepBtn.style.display='inline-block';delBtn.style.display='inline-block';
+  }else{
+    countEl.style.display='none';keepBtn.style.display='none';delBtn.style.display='none';
+  }
+}
+function getSelectedIndices(){
+  return Array.from(document.querySelectorAll('.q-check:checked')).map(cb=>parseInt(cb.dataset.idx));
+}
+function deleteSelected(){
+  const indices=new Set(getSelectedIndices());
+  if(!indices.size)return;
+  if(!confirm(`Delete ${indices.size} question(s)? This will be applied when you click Save changes.`))return;
+  _questions=_questions.filter((_,i)=>!indices.has(i));
+  loadQuestions();
+  showMsg(`${indices.size} question(s) removed — click Save changes to persist`,'ok');
+}
+function keepSelected(){
+  const indices=new Set(getSelectedIndices());
+  if(!indices.size)return;
+  const remove=_questions.length-indices.size;
+  if(!confirm(`Keep only ${indices.size} selected question(s) and remove the other ${remove}? This will be applied when you click Save changes.`))return;
+  _questions=_questions.filter((_,i)=>indices.has(i));
+  loadQuestions();
+  showMsg(`Kept ${indices.size} question(s), removed ${remove} — click Save changes to persist`,'ok');
 }
 function markDirty(input){
   const i=parseInt(input.dataset.idx);
