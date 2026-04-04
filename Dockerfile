@@ -350,6 +350,17 @@ header h1{font-size:16px;font-weight:600}
 .CodeMirror{height:100%!important;font-size:13px!important;font-family:'Menlo','Monaco',monospace!important}
 .config-msg{font-size:12px;padding:6px 10px;border-radius:4px}
 .config-msg.ok{background:#d1fae5;color:#065f46}.config-msg.err{background:#fee2e2;color:#991b1b}
+.config-view-toggle{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;}
+.view-btn{padding:4px 16px;font-size:12px;font-weight:500;border:none;background:transparent;cursor:pointer;color:var(--muted);}
+.view-btn.active{background:var(--teal);color:#fff;}
+.form-section{border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;}
+.form-section-title{font-size:13px;font-weight:600;margin-bottom:12px;color:var(--text);display:flex;align-items:center;gap:10px;}
+.form-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.form-row label{min-width:90px;font-size:12px;color:var(--muted);font-weight:500;}
+.form-row input,.form-row select{flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;}
+.filter-row{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
+.filter-row input{flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:monospace;}
+.filter-row button{padding:4px 8px;border:none;background:#fee2e2;color:#991b1b;border-radius:4px;cursor:pointer;font-size:12px;}
 .reports-pane{padding:20px;display:flex;flex-direction:column;gap:14px}
 .reports-pane h2{font-size:15px;font-weight:600}
 .file-table{width:100%;border-collapse:collapse}
@@ -392,7 +403,6 @@ header h1{font-size:16px;font-weight:600}
     <div class="tabs-bar">
       <div class="tab active" data-tab="dashboard">Dashboard</div>
       <div class="tab" data-tab="config">Config</div>
-      <div class="tab" data-tab="questions">Questions</div>
       <div class="tab" data-tab="reports">Reports</div>
       <div class="tab" data-tab="templates">Templates</div>
       <div class="tab" data-tab="terminal">Terminal</div>
@@ -446,30 +456,77 @@ header h1{font-size:16px;font-weight:600}
         </div>
       </div>
     </div>
-    <div class="tab-content" id="tab-questions">
-      <div class="reports-pane">
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-          <h2>Questions</h2>
-          <span style="color:var(--muted);font-size:12px;">Edit Export label to rename columns used in charts and templates.</span>
-          <span style="margin-left:auto;display:flex;gap:8px;">
-            <button class="btn btn-ghost btn-sm" onclick="loadQuestions()">↺ Refresh</button>
-            <button class="btn btn-primary btn-sm" onclick="saveQuestions()">Save changes</button>
-          </span>
-        </div>
-        <div id="questions-msg" style="display:none;margin:4px 0;font-size:12px;"></div>
-        <div id="questions-container"><p class="empty-state">Loading…</p></div>
-      </div>
-    </div>
     <div class="tab-content" id="tab-config">
       <div class="config-pane">
         <div class="config-toolbar">
-          <strong style="font-size:14px;">config.yml</strong>
-          <span class="info">Edit directly — saved to the mounted volume.</span>
+          <div class="config-view-toggle">
+            <button class="view-btn active" id="btn-view-form" onclick="switchView('form')">Form</button>
+            <button class="view-btn" id="btn-view-yaml" onclick="switchView('yaml')">YAML</button>
+          </div>
           <span id="config-msg" class="config-msg" style="display:none;"></span>
-          <button class="btn btn-primary btn-sm" onclick="saveConfig()">Save</button>
-          <button class="btn btn-ghost btn-sm" onclick="loadConfig()">Reload</button>
+          <span id="yaml-toolbar" style="display:none;gap:8px;margin-left:auto;">
+            <button class="btn btn-ghost btn-sm" onclick="loadConfig()">↺ Reload</button>
+            <button class="btn btn-primary btn-sm" onclick="saveConfig()">Save YAML</button>
+          </span>
         </div>
-        <div class="editor-wrap"><textarea id="config-editor"></textarea></div>
+        <div id="config-form-view" style="display:flex;flex-direction:column;flex:1;overflow-y:auto;padding:4px 0 20px;">
+          <div class="form-section">
+            <div class="form-section-title">API &amp; Form</div>
+            <div class="form-row"><label>Platform</label><select id="cfg-platform"><option value="kobo">Kobo Toolbox</option><option value="ona">Ona</option></select></div>
+            <div class="form-row"><label>API URL</label><input id="cfg-url" type="text" placeholder="https://kf.kobotoolbox.org/api/v2"></div>
+            <div class="form-row"><label>Token</label><input id="cfg-token" type="text" placeholder="env:KOBO_TOKEN"></div>
+            <div class="form-row"><label>Form UID</label><input id="cfg-uid" type="text" placeholder="aAbBcCdDeEfFgGhH"></div>
+            <div class="form-row"><label>Alias</label><input id="cfg-alias" type="text" placeholder="monitoring_survey"></div>
+            <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('api')">Save</button></div>
+          </div>
+          <div class="form-section">
+            <div class="form-section-title">
+              Questions
+              <span style="font-weight:normal;font-size:11px;color:var(--muted);">Edit Export label to rename columns used in charts and templates.</span>
+              <span style="margin-left:auto;display:flex;gap:8px;">
+                <button class="btn btn-ghost btn-sm" onclick="loadQuestions()">↺ Refresh</button>
+                <button class="btn btn-primary btn-sm" onclick="saveQuestions()">Save changes</button>
+              </span>
+            </div>
+            <div id="questions-msg" style="display:none;margin:4px 0;font-size:12px;"></div>
+            <div id="questions-container"><p class="empty-state">No questions yet. Run Fetch questions first.</p></div>
+          </div>
+          <div class="form-section">
+            <div class="form-section-title">
+              Filters
+              <span style="font-weight:normal;font-size:11px;color:var(--muted);">pandas .query() syntax — applied before export and chart generation</span>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="addFilter()">+ Add filter</button>
+            </div>
+            <div id="filters-container"></div>
+            <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('filters')">Save</button></div>
+          </div>
+          <div class="form-section">
+            <div class="form-section-title">Export</div>
+            <div class="form-row"><label>Format</label><select id="cfg-export-format" onchange="toggleDbFields()"><option value="csv">CSV</option><option value="json">JSON</option><option value="xlsx">XLSX</option><option value="mysql">MySQL</option><option value="postgres">PostgreSQL</option><option value="supabase">Supabase</option></select></div>
+            <div class="form-row"><label>Output dir</label><input id="cfg-export-dir" type="text" placeholder="data/processed"></div>
+            <div id="db-fields" style="display:none;">
+              <div class="form-row"><label>Host</label><input id="cfg-db-host" type="text" placeholder="localhost"></div>
+              <div class="form-row"><label>Port</label><input id="cfg-db-port" type="text" placeholder="5432"></div>
+              <div class="form-row"><label>Database</label><input id="cfg-db-name" type="text" placeholder="kobo_reports"></div>
+              <div class="form-row"><label>User</label><input id="cfg-db-user" type="text" placeholder="env:DB_USER"></div>
+              <div class="form-row"><label>Password</label><input id="cfg-db-pass" type="text" placeholder="env:DB_PASSWORD"></div>
+              <div class="form-row"><label>Table</label><input id="cfg-db-table" type="text" placeholder="submissions"></div>
+            </div>
+            <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('export')">Save</button></div>
+          </div>
+          <div class="form-section">
+            <div class="form-section-title">Report</div>
+            <div class="form-row"><label>Title</label><input id="cfg-report-title" type="text" placeholder="Monitoring Report"></div>
+            <div class="form-row"><label>Period</label><input id="cfg-report-period" type="text" placeholder="Q1 2025"></div>
+            <div class="form-row"><label>Template</label><input id="cfg-report-template" type="text" placeholder="templates/report_template.docx"></div>
+            <div class="form-row"><label>Output dir</label><input id="cfg-report-outdir" type="text" placeholder="reports"></div>
+            <div class="form-row"><label>Split by</label><input id="cfg-report-splitby" type="text" placeholder="leave empty or enter column name"></div>
+            <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('report')">Save</button></div>
+          </div>
+        </div>
+        <div id="config-yaml-view" style="display:none;flex:1;overflow:hidden;">
+          <div class="editor-wrap"><textarea id="config-editor"></textarea></div>
+        </div>
       </div>
     </div>
     <div class="tab-content" id="tab-reports">
@@ -521,8 +578,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
     document.querySelectorAll('.tab,.tab-content').forEach(el=>el.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
-    if(tab.dataset.tab==='config'&&!editor.getValue())loadConfig();
-    if(tab.dataset.tab==='questions')loadQuestions();
+    if(tab.dataset.tab==='config')switchView('form');
     if(tab.dataset.tab==='reports'){loadReports();loadDataFiles();}
     if(tab.dataset.tab==='templates')loadTemplates();
     if(tab.dataset.tab==='terminal'&&!terminalLoaded){
@@ -546,6 +602,95 @@ async function saveConfig(){
   if(res.ok)loadSplitByOptions();
 }
 function showMsg(t,type){const el=document.getElementById('config-msg');el.textContent=t;el.className='config-msg '+type;el.style.display='inline-block';setTimeout(()=>el.style.display='none',3000);}
+function switchView(view){
+  document.getElementById('config-form-view').style.display=view==='form'?'flex':'none';
+  document.getElementById('config-yaml-view').style.display=view==='yaml'?'flex':'none';
+  document.getElementById('yaml-toolbar').style.display=view==='yaml'?'flex':'none';
+  document.getElementById('btn-view-form').classList.toggle('active',view==='form');
+  document.getElementById('btn-view-yaml').classList.toggle('active',view==='yaml');
+  if(view==='form')loadFormValues();
+  if(view==='yaml'&&!editor.getValue())loadConfig();
+}
+let _filters=[];
+function renderFilters(){
+  const c=document.getElementById('filters-container');
+  c.innerHTML=_filters.map((f,i)=>`<div class="filter-row"><input value="${(f||'').replace(/"/g,'&quot;')}" oninput="_filters[${i}]=this.value" placeholder="e.g. Age > 0"><button onclick="_filters.splice(${i},1);renderFilters()">✕</button></div>`).join('');
+}
+function addFilter(){_filters.push('');renderFilters();const inputs=document.querySelectorAll('.filter-row input');if(inputs.length)inputs[inputs.length-1].focus();}
+function toggleDbFields(){
+  const fmt=document.getElementById('cfg-export-format').value;
+  document.getElementById('db-fields').style.display=['mysql','postgres','supabase'].includes(fmt)?'block':'none';
+}
+async function loadFormValues(){
+  const res=await fetch('/api/config');const data=await res.json();
+  const cfg=jsyaml.load(data.content||'')||{};
+  const api=cfg.api||{},form=cfg.form||{},exp=cfg.export||{},rep=cfg.report||{};
+  document.getElementById('cfg-platform').value=api.platform||'kobo';
+  document.getElementById('cfg-url').value=api.url||'';
+  document.getElementById('cfg-token').value=api.token||'';
+  document.getElementById('cfg-uid').value=form.uid||'';
+  document.getElementById('cfg-alias').value=form.alias||'';
+  document.getElementById('cfg-export-format').value=exp.format||'csv';
+  document.getElementById('cfg-export-dir').value=exp.output_dir||'data/processed';
+  const db=exp.database||{};
+  document.getElementById('cfg-db-host').value=db.host||'localhost';
+  document.getElementById('cfg-db-port').value=String(db.port||'5432');
+  document.getElementById('cfg-db-name').value=db.name||'';
+  document.getElementById('cfg-db-user').value=db.user||'';
+  document.getElementById('cfg-db-pass').value=db.password||'';
+  document.getElementById('cfg-db-table').value=db.table||'submissions';
+  document.getElementById('cfg-report-title').value=rep.title||'';
+  document.getElementById('cfg-report-period').value=rep.period||'';
+  document.getElementById('cfg-report-template').value=rep.template||'templates/report_template.docx';
+  document.getElementById('cfg-report-outdir').value=rep.output_dir||'reports';
+  document.getElementById('cfg-report-splitby').value=rep.split_by||'';
+  _filters=Array.isArray(cfg.filters)?cfg.filters:[];
+  renderFilters();
+  toggleDbFields();
+  loadQuestions();
+}
+async function saveFormSection(section){
+  const res=await fetch('/api/config');const data=await res.json();
+  let cfg=jsyaml.load(data.content||'')||{};
+  if(section==='api'){
+    cfg.api=cfg.api||{};
+    cfg.api.platform=document.getElementById('cfg-platform').value;
+    cfg.api.url=document.getElementById('cfg-url').value;
+    cfg.api.token=document.getElementById('cfg-token').value;
+    cfg.form=cfg.form||{};
+    cfg.form.uid=document.getElementById('cfg-uid').value;
+    cfg.form.alias=document.getElementById('cfg-alias').value;
+  }else if(section==='filters'){
+    cfg.filters=_filters.filter(f=>f.trim());
+  }else if(section==='export'){
+    const fmt=document.getElementById('cfg-export-format').value;
+    cfg.export=cfg.export||{};
+    cfg.export.format=fmt;
+    cfg.export.output_dir=document.getElementById('cfg-export-dir').value;
+    if(['mysql','postgres','supabase'].includes(fmt)){
+      cfg.export.database=cfg.export.database||{};
+      cfg.export.database.host=document.getElementById('cfg-db-host').value;
+      cfg.export.database.port=document.getElementById('cfg-db-port').value;
+      cfg.export.database.name=document.getElementById('cfg-db-name').value;
+      cfg.export.database.user=document.getElementById('cfg-db-user').value;
+      cfg.export.database.password=document.getElementById('cfg-db-pass').value;
+      cfg.export.database.table=document.getElementById('cfg-db-table').value;
+    }
+  }else if(section==='report'){
+    cfg.report=cfg.report||{};
+    cfg.report.title=document.getElementById('cfg-report-title').value;
+    cfg.report.period=document.getElementById('cfg-report-period').value;
+    cfg.report.template=document.getElementById('cfg-report-template').value;
+    cfg.report.output_dir=document.getElementById('cfg-report-outdir').value;
+    const sb=document.getElementById('cfg-report-splitby').value.trim();
+    if(sb)cfg.report.split_by=sb;else delete cfg.report.split_by;
+  }
+  const newYaml=jsyaml.dump(cfg,{indent:2,lineWidth:-1});
+  const saveRes=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:newYaml})});
+  const saveData=await saveRes.json();
+  showMsg(saveRes.ok?'Saved ✓':(saveData.detail||'Failed'),saveRes.ok?'ok':'err');
+  if(saveRes.ok)loadSplitByOptions();
+}
 function getSample(id){const v=parseInt(document.getElementById(id).value);return isNaN(v)?null:v;}
 function getSplitBy(){const v=document.getElementById('split-by-report').value;return v||null;}
 async function loadSplitByOptions(){
