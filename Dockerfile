@@ -872,7 +872,7 @@ async function testAiConnection(){
   const payload={
     provider:document.getElementById('cfg-ai-provider').value,
     api_key:document.getElementById('cfg-ai-key').value.trim(),
-    model:document.getElementById('cfg-ai-model').value.trim()||'gpt-4o',
+    model:document.getElementById('cfg-ai-model').value.trim()||(document.getElementById('cfg-ai-provider').value==='anthropic'?'claude-sonnet-4-6':'gpt-4o'),
     base_url:document.getElementById('cfg-ai-baseurl').value.trim()||null,
   };
   try{
@@ -1008,11 +1008,8 @@ async function loadSplitByOptions(){
   }catch(e){}
 }
 let _questions=[];
-async function loadQuestions(){
+function renderQuestions(){
   const c=document.getElementById('questions-container');
-  c.innerHTML='<p class="empty-state">Loading…</p>';
-  const data=await(await fetch('/api/questions')).json();
-  _questions=data.questions||[];
   updateSelectionUI();
   if(!_questions.length){c.innerHTML='<p class="empty-state">No questions yet. Run Fetch questions first.</p>';return;}
   c.innerHTML='<table class="file-table"><thead><tr>'+
@@ -1029,6 +1026,13 @@ async function loadQuestions(){
       <td><input class="export-label-input" data-idx="${i}" value="${(q.export_label||'').replace(/"/g,'&quot;')}" style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;" oninput="markDirty(this)"></td>
     </tr>`).join('')+
     '</tbody></table>';
+}
+async function loadQuestions(){
+  const c=document.getElementById('questions-container');
+  c.innerHTML='<p class="empty-state">Loading…</p>';
+  const data=await(await fetch('/api/questions')).json();
+  _questions=data.questions||[];
+  renderQuestions();
 }
 function toggleAllQuestions(checked){
   document.querySelectorAll('.q-check').forEach(cb=>cb.checked=checked);
@@ -1056,7 +1060,7 @@ function deleteSelected(){
   if(!indices.size)return;
   if(!confirm(`Delete ${indices.size} question(s)? This will be applied when you click Save changes.`))return;
   _questions=_questions.filter((_,i)=>!indices.has(i));
-  loadQuestions();
+  renderQuestions();
   showMsg(`${indices.size} question(s) removed — click Save changes to persist`,'ok');
 }
 function keepSelected(){
@@ -1065,7 +1069,7 @@ function keepSelected(){
   const remove=_questions.length-indices.size;
   if(!confirm(`Keep only ${indices.size} selected question(s) and remove the other ${remove}? This will be applied when you click Save changes.`))return;
   _questions=_questions.filter((_,i)=>indices.has(i));
-  loadQuestions();
+  renderQuestions();
   showMsg(`Kept ${indices.size} question(s), removed ${remove} — click Save changes to persist`,'ok');
 }
 function markDirty(input){
