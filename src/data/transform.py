@@ -1,10 +1,17 @@
-import json, logging
+import json, logging, unicodedata, re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 log = logging.getLogger(__name__)
+
+
+def _norm(s: str) -> str:
+    """Lowercase, strip accents, collapse all non-alphanumeric to empty string."""
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
 def _decode_multi(value, choices: dict) -> str:
@@ -92,7 +99,22 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
                 )
                 col_map[candidates[0]] = label
             else:
-                missing.append(key)
+                # Final fallback: unicode-normalize both sides, compare by field name.
+                # Catches e.g. kobo_key "groupe_socio-économique" vs API "groupe_socioeconomique".
+                norm_field = _norm(field_name)
+                candidates_norm = [
+                    c for c in flat.columns
+                    if _norm(c) == norm_field
+                    or _norm(c.split("/")[-1]) == norm_field
+                    or _norm(c.split(".")[-1]) == norm_field
+                ]
+                if len(candidates_norm) == 1:
+                    log.warning(
+                        f"kobo_key '{key}' matched by normalisation to '{candidates_norm[0]}'"
+                    )
+                    col_map[candidates_norm[0]] = label
+                else:
+                    missing.append(key)
     if missing:
         raw_cols = sorted(flat.columns.tolist())
         log.warning(f"Keys not found in submissions: {missing}")
