@@ -321,6 +321,35 @@ async def ai_suggest(payload: AISuggestPayload):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def _pick_preview_df(df, questions_needed, _questions_cfg=None):
+    """If any requested columns are missing from df, scan DATA_DIR for a repeat table file that has them.
+
+    Returns the best-matching DataFrame (most columns found).
+    """
+    import pandas as pd
+    missing = [q for q in questions_needed if q not in df.columns]
+    if not missing:
+        return df
+    best_df = df
+    best_hits = sum(1 for q in questions_needed if q in df.columns)
+    for alt in sorted(DATA_DIR.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True):
+        try:
+            alt_df = pd.read_csv(alt)
+            if _questions_cfg:
+                try:
+                    from src.data.transform import apply_choice_labels
+                    alt_df = apply_choice_labels(alt_df, _questions_cfg)
+                except Exception:
+                    pass
+            hits = sum(1 for q in questions_needed if q in alt_df.columns)
+            if hits > best_hits:
+                best_hits = hits
+                best_df = alt_df
+        except Exception:
+            continue
+    return best_df
+
+
 class ChartPreviewPayload(BaseModel):
     chart: dict
     data_file: Optional[str] = None
@@ -329,6 +358,7 @@ class ChartPreviewPayload(BaseModel):
 async def preview_chart(payload: ChartPreviewPayload):
     import pandas as pd
     from src.reports.charts import generate_chart
+    _questions = []
     if payload.data_file:
         data_path = DATA_DIR / payload.data_file
         if "/" in payload.data_file or ".." in payload.data_file:
@@ -357,6 +387,7 @@ async def preview_chart(payload: ChartPreviewPayload):
     except Exception:
         pass
     questions = payload.chart.get("questions", [])
+    df = _pick_preview_df(df, questions, _questions)
     missing = [q for q in questions if q not in df.columns]
     if missing:
         available = sorted(df.columns.tolist())
@@ -381,6 +412,7 @@ class IndicatorPreviewPayload(BaseModel):
 async def preview_indicator(payload: IndicatorPreviewPayload):
     import pandas as pd
     from src.reports.indicators import compute_indicators
+    _questions = []
     if payload.data_file:
         data_path = DATA_DIR / payload.data_file
         if "/" in payload.data_file or ".." in payload.data_file:
@@ -410,6 +442,8 @@ async def preview_indicator(payload: IndicatorPreviewPayload):
         pass
     ind = payload.indicator
     question = ind.get("question")
+    if question:
+        df = _pick_preview_df(df, [question], _questions)
     if question and question not in df.columns:
         available = sorted(df.columns.tolist())
         raise HTTPException(status_code=400, detail=f"Column '{question}' not found in data. Available: {available}")
@@ -429,6 +463,7 @@ class SummaryPreviewPayload(BaseModel):
 async def preview_summary(payload: SummaryPreviewPayload):
     import pandas as pd
     from src.reports.summaries import _compute_summary
+    _questions = []
     if payload.data_file:
         data_path = DATA_DIR / payload.data_file
         if "/" in payload.data_file or ".." in payload.data_file:
@@ -463,6 +498,7 @@ async def preview_summary(payload: SummaryPreviewPayload):
         pass
     s = payload.summary
     questions = s.get("questions", [])
+    df = _pick_preview_df(df, questions, _questions)
     missing = [q for q in questions if q not in df.columns]
     if missing:
         available = sorted(df.columns.tolist())
