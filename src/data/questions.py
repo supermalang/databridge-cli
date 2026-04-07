@@ -46,10 +46,24 @@ def _parse_schema(asset: Dict, platform: str = "kobo") -> List[Dict]:
         return _parse_ona_recursive(survey, [], [])
     else:
         survey = asset.get("content", {}).get("survey", [])
-        return _parse_kobo_flat(survey)
+        choices_raw = asset.get("content", {}).get("choices", [])
+        choice_map = _build_kobo_choice_map(choices_raw)
+        return _parse_kobo_flat(survey, choice_map)
 
 
-def _parse_kobo_flat(survey: List[Dict]) -> List[Dict]:
+def _build_kobo_choice_map(choices_raw: List[Dict]) -> Dict[str, Dict[str, str]]:
+    """Build {list_name: {code: label}} from asset["content"]["choices"]."""
+    result: Dict[str, Dict[str, str]] = {}
+    for item in choices_raw:
+        list_name = item.get("list_name", "")
+        name = str(item.get("name", "")).strip()
+        label = _resolve_label(item.get("label", name))
+        if list_name and name:
+            result.setdefault(list_name, {})[name] = label
+    return result
+
+
+def _parse_kobo_flat(survey: List[Dict], choice_map: Optional[Dict] = None) -> List[Dict]:
     """Parse Kobo's flat survey list with begin_group/end_group markers."""
     questions: List[Dict] = []
     group_stack: List[str] = []
@@ -70,7 +84,7 @@ def _parse_kobo_flat(survey: List[Dict]) -> List[Dict]:
             if group_stack: group_stack.pop()
             if repeat_stack: repeat_stack.pop()
             continue
-        q = _make_question(item, raw_type, group_stack, repeat_stack)
+        q = _make_question(item, raw_type, group_stack, repeat_stack, choice_map)
         if q:
             questions.append(q)
     return questions
@@ -94,13 +108,22 @@ def _parse_ona_recursive(children: List[Dict], group_stack: List[str], repeat_st
             repeat_stack.pop()
             group_stack.pop()
         else:
-            q = _make_question(item, raw_type, group_stack, repeat_stack)
+            # For Ona, choices are embedded as children of select questions
+            ona_choices = None
+            base_type = raw_type.strip().split()[0]
+            if base_type in ("select_one", "select_multiple") and nested:
+                ona_choices = {
+                    str(c.get("name", "")).strip(): _resolve_label(c.get("label", c.get("name", "")))
+                    for c in nested if c.get("name")
+                }
+            q = _make_question(item, raw_type, group_stack, repeat_stack, ona_choices)
             if q:
                 questions.append(q)
     return questions
 
 
-def _make_question(item: Dict, raw_type: str, group_stack: List[str], repeat_stack: List[str]) -> Optional[Dict]:
+def _make_question(item: Dict, raw_type: str, group_stack: List[str], repeat_stack: List[str],
+                   choice_map: Optional[Dict] = None) -> Optional[Dict]:
     """Build a question dict from a survey item, or return None if it should be skipped."""
     parts = raw_type.strip().split()
     q_type = parts[0] if parts else raw_type
@@ -114,11 +137,19 @@ def _make_question(item: Dict, raw_type: str, group_stack: List[str], repeat_sta
     kobo_key = f"{group_path}/{name}" if group_path else name
     label = _resolve_label(item.get("label", name))
     repeat_group = repeat_stack[-1] if repeat_stack else None
+    # Resolve choices: for Kobo, look up by choice_list name; for Ona, choice_map is already the inline dict
+    choices = None
+    if choice_map:
+        if choice_list:
+            choices = choice_map.get(choice_list) or None
+        elif q_type in ("select_one", "select_multiple"):
+            # Ona inline: choice_map passed directly as {code: label}
+            choices = choice_map or None
     return {
         "kobo_key": kobo_key, "label": label, "type": q_type,
         "category": TYPE_CATEGORY_MAP.get(q_type, "undefined"),
         "group": group_path, "choice_list": choice_list, "export_label": label,
-        "repeat_group": repeat_group,
+        "repeat_group": repeat_group, "choices": choices,
     }
 
 def _resolve_label(label: Any) -> str:

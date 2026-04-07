@@ -6,6 +6,14 @@ import pandas as pd
 log = logging.getLogger(__name__)
 
 
+def _decode_multi(value, choices: dict) -> str:
+    """Decode space-separated select_multiple codes to human-readable labels."""
+    if not value or str(value).strip() in ("", "nan"):
+        return value
+    parts = str(value).strip().split()
+    return " ".join(choices.get(p, p) for p in parts)
+
+
 def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """Load submissions into a main DataFrame + separate DataFrames for repeat groups.
 
@@ -62,6 +70,23 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
         label = q.get("export_label") or q.get("label") or q["kobo_key"]
         if label in df.columns:
             df[label] = _cast(df[label], q.get("category", "undefined"))
+
+    # Decode select choice codes to human-readable labels
+    for q in main_questions:
+        choices = q.get("choices")
+        if not choices:
+            continue
+        col = q.get("export_label") or q.get("label") or q["kobo_key"]
+        if col not in df.columns:
+            continue
+        if q.get("type") == "select_multiple":
+            df[col] = df[col].apply(lambda v, ch=choices: _decode_multi(v, ch))
+        else:
+            df[col] = df[col].apply(
+                lambda v, ch=choices: ch.get(str(v).strip(), v)
+                if pd.notna(v) and str(v).strip() not in ("", "nan") else v
+            )
+
     log.info(f"Loaded {len(df)} submissions, {len(df.columns)} columns (main table)")
 
     # --- Repeat tables ---
@@ -90,6 +115,20 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
                 label = q.get("export_label") or q.get("label") or q["kobo_key"]
                 if label in rdf.columns:
                     rdf[label] = _cast(rdf[label], q.get("category", "undefined"))
+            for q in group_questions:
+                choices = q.get("choices")
+                if not choices:
+                    continue
+                label = q.get("export_label") or q.get("label") or q["kobo_key"]
+                if label not in rdf.columns:
+                    continue
+                if q.get("type") == "select_multiple":
+                    rdf[label] = rdf[label].apply(lambda v, ch=choices: _decode_multi(v, ch))
+                else:
+                    rdf[label] = rdf[label].apply(
+                        lambda v, ch=choices: ch.get(str(v).strip(), v)
+                        if pd.notna(v) and str(v).strip() not in ("", "nan") else v
+                    )
             repeat_tables[group_name] = rdf
             log.info(f"Loaded {len(rdf)} rows for repeat group '{group_name}'")
         else:
