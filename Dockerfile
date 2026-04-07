@@ -189,9 +189,11 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "box_plot|heatmap|treemap|waterfall|funnel|table|bullet_chart|likert|scorecard|pyramid|dot_map. "
             "Valid options keys: width_inches, color, top_n, sort, normalize, freq, bins, target, stat, "
             "columns, male_value, female_value, color_by, xlabel, ylabel. "
-            "Use exact column names from the provided list. Return JSON only, no markdown fences."
+            "CRITICAL: the questions array must contain ONLY exact column names copied verbatim from the "
+            "provided list — never descriptions, never sentences, never translated text. "
+            "Return JSON only, no markdown fences."
         )
-        user = f"Available columns (name, category): {labels}\nRequest: {prompt}"
+        user = f"Available columns (name, category): {labels}\nRequest: {prompt}\n\nRemember: questions array values must be exact column names from the list above."
     else:
         system = (
             "You are a data analyst. Given survey columns with their categories and a description, return a single indicator "
@@ -1326,7 +1328,12 @@ function updateChartForm(){
   document.getElementById('cm-type-hint').textContent=meta.hint||'';
   // question inputs
   const wrap=document.getElementById('cm-questions-wrap');
-  wrap.innerHTML=meta.q.map((lbl,i)=>`<div class="form-row"><label>${lbl}</label><div style="flex:1;display:flex;flex-direction:column;gap:4px;"><input class="cm-q-input" data-qi="${i}" placeholder="column name" oninput="showColumnChoices(this)"><div class="cm-choices-hint" style="display:none;flex-wrap:wrap;gap:3px;align-items:center;padding:2px 0;"></div></div></div>`).join('');
+  const colNames=(_questions||[]).map(q=>q.export_label||q.label||q.kobo_key).filter(Boolean);
+  const dlId='cm-col-datalist';
+  let dl=document.getElementById(dlId);
+  if(!dl){dl=document.createElement('datalist');dl.id=dlId;document.body.appendChild(dl);}
+  dl.innerHTML=colNames.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+  wrap.innerHTML=meta.q.map((lbl,i)=>`<div class="form-row"><label>${lbl}</label><div style="flex:1;display:flex;flex-direction:column;gap:4px;"><input class="cm-q-input" data-qi="${i}" placeholder="column name" list="${dlId}" oninput="showColumnChoices(this)"><div class="cm-choices-hint" style="display:none;flex-wrap:wrap;gap:3px;align-items:center;padding:2px 0;"></div></div></div>`).join('');
   // option rows visibility
   Object.entries(CHART_OPT_ROWS).forEach(([rowId,types])=>{
     const el=document.getElementById(rowId);
