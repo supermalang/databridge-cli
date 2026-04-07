@@ -228,9 +228,11 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "Use count when the user wants the total number of non-null rows. "
             "The optional dedup_by field (string) deduplicates rows by a key column before computing any stat — use it when the user wants to measure something per unique entity (e.g. dedup_by: Beneficiary_ID to count each beneficiary once). "
             "Valid format values: number|decimal|percent|text. "
-            "Use exact column names from the provided list. Return JSON only, no markdown fences."
+            "CRITICAL: the question field must be an exact column name copied verbatim from the provided numbered list — never invent, translate, or paraphrase column names. "
+            "Similarly, dedup_by must be an exact column name from the list if used. "
+            "Return JSON only, no markdown fences."
         )
-        user = f"Available columns (name, category): {labels}\nRequest: {prompt}"
+        user = f"Available columns:\n{labels}\n\nRequest: {prompt}\n\nRemember: question (and dedup_by if used) must be exact column names from the numbered list above."
     return system, user
 
 @app.post("/api/ai/suggest")
