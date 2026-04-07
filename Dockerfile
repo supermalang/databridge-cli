@@ -576,6 +576,46 @@ async def list_data_files():
                            "modified": datetime.fromtimestamp(s.st_mtime).strftime("%Y-%m-%d %H:%M")})
     return {"files": files}
 
+@app.get("/api/debug/raw-columns")
+async def debug_raw_columns():
+    """Fetch 1 submission and show raw API columns vs config kobo_keys."""
+    try:
+        import pandas as pd
+        from src.utils.config import load_config
+        from src.data.extract import get_client
+        cfg = load_config(CONFIG_PATH)
+        client = get_client(cfg)
+        raw = client.get_submissions(sample_size=1)
+        if not raw:
+            return {"error": "No submissions returned by API"}
+        flat = pd.json_normalize(raw)
+        raw_cols = sorted(flat.columns.tolist())
+        questions = cfg.get("questions", [])
+        mapping = []
+        for q in questions:
+            key = q.get("kobo_key", "")
+            flat_key = key.replace("/", ".")
+            field_name = key.split("/")[-1]
+            candidates = [c for c in flat.columns if c == field_name or c.endswith(f"/{field_name}") or c.endswith(f".{field_name}")]
+            if flat_key in flat.columns or key in flat.columns:
+                status = "ok"
+            elif len(candidates) == 1:
+                status = "field_match"
+            elif len(candidates) > 1:
+                status = "ambiguous"
+            else:
+                status = "MISSING"
+            mapping.append({
+                "export_label": q.get("export_label") or q.get("label", ""),
+                "kobo_key": key,
+                "repeat_group": q.get("repeat_group"),
+                "status": status,
+                "field_match": candidates[0] if len(candidates) == 1 else (candidates if len(candidates) > 1 else None),
+            })
+        return {"raw_columns": raw_cols, "mapping": mapping}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/data/download/{filename}")
 async def download_data_file(filename: str):
     if "/" in filename or ".." in filename:
