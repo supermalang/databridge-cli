@@ -90,11 +90,22 @@ def _parse_kobo_flat(survey: List[Dict], choice_map: Optional[Dict] = None) -> L
     return questions
 
 
+_ONA_TYPE_ALIASES = {
+    "select one": "select_one",
+    "select many": "select_multiple",
+    "select all that apply": "select_multiple",
+}
+
+def _normalize_ona_type(raw_type: str) -> str:
+    """Normalize Ona type strings to match Kobo conventions."""
+    return _ONA_TYPE_ALIASES.get(raw_type.strip().lower(), raw_type)
+
+
 def _parse_ona_recursive(children: List[Dict], group_stack: List[str], repeat_stack: List[str]) -> List[Dict]:
     """Parse Ona's recursive children structure."""
     questions: List[Dict] = []
     for item in children:
-        raw_type = item.get("type", "")
+        raw_type = _normalize_ona_type(item.get("type", ""))
         name = item.get("name", "")
         nested = item.get("children", [])
         if raw_type == "group" and nested:
