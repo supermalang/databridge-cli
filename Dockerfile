@@ -344,6 +344,54 @@ async def preview_chart(payload: ChartPreviewPayload):
         img_b64 = base64.b64encode(png_path.read_bytes()).decode()
     return {"image": img_b64}
 
+class IndicatorPreviewPayload(BaseModel):
+    indicator: dict
+    data_file: Optional[str] = None
+
+@app.post("/api/indicators/preview")
+async def preview_indicator(payload: IndicatorPreviewPayload):
+    import pandas as pd
+    from src.reports.indicators import compute_indicators
+    if payload.data_file:
+        data_path = DATA_DIR / payload.data_file
+        if "/" in payload.data_file or ".." in payload.data_file:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        if not data_path.exists():
+            raise HTTPException(status_code=404, detail=f"Data file not found: {payload.data_file}")
+        ext = data_path.suffix.lower()
+        if ext == ".csv": df = pd.read_csv(data_path)
+        elif ext == ".json": df = pd.read_json(data_path)
+        elif ext == ".xlsx": df = pd.read_excel(data_path)
+        else: raise HTTPException(status_code=400, detail="Unsupported file type")
+    else:
+        candidates = sorted(DATA_DIR.glob("*_data.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not candidates:
+            candidates = sorted(DATA_DIR.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not candidates:
+            raise HTTPException(status_code=400, detail="No data file found. Run Download first.")
+        df = pd.read_csv(candidates[0])
+    try:
+        async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as _f:
+            _cfg = yaml.safe_load(await _f.read()) or {}
+        _questions = _cfg.get("questions", [])
+        if _questions:
+            from src.data.transform import apply_choice_labels
+            df = apply_choice_labels(df, _questions)
+    except Exception:
+        pass
+    ind = payload.indicator
+    question = ind.get("question")
+    if question and question not in df.columns:
+        available = sorted(df.columns.tolist())
+        raise HTTPException(status_code=400, detail=f"Column '{question}' not found in data. Available: {available}")
+    try:
+        result = compute_indicators([ind], df)
+        key = f"ind_{ind.get('name', 'preview')}"
+        value = result.get(key, "N/A")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Indicator error: {e}")
+    return {"value": value, "n_rows": len(df)}
+
 @app.post("/api/run/{command}")
 async def run_command(command: str, payload: RunPayload):
     if command not in ALLOWED_COMMANDS:
@@ -1514,6 +1562,9 @@ function openIndicatorModal(idx){
   ['im-name','im-label','im-question','im-filterval','im-decimals'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('im-stat').value='count';
   document.getElementById('im-format').value='number';
+  document.getElementById('im-preview-area').innerHTML='Click Preview to compute the indicator value.';
+  document.getElementById('im-preview-area').style.color='var(--muted)';
+  loadIndicatorPreviewFileOptions();
   updateIndicatorForm();
   if(idx!==null){
     const ind=_indicators[idx];
@@ -1540,6 +1591,37 @@ function saveIndicatorFromModal(){
   else _indicators[_editIndIdx]=ind;
   renderIndicatorsList();
   closeIndicatorModal();
+}
+async function loadIndicatorPreviewFileOptions(){
+  try{
+    const data=await(await fetch('/api/data')).json();
+    const sel=document.getElementById('im-preview-file');
+    sel.innerHTML='<option value="">— auto-detect —</option>';
+    (data.files||[]).forEach(f=>{const o=document.createElement('option');o.value=f.name;o.textContent=f.name+' ('+f.size_kb+' KB)';sel.appendChild(o);});
+  }catch(e){}
+}
+async function previewIndicator(){
+  const name=document.getElementById('im-name').value.trim();
+  const question=document.getElementById('im-question').value.trim();
+  const stat=document.getElementById('im-stat').value;
+  const parea=document.getElementById('im-preview-area');
+  if(!name){parea.innerHTML='<span style="color:#dc2626;">Enter a name first.</span>';parea.style.color='';return;}
+  const ind={name,stat,format:document.getElementById('im-format').value};
+  if(question)ind.question=question;
+  const fv=document.getElementById('im-filterval').value.trim();if(fv)ind.filter_value=fv;
+  const dec=document.getElementById('im-decimals').value;if(dec!=='')ind.decimals=parseInt(dec);
+  parea.innerHTML='<span style="color:var(--muted);">Computing…</span>';parea.style.color='';
+  const dataFile=document.getElementById('im-preview-file').value||null;
+  try{
+    const res=await fetch('/api/indicators/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indicator:ind,data_file:dataFile})});
+    const data=await res.json();
+    if(res.ok){
+      const label=document.getElementById('im-label').value.trim()||name;
+      parea.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">${label}</div><div style="font-size:28px;font-weight:700;color:var(--teal-dark);">${data.value}</div><div style="font-size:11px;color:var(--muted);">${data.n_rows.toLocaleString()} rows</div></div>`;
+    }else{
+      parea.innerHTML=`<span style="color:#dc2626;">${data.detail||'Preview failed'}</span>`;
+    }
+  }catch(e){parea.innerHTML=`<span style="color:#dc2626;">Error: ${e.message}</span>`;}
 }
 loadConfig();
 function switchChartView(v){
@@ -1784,6 +1866,8 @@ async function runAiGenerateTemplate(){
         </select>
       </div>
       <div class="form-row"><label>Decimals</label><input id="im-decimals" type="number" placeholder="1" min="0" max="6" style="max-width:80px;"></div>
+      <div class="form-row" style="align-items:center;"><label>Data file</label><select id="im-preview-file" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;"><option value="">— auto-detect —</option></select></div>
+      <div id="im-preview-area" style="margin-top:8px;min-height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--muted);text-align:center;">Click Preview to compute the indicator value.</div>
     </div>
     <div id="im-ai-view" style="display:none;padding:18px;">
       <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Describe the indicator you need. The AI will suggest a configuration using your available columns.</p>
@@ -1800,6 +1884,7 @@ async function runAiGenerateTemplate(){
     </div>
     <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="closeIndicatorModal()">Cancel</button>
+      <button class="btn btn-ghost btn-sm" onclick="previewIndicator()">Preview</button>
       <button class="btn btn-primary btn-sm" onclick="saveIndicatorFromModal()">Save indicator</button>
     </div>
   </div>
