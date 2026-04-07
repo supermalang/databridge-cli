@@ -7,6 +7,26 @@ import pandas as pd
 log = logging.getLogger(__name__)
 
 
+def _repeat_path(q: Dict) -> str:
+    """Return the full slash-path to the repeat array for a question.
+
+    repeat_group stores only the leaf name (e.g. 'hh_members'), but the Kobo/Ona
+    submission JSON uses the full path as the key (e.g. 'household/hh_members').
+    We reconstruct it from the question's group field.
+    """
+    group = q.get("group", "")
+    repeat_name = q.get("repeat_group", "")
+    if not repeat_name:
+        return ""
+    if not group:
+        return repeat_name
+    parts = group.split("/")
+    for i, part in enumerate(parts):
+        if part == repeat_name:
+            return "/".join(parts[: i + 1])
+    return repeat_name
+
+
 def _norm(s: str) -> str:
     """Lowercase, strip accents, collapse all non-alphanumeric to empty string."""
     s = unicodedata.normalize("NFD", s)
@@ -61,7 +81,8 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
     for q in questions:
         rg = q.get("repeat_group")
         if rg:
-            repeat_groups.setdefault(rg, []).append(q)
+            full_path = _repeat_path(q)
+            repeat_groups.setdefault(full_path, []).append(q)
 
     # --- Main table ---
     flat = pd.json_normalize(submissions)
@@ -257,7 +278,7 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
             df.to_excel(writer, sheet_name="main", index=False)
             if repeat_tables:
                 for name, rdf in repeat_tables.items():
-                    sheet_name = name[:31]  # Excel sheet name limit
+                    sheet_name = name.replace("/", "_")[:31]  # Excel sheet name limit
                     rdf.to_excel(writer, sheet_name=sheet_name, index=False)
         log.info(f"Data exported → {out}")
     else:
@@ -272,11 +293,12 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
 
         if repeat_tables:
             for name, rdf in repeat_tables.items():
+                safe_name = name.replace("/", "_")
                 if fmt == "csv":
-                    rout = out_dir / f"{alias}_{name}_{ts}.csv"
+                    rout = out_dir / f"{alias}_{safe_name}_{ts}.csv"
                     rdf.to_csv(rout, index=False, encoding="utf-8-sig")
                 elif fmt == "json":
-                    rout = out_dir / f"{alias}_{name}_{ts}.json"
+                    rout = out_dir / f"{alias}_{safe_name}_{ts}.json"
                     rdf.to_json(rout, orient="records", force_ascii=False, indent=2, date_format="iso")
                 log.info(f"Repeat group exported → {rout}")
 
@@ -293,8 +315,9 @@ def _export_sql(df: pd.DataFrame, cfg: Dict, dialect: str, repeat_tables: Dict[s
     log.info(f"Data exported → {dialect}://{h}:{p}/{n}.{t}")
     if repeat_tables:
         for name, rdf in repeat_tables.items():
-            rdf.to_sql(f"{t}_{name}", engine, if_exists="replace", index=False)
-            log.info(f"Repeat group exported → {dialect}://{h}:{p}/{n}.{t}_{name}")
+            safe_name = name.replace("/", "_")
+            rdf.to_sql(f"{t}_{safe_name}", engine, if_exists="replace", index=False)
+            log.info(f"Repeat group exported → {dialect}://{h}:{p}/{n}.{t}_{safe_name}")
 
 
 def _export_supabase(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
@@ -310,10 +333,11 @@ def _export_supabase(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.Da
     log.info(f"Data exported → Supabase '{table}' ({len(records)} rows)")
     if repeat_tables:
         for name, rdf in repeat_tables.items():
+            safe_name = name.replace("/", "_")
             recs = json.loads(rdf.to_json(orient="records", date_format="iso", force_ascii=False))
             for i in range(0, len(recs), 500):
-                client.table(f"{table}_{name}").upsert(recs[i:i + 500]).execute()
-            log.info(f"Repeat group exported → Supabase '{table}_{name}' ({len(recs)} rows)")
+                client.table(f"{table}_{safe_name}").upsert(recs[i:i + 500]).execute()
+            log.info(f"Repeat group exported → Supabase '{table}_{safe_name}' ({len(recs)} rows)")
 
 
 def load_processed_data(cfg: Dict, sample_size: Optional[int] = None) -> pd.DataFrame:
