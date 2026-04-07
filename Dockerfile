@@ -196,10 +196,10 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "line/area: color,freq,xlabel,ylabel; "
             "histogram: color,bins,xlabel,ylabel; "
             "scatter/box_plot: color,xlabel,ylabel; "
-            "heatmap: xlabel; "
+            "heatmap: xlabel,ylabel; "
             "treemap/table: top_n; "
             "waterfall: color,top_n,sort,xlabel,ylabel; "
-            "funnel: color,top_n,xlabel; "
+            "funnel: color,top_n; "
             "bullet_chart: color,target,xlabel,ylabel; "
             "likert: color,top_n; "
             "scorecard: stat,columns; "
@@ -1336,8 +1336,8 @@ const CHART_OPT_ROWS={
   'cm-male-row':['pyramid'],
   'cm-female-row':['pyramid'],
   'cm-colorby-row':['dot_map'],
-  'cm-xlabel-row':['bar','horizontal_bar','stacked_bar','grouped_bar','line','area','histogram','scatter','box_plot','waterfall','funnel','bullet_chart','heatmap'],
-  'cm-ylabel-row':['bar','horizontal_bar','stacked_bar','grouped_bar','line','area','histogram','scatter','box_plot','waterfall','funnel','bullet_chart'],
+  'cm-xlabel-row':['bar','horizontal_bar','stacked_bar','grouped_bar','line','area','histogram','scatter','box_plot','waterfall','bullet_chart','heatmap'],
+  'cm-ylabel-row':['bar','horizontal_bar','stacked_bar','grouped_bar','line','area','histogram','scatter','box_plot','waterfall','bullet_chart','heatmap'],
 };
 function renderChartsList(){
   const c=document.getElementById('charts-list');

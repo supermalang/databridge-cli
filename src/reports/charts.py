@@ -229,14 +229,14 @@ def chart_scatter(df, q, title, out, opts):
 def chart_box_plot(df, q, title, out, opts):
     if len(q) < 2: raise ValueError("box_plot needs 2 questions")
     cat, num = q[0], q[1]; n = opts.get("top_n", 10)
-    _, yl = _labels(opts, "", num)
+    xl, yl = _labels(opts, cat, num)
     top_cats = df[cat].value_counts().head(n).index
     groups = [pd.to_numeric(df[df[cat]==c][num], errors="coerce").dropna() for c in top_cats]
     fig, ax = plt.subplots(figsize=_fs(opts, (8, 5)))
     bp = ax.boxplot(groups, patch_artist=True, labels=top_cats)
     for i, patch in enumerate(bp["boxes"]):
         patch.set_facecolor(PALETTE[i % len(PALETTE)]); patch.set_alpha(0.75)
-    ax.set_title(title); ax.set_ylabel(yl)
+    ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
@@ -253,7 +253,9 @@ def chart_heatmap(df, q, title, out, opts):
     for i in range(len(pivot.index)):
         for j in range(len(pivot.columns)):
             ax.text(j, i, pivot.values[i,j], ha="center", va="center", fontsize=8)
+    xl, yl = _labels(opts, c, r)
     plt.colorbar(im, ax=ax, shrink=0.7); ax.set_title(title)
+    ax.set_xlabel(xl); ax.set_ylabel(yl)
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 def chart_treemap(df, q, title, out, opts):
@@ -269,11 +271,11 @@ def chart_waterfall(df, q, title, out, opts):
     c = q[0]
     counts = _sort(_top(df[c].dropna(), opts.get("top_n", 12)), opts)
     running = counts.cumsum(); bottoms = [0] + list(running.values[:-1])
-    _, yl = _labels(opts, "", "Cumulative count")
+    xl, yl = _labels(opts, c, "Cumulative count")
     fig, ax = plt.subplots(figsize=_fs(opts, (8, 4)))
     for i, (label, val, bottom) in enumerate(zip(counts.index, counts.values, bottoms)):
         ax.bar(label, val, bottom=bottom, color=PALETTE[i % len(PALETTE)], alpha=0.85, edgecolor="white")
-    ax.set_title(title); ax.set_ylabel(yl)
+    ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
