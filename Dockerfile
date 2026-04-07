@@ -218,6 +218,25 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "Return JSON only, no markdown fences."
         )
         user = f"Available columns:\n{labels}\n\nRequest: {prompt}\n\nRemember: questions array values must be exact column names from the numbered list above — never the answer/choice values of those columns."
+    elif kind == "summary":
+        system = (
+            "You are a data analyst. Given survey columns with their categories and a description, return a single summary "
+            "config as JSON with keys: name, label, questions (array), stat, "
+            "top_n (optional), freq (optional), prompt (optional). "
+            "Valid stat values: distribution|stats|crosstab|trend|ai. "
+            "Use distribution for one categorical column (top-N breakdown). "
+            "Use stats for one numeric column (mean, median, range). "
+            "Use crosstab for two categorical columns (row x column breakdown). "
+            "Use trend for a date column, optionally with a numeric column. "
+            "Use ai only when the user explicitly wants an AI-generated paragraph. "
+            "top_n (integer, default 5): applies to distribution and crosstab. "
+            "freq (string: day|week|month|year): applies to trend only. "
+            "prompt (string): focus instruction for ai stat only. "
+            "CRITICAL: values in the questions array must be exact column names copied verbatim from the provided numbered list. "
+            "distribution and stats require exactly 1 question. crosstab and trend require 1-2 questions. ai allows 1 or more. "
+            "Return JSON only, no markdown fences."
+        )
+        user = f"Available columns:\n{labels}\n\nRequest: {prompt}\n\nRemember: questions array values must be exact column names from the numbered list above."
     else:
         system = (
             "You are a data analyst. Given survey columns with their categories and a description, return a single indicator "
@@ -1831,6 +1850,9 @@ async function loadSummaryPreviewFileOptions(){
 }
 function openSummaryModal(idx){
   _editSumIdx=idx;
+  switchSummaryView('form');
+  document.getElementById('sm-ai-prompt').value='';
+  document.getElementById('sm-ai-result').style.display='none';
   ['sm-name','sm-label','sm-question1','sm-question2','sm-topn','sm-language'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('sm-prompt').value='';
   document.getElementById('sm-stat').value='distribution';
@@ -1876,6 +1898,45 @@ function saveSummaryFromModal(){
   else _summaries[_editSumIdx]=s;
   renderSummariesList();
   closeSummaryModal();
+}
+function switchSummaryView(v){
+  document.getElementById('sm-form-view').style.display=v==='form'?'block':'none';
+  document.getElementById('sm-ai-view').style.display=v==='ai'?'block':'none';
+  document.getElementById('sm-btn-form').classList.toggle('active',v==='form');
+  document.getElementById('sm-btn-ai').classList.toggle('active',v==='ai');
+}
+async function askAiSummary(){
+  const prompt=document.getElementById('sm-ai-prompt').value.trim();
+  if(!prompt){alert('Please describe the summary you want.');return;}
+  const btn=document.getElementById('sm-ai-btn');
+  const statusEl=document.getElementById('sm-ai-status');
+  btn.disabled=true;statusEl.textContent='Thinking…';statusEl.style.color='var(--muted)';
+  document.getElementById('sm-ai-result').style.display='none';
+  try{
+    const res=await fetch('/api/ai/suggest',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({kind:'summary',prompt,questions:_questions})});
+    const data=await res.json();
+    if(res.ok&&data.ok){
+      document.getElementById('sm-ai-result-pre').textContent=JSON.stringify(data.result,null,2);
+      document.getElementById('sm-ai-result').style.display='block';
+      statusEl.textContent='';window._aiSummarySuggestion=data.result;
+    }else{statusEl.textContent='✗ '+(data.detail||'Failed');statusEl.style.color='#991b1b';}
+  }catch(e){statusEl.textContent='✗ '+e.message;statusEl.style.color='#991b1b';}
+  btn.disabled=false;
+}
+function acceptAiSummary(){
+  const s=window._aiSummarySuggestion||{};
+  if(s.name)document.getElementById('sm-name').value=s.name;
+  if(s.label)document.getElementById('sm-label').value=s.label;
+  if(s.stat){document.getElementById('sm-stat').value=s.stat;updateSummaryForm();}
+  const qs=s.questions||[];
+  document.getElementById('sm-question1').value=qs[0]||'';
+  document.getElementById('sm-question2').value=qs[1]||'';
+  if(s.top_n!==undefined)document.getElementById('sm-topn').value=s.top_n;
+  if(s.freq)document.getElementById('sm-freq').value=s.freq;
+  if(s.prompt)document.getElementById('sm-prompt').value=s.prompt;
+  if(s.language)document.getElementById('sm-language').value=s.language;
+  switchSummaryView('form');
 }
 async function previewSummary(){
   const name=document.getElementById('sm-name').value.trim();
@@ -2087,9 +2148,13 @@ async function runAiGenerateTemplate(){
   <div class="modal" style="width:480px;">
     <div class="modal-header">
       <h3 id="sm-modal-title">Add summary</h3>
+      <div class="config-view-toggle" style="margin-right:8px;">
+        <button class="view-btn active" id="sm-btn-form" onclick="switchSummaryView('form')">Form</button>
+        <button class="view-btn" id="sm-btn-ai" onclick="switchSummaryView('ai')">AI</button>
+      </div>
       <button onclick="closeSummaryModal()">✕</button>
     </div>
-    <div class="modal-body">
+    <div id="sm-form-view" class="modal-body">
       <div class="form-row"><label>Name</label><input id="sm-name" placeholder="e.g. region_breakdown"></div>
       <div class="form-row"><label>Label</label><input id="sm-label" placeholder="e.g. Region breakdown (optional)"></div>
       <div class="form-row"><label>Stat</label>
@@ -2116,6 +2181,19 @@ async function runAiGenerateTemplate(){
       <div class="form-row" id="sm-language-row" style="display:none;"><label>Language</label><input id="sm-language" placeholder="e.g. English, French (optional)"></div>
       <div style="margin-top:8px;"><label style="font-size:11px;color:var(--muted);">Data file</label><select id="sm-preview-file" style="margin-left:8px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;"><option value="">— auto-detect —</option></select></div>
       <div id="sm-preview-area" style="margin-top:10px;min-height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--muted);text-align:center;">Click Preview to compute the summary text.</div>
+    </div>
+    <div id="sm-ai-view" style="display:none;padding:18px;">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Describe the summary you need. The AI will suggest a configuration using your available columns.</p>
+      <textarea id="sm-ai-prompt" rows="3" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="e.g. Distribution of regions, or trend of submissions per month, or crosstab of region vs gender"></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary btn-sm" id="sm-ai-btn" onclick="askAiSummary()">✦ Ask AI</button>
+        <span id="sm-ai-status" style="font-size:12px;color:var(--muted);"></span>
+      </div>
+      <div id="sm-ai-result" style="display:none;margin-top:14px;border:1px solid var(--border);border-radius:var(--radius);padding:12px;background:var(--bg);font-size:12px;">
+        <div style="font-weight:600;margin-bottom:6px;color:var(--teal-dark);">AI suggestion — review then accept</div>
+        <pre id="sm-ai-result-pre" style="font-size:11px;color:var(--muted);white-space:pre-wrap;word-break:break-all;margin-bottom:10px;"></pre>
+        <button class="btn btn-primary btn-sm" onclick="acceptAiSummary()">✓ Accept &amp; populate form</button>
+      </div>
     </div>
     <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="closeSummaryModal()">Cancel</button>
