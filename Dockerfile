@@ -174,13 +174,13 @@ async def test_ai(payload: AITestPayload):
 
 def _build_suggest_prompts(kind: str, prompt: str, questions: list):
     col_parts = []
-    for q in questions:
+    for i, q in enumerate(questions):
         if not q:
             continue
         label = q.get("export_label") or q.get("label") or q.get("kobo_key", "")
         category = q.get("category", "")
-        col_parts.append(f"{label} ({category})" if category else label)
-    labels = ", ".join(col_parts) or "unknown"
+        col_parts.append(f'{i+1}. "{label}" ({category})' if category else f'{i+1}. "{label}"')
+    labels = "\n".join(col_parts) or "unknown"
     if kind == "chart":
         system = (
             "You are a data visualization expert. Given available survey columns with their categories and a description, "
@@ -190,10 +190,14 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "Valid options keys: width_inches, color, top_n, sort, normalize, freq, bins, target, stat, "
             "columns, male_value, female_value, color_by, xlabel, ylabel. "
             "CRITICAL: the questions array must contain ONLY exact column names copied verbatim from the "
-            "provided list — never descriptions, never sentences, never translated text. "
+            "provided numbered list — never choice/answer values, never descriptions, never translated text. "
+            "Question count per chart type: bar/horizontal_bar/pie/donut/treemap/waterfall/funnel/table/"
+            "histogram/line/area/bullet_chart/likert: exactly 1 question; "
+            "stacked_bar/grouped_bar/scatter/box_plot/heatmap/pyramid/dot_map: exactly 2 questions; "
+            "scorecard: 1 to 3 questions. "
             "Return JSON only, no markdown fences."
         )
-        user = f"Available columns (name, category): {labels}\nRequest: {prompt}\n\nRemember: questions array values must be exact column names from the list above."
+        user = f"Available columns:\n{labels}\n\nRequest: {prompt}\n\nRemember: questions array values must be exact column names from the numbered list above — never the answer/choice values of those columns."
     else:
         system = (
             "You are a data analyst. Given survey columns with their categories and a description, return a single indicator "
@@ -251,6 +255,20 @@ async def ai_suggest(payload: AISuggestPayload):
         except Exception:
             m = _re.search(r'\{.*\}', raw, _re.DOTALL)
             result = json.loads(m.group()) if m else {}
+        valid_labels = [
+            (q.get("export_label") or q.get("label") or q.get("kobo_key", "")).strip()
+            for q in payload.questions if q
+        ]
+        col_warnings = []
+        for col in result.get("questions", []):
+            if col.strip() not in valid_labels:
+                closest = next((l for l in valid_labels if col.lower() in l.lower() or l.lower() in col.lower()), None)
+                msg = f"'{col}' is not a known column name"
+                if closest:
+                    msg += f' — did you mean "{closest}"?'
+                col_warnings.append(msg)
+        if col_warnings:
+            result["_warnings"] = col_warnings
         return {"ok": True, "result": result}
     except HTTPException:
         raise
@@ -1324,7 +1342,16 @@ function _choicesForColumn(colName){
 function showColumnChoices(input){
   const hint=input.parentElement.querySelector('.cm-choices-hint');
   if(!hint)return;
-  const choices=_choicesForColumn(input.value.trim());
+  const val=input.value.trim();
+  const colNames=(_questions||[]).map(q=>q.export_label||q.label||q.kobo_key).filter(Boolean);
+  if(val&&!colNames.includes(val)){
+    input.style.borderColor='#f59e0b';
+    hint.innerHTML='<span style="color:#b45309;font-size:10px;">⚠ column not found in config</span>';
+    hint.style.display='flex';
+    return;
+  }
+  input.style.borderColor='';
+  const choices=_choicesForColumn(val);
   if(!choices){hint.innerHTML='';hint.style.display='none';return;}
   const labels=Object.values(choices);
   hint.innerHTML='<span style="color:var(--muted);font-size:10px;margin-right:4px;">segments:</span>'+
@@ -1507,6 +1534,11 @@ async function askAiChart(){
       document.getElementById('cm-ai-result-pre').textContent=JSON.stringify(data.result,null,2);
       document.getElementById('cm-ai-result').style.display='block';
       statusEl.textContent='';window._aiChartSuggestion=data.result;
+      const warnEl=document.getElementById('cm-ai-warnings');
+      if(data.result._warnings&&data.result._warnings.length){
+        warnEl.innerHTML=data.result._warnings.map(w=>`<div>⚠ ${w}</div>`).join('');
+        warnEl.style.display='block';
+      }else{warnEl.style.display='none';}
     }else{statusEl.textContent='✗ '+(data.detail||'Failed');statusEl.style.color='#991b1b';}
   }catch(e){statusEl.textContent='✗ '+e.message;statusEl.style.color='#991b1b';}
   btn.disabled=false;
@@ -1677,6 +1709,7 @@ async function runAiGenerateTemplate(){
       <div id="cm-ai-result" style="display:none;margin-top:14px;border:1px solid var(--border);border-radius:var(--radius);padding:12px;background:var(--bg);font-size:12px;">
         <div style="font-weight:600;margin-bottom:6px;color:var(--teal-dark);">AI suggestion — review then accept</div>
         <pre id="cm-ai-result-pre" style="font-size:11px;color:var(--muted);white-space:pre-wrap;word-break:break-all;margin-bottom:10px;"></pre>
+        <div id="cm-ai-warnings" style="display:none;margin-bottom:10px;padding:8px 10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:4px;font-size:11px;color:#b45309;line-height:1.6;"></div>
         <button class="btn btn-primary btn-sm" onclick="acceptAiChart()">✓ Accept &amp; populate form</button>
       </div>
     </div>
