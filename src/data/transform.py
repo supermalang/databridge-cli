@@ -1,4 +1,5 @@
 import json, logging
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
@@ -204,10 +205,11 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
     out_dir = Path(cfg.get("export", {}).get("output_dir", "data/processed"))
     out_dir.mkdir(parents=True, exist_ok=True)
     alias = cfg.get("form", {}).get("alias", "form")
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if fmt == "xlsx":
         # XLSX: multiple sheets in one file
-        out = out_dir / f"{alias}_data.xlsx"
+        out = out_dir / f"{alias}_data_{ts}.xlsx"
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
             df.to_excel(writer, sheet_name="main", index=False)
             if repeat_tables:
@@ -218,20 +220,20 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
     else:
         # CSV / JSON: one file per table
         if fmt == "csv":
-            out = out_dir / f"{alias}_data.csv"
+            out = out_dir / f"{alias}_data_{ts}.csv"
             df.to_csv(out, index=False, encoding="utf-8-sig")
         elif fmt == "json":
-            out = out_dir / f"{alias}_data.json"
+            out = out_dir / f"{alias}_data_{ts}.json"
             df.to_json(out, orient="records", force_ascii=False, indent=2, date_format="iso")
         log.info(f"Data exported → {out}")
 
         if repeat_tables:
             for name, rdf in repeat_tables.items():
                 if fmt == "csv":
-                    rout = out_dir / f"{alias}_{name}.csv"
+                    rout = out_dir / f"{alias}_{name}_{ts}.csv"
                     rdf.to_csv(rout, index=False, encoding="utf-8-sig")
                 elif fmt == "json":
-                    rout = out_dir / f"{alias}_{name}.json"
+                    rout = out_dir / f"{alias}_{name}_{ts}.json"
                     rdf.to_json(rout, orient="records", force_ascii=False, indent=2, date_format="iso")
                 log.info(f"Repeat group exported → {rout}")
 
@@ -275,17 +277,20 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None) -> pd.Data
     fmt = cfg.get("export", {}).get("format", "csv")
     out_dir = Path(cfg.get("export", {}).get("output_dir", "data/processed"))
     alias = cfg.get("form", {}).get("alias", "form")
+    def _latest(pattern):
+        matches = sorted(out_dir.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not matches:
+            raise FileNotFoundError(f"No data matching {out_dir}/{pattern}. Run 'download' first.")
+        return matches[0]
+
     if fmt == "csv":
-        df = pd.read_csv(out_dir / f"{alias}_data.csv")
+        df = pd.read_csv(_latest(f"{alias}_data*.csv"))
     elif fmt == "json":
-        df = pd.read_json(out_dir / f"{alias}_data.json", orient="records")
+        df = pd.read_json(_latest(f"{alias}_data*.json"), orient="records")
     elif fmt == "xlsx":
-        df = pd.read_excel(out_dir / f"{alias}_data.xlsx", sheet_name="main")
+        df = pd.read_excel(_latest(f"{alias}_data*.xlsx"), sheet_name="main")
     else:
-        p = out_dir / f"{alias}_data.csv"
-        if not p.exists():
-            raise FileNotFoundError(f"No data at {p}. Run 'download' first.")
-        df = pd.read_csv(p)
+        df = pd.read_csv(_latest(f"{alias}_data*.csv"))
     if sample_size:
         df = df.head(sample_size)
         log.info(f"Sample mode: {len(df)} rows")

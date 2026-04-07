@@ -340,7 +340,7 @@ async def preview_chart(payload: ChartPreviewPayload):
         elif ext == ".xlsx": df = pd.read_excel(data_path)
         else: raise HTTPException(status_code=400, detail="Unsupported file type")
     else:
-        candidates = sorted(DATA_DIR.glob("*_data.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        candidates = sorted(DATA_DIR.glob("*_data*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
         if not candidates:
             candidates = sorted(DATA_DIR.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
         if not candidates:
@@ -392,7 +392,7 @@ async def preview_indicator(payload: IndicatorPreviewPayload):
         elif ext == ".xlsx": df = pd.read_excel(data_path)
         else: raise HTTPException(status_code=400, detail="Unsupported file type")
     else:
-        candidates = sorted(DATA_DIR.glob("*_data.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        candidates = sorted(DATA_DIR.glob("*_data*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
         if not candidates:
             candidates = sorted(DATA_DIR.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
         if not candidates:
@@ -440,7 +440,7 @@ async def preview_summary(payload: SummaryPreviewPayload):
         elif ext == ".xlsx": df = pd.read_excel(data_path)
         else: raise HTTPException(status_code=400, detail="Unsupported file type")
     else:
-        candidates = sorted(DATA_DIR.glob("*_data.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        candidates = sorted(DATA_DIR.glob("*_data*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
         if not candidates:
             candidates = sorted(DATA_DIR.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
         if not candidates:
@@ -585,6 +585,16 @@ async def download_data_file(filename: str):
     ext = path.suffix.lower()
     mime = {"csv":"text/csv","json":"application/json","xlsx":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}.get(ext[1:],"application/octet-stream")
     return FileResponse(path=path, filename=filename, media_type=mime)
+
+@app.delete("/api/data/{filename}")
+async def delete_data_file(filename: str):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = DATA_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    path.unlink()
+    return {"ok": True}
 
 # ── Templates ──────────────────────────────────────────────
 @app.get("/api/templates")
@@ -1359,8 +1369,12 @@ async function loadDataFiles(){
   const data=await(await fetch('/api/data')).json();
   if(!data.files.length){c.innerHTML='<p class="empty-state">No data files yet. Run Download data first.</p>';return;}
   c.innerHTML='<table class="file-table"><thead><tr><th>File</th><th>Size</th><th>Generated</th><th></th></tr></thead><tbody>'+
-    data.files.map(f=>`<tr><td><span class="file-name">${f.name}</span></td><td style="color:var(--muted)">${f.size_kb} KB</td><td style="color:var(--muted)">${f.modified}</td><td style="text-align:right;"><a href="/api/data/download/${encodeURIComponent(f.name)}" download><button class="btn btn-primary btn-sm">↓ Download</button></a></td></tr>`).join('')+
+    data.files.map(f=>`<tr><td><span class="file-name">${f.name}</span></td><td style="color:var(--muted)">${f.size_kb} KB</td><td style="color:var(--muted)">${f.modified}</td><td style="text-align:right;display:flex;gap:6px;justify-content:flex-end;"><a href="/api/data/download/${encodeURIComponent(f.name)}" download><button class="btn btn-primary btn-sm">↓ Download</button></a><button class="btn btn-danger btn-sm" onclick="deleteDataFile('${f.name}')">Delete</button></td></tr>`).join('')+
     '</tbody></table>';
+}
+async function deleteDataFile(name){
+  if(!confirm('Delete '+name+'?'))return;
+  await fetch('/api/data/'+encodeURIComponent(name),{method:'DELETE'});loadDataFiles();
 }
 async function loadTemplates(){
   const c=document.getElementById('templates-container');c.innerHTML='<p class="empty-state">Loading…</p>';
