@@ -196,6 +196,52 @@ indicators: []
 # In your Word template: "This report covers {{ ind_total_beneficiaries }}
 # beneficiaries. {{ ind_pct_female }} are female."
 
+# Text summaries → {{ summary_<name> }} placeholders in Word template
+# Each summary produces a paragraph of text computed from the data.
+# stat types:
+#   distribution : top-N breakdown for one categorical column
+#   stats        : mean/median/range for one numeric column
+#   crosstab     : row × column percentage breakdown for two categorical columns
+#   trend        : time-series count or sum over a date column
+#   ai           : AI-generated paragraph (requires ai: section)
+summaries: []
+# summaries:
+#   - name: region_breakdown
+#     label: Regional Distribution
+#     questions: [Region]
+#     stat: distribution           # no AI needed
+#     top_n: 5
+#     # Output: "Leading response: North (45%). Others: South (30%), East (25%)."
+#
+#   - name: age_profile
+#     label: Age Profile
+#     questions: [Age]
+#     stat: stats                  # no AI needed
+#     # Output: "n=382, mean=34.5, median=32.0, range 18.0–65.0."
+#
+#   - name: gender_by_region
+#     label: Gender by Region
+#     questions: [Gender, Region]
+#     stat: crosstab               # no AI needed
+#     top_n: 5
+#     # Output: "North: Female 60%, Male 40%. South: Female 55%, Male 45%."
+#
+#   - name: monthly_trend
+#     label: Monthly Submissions
+#     questions: [submission_date]
+#     stat: trend                  # no AI needed
+#     freq: month                  # day | week | month | year
+#     # Output: "Monthly submissions: Jan 2025 45, Feb 2025 60, Mar 2025 38."
+#
+#   - name: context_analysis
+#     label: Context Analysis
+#     questions: [Region, Gender, Satisfaction]
+#     stat: ai                     # calls LLM — requires ai: section
+#     prompt: "Summarize satisfaction findings by region and gender."
+#     language: English            # overrides ai.language for this summary only
+#
+# In your Word template: "{{ summary_region_breakdown }}"
+
 export:
   format: csv   # csv | json | xlsx | mysql | postgres | supabase
   output_dir: data/processed

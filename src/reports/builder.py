@@ -9,6 +9,7 @@ from src.data.transform import load_processed_data
 from src.reports.charts import generate_chart, CHART_DIR
 from src.reports.indicators import compute_indicators
 from src.reports.narrator import generate_narrative
+from src.reports.summaries import compute_summaries
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class ReportBuilder:
         tpl = DocxTemplate(template_path)
         stats_table = self._stats_table(df)
         indicators  = compute_indicators(self.cfg.get("indicators", []), df)
+        summaries   = compute_summaries(self.cfg.get("summaries", []), df, self.cfg.get("ai"))
 
         narrative = generate_narrative(
             ai_cfg     = self.cfg.get("ai"),
@@ -60,6 +62,7 @@ class ReportBuilder:
             **narrative,
             "stats_table":   stats_table,
             **indicators,
+            **summaries,
             **self._generate_charts(tpl, df),
         }
         tpl.render(context)

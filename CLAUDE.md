@@ -205,6 +205,11 @@ Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
                                  {{ ind_pct_female }}          → "58.3%"
                                  {{ ind_top_region }}          → "Nouakchott"
 
+{{ summary_<name> }}    ← one per summary in config.yml summaries section
+                            e.g. {{ summary_region_breakdown }} → "Leading response: North (45%). Others: South (30%)."
+                                 {{ summary_age_profile }}      → "n=382, mean=34.5, median=32.0, range 18.0–65.0."
+                                 {{ summary_context_analysis }} → AI-generated paragraph
+
 {{ chart_<n> }}         ← one per chart in config.yml
                             e.g. {{ chart_satisfaction_overview }}
 

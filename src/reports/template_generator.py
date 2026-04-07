@@ -46,6 +46,14 @@ def generate_template(cfg: Dict, out_path: Path) -> Path:
         for ind in indicators:
             name=ind.get("name",""); label=ind.get("label",name)
             _meta(doc,label,f"{{{{ ind_{name} }}}}")
+    summaries=cfg.get("summaries",[])
+    if summaries:
+        _divider(doc); _heading(doc,"Data Summaries",1)
+        for s in summaries:
+            name=s.get("name",""); label=s.get("label",name)
+            _heading(doc,label,2)
+            _descriptor(doc,f"{s.get('stat','distribution')} — {', '.join(s.get('questions',[]))}")
+            _editable(doc,f"{{{{ summary_{name} }}}}")
     _divider(doc); _heading(doc,"Placeholder Reference",1)
     _note(doc,"Delete this section before sharing."); _ref_table(doc,cfg)
     out_path.parent.mkdir(parents=True,exist_ok=True)
@@ -110,6 +118,8 @@ def _ref_table(doc,cfg):
     ]
     for ind in cfg.get("indicators",[]):
         rows.append((f"{{{{ ind_{ind.get('name','')} }}}}",f"Indicator: {ind.get('label',ind.get('name',''))}"))
+    for s in cfg.get("summaries",[]):
+        rows.append((f"{{{{ summary_{s.get('name','')} }}}}",f"Summary: {s.get('label',s.get('name',''))}"))
     for c in cfg.get("charts",[]):
         rows.append((f"{{{{ chart_{c.get('name','')} }}}}",f"Chart: {c.get('title','')}"))
     table=doc.add_table(rows=1,cols=2); table.style="Table Grid"
