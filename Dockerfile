@@ -206,9 +206,10 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "scorecard: stat,columns; "
             "pyramid: male_value,female_value; "
             "dot_map: color_by. "
-            "Two special options apply to all chart types: "
+            "Three special options apply to all chart types: "
             "distinct_by (string): column name to deduplicate rows before charting — use when the user wants to count unique entities (e.g. unique beneficiaries, unique communes) rather than total submissions; "
-            "expand_multi (boolean): set true for select_multiple columns where answers are stored as space-separated strings — expands 'choice1 choice2' into separate rows so each choice is counted individually; valid for bar/horizontal_bar/pie/donut/treemap/waterfall/funnel/table/likert types only. "
+            "expand_multi (boolean): set true for select_multiple columns where answers are stored as space-separated strings — expands 'choice1 choice2' into separate rows so each choice is counted individually; valid for bar/horizontal_bar/pie/donut/treemap/waterfall/funnel/table/likert types only; "
+            "data_type (string): override how the column's values are interpreted — valid values are categorical, quantitative, date, qualitative — omit to auto-detect from the column's category. "
             "Only include options relevant to the chosen type. "
             "CRITICAL: the questions array must contain ONLY exact column names copied verbatim from the "
             "provided numbered list — never choice/answer values, never descriptions, never translated text. "
@@ -712,7 +713,10 @@ header h1{font-size:16px;font-weight:600}
 .tab{padding:12px 18px;cursor:pointer;border-bottom:2px solid transparent;font-size:13px;color:var(--muted);transition:all .15s;user-select:none}
 .tab:hover{color:var(--text)}.tab.active{color:var(--teal-dark);border-bottom-color:var(--teal);font-weight:500}
 .tab-content{display:none;height:100%;overflow:auto}.tab-content.active{display:flex;flex-direction:column}
-.dashboard{padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;height:100%;overflow:hidden}
+.dashboard{padding:20px;display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:16px;height:100%;overflow:hidden}
+.dashboard-terminal{background:#1a1a18;border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow)}
+.dashboard-terminal-note{padding:7px 14px;background:#111;color:#888;font-size:11px;font-family:monospace;border-bottom:1px solid #333;flex-shrink:0}
+.dashboard-terminal iframe{flex:1;border:none;min-height:0}
 .commands-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start}
 .cmd-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
 .cmd-card h3{font-size:13px;font-weight:600;margin-bottom:4px}
@@ -853,6 +857,10 @@ header h1{font-size:16px;font-weight:600}
             <button class="btn btn-ghost btn-sm" onclick="clearLog()">Clear</button>
           </div>
           <div class="log-body" id="log-body"><span class="log-empty">No commands run yet.</span></div>
+        </div>
+        <div class="dashboard-terminal">
+          <div class="dashboard-terminal-note">Terminal · /app · python3 src/data/make.py --help</div>
+          <iframe id="dashboard-terminal-frame" src="/terminal/" allowfullscreen></iframe>
         </div>
       </div>
     </div>
@@ -1019,7 +1027,7 @@ header h1{font-size:16px;font-weight:600}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 <script>
-let terminalLoaded=false,running=false;
+let terminalLoaded=true,running=false;
 loadSplitByOptions();
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>{
@@ -1029,9 +1037,9 @@ document.querySelectorAll('.tab').forEach(tab=>{
     if(tab.dataset.tab==='config')switchView('form');
     if(tab.dataset.tab==='reports'){loadReports();loadDataFiles();}
     if(tab.dataset.tab==='templates')loadTemplates();
-    if(tab.dataset.tab==='terminal'&&!terminalLoaded){
-      document.getElementById('terminal-frame').src='/terminal/';
-      terminalLoaded=true;
+    if(tab.dataset.tab==='terminal'){
+      const tf=document.getElementById('terminal-frame');
+      if(!tf.src||tf.src==='about:blank'||tf.src===window.location.href)tf.src='/terminal/';
     }
   });
 });
@@ -1497,6 +1505,7 @@ const CHART_OPT_ROWS={
   'cm-ylabel-row':['bar','horizontal_bar','stacked_bar','grouped_bar','line','area','histogram','scatter','box_plot','waterfall','bullet_chart','heatmap'],
   'cm-distinct-by-row':['bar','horizontal_bar','stacked_bar','grouped_bar','pie','donut','treemap','waterfall','funnel','table','likert','line','area','histogram','scatter','box_plot','heatmap','bullet_chart','scorecard','pyramid'],
   'cm-expand-multi-row':['bar','horizontal_bar','pie','donut','treemap','waterfall','funnel','table','likert'],
+  'cm-data-type-row':['bar','horizontal_bar','stacked_bar','grouped_bar','pie','donut','line','area','histogram','scatter','box_plot','heatmap','treemap','waterfall','funnel','table','bullet_chart','likert','scorecard','pyramid','dot_map'],
 };
 function renderChartsList(){
   const c=document.getElementById('charts-list');
@@ -1583,7 +1592,7 @@ async function openChartModal(idx){
   loadPreviewFileOptions();
   // clear fields
   ['cm-name','cm-title','cm-width','cm-color','cm-topn','cm-bins','cm-target','cm-columns','cm-male','cm-female','cm-colorby','cm-xlabel','cm-ylabel','cm-distinct-by'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  ['cm-sort','cm-normalize','cm-freq','cm-stat-scorecard','cm-expand-multi'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['cm-sort','cm-normalize','cm-freq','cm-stat-scorecard','cm-expand-multi','cm-data-type'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('cm-preview-area').innerHTML='Select a data file (or leave blank for auto-detect) and click Preview.';
   document.getElementById('cm-preview-area').style.color='var(--muted)';
   if(idx!==null){
@@ -1614,6 +1623,7 @@ async function openChartModal(idx){
     if(o.ylabel)document.getElementById('cm-ylabel').value=o.ylabel;
     if(o.distinct_by)document.getElementById('cm-distinct-by').value=o.distinct_by;
     if(o.expand_multi!==undefined)document.getElementById('cm-expand-multi').value=String(o.expand_multi);
+    if(o.data_type)document.getElementById('cm-data-type').value=o.data_type;
   }
   document.getElementById('chart-modal').style.display='flex';
 }
@@ -1639,6 +1649,7 @@ function buildChartFromModal(){
   const yl=document.getElementById('cm-ylabel').value;if(yl)opts.ylabel=yl;
   const dby=document.getElementById('cm-distinct-by').value.trim();if(dby)opts.distinct_by=dby;
   const exm=document.getElementById('cm-expand-multi').value;if(exm)opts.expand_multi=(exm==='true');
+  const dt=document.getElementById('cm-data-type').value;if(dt)opts.data_type=dt;
   return{name:document.getElementById('cm-name').value.trim(),title:document.getElementById('cm-title').value.trim(),type,questions,options:Object.keys(opts).length?opts:undefined};
 }
 async function previewChart(){
@@ -1797,6 +1808,7 @@ function acceptAiChart(){
   if(o.ylabel)document.getElementById('cm-ylabel').value=o.ylabel;
   if(o.distinct_by)document.getElementById('cm-distinct-by').value=o.distinct_by;
   if(o.expand_multi!==undefined)document.getElementById('cm-expand-multi').value=String(o.expand_multi);
+  if(o.data_type)document.getElementById('cm-data-type').value=o.data_type;
   switchChartView('form');
   previewChart();
 }
@@ -2072,6 +2084,7 @@ async function runAiGenerateTemplate(){
       <div class="form-row" id="cm-ylabel-row"><label>ylabel</label><input id="cm-ylabel" placeholder="optional axis label"></div>
       <div class="form-row" id="cm-distinct-by-row"><label>Distinct by</label><input id="cm-distinct-by" placeholder="column to deduplicate rows (optional)"></div>
       <div class="form-row" id="cm-expand-multi-row"><label>Expand multi</label><select id="cm-expand-multi"><option value="">no</option><option value="true">yes — split multi-select choices</option></select></div>
+      <div class="form-row" id="cm-data-type-row"><label>Data type</label><select id="cm-data-type"><option value="">auto-detect</option><option value="categorical">categorical</option><option value="quantitative">quantitative</option><option value="date">date</option><option value="qualitative">qualitative</option></select></div>
       <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
           <span style="font-size:12px;font-weight:600;">Preview</span>

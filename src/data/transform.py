@@ -63,6 +63,8 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
     missing: List[str] = []
     for q in main_questions:
         key = q["kobo_key"]
+        # json_normalize uses "." as separator; kobo_keys use "/" for group paths
+        flat_key = key.replace("/", ".")
         label = q.get("export_label") or q.get("label") or key
         # Deduplicate labels to avoid column collisions
         if label in used_labels:
@@ -70,7 +72,9 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
             label = f"{label}_{used_labels[label]}"
         else:
             used_labels[label] = 0
-        if key in flat.columns:
+        if flat_key in flat.columns:
+            col_map[flat_key] = label
+        elif key in flat.columns:
             col_map[key] = label
         else:
             missing.append(key)
