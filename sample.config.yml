@@ -14,6 +14,21 @@ form:
   alias: monitoring_survey
 
 # Auto-filled by fetch-questions — edit after
+# For free-text (qualitative) questions you can add a classify: block so that
+# `classify-text` clusters responses into themes and writes a *_cluster column:
+#
+#   - kobo_key: main_problem
+#     export_label: Main_Problem
+#     label: What is the main problem in your area?
+#     type: text
+#     category: qualitative
+#     classify:
+#       enabled: true
+#       theme_count: 5        # how many themes to discover (default: 5)
+#       themes: []            # auto-filled after first run; you can edit these
+#
+# After running classify-text, point your charts at the cluster column:
+#   questions: [Main_Problem_cluster]
 questions: []
 
 # pandas .query() syntax — applied to all downloaded data
@@ -171,6 +186,14 @@ indicators: []
 #     question: Beneficiary_ID
 #     stat: count
 #     dedup_by: Beneficiary_ID   # deduplicate by this column first (same as count_distinct here)
+#     format: number
+#
+#   # Multi-column indicator: combine several questions row-wise, then apply the stat
+#   - name: total_personnes_handicapees
+#     label: Total personnes handicapées
+#     questions: [Garcons, Filles, Hommes, Femmes]  # array of columns to combine
+#     combine: sum        # sum|mean|min|max — how to merge columns per row (default: sum)
+#     stat: sum           # stat applied to the combined series
 #     format: number
 #
 #   - name: pct_female

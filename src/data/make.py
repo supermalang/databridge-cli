@@ -77,6 +77,84 @@ def cmd_download(sample):
     log.info(f"Exporting {len(df)} rows ...")
     export_data(df, cfg, repeat_tables)
 
+@cli.command("classify-text")
+@click.option("--sample", default=None, type=int, help="Limit to first N rows (for testing).")
+@click.option("--rediscover", is_flag=True, help="Re-run theme discovery even if themes are already saved.")
+def cmd_classify_text(sample, rediscover):
+    """Cluster free-text responses into themes using AI, then save back to processed data."""
+    from src.data.classifier import discover_themes, classify_responses
+    from src.data.transform import load_processed_data, export_data
+    from src.utils.config import write_config
+
+    cfg = load_config(CONFIG_PATH)
+
+    ai_cfg = cfg.get("ai")
+    if not ai_cfg:
+        click.echo("No ai: section in config.yml. Configure AI provider first.", err=True)
+        sys.exit(1)
+    api_key = ai_cfg.get("api_key", "")
+    if not api_key or str(api_key).startswith("env:"):
+        click.echo("AI api_key is not set or env var is missing.", err=True)
+        sys.exit(1)
+
+    fmt = cfg.get("export", {}).get("format", "csv")
+    if fmt not in ("csv", "json", "xlsx"):
+        click.echo(
+            f"classify-text only supports file-based exports (csv/json/xlsx). "
+            f"Current format is '{fmt}'. Export to a file format first.",
+            err=True,
+        )
+        sys.exit(1)
+
+    questions = cfg.get("questions", [])
+    target_qs = [q for q in questions if q.get("classify", {}).get("enabled")]
+    if not target_qs:
+        click.echo(
+            "No questions have classify.enabled: true in config.yml.\n"
+            "Add it under a qualitative question, e.g.:\n"
+            "  classify:\n"
+            "    enabled: true\n"
+            "    theme_count: 5",
+            err=True,
+        )
+        sys.exit(1)
+
+    log.info(f"Loading processed data ...")
+    df = load_processed_data(cfg, sample_size=sample)
+
+    changed = False
+    for q in target_qs:
+        col = q.get("export_label") or q.get("label") or q.get("kobo_key", "")
+        if not col or col not in df.columns:
+            log.warning(f"Column '{col}' not found in processed data — skipping.")
+            continue
+
+        classify_cfg = q.get("classify", {})
+        theme_count = int(classify_cfg.get("theme_count", 5))
+        themes = classify_cfg.get("themes") or []
+        label = q.get("label") or col
+
+        if not themes or rediscover:
+            log.info(f"Discovering themes for '{col}' ...")
+            themes = discover_themes(df[col], label, theme_count, ai_cfg)
+            q["classify"]["themes"] = themes
+            changed = True
+
+        cluster_col = f"{col}_cluster"
+        log.info(f"Classifying '{col}' → '{cluster_col}' using themes: {themes}")
+        df[cluster_col] = classify_responses(df[col], themes, label, ai_cfg)
+        n_classified = df[cluster_col].notna().sum()
+        log.info(f"  Done — {n_classified}/{len(df)} rows classified.")
+
+    if changed:
+        write_config(cfg, CONFIG_PATH)
+        log.info("Themes saved to config.yml.")
+
+    log.info("Saving classified data ...")
+    export_data(df, cfg)
+    log.info("classify-text complete.")
+
+
 @cli.command("build-report")
 @click.option("--sample", default=None, type=int, help="Use only first N rows.")
 @click.option("--split-by", default=None, help="Column (export_label) to split reports by — one report per unique value.")

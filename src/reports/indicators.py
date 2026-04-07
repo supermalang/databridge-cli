@@ -46,6 +46,7 @@ def compute_indicators(indicators: List[Dict], df: pd.DataFrame) -> Dict[str, st
 def _compute(ind: Dict, df: pd.DataFrame):
     stat = ind.get("stat", "count")
     question = ind.get("question")
+    questions = ind.get("questions")  # multi-column path
 
     # dedup_by: deduplicate df by a key column before computing
     dedup_col = ind.get("dedup_by")
@@ -54,14 +55,26 @@ def _compute(ind: Dict, df: pd.DataFrame):
             raise ValueError(f"dedup_by column '{dedup_col}' not found in data")
         df = df.drop_duplicates(subset=[dedup_col], keep="first")
 
-    if not question:
+    if not questions and not question:
         # no question — just count rows
         return len(df)
 
-    if question not in df.columns:
-        raise ValueError(f"column '{question}' not found in data")
-
-    series = df[question]
+    if questions:
+        # Multi-column path: combine columns row-wise, then apply stat
+        missing = [q for q in questions if q not in df.columns]
+        if missing:
+            raise ValueError(f"columns not found in data: {missing}")
+        combine = ind.get("combine", "sum")
+        cols = df[questions].apply(pd.to_numeric, errors="coerce")
+        combine_ops = {"sum": cols.sum, "mean": cols.mean, "min": cols.min, "max": cols.max}
+        if combine not in combine_ops:
+            raise ValueError(f"unknown combine '{combine}' — use sum|mean|min|max")
+        series = combine_ops[combine](axis=1)
+    else:
+        # Single-column path (original behaviour)
+        if question not in df.columns:
+            raise ValueError(f"column '{question}' not found in data")
+        series = df[question]
 
     if stat == "count":
         return series.notna().sum()
@@ -86,7 +99,8 @@ def _compute(ind: Dict, df: pd.DataFrame):
     # numeric stats
     numeric = pd.to_numeric(series, errors="coerce").dropna()
     if numeric.empty:
-        raise ValueError(f"no numeric data in column '{question}'")
+        label = str(questions or question)
+        raise ValueError(f"no numeric data in column(s) '{label}'")
 
     if stat == "sum":
         return numeric.sum()
