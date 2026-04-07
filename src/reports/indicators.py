@@ -5,13 +5,14 @@ Each indicator in config.yml produces a {{ ind_<name> }} placeholder
 in the Word template, rendered as formatted text (not a chart image).
 
 Supported stats:
-  count        : number of non-null rows
-  sum          : total of numeric column
-  mean         : average of numeric column
-  median       : median of numeric column
-  min / max    : min/max of numeric column
-  percent      : % of rows where column == filter_value
-  most_common  : most frequent value in column
+  count          : number of non-null rows
+  count_distinct : number of unique non-null values (e.g. 20 communes out of 100 submissions)
+  sum            : total of numeric column
+  mean           : average of numeric column
+  median         : median of numeric column
+  min / max      : min/max of numeric column
+  percent        : % of rows where column == filter_value
+  most_common    : most frequent value in column
 
 Supported formats:
   number       : integer with thousands separator  → "4,832"
@@ -46,6 +47,13 @@ def _compute(ind: Dict, df: pd.DataFrame):
     stat = ind.get("stat", "count")
     question = ind.get("question")
 
+    # dedup_by: deduplicate df by a key column before computing
+    dedup_col = ind.get("dedup_by")
+    if dedup_col:
+        if dedup_col not in df.columns:
+            raise ValueError(f"dedup_by column '{dedup_col}' not found in data")
+        df = df.drop_duplicates(subset=[dedup_col], keep="first")
+
     if not question:
         # no question — just count rows
         return len(df)
@@ -57,6 +65,9 @@ def _compute(ind: Dict, df: pd.DataFrame):
 
     if stat == "count":
         return series.notna().sum()
+
+    if stat == "count_distinct":
+        return series.dropna().nunique()
 
     if stat == "percent":
         filter_val = ind.get("filter_value")

@@ -118,6 +118,10 @@ charts: []
 #   height_inches  : chart height in inches
 #   color          : hex color for single-series charts (e.g. "#D85A30")
 #   xlabel / ylabel: axis label overrides
+#   distinct_by    : column to deduplicate rows before charting (e.g. Beneficiary_ID)
+#   expand_multi   : true → split space-separated select_multiple values before counting
+#                    (bar, horizontal_bar, pie, donut, treemap, waterfall, funnel, table, likert)
+#                    Note: choice labels that contain spaces will be split incorrectly
 # Per-type options:
 #   sort      (bar, horizontal_bar, grouped_bar, waterfall): "value"|"label"|"none"
 #   normalize (stacked_bar): true → 100% stacked
@@ -129,6 +133,22 @@ charts: []
 #   stat      (scorecard): "count" | "mean" | "sum"
 #   columns   (scorecard): number of cards per row (default 3)
 #   male_value / female_value (pyramid): strings matching gender column values
+#
+# Examples using distinct_by and expand_multi:
+#   - name: unique_communes_bar
+#     title: Submissions per commune (unique beneficiaries only)
+#     type: bar
+#     questions: [Commune]
+#     options:
+#       distinct_by: Beneficiary_ID   # count each beneficiary once even across multiple submissions
+#
+#   - name: coping_strategies
+#     title: Coping strategies used
+#     type: horizontal_bar
+#     questions: [Coping_Strategies]  # select_multiple column
+#     options:
+#       expand_multi: true            # splits "strategy1 strategy2" → counts each choice separately
+#       top_n: 10
 
 # Text/number indicators → {{ ind_<name> }} placeholders in Word template
 # Use these for key figures that appear inline in text, not as chart images.
@@ -137,8 +157,21 @@ indicators: []
 #   - name: total_beneficiaries
 #     label: Total beneficiaries
 #     question: Beneficiary_ID   # export_label of the column
-#     stat: count                # count|sum|mean|median|min|max|percent|most_common
+#     stat: count                # count|sum|mean|median|min|max|percent|most_common|count_distinct
 #     format: number             # number|decimal|percent|text
+#
+#   - name: communes_reached
+#     label: Communes reached
+#     question: Commune
+#     stat: count_distinct       # 20 communes out of 100 submissions → "20"
+#     format: number
+#
+#   - name: unique_beneficiaries
+#     label: Unique beneficiaries reached
+#     question: Beneficiary_ID
+#     stat: count
+#     dedup_by: Beneficiary_ID   # deduplicate by this column first (same as count_distinct here)
+#     format: number
 #
 #   - name: pct_female
 #     label: Female beneficiaries

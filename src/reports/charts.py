@@ -15,6 +15,10 @@ New options supported across chart types:
   basemap      : true/false — add OpenStreetMap tile basemap (dot_map, requires contextily)
   color_by     : column name to color dots by category (dot_map)
   size         : dot size in points (dot_map, default 20)
+  distinct_by  : column name — deduplicate df by this column before charting
+  expand_multi : true/false — split space-separated select_multiple values before counting
+                 (bar, horizontal_bar, pie, donut, treemap, waterfall, funnel, table, likert)
+                 Note: choice labels containing spaces will be split incorrectly (Kobo limitation)
 """
 import logging
 from pathlib import Path
@@ -45,6 +49,20 @@ def generate_chart(chart_cfg: Dict, df: pd.DataFrame, out_dir: Path = CHART_DIR)
     opts = chart_cfg.get("options",{}); out_path = out_dir / f"{name}.png"
     missing = [q for q in questions if q not in df.columns]
     if missing: log.warning(f"Chart '{name}': columns not found: {missing}"); return None
+    # distinct_by: deduplicate df by a column before charting
+    distinct_by = opts.get("distinct_by")
+    if distinct_by:
+        if distinct_by not in df.columns:
+            log.warning(f"Chart '{name}': distinct_by column '{distinct_by}' not found — ignored")
+        else:
+            df = df.drop_duplicates(subset=[distinct_by], keep="first")
+    # expand_multi: explode space-separated select_multiple values (first question column only)
+    if opts.get("expand_multi") and questions:
+        col = questions[0]
+        df = df.copy()
+        df[col] = df[col].astype(str).str.strip()
+        df = df.assign(**{col: df[col].str.split(" ")}).explode(col)
+        df = df[df[col].notna() & (df[col] != "") & (df[col] != "nan")]
     try:
         fn = CHART_DISPATCH.get(chart_type)
         if not fn: log.warning(f"Unknown chart type '{chart_type}'"); return None

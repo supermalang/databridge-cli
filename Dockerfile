@@ -205,6 +205,9 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "scorecard: stat,columns; "
             "pyramid: male_value,female_value; "
             "dot_map: color_by. "
+            "Two special options apply to all chart types: "
+            "distinct_by (string): column name to deduplicate rows before charting — use when the user wants to count unique entities (e.g. unique beneficiaries, unique communes) rather than total submissions; "
+            "expand_multi (boolean): set true for select_multiple columns where answers are stored as space-separated strings — expands 'choice1 choice2' into separate rows so each choice is counted individually; valid for bar/horizontal_bar/pie/donut/treemap/waterfall/funnel/table/likert types only. "
             "Only include options relevant to the chosen type. "
             "CRITICAL: the questions array must contain ONLY exact column names copied verbatim from the "
             "provided numbered list — never choice/answer values, never descriptions, never translated text. "
@@ -220,7 +223,10 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "You are a data analyst. Given survey columns with their categories and a description, return a single indicator "
             "config as JSON with keys: name, label, question, stat, format, "
             "filter_value (optional), decimals (optional). "
-            "Valid stat values: count|sum|mean|median|min|max|percent|most_common. "
+            "Valid stat values: count|count_distinct|sum|mean|median|min|max|percent|most_common. "
+            "Use count_distinct when the user wants the number of unique values in a column (e.g. how many communes, how many distinct regions). "
+            "Use count when the user wants the total number of non-null rows. "
+            "The optional dedup_by field (string) deduplicates rows by a key column before computing any stat — use it when the user wants to measure something per unique entity (e.g. dedup_by: Beneficiary_ID to count each beneficiary once). "
             "Valid format values: number|decimal|percent|text. "
             "Use exact column names from the provided list. Return JSON only, no markdown fences."
         )
@@ -1386,6 +1392,8 @@ const CHART_OPT_ROWS={
   'cm-colorby-row':['dot_map'],
   'cm-xlabel-row':['bar','horizontal_bar','stacked_bar','grouped_bar','line','area','histogram','scatter','box_plot','waterfall','bullet_chart','heatmap'],
   'cm-ylabel-row':['bar','horizontal_bar','stacked_bar','grouped_bar','line','area','histogram','scatter','box_plot','waterfall','bullet_chart','heatmap'],
+  'cm-distinct-by-row':['bar','horizontal_bar','stacked_bar','grouped_bar','pie','donut','treemap','waterfall','funnel','table','likert','line','area','histogram','scatter','box_plot','heatmap','bullet_chart','scorecard','pyramid'],
+  'cm-expand-multi-row':['bar','horizontal_bar','pie','donut','treemap','waterfall','funnel','table','likert'],
 };
 function renderChartsList(){
   const c=document.getElementById('charts-list');
@@ -1471,8 +1479,8 @@ async function openChartModal(idx){
   updateChartForm();
   loadPreviewFileOptions();
   // clear fields
-  ['cm-name','cm-title','cm-width','cm-color','cm-topn','cm-bins','cm-target','cm-columns','cm-male','cm-female','cm-colorby','cm-xlabel','cm-ylabel'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  ['cm-sort','cm-normalize','cm-freq','cm-stat-scorecard'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['cm-name','cm-title','cm-width','cm-color','cm-topn','cm-bins','cm-target','cm-columns','cm-male','cm-female','cm-colorby','cm-xlabel','cm-ylabel','cm-distinct-by'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['cm-sort','cm-normalize','cm-freq','cm-stat-scorecard','cm-expand-multi'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('cm-preview-area').innerHTML='Select a data file (or leave blank for auto-detect) and click Preview.';
   document.getElementById('cm-preview-area').style.color='var(--muted)';
   if(idx!==null){
@@ -1499,7 +1507,10 @@ async function openChartModal(idx){
     if(o.female_value)document.getElementById('cm-female').value=o.female_value;
     if(o.color_by)document.getElementById('cm-colorby').value=o.color_by;
     if(o.xlabel)document.getElementById('cm-xlabel').value=o.xlabel;
+    if(o.xlabel)document.getElementById('cm-xlabel').value=o.xlabel;
     if(o.ylabel)document.getElementById('cm-ylabel').value=o.ylabel;
+    if(o.distinct_by)document.getElementById('cm-distinct-by').value=o.distinct_by;
+    if(o.expand_multi!==undefined)document.getElementById('cm-expand-multi').value=String(o.expand_multi);
   }
   document.getElementById('chart-modal').style.display='flex';
 }
@@ -1523,6 +1534,8 @@ function buildChartFromModal(){
   const cby=document.getElementById('cm-colorby').value;if(cby)opts.color_by=cby;
   const xl=document.getElementById('cm-xlabel').value;if(xl)opts.xlabel=xl;
   const yl=document.getElementById('cm-ylabel').value;if(yl)opts.ylabel=yl;
+  const dby=document.getElementById('cm-distinct-by').value.trim();if(dby)opts.distinct_by=dby;
+  const exm=document.getElementById('cm-expand-multi').value;if(exm)opts.expand_multi=(exm==='true');
   return{name:document.getElementById('cm-name').value.trim(),title:document.getElementById('cm-title').value.trim(),type,questions,options:Object.keys(opts).length?opts:undefined};
 }
 async function previewChart(){
@@ -1559,7 +1572,7 @@ function openIndicatorModal(idx){
   document.getElementById('im-ai-prompt').value='';
   document.getElementById('im-ai-result').style.display='none';
   document.getElementById('ind-modal-title').textContent=idx===null?'Add indicator':'Edit indicator';
-  ['im-name','im-label','im-question','im-filterval','im-decimals'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['im-name','im-label','im-question','im-filterval','im-decimals','im-dedup-by'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('im-stat').value='count';
   document.getElementById('im-format').value='number';
   document.getElementById('im-preview-area').innerHTML='Click Preview to compute the indicator value.';
@@ -1574,7 +1587,8 @@ function openIndicatorModal(idx){
     document.getElementById('im-stat').value=ind.stat||'count';
     document.getElementById('im-filterval').value=ind.filter_value||'';
     document.getElementById('im-format').value=ind.format||'number';
-    document.getElementById('im-decimals').value=ind.decimals||'';
+    document.getElementById("im-decimals").value=ind.decimals||"";
+    document.getElementById("im-dedup-by").value=ind.dedup_by||"";
     updateIndicatorForm();
   }
   document.getElementById('indicator-modal').style.display='flex';
@@ -1587,6 +1601,7 @@ function saveIndicatorFromModal(){
   const ind={name,label:document.getElementById('im-label').value.trim(),question:document.getElementById('im-question').value.trim(),stat,format:document.getElementById('im-format').value};
   const fv=document.getElementById('im-filterval').value.trim();if(fv)ind.filter_value=fv;
   const dec=document.getElementById('im-decimals').value;if(dec!=='')ind.decimals=parseInt(dec);
+  const dby=document.getElementById('im-dedup-by').value.trim();if(dby)ind.dedup_by=dby;
   if(_editIndIdx===null)_indicators.push(ind);
   else _indicators[_editIndIdx]=ind;
   renderIndicatorsList();
@@ -1610,6 +1625,7 @@ async function previewIndicator(){
   if(question)ind.question=question;
   const fv=document.getElementById('im-filterval').value.trim();if(fv)ind.filter_value=fv;
   const dec=document.getElementById('im-decimals').value;if(dec!=='')ind.decimals=parseInt(dec);
+  const dby=document.getElementById('im-dedup-by').value.trim();if(dby)ind.dedup_by=dby;
   parea.innerHTML='<span style="color:var(--muted);">Computing…</span>';parea.style.color='';
   const dataFile=document.getElementById('im-preview-file').value||null;
   try{
@@ -1676,6 +1692,8 @@ function acceptAiChart(){
   if(o.color_by)document.getElementById('cm-colorby').value=o.color_by;
   if(o.xlabel)document.getElementById('cm-xlabel').value=o.xlabel;
   if(o.ylabel)document.getElementById('cm-ylabel').value=o.ylabel;
+  if(o.distinct_by)document.getElementById('cm-distinct-by').value=o.distinct_by;
+  if(o.expand_multi!==undefined)document.getElementById('cm-expand-multi').value=String(o.expand_multi);
   switchChartView('form');
   previewChart();
 }
@@ -1713,6 +1731,7 @@ function acceptAiIndicator(){
   if(s.filter_value)document.getElementById('im-filterval').value=s.filter_value;
   if(s.format)document.getElementById('im-format').value=s.format;
   if(s.decimals!==undefined)document.getElementById('im-decimals').value=s.decimals;
+  if(s.dedup_by)document.getElementById('im-dedup-by').value=s.dedup_by;
   switchIndicatorView('form');
 }
 function openAiTemplateModal(){document.getElementById('ai-tpl-modal').style.display='flex';}
@@ -1802,6 +1821,8 @@ async function runAiGenerateTemplate(){
       <div class="form-row" id="cm-colorby-row"><label>Color by</label><input id="cm-colorby" placeholder="column name (optional)"></div>
       <div class="form-row" id="cm-xlabel-row"><label>xlabel</label><input id="cm-xlabel" placeholder="optional axis label"></div>
       <div class="form-row" id="cm-ylabel-row"><label>ylabel</label><input id="cm-ylabel" placeholder="optional axis label"></div>
+      <div class="form-row" id="cm-distinct-by-row"><label>Distinct by</label><input id="cm-distinct-by" placeholder="column to deduplicate rows (optional)"></div>
+      <div class="form-row" id="cm-expand-multi-row"><label>Expand multi</label><select id="cm-expand-multi"><option value="">no</option><option value="true">yes — split multi-select choices</option></select></div>
       <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
           <span style="font-size:12px;font-weight:600;">Preview</span>
@@ -1854,6 +1875,7 @@ async function runAiGenerateTemplate(){
           <option value="max">max</option>
           <option value="percent">percent — % where value = filter</option>
           <option value="most_common">most_common — top value</option>
+          <option value="count_distinct">count_distinct — unique values (e.g. 20 communes)</option>
         </select>
       </div>
       <div class="form-row" id="im-filterval-row" style="display:none;"><label>Filter value</label><input id="im-filterval" placeholder="e.g. Female (required for percent)"></div>
@@ -1866,6 +1888,7 @@ async function runAiGenerateTemplate(){
         </select>
       </div>
       <div class="form-row"><label>Decimals</label><input id="im-decimals" type="number" placeholder="1" min="0" max="6" style="max-width:80px;"></div>
+      <div class="form-row"><label>Dedup by</label><input id="im-dedup-by" placeholder="column to deduplicate rows (optional)"></div>
       <div class="form-row" style="align-items:center;"><label>Data file</label><select id="im-preview-file" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;"><option value="">— auto-detect —</option></select></div>
       <div id="im-preview-area" style="margin-top:8px;min-height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--muted);text-align:center;">Click Preview to compute the indicator value.</div>
     </div>
