@@ -326,10 +326,18 @@ async def preview_chart(payload: ChartPreviewPayload):
             df = apply_choice_labels(df, _questions)
     except Exception:
         pass
+    questions = payload.chart.get("questions", [])
+    missing = [q for q in questions if q not in df.columns]
+    if missing:
+        available = sorted(df.columns.tolist())
+        raise HTTPException(status_code=400, detail=f"Column(s) not found in data: {missing}. Available columns: {available}")
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
         cfg = {**payload.chart, "name": payload.chart.get("name") or "preview"}
-        png_path = generate_chart(cfg, df, out_dir=out_dir)
+        try:
+            png_path = generate_chart(cfg, df, out_dir=out_dir)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Chart error: {e}")
         if not png_path or not png_path.exists():
             raise HTTPException(status_code=400, detail="Chart generation failed — check column names and chart type")
         img_b64 = base64.b64encode(png_path.read_bytes()).decode()
