@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 PALETTE = ["#1D9E75","#378ADD","#D85A30","#BA7517","#7F77DD","#D4537E","#5DCAA5","#85B7EB","#F0997B","#C0DD97"]
 _rc = {
     "figure.facecolor":"white","axes.facecolor":"white","axes.edgecolor":"#CCCCCC",
-    "axes.spines.top":False,"axes.spines.right":False,"axes.grid":True,
+    "axes.spines.top":False,"axes.spines.right":False,"axes.grid":True,"axes.axisbelow":True,
     "grid.color":"#EEEEEE","grid.linewidth":0.7,"font.family":"sans-serif","font.size":10,
     "axes.titlesize":12,"axes.titleweight":"bold","axes.titlepad":10,
 }
@@ -123,7 +123,7 @@ def chart_horizontal_bar(df, q, title, out, opts):
     for b in bars:
         w = b.get_width()
         ax.text(w + max(counts.values)*0.01, b.get_y()+b.get_height()/2, f"{int(w)}", va="center", fontsize=9)
-    ax.set_title(title); ax.set_xlabel(xl); ax.margins(x=0.12)
+    ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl); ax.margins(x=0.12)
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 def chart_stacked_bar(df, q, title, out, opts):
