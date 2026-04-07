@@ -1024,15 +1024,24 @@ function renderQuestions(){
     '<th style="width:32px;"><input type="checkbox" id="q-check-all" onchange="toggleAllQuestions(this.checked)" title="Select all"></th>'+
     '<th>kobo_key</th><th>Label</th><th>Type</th><th>Category</th>'+
     '<th style="min-width:180px;">Export label <span style="font-weight:normal;color:var(--muted)">(editable)</span></th>'+
+    '<th>Choices</th>'+
     '</tr></thead><tbody>'+
-    _questions.map((q,i)=>`<tr id="qrow-${i}">
+    _questions.map((q,i)=>{
+      const choices=q.choices&&Object.keys(q.choices).length?q.choices:null;
+      const choicesHtml=choices
+        ?`<details style="cursor:pointer;"><summary style="font-size:11px;color:var(--muted);list-style:none;user-select:none;">${Object.keys(choices).length} values ▾</summary><div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px;">`+
+          Object.entries(choices).map(([k,v])=>`<span title="${k}" style="display:inline-block;background:var(--bg2,#f0f0f0);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:10px;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;">${v}</span>`).join('')+
+          `</div></details>`
+        :`<span style="color:var(--muted);font-size:11px;">—</span>`;
+      return `<tr id="qrow-${i}">
       <td><input type="checkbox" class="q-check" data-idx="${i}" onchange="updateSelectionUI()"></td>
       <td style="color:var(--muted);font-size:11px;font-family:monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${q.kobo_key||''}">${q.kobo_key||''}</td>
       <td style="font-size:12px;">${q.label||''}</td>
       <td style="color:var(--muted);font-size:11px;">${q.type||''}</td>
       <td><span class="badge-cat badge-cat-${q.category||'undefined'}">${q.category||''}</span></td>
       <td><input class="export-label-input" data-idx="${i}" value="${(q.export_label||'').replace(/"/g,'&quot;')}" style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;" oninput="markDirty(this)"></td>
-    </tr>`).join('')+
+      <td style="max-width:200px;">${choicesHtml}</td>
+    </tr>`;}).join('')+
     '</tbody></table>';
 }
 async function loadQuestions(){
