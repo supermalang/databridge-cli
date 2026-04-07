@@ -340,10 +340,16 @@ def _export_supabase(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.Da
             log.info(f"Repeat group exported → Supabase '{table}_{safe_name}' ({len(recs)} rows)")
 
 
-def load_processed_data(cfg: Dict, sample_size: Optional[int] = None) -> pd.DataFrame:
+def load_processed_data(cfg: Dict, sample_size: Optional[int] = None) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+    """Load the main processed DataFrame plus any repeat-group tables from disk.
+
+    Returns:
+        (main_df, repeat_tables) where repeat_tables is {safe_group_name: DataFrame}
+    """
     fmt = cfg.get("export", {}).get("format", "csv")
     out_dir = Path(cfg.get("export", {}).get("output_dir", "data/processed"))
     alias = cfg.get("form", {}).get("alias", "form")
+
     def _latest(pattern):
         matches = sorted(out_dir.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True)
         if not matches:
@@ -358,10 +364,45 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None) -> pd.Data
         df = pd.read_excel(_latest(f"{alias}_data*.xlsx"), sheet_name="main")
     else:
         df = pd.read_csv(_latest(f"{alias}_data*.csv"))
+
     if sample_size:
         df = df.head(sample_size)
         log.info(f"Sample mode: {len(df)} rows")
+
     questions = cfg.get("questions", [])
     if questions:
         df = apply_choice_labels(df, questions)
-    return df
+
+    # --- Load repeat tables ---
+    repeat_tables: Dict[str, pd.DataFrame] = {}
+    if fmt == "xlsx":
+        xl_path = _latest(f"{alias}_data*.xlsx")
+        import openpyxl
+        wb = openpyxl.load_workbook(xl_path, read_only=True)
+        for sheet in wb.sheetnames:
+            if sheet != "main":
+                repeat_tables[sheet] = pd.read_excel(xl_path, sheet_name=sheet)
+        wb.close()
+    else:
+        # CSV / JSON: repeat files are named {alias}_{safe_group}_{ts}.{ext}
+        # Main file is {alias}_data_{ts}.{ext} — skip it
+        ext = "csv" if fmt == "csv" else "json"
+        main_stem_prefix = f"{alias}_data_"
+        for f in sorted(out_dir.glob(f"{alias}_*.{ext}"), key=lambda x: x.stat().st_mtime, reverse=True):
+            if f.stem.startswith(main_stem_prefix):
+                continue
+            # stem = {alias}_{safe_name}_{YYYYMMDD}_{HHMMSS}
+            # rsplit on "_" twice to strip the two timestamp segments
+            remainder = f.stem[len(f"{alias}_"):]
+            parts = remainder.rsplit("_", 2)
+            if len(parts) != 3:
+                continue
+            group_name = parts[0]
+            if group_name and group_name not in repeat_tables:
+                if fmt == "csv":
+                    repeat_tables[group_name] = pd.read_csv(f)
+                else:
+                    repeat_tables[group_name] = pd.read_json(f, orient="records")
+                log.info(f"Loaded repeat table '{group_name}' ({len(repeat_tables[group_name])} rows)")
+
+    return df, repeat_tables

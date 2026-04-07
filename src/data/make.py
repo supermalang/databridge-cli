@@ -85,7 +85,7 @@ def _run_classify(cfg, sample=None, rediscover=False):
         return
 
     log.info("Running text classification ...")
-    df = load_processed_data(cfg, sample_size=sample)
+    df, _repeat_tables = load_processed_data(cfg, sample_size=sample)
 
     changed = False
     for q in target_qs:
