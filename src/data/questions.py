@@ -27,7 +27,8 @@ def fetch_and_write_questions(client, cfg: Dict, config_path: Path) -> None:
     for q in questions:
         if q["kobo_key"] in existing:
             prev = existing[q["kobo_key"]]
-            q["category"] = prev.get("category", q["category"])
+            prev_cat = prev.get("category", q["category"])
+            q["category"] = prev_cat if prev_cat != "undefined" else q["category"]
             q["export_label"] = prev.get("export_label", q["export_label"])
         merged.append(q)
     cfg["questions"] = merged
