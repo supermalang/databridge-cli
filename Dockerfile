@@ -1594,6 +1594,7 @@ function acceptAiChart(){
   if(o.xlabel)document.getElementById('cm-xlabel').value=o.xlabel;
   if(o.ylabel)document.getElementById('cm-ylabel').value=o.ylabel;
   switchChartView('form');
+  previewChart();
 }
 function switchIndicatorView(v){
   document.getElementById('im-form-view').style.display=v==='form'?'block':'none';
