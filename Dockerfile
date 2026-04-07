@@ -283,6 +283,15 @@ async def preview_chart(payload: ChartPreviewPayload):
         if not candidates:
             raise HTTPException(status_code=400, detail="No data file found. Run Download first.")
         df = pd.read_csv(candidates[0])
+    try:
+        async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as _f:
+            _cfg = yaml.safe_load(await _f.read()) or {}
+        _questions = _cfg.get("questions", [])
+        if _questions:
+            from src.data.transform import apply_choice_labels
+            df = apply_choice_labels(df, _questions)
+    except Exception:
+        pass
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
         cfg = {**payload.chart, "name": payload.chart.get("name") or "preview"}

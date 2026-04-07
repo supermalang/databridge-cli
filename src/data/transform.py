@@ -14,6 +14,29 @@ def _decode_multi(value, choices: dict) -> str:
     return " ".join(choices.get(p, p) for p in parts)
 
 
+def apply_choice_labels(df: pd.DataFrame, questions: list) -> pd.DataFrame:
+    """Map raw numeric/code values to human-readable labels for select questions.
+
+    Works on any DataFrame whose column names match questions' export_label values.
+    Safe to call on pre-exported CSVs or live submission data alike.
+    """
+    for q in questions:
+        choices = q.get("choices")
+        if not choices:
+            continue
+        col = q.get("export_label") or q.get("label") or q.get("kobo_key", "")
+        if not col or col not in df.columns:
+            continue
+        if q.get("type") == "select_multiple":
+            df[col] = df[col].apply(lambda v, ch=choices: _decode_multi(v, ch))
+        else:
+            df[col] = df[col].apply(
+                lambda v, ch=choices: ch.get(str(v).strip(), v)
+                if pd.notna(v) and str(v).strip() not in ("", "nan") else v
+            )
+    return df
+
+
 def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """Load submissions into a main DataFrame + separate DataFrames for repeat groups.
 
@@ -71,22 +94,7 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
         if label in df.columns:
             df[label] = _cast(df[label], q.get("category", "undefined"))
 
-    # Decode select choice codes to human-readable labels
-    for q in main_questions:
-        choices = q.get("choices")
-        if not choices:
-            continue
-        col = q.get("export_label") or q.get("label") or q["kobo_key"]
-        if col not in df.columns:
-            continue
-        if q.get("type") == "select_multiple":
-            df[col] = df[col].apply(lambda v, ch=choices: _decode_multi(v, ch))
-        else:
-            df[col] = df[col].apply(
-                lambda v, ch=choices: ch.get(str(v).strip(), v)
-                if pd.notna(v) and str(v).strip() not in ("", "nan") else v
-            )
-
+    df = apply_choice_labels(df, main_questions)
     log.info(f"Loaded {len(df)} submissions, {len(df.columns)} columns (main table)")
 
     # --- Repeat tables ---
@@ -115,20 +123,7 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
                 label = q.get("export_label") or q.get("label") or q["kobo_key"]
                 if label in rdf.columns:
                     rdf[label] = _cast(rdf[label], q.get("category", "undefined"))
-            for q in group_questions:
-                choices = q.get("choices")
-                if not choices:
-                    continue
-                label = q.get("export_label") or q.get("label") or q["kobo_key"]
-                if label not in rdf.columns:
-                    continue
-                if q.get("type") == "select_multiple":
-                    rdf[label] = rdf[label].apply(lambda v, ch=choices: _decode_multi(v, ch))
-                else:
-                    rdf[label] = rdf[label].apply(
-                        lambda v, ch=choices: ch.get(str(v).strip(), v)
-                        if pd.notna(v) and str(v).strip() not in ("", "nan") else v
-                    )
+            rdf = apply_choice_labels(rdf, group_questions)
             repeat_tables[group_name] = rdf
             log.info(f"Loaded {len(rdf)} rows for repeat group '{group_name}'")
         else:
@@ -294,4 +289,7 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None) -> pd.Data
     if sample_size:
         df = df.head(sample_size)
         log.info(f"Sample mode: {len(df)} rows")
+    questions = cfg.get("questions", [])
+    if questions:
+        df = apply_choice_labels(df, questions)
     return df
