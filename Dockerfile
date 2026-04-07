@@ -117,7 +117,9 @@ async def save_questions(payload: QuestionsPayload):
 @app.post("/api/ai/test")
 async def test_ai(payload: AITestPayload):
     api_key = payload.api_key.strip()
-    if not api_key or api_key.startswith("env:"):
+    if api_key.startswith("env:"):
+        api_key = os.environ.get(api_key[4:].strip(), "")
+    if not api_key:
         raise HTTPException(status_code=400, detail="API key not set or not resolved.")
     provider = payload.provider.lower()
     result = {"ok": False, "tokens_used": None, "quota": None, "message": ""}
