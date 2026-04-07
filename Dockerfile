@@ -1305,13 +1305,28 @@ function renderIndicatorsList(){
   </div>`).join('');
 }
 function deleteIndicator(i){if(!confirm('Delete indicator "'+(_indicators[i]||{}).name+'"?'))return;_indicators.splice(i,1);renderIndicatorsList();}
+function _choicesForColumn(colName){
+  if(!colName||!_questions)return null;
+  const q=_questions.find(q=>(q.export_label||q.label||q.kobo_key)===colName);
+  return(q&&q.choices&&Object.keys(q.choices).length)?q.choices:null;
+}
+function showColumnChoices(input){
+  const hint=input.parentElement.querySelector('.cm-choices-hint');
+  if(!hint)return;
+  const choices=_choicesForColumn(input.value.trim());
+  if(!choices){hint.innerHTML='';hint.style.display='none';return;}
+  const labels=Object.values(choices);
+  hint.innerHTML='<span style="color:var(--muted);font-size:10px;margin-right:4px;">segments:</span>'+
+    labels.map(v=>`<span style="display:inline-block;background:var(--bg2,#f0f0f0);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:10px;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;" title="${v.replace(/"/g,'&quot;')}">${v}</span>`).join(' ');
+  hint.style.display='flex';
+}
 function updateChartForm(){
   const type=document.getElementById('cm-type').value;
   const meta=CHART_META[type]||{q:['column'],hint:''};
   document.getElementById('cm-type-hint').textContent=meta.hint||'';
   // question inputs
   const wrap=document.getElementById('cm-questions-wrap');
-  wrap.innerHTML=meta.q.map((lbl,i)=>`<div class="form-row"><label>${lbl}</label><input class="cm-q-input" data-qi="${i}" placeholder="column name"></div>`).join('');
+  wrap.innerHTML=meta.q.map((lbl,i)=>`<div class="form-row"><label>${lbl}</label><div style="flex:1;display:flex;flex-direction:column;gap:4px;"><input class="cm-q-input" data-qi="${i}" placeholder="column name" oninput="showColumnChoices(this)"><div class="cm-choices-hint" style="display:none;flex-wrap:wrap;gap:3px;align-items:center;padding:2px 0;"></div></div></div>`).join('');
   // option rows visibility
   Object.entries(CHART_OPT_ROWS).forEach(([rowId,types])=>{
     const el=document.getElementById(rowId);
@@ -1348,7 +1363,7 @@ async function openChartModal(idx){
     document.getElementById('cm-title').value=ch.title||'';
     // populate question inputs
     const qInputs=document.querySelectorAll('.cm-q-input');
-    (ch.questions||[]).forEach((q,i)=>{if(qInputs[i])qInputs[i].value=q;});
+    (ch.questions||[]).forEach((q,i)=>{if(qInputs[i]){qInputs[i].value=q;showColumnChoices(qInputs[i]);}});
     const o=ch.options||{};
     if(o.width_inches)document.getElementById('cm-width').value=o.width_inches;
     if(o.color)document.getElementById('cm-color').value=o.color;
@@ -1485,7 +1500,7 @@ function acceptAiChart(){
   if(s.type){document.getElementById('cm-type').value=s.type;updateChartForm();}
   if(s.name)document.getElementById('cm-name').value=s.name;
   if(s.title)document.getElementById('cm-title').value=s.title;
-  if(s.questions){const inputs=document.querySelectorAll('.cm-q-input');s.questions.forEach((q,i)=>{if(inputs[i])inputs[i].value=q;});}
+  if(s.questions){const inputs=document.querySelectorAll('.cm-q-input');s.questions.forEach((q,i)=>{if(inputs[i]){inputs[i].value=q;showColumnChoices(inputs[i]);}});}
   const o=s.options||{};
   if(o.width_inches)document.getElementById('cm-width').value=o.width_inches;
   if(o.color)document.getElementById('cm-color').value=o.color;
