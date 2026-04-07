@@ -713,9 +713,16 @@ header h1{font-size:16px;font-weight:600}
 .tab{padding:12px 18px;cursor:pointer;border-bottom:2px solid transparent;font-size:13px;color:var(--muted);transition:all .15s;user-select:none}
 .tab:hover{color:var(--text)}.tab.active{color:var(--teal-dark);border-bottom-color:var(--teal);font-weight:500}
 .tab-content{display:none;height:100%;overflow:auto}.tab-content.active{display:flex;flex-direction:column}
-.dashboard{padding:20px;display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:16px;height:100%;overflow:hidden}
-.dashboard-terminal{background:#1a1a18;border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow)}
-.dashboard-terminal-note{padding:7px 14px;background:#111;color:#888;font-size:11px;font-family:monospace;border-bottom:1px solid #333;flex-shrink:0}
+.dashboard{padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;height:100%;overflow:hidden}
+.dashboard-right{display:flex;flex-direction:column;gap:16px;min-height:0;overflow:hidden}
+.dashboard-terminal{background:#1a1a18;border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow);flex-shrink:0}
+.dashboard-terminal-toggle{padding:8px 14px;background:#111;color:#888;font-size:11px;font-family:monospace;border-bottom:1px solid #333;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+.dashboard-terminal-toggle:hover{color:#bbb}
+.dashboard-terminal-toggle .toggle-icon{font-size:10px;transition:transform .2s}
+.dashboard-terminal.open .toggle-icon{transform:rotate(90deg)}
+.dashboard-terminal-body{display:none;flex:1;flex-direction:column;min-height:0}
+.dashboard-terminal.open .dashboard-terminal-body{display:flex}
+.dashboard-terminal.open{flex-shrink:1;min-height:0}
 .dashboard-terminal iframe{flex:1;border:none;min-height:0}
 .commands-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start}
 .cmd-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
@@ -729,7 +736,7 @@ header h1{font-size:16px;font-weight:600}
 .btn-sm{padding:5px 10px;font-size:12px}
 .btn-danger{background:#fee2e2;color:var(--red)}.btn-danger:hover{background:#fecaca}
 .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}.btn-ghost:hover{background:var(--bg)}
-.log-panel{background:#1a1a18;border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow)}
+.log-panel{background:#1a1a18;border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow);flex:1;min-height:0}
 .log-header{padding:10px 14px;background:#111;display:flex;align-items:center;gap:8px;border-bottom:1px solid #333}
 .log-header span{font-size:12px;color:#888;flex:1}
 .log-body{flex:1;overflow-y:auto;padding:12px 14px;font-family:'Menlo','Monaco',monospace;font-size:12px;line-height:1.7}
@@ -788,9 +795,6 @@ header h1{font-size:16px;font-weight:600}
 .modal-body h4:first-child{margin-top:0}
 .placeholder-list{list-style:none;padding:0}
 .placeholder-list li{font-family:'Menlo','Monaco',monospace;font-size:12px;padding:3px 8px;background:var(--bg);border-radius:4px;margin-bottom:4px;color:var(--teal-dark)}
-.terminal-pane{height:100%;display:flex;flex-direction:column}
-.terminal-pane iframe{flex:1;border:none}
-.terminal-note{padding:8px 16px;background:#1a1a18;color:#888;font-size:11px;font-family:monospace}
 .toast{position:fixed;bottom:20px;right:20px;padding:10px 16px;border-radius:var(--radius);font-size:13px;font-weight:500;z-index:999;animation:slide-in .2s ease;box-shadow:0 4px 12px rgba(0,0,0,.15)}
 .toast.ok{background:#d1fae5;color:#065f46}.toast.err{background:#fee2e2;color:#991b1b}
 @keyframes slide-in{from{transform:translateY(10px);opacity:0}}
@@ -809,7 +813,6 @@ header h1{font-size:16px;font-weight:600}
       <div class="tab" data-tab="config">Config</div>
       <div class="tab" data-tab="reports">Reports</div>
       <div class="tab" data-tab="templates">Templates</div>
-      <div class="tab" data-tab="terminal">Terminal</div>
     </div>
     <div class="tab-content active" id="tab-dashboard" style="overflow:hidden;">
       <div class="dashboard">
@@ -851,16 +854,23 @@ header h1{font-size:16px;font-weight:600}
             <button class="btn btn-primary" onclick="runCmd('build-report',{sample:getSample('sample-report'),split_by:getSplitBy()})">▶ Run</button>
           </div>
         </div>
-        <div class="log-panel">
-          <div class="log-header">
-            <span id="log-title">Logs</span>
-            <button class="btn btn-ghost btn-sm" onclick="clearLog()">Clear</button>
+        <div class="dashboard-right">
+          <div class="log-panel">
+            <div class="log-header">
+              <span id="log-title">Logs</span>
+              <button class="btn btn-ghost btn-sm" onclick="clearLog()">Clear</button>
+            </div>
+            <div class="log-body" id="log-body"><span class="log-empty">No commands run yet.</span></div>
           </div>
-          <div class="log-body" id="log-body"><span class="log-empty">No commands run yet.</span></div>
-        </div>
-        <div class="dashboard-terminal">
-          <div class="dashboard-terminal-note">Terminal · /app · python3 src/data/make.py --help</div>
-          <iframe id="dashboard-terminal-frame" src="/terminal/" allowfullscreen></iframe>
+          <div class="dashboard-terminal" id="dashboard-terminal">
+            <div class="dashboard-terminal-toggle" onclick="toggleDashboardTerminal()">
+              <span>Terminal · /app</span>
+              <span class="toggle-icon">▶</span>
+            </div>
+            <div class="dashboard-terminal-body">
+              <iframe id="dashboard-terminal-frame" src="" allowfullscreen></iframe>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1015,19 +1025,22 @@ header h1{font-size:16px;font-weight:600}
         <div id="templates-container"><p class="empty-state">Loading…</p></div>
       </div>
     </div>
-    <div class="tab-content" id="tab-terminal">
-      <div class="terminal-pane">
-        <div class="terminal-note">Web terminal · /app · python3 src/data/make.py --help</div>
-        <iframe id="terminal-frame" src="" allowfullscreen></iframe>
-      </div>
-    </div>
   </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 <script>
-let terminalLoaded=true,running=false;
+let running=false;
+function toggleDashboardTerminal(){
+  const el=document.getElementById('dashboard-terminal');
+  const wasOpen=el.classList.contains('open');
+  el.classList.toggle('open');
+  if(!wasOpen){
+    const iframe=document.getElementById('dashboard-terminal-frame');
+    if(!iframe.src||iframe.src==='about:blank'||iframe.src===window.location.href)iframe.src='/terminal/';
+  }
+}
 loadSplitByOptions();
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>{
@@ -1037,10 +1050,6 @@ document.querySelectorAll('.tab').forEach(tab=>{
     if(tab.dataset.tab==='config')switchView('form');
     if(tab.dataset.tab==='reports'){loadReports();loadDataFiles();}
     if(tab.dataset.tab==='templates')loadTemplates();
-    if(tab.dataset.tab==='terminal'){
-      const tf=document.getElementById('terminal-frame');
-      if(!tf.src||tf.src==='about:blank'||tf.src===window.location.href)tf.src='/terminal/';
-    }
   });
 });
 const editor=CodeMirror.fromTextArea(document.getElementById('config-editor'),{
