@@ -173,31 +173,35 @@ async def test_ai(payload: AITestPayload):
     return result
 
 def _build_suggest_prompts(kind: str, prompt: str, questions: list):
-    labels = ", ".join(
-        q.get("export_label") or q.get("label") or q.get("kobo_key", "")
-        for q in questions if q
-    ) or "unknown"
+    col_parts = []
+    for q in questions:
+        if not q:
+            continue
+        label = q.get("export_label") or q.get("label") or q.get("kobo_key", "")
+        category = q.get("category", "")
+        col_parts.append(f"{label} ({category})" if category else label)
+    labels = ", ".join(col_parts) or "unknown"
     if kind == "chart":
         system = (
-            "You are a data visualization expert. Given available survey columns and a description, "
+            "You are a data visualization expert. Given available survey columns with their categories and a description, "
             "return a single chart config as JSON with keys: name, title, type, questions (array), options (object). "
             "Valid types: bar|horizontal_bar|stacked_bar|grouped_bar|pie|donut|line|area|histogram|scatter|"
             "box_plot|heatmap|treemap|waterfall|funnel|table|bullet_chart|likert|scorecard|pyramid|dot_map. "
             "Valid options keys: width_inches, color, top_n, sort, normalize, freq, bins, target, stat, "
             "columns, male_value, female_value, color_by, xlabel, ylabel. "
-            "Return JSON only, no markdown fences."
+            "Use exact column names from the provided list. Return JSON only, no markdown fences."
         )
-        user = f"Available columns: {labels}\nRequest: {prompt}"
+        user = f"Available columns (name, category): {labels}\nRequest: {prompt}"
     else:
         system = (
-            "You are a data analyst. Given survey columns and a description, return a single indicator "
+            "You are a data analyst. Given survey columns with their categories and a description, return a single indicator "
             "config as JSON with keys: name, label, question, stat, format, "
             "filter_value (optional), decimals (optional). "
             "Valid stat values: count|sum|mean|median|min|max|percent|most_common. "
             "Valid format values: number|decimal|percent|text. "
-            "Return JSON only, no markdown fences."
+            "Use exact column names from the provided list. Return JSON only, no markdown fences."
         )
-        user = f"Available columns: {labels}\nRequest: {prompt}"
+        user = f"Available columns (name, category): {labels}\nRequest: {prompt}"
     return system, user
 
 @app.post("/api/ai/suggest")
@@ -211,7 +215,9 @@ async def ai_suggest(payload: AISuggestPayload):
     if not ai_cfg:
         raise HTTPException(status_code=400, detail="No ai: section in config.yml. Configure AI first.")
     api_key = ai_cfg.get("api_key", "")
-    if not api_key or str(api_key).startswith("env:"):
+    if str(api_key).startswith("env:"):
+        api_key = os.environ.get(str(api_key)[4:].strip(), "")
+    if not api_key:
         raise HTTPException(status_code=400, detail="AI api_key not resolved.")
     provider = ai_cfg.get("provider", "openai").lower()
     model = ai_cfg.get("model", "gpt-4o")
@@ -1311,7 +1317,8 @@ async function loadPreviewFileOptions(){
     (data.files||[]).forEach(f=>{const o=document.createElement('option');o.value=f.name;o.textContent=f.name+' ('+f.size_kb+' KB)';sel.appendChild(o);});
   }catch(e){}
 }
-function openChartModal(idx){
+async function openChartModal(idx){
+  if(!_questions.length){const d=await(await fetch('/api/questions')).json();_questions=d.questions||[];}
   _editChartIdx=idx;
   switchChartView('form');
   document.getElementById('cm-ai-prompt').value='';
