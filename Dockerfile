@@ -400,6 +400,58 @@ async def preview_indicator(payload: IndicatorPreviewPayload):
         raise HTTPException(status_code=400, detail=f"Indicator error: {e}")
     return {"value": value, "n_rows": len(df)}
 
+class SummaryPreviewPayload(BaseModel):
+    summary: dict
+    data_file: Optional[str] = None
+
+@app.post("/api/summaries/preview")
+async def preview_summary(payload: SummaryPreviewPayload):
+    import pandas as pd
+    from src.reports.summaries import _compute_summary
+    if payload.data_file:
+        data_path = DATA_DIR / payload.data_file
+        if "/" in payload.data_file or ".." in payload.data_file:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        if not data_path.exists():
+            raise HTTPException(status_code=404, detail=f"Data file not found: {payload.data_file}")
+        ext = data_path.suffix.lower()
+        if ext == ".csv": df = pd.read_csv(data_path)
+        elif ext == ".json": df = pd.read_json(data_path)
+        elif ext == ".xlsx": df = pd.read_excel(data_path)
+        else: raise HTTPException(status_code=400, detail="Unsupported file type")
+    else:
+        candidates = sorted(DATA_DIR.glob("*_data.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not candidates:
+            candidates = sorted(DATA_DIR.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not candidates:
+            raise HTTPException(status_code=400, detail="No data file found. Run Download first.")
+        df = pd.read_csv(candidates[0])
+    ai_cfg = None
+    try:
+        async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as _f:
+            _cfg = yaml.safe_load(await _f.read()) or {}
+        _questions = _cfg.get("questions", [])
+        if _questions:
+            from src.data.transform import apply_choice_labels
+            df = apply_choice_labels(df, _questions)
+        raw_ai = _cfg.get("ai")
+        if raw_ai:
+            from src.utils.config import _resolve_env
+            ai_cfg = _resolve_env(raw_ai)
+    except Exception:
+        pass
+    s = payload.summary
+    questions = s.get("questions", [])
+    missing = [q for q in questions if q not in df.columns]
+    if missing:
+        available = sorted(df.columns.tolist())
+        raise HTTPException(status_code=400, detail=f"Column(s) {missing} not found. Available: {available}")
+    try:
+        text = _compute_summary(s, df, ai_cfg)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Summary error: {e}")
+    return {"text": text, "n_rows": len(df)}
+
 @app.post("/api/run/{command}")
 async def run_command(command: str, payload: RunPayload):
     if command not in ALLOWED_COMMANDS:
@@ -877,6 +929,15 @@ header h1{font-size:16px;font-weight:600}
             <div id="indicators-list"><p class="empty-state" style="padding:12px 0 4px;">No indicators configured.</p></div>
             <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('indicators')">Save</button></div>
           </div>
+          <div class="form-section" id="section-summaries">
+            <div class="form-section-title">
+              Summaries
+              <span style="font-weight:normal;font-size:11px;color:var(--muted);">Text paragraphs → &#123;&#123; summary_&lt;name&gt; &#125;&#125; placeholders in template</span>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="openSummaryModal(null)">+ Add summary</button>
+            </div>
+            <div id="summaries-list"><p class="empty-state" style="padding:12px 0 4px;">No summaries configured.</p></div>
+            <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('summaries')">Save</button></div>
+          </div>
         </div>
         <div id="config-yaml-view" style="display:none;flex:1;overflow:hidden;">
           <div class="editor-wrap"><textarea id="config-editor"></textarea></div>
@@ -1043,9 +1104,11 @@ async function loadFormValues(){
   _filters=Array.isArray(cfg.filters)?cfg.filters:[];
   _charts=Array.isArray(cfg.charts)?cfg.charts:[];
   _indicators=Array.isArray(cfg.indicators)?cfg.indicators:[];
+  _summaries=Array.isArray(cfg.summaries)?cfg.summaries:[];
   renderFilters();
   renderChartsList();
   renderIndicatorsList();
+  renderSummariesList();
   toggleDbFields();
   loadQuestions();
 }
@@ -1088,6 +1151,8 @@ async function saveFormSection(section){
     cfg.charts=_charts.map(ch=>{const c={...ch};if(c.options&&!Object.keys(c.options).length)delete c.options;return c;});
   }else if(section==='indicators'){
     cfg.indicators=_indicators;
+  }else if(section==='summaries'){
+    cfg.summaries=_summaries;
   }else if(section==='ai'){
     const provider=document.getElementById('cfg-ai-provider').value;
     const key=document.getElementById('cfg-ai-key').value.trim();
@@ -1355,7 +1420,7 @@ async function deleteTemplate(name){
 }
 function toast(msg,type='ok'){const el=document.createElement('div');el.className='toast '+type;el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),3000);}
 // ── Charts & Indicators ───────────────────────────────────────────────
-let _charts=[],_indicators=[],_editChartIdx=null,_editIndIdx=null;
+let _charts=[],_indicators=[],_summaries=[],_editChartIdx=null,_editIndIdx=null,_editSumIdx=null;
 const CHART_META={
   bar:{q:['categorical'],hint:'1 categorical column'},
   horizontal_bar:{q:['categorical'],hint:'1 categorical column'},
@@ -1736,6 +1801,110 @@ function acceptAiIndicator(){
   if(s.dedup_by)document.getElementById('im-dedup-by').value=s.dedup_by;
   switchIndicatorView('form');
 }
+// ── Summaries ─────────────────────────────────────────────────────────────────
+function renderSummariesList(){
+  const c=document.getElementById('summaries-list');
+  if(!_summaries.length){c.innerHTML='<p class="empty-state" style="padding:12px 0 4px;">No summaries configured.</p>';return;}
+  c.innerHTML=_summaries.map((s,i)=>`<div class="ind-row">
+    <span class="ind-name">${s.name||''}</span>
+    <span class="ind-meta">${s.label||''} · ${s.stat||''} of ${(s.questions||[]).join(', ')}</span>
+    <button class="btn btn-ghost btn-sm" onclick="openSummaryModal(${i})">Edit</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteSummary(${i})">Delete</button>
+  </div>`).join('');
+}
+function deleteSummary(i){if(!confirm('Delete summary "'+(_summaries[i]||{}).name+'"?'))return;_summaries.splice(i,1);renderSummariesList();}
+function updateSummaryForm(){
+  const stat=document.getElementById('sm-stat').value;
+  document.getElementById('sm-question2-row').style.display=(stat==='crosstab'||stat==='trend')?'flex':'none';
+  document.getElementById('sm-topn-row').style.display=(stat==='distribution'||stat==='crosstab')?'flex':'none';
+  document.getElementById('sm-freq-row').style.display=stat==='trend'?'flex':'none';
+  document.getElementById('sm-prompt-row').style.display=stat==='ai'?'flex':'none';
+  document.getElementById('sm-language-row').style.display=stat==='ai'?'flex':'none';
+}
+async function loadSummaryPreviewFileOptions(){
+  try{
+    const data=await(await fetch('/api/data')).json();
+    const sel=document.getElementById('sm-preview-file');
+    sel.innerHTML='<option value="">— auto-detect —</option>';
+    (data.files||[]).forEach(f=>{const o=document.createElement('option');o.value=f.name;o.textContent=f.name+' ('+f.size_kb+' KB)';sel.appendChild(o);});
+  }catch(e){}
+}
+function openSummaryModal(idx){
+  _editSumIdx=idx;
+  ['sm-name','sm-label','sm-question1','sm-question2','sm-topn','sm-language'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('sm-prompt').value='';
+  document.getElementById('sm-stat').value='distribution';
+  document.getElementById('sm-freq').value='month';
+  document.getElementById('sm-modal-title').textContent=idx===null?'Add summary':'Edit summary';
+  document.getElementById('sm-preview-area').textContent='Click Preview to compute the summary text.';
+  document.getElementById('sm-preview-area').style.color='var(--muted)';
+  loadSummaryPreviewFileOptions();
+  updateSummaryForm();
+  if(idx!==null){
+    const s=_summaries[idx];
+    document.getElementById('sm-name').value=s.name||'';
+    document.getElementById('sm-label').value=s.label||'';
+    document.getElementById('sm-stat').value=s.stat||'distribution';
+    const qs=s.questions||[];
+    document.getElementById('sm-question1').value=qs[0]||'';
+    document.getElementById('sm-question2').value=qs[1]||'';
+    document.getElementById('sm-topn').value=s.top_n||'';
+    document.getElementById('sm-freq').value=s.freq||'month';
+    document.getElementById('sm-prompt').value=s.prompt||'';
+    document.getElementById('sm-language').value=s.language||'';
+    updateSummaryForm();
+  }
+  document.getElementById('summary-modal').style.display='flex';
+}
+function closeSummaryModal(){document.getElementById('summary-modal').style.display='none';}
+function saveSummaryFromModal(){
+  const name=document.getElementById('sm-name').value.trim();
+  if(!name){alert('Summary name is required');return;}
+  const stat=document.getElementById('sm-stat').value;
+  const q1=document.getElementById('sm-question1').value.trim();
+  const q2=document.getElementById('sm-question2').value.trim();
+  const questions=q2?[q1,q2]:(q1?[q1]:[]);
+  const s={name,stat,questions};
+  const lbl=document.getElementById('sm-label').value.trim();if(lbl)s.label=lbl;
+  const topn=document.getElementById('sm-topn').value;if(topn!=='')s.top_n=parseInt(topn);
+  if(stat==='trend')s.freq=document.getElementById('sm-freq').value;
+  if(stat==='ai'){
+    const pr=document.getElementById('sm-prompt').value.trim();if(pr)s.prompt=pr;
+    const lg=document.getElementById('sm-language').value.trim();if(lg)s.language=lg;
+  }
+  if(_editSumIdx===null)_summaries.push(s);
+  else _summaries[_editSumIdx]=s;
+  renderSummariesList();
+  closeSummaryModal();
+}
+async function previewSummary(){
+  const name=document.getElementById('sm-name').value.trim();
+  const parea=document.getElementById('sm-preview-area');
+  if(!name){parea.style.color='#dc2626';parea.textContent='Enter a name first.';return;}
+  const stat=document.getElementById('sm-stat').value;
+  const q1=document.getElementById('sm-question1').value.trim();
+  const q2=document.getElementById('sm-question2').value.trim();
+  const questions=q2?[q1,q2]:(q1?[q1]:[]);
+  const s={name,stat,questions};
+  const topn=document.getElementById('sm-topn').value;if(topn!=='')s.top_n=parseInt(topn);
+  if(stat==='trend')s.freq=document.getElementById('sm-freq').value;
+  if(stat==='ai'){
+    const pr=document.getElementById('sm-prompt').value.trim();if(pr)s.prompt=pr;
+    const lg=document.getElementById('sm-language').value.trim();if(lg)s.language=lg;
+  }
+  parea.style.color='var(--muted)';parea.textContent='Computing…';
+  const dataFile=document.getElementById('sm-preview-file').value||null;
+  try{
+    const res=await fetch('/api/summaries/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({summary:s,data_file:dataFile})});
+    const data=await res.json();
+    if(res.ok){
+      parea.style.color='var(--text)';
+      parea.textContent=data.text;
+    }else{
+      parea.style.color='#dc2626';parea.textContent=data.detail||'Preview failed';
+    }
+  }catch(e){parea.style.color='#dc2626';parea.textContent='Error: '+e.message;}
+}
 function openAiTemplateModal(){document.getElementById('ai-tpl-modal').style.display='flex';}
 function closeAiTemplateModal(){document.getElementById('ai-tpl-modal').style.display='none';}
 async function runAiGenerateTemplate(){
@@ -1911,6 +2080,47 @@ async function runAiGenerateTemplate(){
       <button class="btn btn-ghost btn-sm" onclick="closeIndicatorModal()">Cancel</button>
       <button class="btn btn-ghost btn-sm" onclick="previewIndicator()">Preview</button>
       <button class="btn btn-primary btn-sm" onclick="saveIndicatorFromModal()">Save indicator</button>
+    </div>
+  </div>
+</div>
+<div id="summary-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeSummaryModal()">
+  <div class="modal" style="width:480px;">
+    <div class="modal-header">
+      <h3 id="sm-modal-title">Add summary</h3>
+      <button onclick="closeSummaryModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row"><label>Name</label><input id="sm-name" placeholder="e.g. region_breakdown"></div>
+      <div class="form-row"><label>Label</label><input id="sm-label" placeholder="e.g. Region breakdown (optional)"></div>
+      <div class="form-row"><label>Stat</label>
+        <select id="sm-stat" onchange="updateSummaryForm()">
+          <option value="distribution">distribution — top-N breakdown of one categorical column</option>
+          <option value="stats">stats — descriptive stats for one numeric column</option>
+          <option value="crosstab">crosstab — row × column breakdown (two categoricals)</option>
+          <option value="trend">trend — time-series count/sum over a date column</option>
+          <option value="ai">ai — AI-generated paragraph</option>
+        </select>
+      </div>
+      <div class="form-row"><label>Column 1</label><input id="sm-question1" placeholder="export_label of column"></div>
+      <div class="form-row" id="sm-question2-row" style="display:none;"><label>Column 2</label><input id="sm-question2" placeholder="second column (export_label)"></div>
+      <div class="form-row" id="sm-topn-row"><label>Top N</label><input id="sm-topn" type="number" placeholder="5" min="1" max="50" style="max-width:80px;"></div>
+      <div class="form-row" id="sm-freq-row" style="display:none;"><label>Frequency</label>
+        <select id="sm-freq">
+          <option value="month">month</option>
+          <option value="week">week</option>
+          <option value="day">day</option>
+          <option value="year">year</option>
+        </select>
+      </div>
+      <div class="form-row" id="sm-prompt-row" style="display:none;align-items:flex-start;"><label style="padding-top:4px;">Prompt</label><textarea id="sm-prompt" rows="3" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="e.g. Focus on gender gaps and regional disparities"></textarea></div>
+      <div class="form-row" id="sm-language-row" style="display:none;"><label>Language</label><input id="sm-language" placeholder="e.g. English, French (optional)"></div>
+      <div style="margin-top:8px;"><label style="font-size:11px;color:var(--muted);">Data file</label><select id="sm-preview-file" style="margin-left:8px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;"><option value="">— auto-detect —</option></select></div>
+      <div id="sm-preview-area" style="margin-top:10px;min-height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--muted);text-align:center;">Click Preview to compute the summary text.</div>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="closeSummaryModal()">Cancel</button>
+      <button class="btn btn-ghost btn-sm" onclick="previewSummary()">Preview</button>
+      <button class="btn btn-primary btn-sm" onclick="saveSummaryFromModal()">Save summary</button>
     </div>
   </div>
 </div>
