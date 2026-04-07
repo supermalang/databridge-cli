@@ -2,7 +2,7 @@
 kobo-reporter CLI — four commands:
   fetch-questions    Download form schema → writes into config.yml
   generate-template  Build starter Word template from config charts
-  download           Extract + filter + export data
+  download           Extract + filter + export data (+ auto-classify if configured)
   build-report       Generate Word report from downloaded data
 """
 import sys, logging
@@ -58,68 +58,33 @@ def cmd_ai_generate_template(description, pages, language, out):
         out_path = Path(out)
     ai_generate_template(cfg, out_path, description, pages, language)
 
-@cli.command("download")
-@click.option("--sample", default=None, type=int, help="Limit to first N submissions.")
-def cmd_download(sample):
-    """Download submissions, apply filters, export to configured destination."""
-    from src.data.extract import get_client
-    from src.data.transform import load_data, apply_filters, export_data
-    cfg = load_config(CONFIG_PATH)
-    if not cfg.get("questions"):
-        click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
-        sys.exit(1)
-    client = get_client(cfg)
-    log.info("Downloading submissions ...")
-    raw = client.get_submissions(sample_size=sample)
-    log.info("Transforming data ...")
-    df, repeat_tables = load_data(raw, cfg)
-    df, repeat_tables = apply_filters(df, cfg, repeat_tables)
-    log.info(f"Exporting {len(df)} rows ...")
-    export_data(df, cfg, repeat_tables)
+def _run_classify(cfg, sample=None, rediscover=False):
+    """Run text classification for any questions with classify.enabled: true.
 
-@cli.command("classify-text")
-@click.option("--sample", default=None, type=int, help="Limit to first N rows (for testing).")
-@click.option("--rediscover", is_flag=True, help="Re-run theme discovery even if themes are already saved.")
-def cmd_classify_text(sample, rediscover):
-    """Cluster free-text responses into themes using AI, then save back to processed data."""
+    Called automatically at the end of download. Silently skips if no AI config
+    or no classify-enabled questions are present.
+    """
     from src.data.classifier import discover_themes, classify_responses
     from src.data.transform import load_processed_data, export_data
     from src.utils.config import write_config
 
-    cfg = load_config(CONFIG_PATH)
-
     ai_cfg = cfg.get("ai")
     if not ai_cfg:
-        click.echo("No ai: section in config.yml. Configure AI provider first.", err=True)
-        sys.exit(1)
+        return
     api_key = ai_cfg.get("api_key", "")
     if not api_key or str(api_key).startswith("env:"):
-        click.echo("AI api_key is not set or env var is missing.", err=True)
-        sys.exit(1)
+        return
 
     fmt = cfg.get("export", {}).get("format", "csv")
     if fmt not in ("csv", "json", "xlsx"):
-        click.echo(
-            f"classify-text only supports file-based exports (csv/json/xlsx). "
-            f"Current format is '{fmt}'. Export to a file format first.",
-            err=True,
-        )
-        sys.exit(1)
+        return
 
     questions = cfg.get("questions", [])
     target_qs = [q for q in questions if q.get("classify", {}).get("enabled")]
     if not target_qs:
-        click.echo(
-            "No questions have classify.enabled: true in config.yml.\n"
-            "Add it under a qualitative question, e.g.:\n"
-            "  classify:\n"
-            "    enabled: true\n"
-            "    theme_count: 5",
-            err=True,
-        )
-        sys.exit(1)
+        return
 
-    log.info(f"Loading processed data ...")
+    log.info("Running text classification ...")
     df = load_processed_data(cfg, sample_size=sample)
 
     changed = False
@@ -152,7 +117,28 @@ def cmd_classify_text(sample, rediscover):
 
     log.info("Saving classified data ...")
     export_data(df, cfg)
-    log.info("classify-text complete.")
+    log.info("Classification complete.")
+
+
+@cli.command("download")
+@click.option("--sample", default=None, type=int, help="Limit to first N submissions.")
+def cmd_download(sample):
+    """Download submissions, apply filters, export to configured destination."""
+    from src.data.extract import get_client
+    from src.data.transform import load_data, apply_filters, export_data
+    cfg = load_config(CONFIG_PATH)
+    if not cfg.get("questions"):
+        click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
+        sys.exit(1)
+    client = get_client(cfg)
+    log.info("Downloading submissions ...")
+    raw = client.get_submissions(sample_size=sample)
+    log.info("Transforming data ...")
+    df, repeat_tables = load_data(raw, cfg)
+    df, repeat_tables = apply_filters(df, cfg, repeat_tables)
+    log.info(f"Exporting {len(df)} rows ...")
+    export_data(df, cfg, repeat_tables)
+    _run_classify(cfg, sample=sample)
 
 
 @cli.command("build-report")

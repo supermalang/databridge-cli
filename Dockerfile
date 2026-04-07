@@ -71,7 +71,6 @@ ALLOWED_COMMANDS = {
     "ai-generate-template": ["--description", "--pages", "--language"],
     "download":             ["--sample"],
     "build-report":         ["--sample", "--split-by"],
-    "classify-text":        ["--sample", "--rediscover"],
 }
 
 class RunPayload(BaseModel):
@@ -836,19 +835,6 @@ header h1{font-size:16px;font-weight:600}
               </select>
             </div>
             <button class="btn btn-primary" onclick="runCmd('build-report',{sample:getSample('sample-report'),split_by:getSplitBy()})">▶ Run</button>
-          </div>
-          <div class="cmd-card">
-            <h3>5 · Classify text</h3>
-            <p>Cluster free-text responses into themes using AI. Adds a <em>*_cluster</em> column to the data file. Requires <code>classify.enabled: true</code> on a question and an <code>ai:</code> config.</p>
-            <div class="sample-row">
-              <label>Sample</label>
-              <input type="number" id="sample-classify" placeholder="all" min="1">
-              <span style="font-size:11px;color:var(--muted)">rows</span>
-            </div>
-            <div class="sample-row" style="margin-top:6px;">
-              <label style="white-space:nowrap"><input type="checkbox" id="rediscover-classify" style="margin-right:4px">Re-discover themes</label>
-            </div>
-            <button class="btn btn-primary" onclick="runCmd('classify-text',{sample:getSample('sample-classify'),rediscover:document.getElementById('rediscover-classify').checked||null})">▶ Run</button>
           </div>
         </div>
         <div class="log-panel">
