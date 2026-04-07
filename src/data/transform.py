@@ -77,9 +77,26 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
         elif key in flat.columns:
             col_map[key] = label
         else:
-            missing.append(key)
+            # Fallback: match by field name only (last path segment), ignoring group prefix.
+            # Handles cases where config group path differs from what the API returns.
+            field_name = key.split("/")[-1]
+            candidates = [
+                c for c in flat.columns
+                if c == field_name
+                or c.endswith(f"/{field_name}")
+                or c.endswith(f".{field_name}")
+            ]
+            if len(candidates) == 1:
+                log.warning(
+                    f"kobo_key '{key}' not found; matched by field name to '{candidates[0]}'"
+                )
+                col_map[candidates[0]] = label
+            else:
+                missing.append(key)
     if missing:
+        raw_cols = sorted(flat.columns.tolist())
         log.warning(f"Keys not found in submissions: {missing}")
+        log.warning(f"Available raw submission columns ({len(raw_cols)}): {raw_cols}")
 
     # Include _id / _index for joining repeat tables
     id_col = None
