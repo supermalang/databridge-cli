@@ -1299,6 +1299,8 @@ const CHART_META={
   dot_map:{q:['latitude','longitude'],hint:'[latitude_col, longitude_col]'},
 };
 const CHART_OPT_ROWS={
+  'cm-topn-row':['bar','horizontal_bar','pie','donut','treemap','waterfall','funnel','table','likert'],
+  'cm-color-row':['bar','horizontal_bar','pie','donut','line','area','histogram','scatter','box_plot','waterfall','funnel','bullet_chart','likert'],
   'cm-sort-row':['bar','horizontal_bar','grouped_bar','waterfall'],
   'cm-normalize-row':['stacked_bar'],
   'cm-freq-row':['line','area'],
@@ -1309,6 +1311,8 @@ const CHART_OPT_ROWS={
   'cm-male-row':['pyramid'],
   'cm-female-row':['pyramid'],
   'cm-colorby-row':['dot_map'],
+  'cm-xlabel-row':['bar','horizontal_bar','stacked_bar','grouped_bar','line','area','histogram','scatter','box_plot','waterfall','funnel','bullet_chart','heatmap'],
+  'cm-ylabel-row':['bar','horizontal_bar','stacked_bar','grouped_bar','line','area','histogram','scatter','box_plot','waterfall','funnel','bullet_chart'],
 };
 function renderChartsList(){
   const c=document.getElementById('charts-list');
@@ -1676,8 +1680,8 @@ async function runAiGenerateTemplate(){
       <div id="cm-questions-wrap"></div>
       <div class="modal-body"><h4>Options</h4></div>
       <div class="form-row"><label>Width (in)</label><input id="cm-width" type="number" step="0.5" placeholder="5.5 (default)"></div>
-      <div class="form-row"><label>Color</label><input id="cm-color" type="text" placeholder="#1D9E75"></div>
-      <div class="form-row"><label>top_n</label><input id="cm-topn" type="number" placeholder="15 (default)"></div>
+      <div class="form-row" id="cm-color-row"><label>Color</label><input id="cm-color" type="text" placeholder="#1D9E75"></div>
+      <div class="form-row" id="cm-topn-row"><label>top_n</label><input id="cm-topn" type="number" placeholder="15 (default)"></div>
       <div class="form-row" id="cm-sort-row"><label>Sort</label><select id="cm-sort"><option value="">default (value)</option><option value="value">value</option><option value="label">label</option><option value="none">none</option></select></div>
       <div class="form-row" id="cm-normalize-row"><label>Normalize</label><select id="cm-normalize"><option value="">no</option><option value="true">yes (100% stacked)</option></select></div>
       <div class="form-row" id="cm-freq-row"><label>Freq</label><select id="cm-freq"><option value="">auto</option><option value="day">day</option><option value="week">week</option><option value="month">month</option><option value="year">year</option></select></div>
@@ -1688,8 +1692,8 @@ async function runAiGenerateTemplate(){
       <div class="form-row" id="cm-male-row"><label>Male value</label><input id="cm-male" placeholder="e.g. Male"></div>
       <div class="form-row" id="cm-female-row"><label>Female value</label><input id="cm-female" placeholder="e.g. Female"></div>
       <div class="form-row" id="cm-colorby-row"><label>Color by</label><input id="cm-colorby" placeholder="column name (optional)"></div>
-      <div class="form-row"><label>xlabel</label><input id="cm-xlabel" placeholder="optional axis label"></div>
-      <div class="form-row"><label>ylabel</label><input id="cm-ylabel" placeholder="optional axis label"></div>
+      <div class="form-row" id="cm-xlabel-row"><label>xlabel</label><input id="cm-xlabel" placeholder="optional axis label"></div>
+      <div class="form-row" id="cm-ylabel-row"><label>ylabel</label><input id="cm-ylabel" placeholder="optional axis label"></div>
       <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
           <span style="font-size:12px;font-weight:600;">Preview</span>
