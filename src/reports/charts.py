@@ -168,24 +168,28 @@ def chart_pie(df, q, title, out, opts):
     c = q[0]; counts = _top(df[c].dropna(), opts.get("top_n", 8))
     colors = PALETTE[:len(counts)]
     fig, ax = plt.subplots(figsize=_fs(opts, (6, 5)))
-    _, _, at = ax.pie(counts.values, labels=counts.index, colors=colors,
-                      autopct="%1.1f%%", startangle=90, pctdistance=0.82)
-    for i, t in enumerate(at):
+    wedges, _, at = ax.pie(counts.values, labels=None, colors=colors,
+                           autopct="%1.1f%%", startangle=90, pctdistance=0.82)
+    for t in at:
         t.set_fontsize(9)
-        t.set_color(_label_color(colors[i % len(colors)]))
-    ax.set_title(title); plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+    ax.set_title(title)
+    ax.legend(wedges, counts.index, loc="lower center", bbox_to_anchor=(0.5, -0.15),
+              ncol=min(4, len(counts)), fontsize=9)
+    plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 def chart_donut(df, q, title, out, opts):
     c = q[0]; counts = _top(df[c].dropna(), opts.get("top_n", 8))
     colors = PALETTE[:len(counts)]
     fig, ax = plt.subplots(figsize=_fs(opts, (6, 5)))
-    _, _, at = ax.pie(counts.values, labels=counts.index, colors=colors,
-                      autopct="%1.1f%%", startangle=90, pctdistance=0.75,
-                      wedgeprops={"width": 0.5})
-    for i, t in enumerate(at):
+    wedges, _, at = ax.pie(counts.values, labels=None, colors=colors,
+                           autopct="%1.1f%%", startangle=90, pctdistance=0.75,
+                           wedgeprops={"width": 0.5})
+    for t in at:
         t.set_fontsize(9)
-        t.set_color(_label_color(colors[i % len(colors)]))
-    ax.set_title(title); plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+    ax.set_title(title)
+    ax.legend(wedges, counts.index, loc="lower center", bbox_to_anchor=(0.5, -0.15),
+              ncol=min(4, len(counts)), fontsize=9)
+    plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 def chart_line(df, q, title, out, opts):
     x = q[0]; y = q[1] if len(q) > 1 else None
