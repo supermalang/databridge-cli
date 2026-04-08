@@ -353,6 +353,7 @@ def _pick_preview_df(df, questions_needed, _questions_cfg=None):
 class ChartPreviewPayload(BaseModel):
     chart: dict
     data_file: Optional[str] = None
+    sample_n: Optional[int] = None
 
 @app.post("/api/charts/preview")
 async def preview_chart(payload: ChartPreviewPayload):
@@ -386,6 +387,8 @@ async def preview_chart(payload: ChartPreviewPayload):
             df = apply_choice_labels(df, _questions)
     except Exception:
         pass
+    if payload.sample_n and payload.sample_n > 0:
+        df = df.head(payload.sample_n)
     questions = payload.chart.get("questions", [])
     df = _pick_preview_df(df, questions, _questions)
     missing = [q for q in questions if q not in df.columns]
@@ -407,6 +410,7 @@ async def preview_chart(payload: ChartPreviewPayload):
 class IndicatorPreviewPayload(BaseModel):
     indicator: dict
     data_file: Optional[str] = None
+    sample_n: Optional[int] = None
 
 @app.post("/api/indicators/preview")
 async def preview_indicator(payload: IndicatorPreviewPayload):
@@ -440,6 +444,8 @@ async def preview_indicator(payload: IndicatorPreviewPayload):
             df = apply_choice_labels(df, _questions)
     except Exception:
         pass
+    if payload.sample_n and payload.sample_n > 0:
+        df = df.head(payload.sample_n)
     ind = payload.indicator
     question = ind.get("question")
     if question:
@@ -458,6 +464,7 @@ async def preview_indicator(payload: IndicatorPreviewPayload):
 class SummaryPreviewPayload(BaseModel):
     summary: dict
     data_file: Optional[str] = None
+    sample_n: Optional[int] = None
 
 @app.post("/api/summaries/preview")
 async def preview_summary(payload: SummaryPreviewPayload):
@@ -496,6 +503,8 @@ async def preview_summary(payload: SummaryPreviewPayload):
             ai_cfg = _resolve_env(raw_ai)
     except Exception:
         pass
+    if payload.sample_n and payload.sample_n > 0:
+        df = df.head(payload.sample_n)
     s = payload.summary
     questions = s.get("questions", [])
     df = _pick_preview_df(df, questions, _questions)
@@ -1676,7 +1685,7 @@ async function openChartModal(idx){
   updateChartForm();
   loadPreviewFileOptions();
   // clear fields
-  ['cm-name','cm-title','cm-width','cm-color','cm-topn','cm-bins','cm-target','cm-columns','cm-male','cm-female','cm-colorby','cm-xlabel','cm-ylabel','cm-distinct-by'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['cm-name','cm-title','cm-width','cm-color','cm-topn','cm-bins','cm-target','cm-columns','cm-male','cm-female','cm-colorby','cm-xlabel','cm-ylabel','cm-distinct-by','cm-sample-n'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   ['cm-sort','cm-normalize','cm-freq','cm-stat-scorecard','cm-expand-multi','cm-data-type'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('cm-preview-area').innerHTML='Select a data file (or leave blank for auto-detect) and click Preview.';
   document.getElementById('cm-preview-area').style.color='var(--muted)';
@@ -1743,8 +1752,9 @@ async function previewChart(){
   const parea=document.getElementById('cm-preview-area');
   parea.innerHTML='<span style="color:var(--muted);">Generating preview…</span>';
   const dataFile=document.getElementById('cm-preview-file').value||null;
+  const sampleN=parseInt(document.getElementById('cm-sample-n').value)||null;
   try{
-    const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart,data_file:dataFile})});
+    const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart,data_file:dataFile,sample_n:sampleN})});
     const data=await res.json();
     if(res.ok){
       parea.innerHTML=`<img src="data:image/png;base64,${data.image}" style="max-width:100%;border-radius:4px;border:1px solid var(--border);">`;
@@ -1827,8 +1837,9 @@ async function previewIndicator(){
   const dby=document.getElementById('im-dedup-by').value.trim();if(dby)ind.dedup_by=dby;
   parea.innerHTML='<span style="color:var(--muted);">Computing…</span>';parea.style.color='';
   const dataFile=document.getElementById('im-preview-file').value||null;
+  const sampleN=parseInt(document.getElementById('im-sample-n').value)||null;
   try{
-    const res=await fetch('/api/indicators/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indicator:ind,data_file:dataFile})});
+    const res=await fetch('/api/indicators/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indicator:ind,data_file:dataFile,sample_n:sampleN})});
     const data=await res.json();
     if(res.ok){
       const label=document.getElementById('im-label').value.trim()||name;
@@ -2069,8 +2080,9 @@ async function previewSummary(){
   }
   parea.style.color='var(--muted)';parea.textContent='Computing…';
   const dataFile=document.getElementById('sm-preview-file').value||null;
+  const sampleN=parseInt(document.getElementById('sm-sample-n').value)||null;
   try{
-    const res=await fetch('/api/summaries/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({summary:s,data_file:dataFile})});
+    const res=await fetch('/api/summaries/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({summary:s,data_file:dataFile,sample_n:sampleN})});
     const data=await res.json();
     if(res.ok){
       parea.style.color='var(--text)';
@@ -2173,7 +2185,8 @@ async function runAiGenerateTemplate(){
       <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
           <span style="font-size:12px;font-weight:600;">Preview</span>
-          <select id="cm-preview-file" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:260px;"><option value="">— auto-detect data file —</option></select>
+          <select id="cm-preview-file" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:220px;"><option value="">— auto-detect data file —</option></select>
+          <input id="cm-sample-n" type="number" min="1" placeholder="rows" title="Sample N rows for preview" style="width:70px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
           <button class="btn btn-ghost btn-sm" onclick="previewChart()">▶ Preview</button>
         </div>
         <div id="cm-preview-area" style="text-align:center;color:var(--muted);font-size:12px;min-height:40px;">Select a data file (or leave blank for auto-detect) and click Preview.</div>
@@ -2236,7 +2249,7 @@ async function runAiGenerateTemplate(){
       </div>
       <div class="form-row"><label>Decimals</label><input id="im-decimals" type="number" placeholder="1" min="0" max="6" style="max-width:80px;"></div>
       <div class="form-row"><label>Dedup by</label><input id="im-dedup-by" placeholder="column to deduplicate rows (optional)"></div>
-      <div class="form-row" style="align-items:center;"><label>Data file</label><select id="im-preview-file" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;"><option value="">— auto-detect —</option></select></div>
+      <div class="form-row" style="align-items:center;"><label>Data file</label><select id="im-preview-file" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;"><option value="">— auto-detect —</option></select><input id="im-sample-n" type="number" min="1" placeholder="rows" title="Sample N rows for preview" style="width:70px;margin-left:6px;padding:5px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;"></div>
       <div id="im-preview-area" style="margin-top:8px;min-height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--muted);text-align:center;">Click Preview to compute the indicator value.</div>
     </div>
     <div id="im-ai-view" style="display:none;padding:18px;">
@@ -2294,7 +2307,7 @@ async function runAiGenerateTemplate(){
       </div>
       <div class="form-row" id="sm-prompt-row" style="display:none;align-items:flex-start;"><label style="padding-top:4px;">Prompt</label><textarea id="sm-prompt" rows="3" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="e.g. Focus on gender gaps and regional disparities"></textarea></div>
       <div class="form-row" id="sm-language-row" style="display:none;"><label>Language</label><input id="sm-language" placeholder="e.g. English, French (optional)"></div>
-      <div style="margin-top:8px;"><label style="font-size:11px;color:var(--muted);">Data file</label><select id="sm-preview-file" style="margin-left:8px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;"><option value="">— auto-detect —</option></select></div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;"><label style="font-size:11px;color:var(--muted);">Data file</label><select id="sm-preview-file" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;"><option value="">— auto-detect —</option></select><input id="sm-sample-n" type="number" min="1" placeholder="rows" title="Sample N rows for preview" style="width:70px;padding:5px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;"></div>
       <div id="sm-preview-area" style="margin-top:10px;min-height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--muted);text-align:center;">Click Preview to compute the summary text.</div>
     </div>
     <div id="sm-ai-view" style="display:none;padding:18px;">
