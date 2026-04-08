@@ -71,6 +71,9 @@ python3 src/data/make.py download --sample 50   # first 50 rows only (for testin
 # 4. Build Word report from downloaded data
 python3 src/data/make.py build-report
 python3 src/data/make.py build-report --sample 100
+python3 src/data/make.py build-report --sample 100 --random-sample
+python3 src/data/make.py build-report --split-by Site                  # one report per Site value
+python3 src/data/make.py build-report --split-by Site --split-sample 3 # first 3 sites only
 ```
 
 ---

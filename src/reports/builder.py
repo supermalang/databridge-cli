@@ -74,7 +74,7 @@ class ReportBuilder:
         self.report_cfg = cfg.get("report", {})
         self.charts_cfg: List[Dict] = cfg.get("charts", [])
 
-    def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False) -> List[Path]:
+    def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None) -> List[Path]:
         df, repeat_tables = load_processed_data(self.cfg, sample_size=sample_size, random_sample=random_sample)
         split_col = split_by or self.report_cfg.get("split_by")
         if split_col:
@@ -82,6 +82,9 @@ class ReportBuilder:
                 log.warning(f"split_by column '{split_col}' not found — building single report")
                 return [self._render(df, repeat_tables, suffix="")]
             unique_vals = sorted(df[split_col].dropna().unique())
+            if split_sample and split_sample < len(unique_vals):
+                log.info(f"Split sample: limiting to first {split_sample} of {len(unique_vals)} value(s)")
+                unique_vals = unique_vals[:split_sample]
             log.info(f"Split by '{split_col}': {len(unique_vals)} value(s) → {len(unique_vals)} report(s)")
             paths = []
             for val in unique_vals:
@@ -148,7 +151,19 @@ class ReportBuilder:
                 key_to_label.get(q, q) if q not in df.columns else q
                 for q in c.get("questions", [])
             ]
-            resolved = {**c, "questions": resolved_questions}
+
+            # group_by: inject as second question and auto-upgrade chart type
+            group_by = c.get("group_by")
+            if group_by:
+                group_col = key_to_label.get(group_by, group_by)
+                if group_col not in resolved_questions:
+                    resolved_questions = resolved_questions[:1] + [group_col] + resolved_questions[1:]
+                chart_type = c.get("type", "bar")
+                _AUTO_UPGRADE = {"bar": "grouped_bar", "horizontal_bar": "grouped_bar", "histogram": "box_plot"}
+                upgraded_type = _AUTO_UPGRADE.get(chart_type, chart_type)
+                resolved = {**c, "questions": resolved_questions, "type": upgraded_type}
+            else:
+                resolved = {**c, "questions": resolved_questions}
 
             # 1. Select explicit source or auto-pick
             source = c.get("source")

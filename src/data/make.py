@@ -146,14 +146,16 @@ def cmd_download(sample):
 @click.option("--random-sample", "random_sample", is_flag=True, default=False,
               help="Use random sampling instead of first-N when --sample is set.")
 @click.option("--split-by", default=None, help="Column (export_label) to split reports by — one report per unique value.")
-def cmd_build_report(sample, random_sample, split_by):
+@click.option("--split-sample", "split_sample", default=None, type=int,
+              help="When splitting, generate reports for only the first N split values.")
+def cmd_build_report(sample, random_sample, split_by, split_sample):
     """Build a Word report from previously downloaded data."""
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("charts"):
         click.echo("No charts in config.yml. Add chart configs first.", err=True)
         sys.exit(1)
     from src.reports.builder import ReportBuilder
-    ReportBuilder(cfg).build(sample_size=sample, split_by=split_by, random_sample=random_sample)
+    ReportBuilder(cfg).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample)
 
 if __name__ == "__main__":
     cli()

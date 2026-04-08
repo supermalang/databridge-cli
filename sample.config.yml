@@ -200,6 +200,10 @@ charts: []
 #   height_inches  : chart height in inches
 #   color          : hex color for single-series charts (e.g. "#D85A30")
 #   xlabel / ylabel: axis label overrides
+#   group_by       : column to group by — injects it as the second question and
+#                    auto-upgrades the chart type when needed:
+#                    bar/horizontal_bar → grouped_bar,  histogram → box_plot
+#                    e.g. group_by: Region  (with type: bar, questions: [Satisfaction])
 #   distinct_by    : column to deduplicate rows before charting (e.g. Beneficiary_ID)
 #   expand_multi   : true → split space-separated select_multiple values before counting
 #                    (bar, horizontal_bar, pie, donut, treemap, waterfall, funnel, table, likert)
