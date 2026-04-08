@@ -10,7 +10,7 @@ or if no ai config is present.
 import json
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -26,10 +26,21 @@ def generate_narrative(
     stats_table: List[Dict],
     indicators: Dict[str, str],
     charts_cfg: List[Dict],
+    summaries: Optional[Dict[str, str]] = None,
+    split_value: Optional[str] = None,
+    questions_cfg: Optional[List[Dict]] = None,
 ) -> Dict[str, str]:
     """
     Return {"summary_text": str, "observations": str, "recommendations": str}.
     Falls back to empty strings silently (with a warning) on any error.
+
+    Args:
+        summaries:      computed summary texts (summary_<name>: text) — fed into the
+                        prompt so the LLM references actual distribution findings
+        split_value:    when building a split report, the value being rendered
+                        (e.g. "Kédougou") so the LLM knows it's site-specific
+        questions_cfg:  questions list from config — used to label categorical columns
+                        with their human-readable question labels instead of raw keys
     """
     if not ai_cfg:
         return _EMPTY
@@ -45,7 +56,10 @@ def generate_narrative(
         return _EMPTY
 
     system_prompt = ai_cfg.get("custom_prompt") or _default_system_prompt()
-    user_prompt   = _build_user_prompt(ai_cfg, report_cfg, df, stats_table, indicators, charts_cfg)
+    user_prompt   = _build_user_prompt(
+        ai_cfg, report_cfg, df, stats_table, indicators, charts_cfg,
+        summaries=summaries, split_value=split_value, questions_cfg=questions_cfg,
+    )
 
     try:
         if provider == "anthropic":
@@ -73,21 +87,46 @@ def _default_system_prompt() -> str:
     )
 
 
-def _build_user_prompt(ai_cfg, report_cfg, df, stats_table, indicators, charts_cfg) -> str:
+def _build_user_prompt(
+    ai_cfg, report_cfg, df, stats_table, indicators, charts_cfg,
+    summaries=None, split_value=None, questions_cfg=None,
+) -> str:
     language = ai_cfg.get("language", "English")
+
     lines = [
         f"Write narrative sections for a monitoring report in {language}.",
         f"Report title: {report_cfg.get('title', 'Report')}",
         f"Period: {report_cfg.get('period', '')}",
         f"Total submissions: {len(df):,}",
-        "",
     ]
 
+    # Improvement 3 — split context so LLM knows it's site/partner-specific
+    if split_value:
+        lines.append(f"Scope: this report covers data for '{split_value}' only.")
+    lines.append("")
+
+    # Improvement 2 — group indicators with their baseline/target/achievement
     if indicators:
         lines.append("KEY INDICATORS:")
-        for key, val in indicators.items():
+        # Collect base indicator names (skip _baseline/_target/_pct_achievement suffixes)
+        base_keys = [k for k in indicators if not any(
+            k.endswith(s) for s in ("_baseline", "_target", "_pct_achievement")
+        )]
+        for key in base_keys:
             label = key.replace("ind_", "").replace("_", " ").title()
-            lines.append(f"  - {label}: {val}")
+            val = indicators[key]
+            extra = []
+            baseline = indicators.get(f"{key}_baseline")
+            target   = indicators.get(f"{key}_target")
+            pct      = indicators.get(f"{key}_pct_achievement")
+            if baseline:
+                extra.append(f"baseline {baseline}")
+            if target:
+                extra.append(f"target {target}")
+            if pct:
+                extra.append(f"{pct} achieved")
+            suffix = f" ({', '.join(extra)})" if extra else ""
+            lines.append(f"  - {label}: {val}{suffix}")
         lines.append("")
 
     if stats_table:
@@ -99,24 +138,44 @@ def _build_user_prompt(ai_cfg, report_cfg, df, stats_table, indicators, charts_c
             )
         lines.append("")
 
-    # Categorical summaries — cap at 8 columns / 5 values to keep prompt bounded
+    # Improvement 4 — use question labels for categorical columns, cap 8 cols / 5 values
+    col_to_label = {}
+    if questions_cfg:
+        for q in questions_cfg:
+            lbl = q.get("export_label") or q.get("label") or q.get("kobo_key", "")
+            if lbl:
+                col_to_label[lbl] = lbl  # export_label IS the df column name
     cat_cols = [c for c in df.columns if df[c].dtype == object][:8]
     if cat_cols:
         lines.append("CATEGORICAL DATA SUMMARIES (top values):")
         for col in cat_cols:
+            display = col_to_label.get(col, col)
             vc = df[col].value_counts().head(5)
             total = df[col].notna().sum()
             if total:
-                parts = [f"{v} ({c}, {c/total*100:.0f}%)" for v, c in vc.items()]
+                parts = [f"{v} ({cnt/total*100:.0f}%)" for v, cnt in vc.items()]
             else:
-                parts = [f"{v} ({c})" for v, c in vc.items()]
-            lines.append(f"  - {col}: {', '.join(parts)}")
+                parts = [f"{v}" for v, _ in vc.items()]
+            lines.append(f"  - {display}: {', '.join(parts)}")
         lines.append("")
+
+    # Improvement 1 — feed computed summary texts so LLM references actual findings
+    if summaries:
+        relevant = {k: v for k, v in summaries.items() if v and v != "N/A"}
+        if relevant:
+            lines.append("COMPUTED DATA SUMMARIES (reference these findings in your narrative):")
+            for key, text in relevant.items():
+                label = key.replace("summary_", "").replace("_", " ").title()
+                lines.append(f"  - {label}: {text}")
+            lines.append("")
 
     if charts_cfg:
         lines.append("CHARTS INCLUDED IN THIS REPORT:")
         for c in charts_cfg:
-            lines.append(f"  - {c.get('title', c.get('name', ''))} ({c.get('type', '')})")
+            questions_str = ", ".join(c.get("questions", []))
+            title = c.get("title", c.get("name", ""))
+            ctype = c.get("type", "")
+            lines.append(f"  - {title} ({ctype}){f': {questions_str}' if questions_str else ''}")
         lines.append("")
 
     lines += [

@@ -105,6 +105,17 @@ def _render_item(doc, item: Dict, ind_map: Dict, cfg: Dict):
         label = ind_map.get(name, name.replace("_", " ").title())
         _meta(doc, label, f"{{{{ ind_{name} }}}}")
 
+    elif t == "summary":
+        name = item.get("name", "")
+        # Find label from config summaries
+        summary_cfg = cfg.get("summaries", [])
+        label = next(
+            (s.get("label", name) for s in summary_cfg if s.get("name") == name),
+            name.replace("_", " ").title(),
+        )
+        _descriptor(doc, label)
+        _editable(doc, f"{{{{ summary_{name} }}}}", hint="")
+
     elif t == "text":
         text = item.get("text", "")
         if text:
@@ -155,7 +166,7 @@ def _get_layout_spec(ai_cfg: Dict, cfg: Dict, description: str, pages: int, lang
 def _system_prompt() -> str:
     return (
         "You are a document layout expert specializing in humanitarian and monitoring reports. "
-        "Given a project description, available charts/indicators, and a target page count, "
+        "Given a project description, available charts/indicators/summaries, and a target page count, "
         "design a structured Word report template layout. "
         "Return ONLY valid JSON — no markdown fences, no explanation. "
         'Exact structure: {"sections": [{"heading": str, "level": 1 or 2, "content": [...]}]}\n'
@@ -163,14 +174,16 @@ def _system_prompt() -> str:
         '  {"type":"editable","placeholder":"summary_text"|"observations"|"recommendations","hint":"..."}\n'
         '  {"type":"chart","name":"<chart_name>"}  — only names from the provided list\n'
         '  {"type":"indicator","name":"<indicator_name>"}  — only names from the provided list\n'
+        '  {"type":"summary","name":"<summary_name>"}  — only names from the provided list\n'
         '  {"type":"text","text":"..."}  — static text, may contain {{ period }}, {{ n_submissions }}, {{ generated_at }}\n'
         '  {"type":"divider"}\n'
         '  {"type":"stats_table"}  — numeric stats (only if quantitative questions exist)\n'
         "Rules:\n"
         "  - Use every provided chart exactly once, placed in a contextually appropriate section\n"
         "  - Place indicators in a KPI or executive summary section\n"
+        "  - Place summaries near their related charts when possible\n"
         "  - For a N-page report, create approximately N/2 top-level sections\n"
-        "  - Do NOT invent chart or indicator names — use only those provided\n"
+        "  - Do NOT invent chart, indicator, or summary names — use only those provided\n"
         "  - Return JSON only"
     )
 
@@ -183,11 +196,16 @@ def _user_prompt(cfg: Dict, description: str, pages: int, language: str) -> str:
         "",
     ]
 
+    # Improvement 3 — pass chart questions so LLM can group charts into logical sections
     charts = cfg.get("charts", [])
     if charts:
         lines.append("Available charts:")
         for c in charts:
-            lines.append(f"  - {c['name']} ({c.get('type', '')}): {c.get('title', c['name'])}")
+            questions_str = ", ".join(c.get("questions", []))
+            detail = f"{c.get('title', c['name'])}"
+            if questions_str:
+                detail += f" — columns: {questions_str}"
+            lines.append(f"  - {c['name']} ({c.get('type', '')}): {detail}")
         lines.append("")
 
     indicators = cfg.get("indicators", [])
@@ -197,16 +215,34 @@ def _user_prompt(cfg: Dict, description: str, pages: int, language: str) -> str:
             lines.append(f"  - {ind['name']}: {ind.get('label', ind['name'])} ({ind.get('stat', '')})")
         lines.append("")
 
+    # Improvement 2 — include summaries so LLM places them in the template
+    summaries = cfg.get("summaries", [])
+    if summaries:
+        lines.append("Available summaries (computed text paragraphs):")
+        for s in summaries:
+            stat = s.get("stat", "")
+            questions_str = ", ".join(s.get("questions", []))
+            detail = s.get("label", s["name"])
+            if questions_str:
+                detail += f" — {questions_str}"
+            lines.append(f"  - {s['name']} ({stat}): {detail}")
+        lines.append("")
+
+    # Improvement 1 — pass actual question labels grouped by category
     questions = cfg.get("questions", [])
     if questions:
         cat_counts = Counter(q.get("category", "undefined") for q in questions)
-        lines.append("Questions by category: " + ", ".join(f"{k}: {v}" for k, v in cat_counts.items()))
-        quant_labels = [
-            q.get("export_label") or q.get("label") or q["kobo_key"]
-            for q in questions if q.get("category") == "quantitative"
-        ]
-        if quant_labels:
-            lines.append(f"Quantitative columns: {', '.join(quant_labels)}")
+        lines.append("Survey questions by category:")
+        for cat in ("categorical", "quantitative", "qualitative", "date", "geographical", "undefined"):
+            qs = [
+                q.get("export_label") or q.get("label") or q["kobo_key"]
+                for q in questions if q.get("category") == cat
+            ]
+            if qs:
+                # Cap to 10 per category to keep prompt bounded
+                sample = qs[:10]
+                suffix = f" (+{len(qs)-10} more)" if len(qs) > 10 else ""
+                lines.append(f"  {cat}: {', '.join(sample)}{suffix}")
         lines.append("")
 
     lines.append("Design a report template layout following the JSON spec.")

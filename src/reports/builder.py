@@ -91,12 +91,12 @@ class ReportBuilder:
                 safe = str(val).replace("/", "_").replace(" ", "_")
                 # Filter repeat tables to rows whose parent submission survived the split
                 filtered_repeats = _filter_repeat_tables_by_split(df, repeat_tables, split_col, val)
-                paths.append(self._render(df[df[split_col] == val], filtered_repeats, suffix=f"_{safe}"))
+                paths.append(self._render(df[df[split_col] == val], filtered_repeats, suffix=f"_{safe}", split_value=str(val)))
             return paths
         suffix = f"_sample{sample_size}" if sample_size else ""
         return [self._render(df, repeat_tables, suffix=suffix)]
 
-    def _render(self, df: "pd.DataFrame", repeat_tables: Dict, suffix: str = "") -> Path:
+    def _render(self, df: "pd.DataFrame", repeat_tables: Dict, suffix: str = "", split_value: Optional[str] = None) -> Path:
         template_path = Path(self.report_cfg.get("template","templates/report_template.docx"))
         if not template_path.exists():
             raise FileNotFoundError(f"Template not found: {template_path}\nRun generate-template or see TEMPLATE_GUIDE.md")
@@ -106,12 +106,15 @@ class ReportBuilder:
         summaries   = compute_summaries(self.cfg.get("summaries", []), df, self.cfg.get("ai"), repeat_tables)
 
         narrative = generate_narrative(
-            ai_cfg     = self.cfg.get("ai"),
-            report_cfg = self.report_cfg,
-            df         = df,
-            stats_table= stats_table,
-            indicators = indicators,
-            charts_cfg = self.charts_cfg,
+            ai_cfg        = self.cfg.get("ai"),
+            report_cfg    = self.report_cfg,
+            df            = df,
+            stats_table   = stats_table,
+            indicators    = indicators,
+            charts_cfg    = self.charts_cfg,
+            summaries     = summaries,
+            split_value   = split_value,
+            questions_cfg = self.cfg.get("questions"),
         )
 
         context = {
