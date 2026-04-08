@@ -91,6 +91,9 @@ class OnaClient(DataClient):
                 batch = data.get("results", data.get("data", []))
             results.extend(batch)
             log.info(f"  fetched {len(results)} submissions")
+            if sample_size and len(results) >= sample_size:
+                results = results[:sample_size]
+                break
             if len(batch) < page_size:
                 break
             page += 1

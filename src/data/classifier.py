@@ -9,6 +9,19 @@ this module:
 
 The classified column is written back to the processed data file as
 {export_label}_cluster, making it suitable for bar charts and indicators.
+
+Pre-defined codebook:
+  If classify.themes is already set in config.yml, theme discovery is skipped
+  entirely and the LLM goes straight to classification. This is the recommended
+  approach when a validated codebook already exists (e.g., from a prior run or
+  designed by the M&E team). Example config:
+
+    questions:
+      - kobo_key: satisfaction_text
+        classify:
+          enabled: true
+          themes: ["Very satisfied", "Satisfied", "Neutral", "Dissatisfied", "Other"]
+          # theme_count is ignored when themes are pre-defined
 """
 import json
 import logging

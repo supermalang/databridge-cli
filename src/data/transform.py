@@ -340,7 +340,89 @@ def _export_supabase(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.Da
             log.info(f"Repeat group exported → Supabase '{table}_{safe_name}' ({len(recs)} rows)")
 
 
-def load_processed_data(cfg: Dict, sample_size: Optional[int] = None) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+def apply_local_scope(
+    df: pd.DataFrame,
+    repeat_tables: Dict[str, pd.DataFrame],
+    source: Optional[str] = None,
+    filter_expr: Optional[str] = None,
+    sample_n: Optional[int] = None,
+    random_sample: bool = True,
+) -> pd.DataFrame:
+    """Select data source, apply a per-item filter, and optionally sample rows.
+
+    Args:
+        source:      "main" (or None) → use main df; any other string → look up
+                     in repeat_tables by that key.
+        filter_expr: pandas .query() expression applied after source selection.
+        sample_n:    If set, limit to this many rows (random when random_sample=True).
+        random_sample: Use random sampling (seed 42) instead of head().
+
+    Returns a new (possibly smaller) DataFrame scoped to the item.
+    """
+    if source and source != "main":
+        target = repeat_tables.get(source)
+        if target is None:
+            log.warning(f"source '{source}' not found in repeat_tables — falling back to main df")
+            target = df
+    else:
+        target = df
+
+    if filter_expr:
+        try:
+            target = target.query(filter_expr)
+            log.debug(f"Local filter '{filter_expr}' → {len(target)} rows")
+        except Exception as e:
+            log.warning(f"Local filter '{filter_expr}' failed: {e} — skipped")
+
+    if sample_n and len(target) > sample_n:
+        if random_sample:
+            target = target.sample(n=sample_n, random_state=42)
+        else:
+            target = target.head(sample_n)
+
+    return target
+
+
+def aggregate_repeat(repeat_df: pd.DataFrame, agg_spec: Dict) -> pd.DataFrame:
+    """Aggregate repeat-group rows per parent before charting or computing indicators.
+
+    agg_spec keys:
+        group_by  : column to group on (default: '_parent_index')
+        count_as  : if set, count rows per group and name the result this column
+        sum_col   : if set, sum this column per group
+        mean_col  : if set, average this column per group
+        min_col   : if set, min of this column per group
+        max_col   : if set, max of this column per group
+
+    Returns a new DataFrame with one row per group value.
+    """
+    group_col = agg_spec.get("group_by", "_parent_index")
+    if group_col not in repeat_df.columns:
+        log.warning(f"aggregate group_by column '{group_col}' not found — returning repeat_df unchanged")
+        return repeat_df
+
+    grouped = repeat_df.groupby(group_col)
+
+    if "count_as" in agg_spec:
+        return grouped.size().reset_index(name=agg_spec["count_as"])
+    if "sum_col" in agg_spec:
+        col = agg_spec["sum_col"]
+        return grouped[col].sum().reset_index()
+    if "mean_col" in agg_spec:
+        col = agg_spec["mean_col"]
+        return grouped[col].mean().reset_index()
+    if "min_col" in agg_spec:
+        col = agg_spec["min_col"]
+        return grouped[col].min().reset_index()
+    if "max_col" in agg_spec:
+        col = agg_spec["max_col"]
+        return grouped[col].max().reset_index()
+
+    # Default: count rows per group
+    return grouped.size().reset_index(name="count")
+
+
+def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sample: bool = False) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """Load the main processed DataFrame plus any repeat-group tables from disk.
 
     Returns:
@@ -366,8 +448,12 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None) -> Tuple[p
         df = pd.read_csv(_latest(f"{alias}_data*.csv"))
 
     if sample_size:
-        df = df.head(sample_size)
-        log.info(f"Sample mode: {len(df)} rows")
+        if random_sample:
+            df = df.sample(n=min(sample_size, len(df)), random_state=42)
+            log.info(f"Random sample mode: {len(df)} rows")
+        else:
+            df = df.head(sample_size)
+            log.info(f"Sample mode: {len(df)} rows")
 
     questions = cfg.get("questions", [])
     if questions:

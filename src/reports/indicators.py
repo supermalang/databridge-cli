@@ -19,28 +19,91 @@ Supported formats:
   decimal      : 1 decimal place                   → "4.2"
   percent      : appends %                         → "58.3%"
   text         : plain string                      → "Nouakchott"
+
+Per-item scoping (optional):
+  source       : "main" (default) or a repeat-group path like "household/members"
+  filter       : pandas .query() expression applied before computing
+  sample       : limit to N random rows before computing
+
+Baseline / target (optional):
+  baseline     : previous measurement value (numeric)
+  target       : goal value (numeric)
+  Exposes extra placeholders: ind_<name>_baseline, ind_<name>_target, ind_<name>_pct_achievement
 """
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 import pandas as pd
 
 log = logging.getLogger(__name__)
 
 
-def compute_indicators(indicators: List[Dict], df: pd.DataFrame) -> Dict[str, str]:
-    """Return a dict of {ind_<name>: formatted_value} for all indicators."""
+def compute_indicators(
+    indicators: List[Dict],
+    df: pd.DataFrame,
+    repeat_tables: Optional[Dict[str, pd.DataFrame]] = None,
+) -> Dict[str, str]:
+    """Return a dict of {ind_<name>: formatted_value} for all indicators.
+
+    When repeat_tables is provided, indicators can use `source:` to compute
+    against a repeat-group DataFrame instead of the main table.
+    """
+    if repeat_tables is None:
+        repeat_tables = {}
     context = {}
     for ind in indicators:
         name = ind.get("name")
         if not name:
             continue
         try:
-            value = _compute(ind, df)
-            context[f"ind_{name}"] = _format(value, ind.get("format", "number"), ind)
+            # Resolve data source for this indicator
+            ind_df = _resolve_source(ind, df, repeat_tables)
+            value = _compute(ind, ind_df)
+            fmt = ind.get("format", "number")
+            context[f"ind_{name}"] = _format(value, fmt, ind)
+
+            # Baseline / target extra placeholders
+            baseline = ind.get("baseline")
+            target = ind.get("target")
+            if baseline is not None:
+                context[f"ind_{name}_baseline"] = _format(baseline, fmt, ind)
+            if target is not None:
+                context[f"ind_{name}_target"] = _format(target, fmt, ind)
+            if target is not None and target != 0:
+                try:
+                    pct = float(value) / float(target) * 100
+                    context[f"ind_{name}_pct_achievement"] = f"{pct:,.1f}%"
+                except (TypeError, ValueError):
+                    context[f"ind_{name}_pct_achievement"] = "N/A"
         except Exception as e:
             log.warning(f"Indicator '{name}' failed: {e}")
             context[f"ind_{name}"] = "N/A"
     return context
+
+
+def _resolve_source(ind: Dict, main_df: pd.DataFrame, repeat_tables: Dict) -> pd.DataFrame:
+    """Select and scope the DataFrame for one indicator."""
+    source = ind.get("source")
+    filter_expr = ind.get("filter")
+    sample_n = ind.get("sample")
+
+    if source and source != "main":
+        df = repeat_tables.get(source)
+        if df is None:
+            log.warning(f"Indicator source '{source}' not found — using main df")
+            df = main_df
+    else:
+        df = main_df
+
+    if filter_expr:
+        try:
+            df = df.query(filter_expr)
+        except Exception as e:
+            log.warning(f"Indicator filter '{filter_expr}' failed: {e} — skipped")
+
+    if sample_n and len(df) > sample_n:
+        df = df.sample(n=sample_n, random_state=42)
+
+    return df
 
 
 def _compute(ind: Dict, df: pd.DataFrame):

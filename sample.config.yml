@@ -127,6 +127,47 @@ charts: []
 #   line | area | histogram | scatter | box_plot | heatmap | treemap |
 #   waterfall | funnel | table | bullet_chart | likert | scorecard | pyramid
 #
+# Per-chart data scoping (optional — applied on top of global filters):
+#   source : "main" (default) | repeat-group path e.g. "household/members"
+#            Explicit source avoids the auto-heuristic and prevents ambiguity.
+#   filter : pandas .query() expression applied after source selection.
+#            e.g. filter: "Region == 'North'"
+#   sample : limit to this many random rows before charting (integer).
+#            Useful for exploratory charts on large datasets.
+#
+# Repeat-group aggregation (requires source: pointing to a repeat table):
+#   aggregate:
+#     group_by : column to group on (default: _parent_index)
+#     count_as : count rows per group → new column with this name
+#     sum_col  : sum this column per group
+#     mean_col : average this column per group
+#     min_col  : min of this column per group
+#     max_col  : max of this column per group
+#
+# Example — chart only northern data:
+#   - name: northern_satisfaction
+#     title: Satisfaction (North only)
+#     type: horizontal_bar
+#     questions: [Satisfaction]
+#     filter: "Region == 'North'"
+#
+# Example — chart from repeat group directly:
+#   - name: member_age_dist
+#     title: Household member age distribution
+#     type: histogram
+#     questions: [Age]
+#     source: "household/members"
+#
+# Example — aggregate repeat rows before charting (household size distribution):
+#   - name: household_size
+#     title: Members per household
+#     type: histogram
+#     source: "household/members"
+#     aggregate:
+#       group_by: _parent_index
+#       count_as: n_members
+#     questions: [n_members]
+#
 # Common options (all chart types):
 #   top_n          : max categories to show (default 15, pie/donut default 8)
 #   width_inches   : chart width in inches (default varies by type)
@@ -216,17 +257,54 @@ indicators: []
 #     stat: most_common
 #     format: text
 #
+# Per-indicator data scoping (optional):
+#   source : "main" (default) | repeat-group path e.g. "household/members"
+#   filter : pandas .query() expression applied before computing
+#   sample : limit to N random rows before computing
+#
+# Example — count adult members from a repeat group:
+#   - name: total_adults
+#     source: "household/members"
+#     filter: "Age >= 18"
+#     stat: count
+#     format: number
+#
+# Baseline and target tracking (optional):
+#   baseline     : previous measurement value (numeric)
+#                  Exposes {{ ind_<name>_baseline }} in Word template
+#   target       : goal value (numeric)
+#                  Exposes {{ ind_<name>_target }} and {{ ind_<name>_pct_achievement }} in Word template
+#
+# Example — indicator with achievement tracking:
+#   - name: pct_female
+#     label: Female beneficiaries
+#     question: Gender
+#     stat: percent
+#     filter_value: "Female"
+#     format: percent
+#     baseline: 48.2
+#     target: 55.0
+#     # Template: "{{ ind_pct_female }} (target {{ ind_pct_female_target }}, {{ ind_pct_female_pct_achievement }} achieved)"
+#
 # In your Word template: "This report covers {{ ind_total_beneficiaries }}
 # beneficiaries. {{ ind_pct_female }} are female."
 
 # Text summaries → {{ summary_<name> }} placeholders in Word template
 # Each summary produces a paragraph of text computed from the data.
 # stat types:
-#   distribution : top-N breakdown for one categorical column
-#   stats        : mean/median/range for one numeric column
-#   crosstab     : row × column percentage breakdown for two categorical columns
-#   trend        : time-series count or sum over a date column
-#   ai           : AI-generated paragraph (requires ai: section)
+#   distribution      : top-N breakdown for one categorical column
+#   stats             : mean/median/range for one numeric column
+#   crosstab          : row × column percentage breakdown for two categorical columns
+#   trend             : time-series count or sum over a date column
+#   data_quality      : completeness %, duplicates, and outlier flags
+#   keyword_frequency : top-N word frequencies for one text column
+#   correlation       : Pearson/Spearman correlation pairs for numeric columns
+#   ai                : AI-generated paragraph (requires ai: section)
+#
+# Per-summary data scoping (optional — same keys as charts):
+#   source : "main" | repeat-group path
+#   filter : pandas .query() expression
+#   sample : limit to N random rows
 summaries: []
 # summaries:
 #   - name: region_breakdown
@@ -255,6 +333,35 @@ summaries: []
 #     stat: trend                  # no AI needed
 #     freq: month                  # day | week | month | year
 #     # Output: "Monthly submissions: Jan 2025 45, Feb 2025 60, Mar 2025 38."
+#
+#   - name: dq_check
+#     label: Data Quality Report
+#     questions: [Age, Gender, Region, Comments]  # leave empty to check all columns
+#     stat: data_quality           # no AI needed
+#     # Output: "Total: 1,234 rows. Completeness: Age 97.2%, Gender 99.1%, ...
+#     #          Duplicate rows: 3. Outliers (IQR): Age 8 flagged."
+#
+#   - name: comments_keywords
+#     label: Key Themes in Comments
+#     questions: [Comments]
+#     stat: keyword_frequency      # no AI needed
+#     top_n: 15
+#     language: en                 # en | fr | ar | es (for stop-word removal)
+#     # Output: "Top 15 words: water (142), access (98), latrine (87), ..."
+#
+#   - name: numeric_correlations
+#     label: Variable Correlations
+#     questions: [Age, Income, Satisfaction_score]
+#     stat: correlation            # no AI needed
+#     method: pearson              # pearson | spearman
+#     # Output: "Pearson correlations — Age ↔ Satisfaction_score: r=0.42 (positive moderate). ..."
+#
+#   - name: northern_region_summary
+#     label: Northern Region Overview
+#     questions: [Region, Satisfaction]
+#     stat: distribution
+#     filter: "Region == 'North'"  # per-summary filter — on top of global filters
+#     # Output covers only northern respondents
 #
 #   - name: context_analysis
 #     label: Context Analysis
