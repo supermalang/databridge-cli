@@ -8,16 +8,20 @@ from docx.oxml import OxmlElement
 
 log = logging.getLogger(__name__)
 
-def generate_template(cfg: Dict, out_path: Path) -> Path:
+def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_prompt: str = None) -> Path:
     doc = Document(); charts: List[Dict] = cfg.get("charts",[])
     _margins(doc)
     _heading(doc,"{{ report_title }}",0)
     _meta(doc,"Period","{{ period }}")
     _meta(doc,"Submissions","{{ n_submissions }}")
     _meta(doc,"Generated","{{ generated_at }}")
+    if context:
+        _divider(doc)
+        _heading(doc,"Background & Context",1)
+        _editable(doc,"",context)
     _divider(doc)
     _heading(doc,"Executive Summary",1)
-    _editable(doc,"{{ summary_text }}","Write your executive summary here.")
+    _editable(doc,"{{ summary_text }}",summary_prompt or "Write your executive summary here.")
     _divider(doc)
     if charts:
         _heading(doc,"Data & Visualizations",1)

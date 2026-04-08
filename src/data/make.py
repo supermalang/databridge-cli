@@ -30,21 +30,25 @@ def cmd_fetch_questions():
 
 @cli.command("generate-template")
 @click.option("--out", default=None, help="Output path. Defaults to report.template in config.yml.")
-def cmd_generate_template(out):
+@click.option("--context", default=None, help="Background and context shown at the top of the template.")
+@click.option("--summary-prompt", default=None, help="Prompt/guidance shown in the executive summary section.")
+def cmd_generate_template(out, context, summary_prompt):
     """Auto-generate a starter Word template from config.yml."""
     from src.reports.template_generator import generate_template
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("charts"):
         click.echo("Warning: no charts in config.yml — template will have no chart placeholders.", err=True)
     out_path = Path(out) if out else Path(cfg.get("report",{}).get("template","templates/report_template.docx"))
-    generate_template(cfg, out_path)
+    generate_template(cfg, out_path, context=context, summary_prompt=summary_prompt)
 
 @cli.command("ai-generate-template")
-@click.option("--description", required=True, help="Project/report description for the AI.")
+@click.option("--description", required=True, help="Project/report background and context for the AI.")
 @click.option("--pages", default=10, type=int, help="Target number of pages.")
 @click.option("--language", default="English", help="Report language.")
+@click.option("--context", default=None, help="Background and context (alias for --description if provided separately).")
+@click.option("--summary-prompt", default=None, help="Guidance for the executive summary section.")
 @click.option("--out", default=None, help="Output path. Defaults to ai_<template> from config.yml.")
-def cmd_ai_generate_template(description, pages, language, out):
+def cmd_ai_generate_template(description, pages, language, context, summary_prompt, out):
     """AI-generate a structured Word template based on project description and config."""
     from src.reports.ai_template_generator import ai_generate_template
     cfg = load_config(CONFIG_PATH)
@@ -56,7 +60,9 @@ def cmd_ai_generate_template(description, pages, language, out):
         out_path = base.with_name(f"ai_{base.stem}.docx")
     else:
         out_path = Path(out)
-    ai_generate_template(cfg, out_path, description, pages, language)
+    # --context overrides --description if both are passed; otherwise use description
+    effective_description = context or description
+    ai_generate_template(cfg, out_path, effective_description, pages, language, summary_prompt=summary_prompt)
 
 @cli.command("suggest-charts")
 @click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")

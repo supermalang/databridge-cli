@@ -17,7 +17,7 @@ COPY src/ ./src/
 RUN mkdir -p web/static && touch web/__init__.py
 
 COPY <<'PYEOF' web/main.py
-import asyncio, base64, json, os, sys, tempfile
+import asyncio, base64, io, json, os, sys, tempfile, zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Dict, Optional
@@ -37,6 +37,7 @@ STATIC_DIR    = Path(__file__).parent / "static"
 
 app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None)
 _last_status: Dict = {"command": None, "status": "idle", "finished_at": None}
+_proc: Optional[asyncio.subprocess.Process] = None
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -67,8 +68,8 @@ async def save_config(payload: ConfigPayload):
 
 ALLOWED_COMMANDS = {
     "fetch-questions":      [],
-    "generate-template":    [],
-    "ai-generate-template": ["--description", "--pages", "--language"],
+    "generate-template":    ["--context", "--summary-prompt"],
+    "ai-generate-template": ["--description", "--pages", "--language", "--context", "--summary-prompt"],
     "suggest-charts":       [],
     "download":             ["--sample"],
     "build-report":         ["--sample", "--split-by"],
@@ -81,6 +82,8 @@ class RunPayload(BaseModel):
     pages: Optional[int] = None
     language: Optional[str] = None
     rediscover: Optional[bool] = None
+    context: Optional[str] = None
+    summary_prompt: Optional[str] = None
 
 class QuestionsPayload(BaseModel):
     questions: list
@@ -190,20 +193,23 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "Valid types: bar|horizontal_bar|stacked_bar|grouped_bar|pie|donut|line|area|histogram|scatter|"
             "box_plot|heatmap|treemap|waterfall|funnel|table|bullet_chart|likert|scorecard|pyramid|dot_map. "
             "width_inches applies to all types. Per-type valid options — "
-            "bar: color,top_n,sort,xlabel(category axis),ylabel(value axis); "
-            "horizontal_bar: color,top_n,sort,xlabel(value axis — counts),ylabel(category axis — the column name); "
+            "color (hex string) applies to ALL types — for single-series it sets the bar/line color; "
+            "for multi-series (stacked_bar, grouped_bar, etc.) it overrides the first segment color. "
+            "Per-type additional options — "
+            "bar: top_n,sort,xlabel(category axis),ylabel(value axis); "
+            "horizontal_bar: top_n,sort,xlabel(value axis — counts),ylabel(category axis — the column name); "
             "stacked_bar: normalize,xlabel,ylabel; "
             "grouped_bar: sort,xlabel,ylabel; "
-            "pie/donut: color,top_n; "
-            "line/area: color,freq,xlabel,ylabel; "
-            "histogram: color,bins,xlabel,ylabel; "
-            "scatter/box_plot: color,xlabel,ylabel; "
+            "pie/donut: top_n; "
+            "line/area: freq,xlabel,ylabel; "
+            "histogram: bins,xlabel,ylabel; "
+            "scatter/box_plot: xlabel,ylabel; "
             "heatmap: xlabel,ylabel; "
             "treemap/table: top_n; "
-            "waterfall: color,top_n,sort,xlabel,ylabel; "
-            "funnel: color,top_n; "
-            "bullet_chart: color,target,xlabel,ylabel; "
-            "likert: color,top_n; "
+            "waterfall: top_n,sort,xlabel,ylabel; "
+            "funnel: top_n; "
+            "bullet_chart: target,xlabel,ylabel; "
+            "likert: top_n; "
             "scorecard: stat,columns; "
             "pyramid: male_value,female_value; "
             "dot_map: color_by. "
@@ -536,6 +542,10 @@ async def run_command(command: str, payload: RunPayload):
         cmd += ["--language", payload.language]
     if payload.rediscover and "--rediscover" in ALLOWED_COMMANDS[command]:
         cmd += ["--rediscover"]
+    if payload.context and "--context" in ALLOWED_COMMANDS[command]:
+        cmd += ["--context", payload.context]
+    if payload.summary_prompt and "--summary-prompt" in ALLOWED_COMMANDS[command]:
+        cmd += ["--summary-prompt", payload.summary_prompt]
     return StreamingResponse(
         _stream(command, cmd),
         media_type="text/event-stream",
@@ -543,24 +553,26 @@ async def run_command(command: str, payload: RunPayload):
     )
 
 async def _stream(command: str, cmd: list) -> AsyncGenerator[str, None]:
-    global _last_status
+    global _last_status, _proc
     _last_status = {"command": command, "status": "running", "finished_at": None}
     yield _sse("status", {"status": "running", "command": command})
     yield _sse("log", {"line": f"$ {' '.join(cmd)}", "level": "cmd"})
     env = {**os.environ, "PYTHONPATH": str(BASE_DIR), "PYTHONUNBUFFERED": "1"}
     try:
-        proc = await asyncio.create_subprocess_exec(
+        _proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT, cwd=str(BASE_DIR), env=env,
         )
-        async for raw in proc.stdout:
+        async for raw in _proc.stdout:
             line = raw.decode("utf-8", errors="replace").rstrip()
             yield _sse("log", {"line": line, "level": _classify(line)})
-        await proc.wait()
-        status = "success" if proc.returncode == 0 else "error"
+        await _proc.wait()
+        status = "success" if _proc.returncode == 0 else "error"
     except Exception as e:
         yield _sse("log", {"line": f"Error: {e}", "level": "error"})
         status = "error"
+    finally:
+        _proc = None
     _last_status = {"command": command, "status": status, "finished_at": datetime.now().isoformat()}
     yield _sse("status", {**_last_status})
     yield _sse("done", {})
@@ -579,6 +591,54 @@ def _classify(line: str) -> str:
 @app.get("/api/status")
 async def get_status():
     return _last_status
+
+@app.post("/api/stop")
+async def stop_command():
+    global _proc
+    if _proc is None:
+        return {"ok": False, "detail": "no running process"}
+    try:
+        _proc.terminate()
+        try:
+            await asyncio.wait_for(_proc.wait(), timeout=2.0)
+        except asyncio.TimeoutError:
+            _proc.kill()
+    except ProcessLookupError:
+        pass
+    return {"ok": True}
+
+@app.get("/api/state")
+async def get_state():
+    has_questions = False
+    if CONFIG_PATH.exists():
+        try:
+            import aiofiles as _af
+            async with _af.open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(await f.read()) or {}
+            has_questions = bool(cfg.get("questions"))
+        except Exception:
+            pass
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    has_data = any(
+        f.suffix.lower() in {".csv", ".json", ".xlsx"}
+        for f in DATA_DIR.iterdir() if f.is_file()
+    ) if DATA_DIR.exists() else False
+    TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+    has_templates = any(TEMPLATES_DIR.glob("*.docx"))
+    has_ai = False
+    if CONFIG_PATH.exists():
+        try:
+            async with _af.open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                _cfg2 = yaml.safe_load(await f.read()) or {}
+            ai_sec = _cfg2.get("ai", {})
+            api_key = str(ai_sec.get("api_key", ""))
+            if api_key and not api_key.startswith("env:"):
+                has_ai = True
+            elif api_key.startswith("env:"):
+                has_ai = bool(os.environ.get(api_key[4:].strip()))
+        except Exception:
+            pass
+    return {"has_questions": has_questions, "has_data": has_data, "has_templates": has_templates, "has_ai": has_ai}
 
 @app.get("/api/reports")
 async def list_reports():
@@ -609,6 +669,23 @@ async def delete_report(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
     path.unlink()
     return {"ok": True}
+
+@app.get("/api/reports/download-zip")
+async def download_reports_zip():
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    docx_files = list(REPORTS_DIR.glob("*.docx"))
+    if not docx_files:
+        raise HTTPException(status_code=404, detail="No reports to zip")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in docx_files:
+            zf.write(f, f.name)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=reports.zip"},
+    )
 
 # ── Data files ──────────────────────────────────────────────
 @app.get("/api/data")
@@ -822,6 +899,11 @@ header h1{font-size:16px;font-weight:600}
 .btn-sm{padding:5px 10px;font-size:12px}
 .btn-danger{background:#fee2e2;color:var(--red)}.btn-danger:hover{background:#fecaca}
 .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}.btn-ghost:hover{background:var(--bg)}
+.btn-row{display:flex;gap:8px;align-items:center}
+.cmd-card.disabled{opacity:.4;pointer-events:none;border-color:var(--border)}
+.cmd-card .btn-stop{display:none}
+.cmd-card.running .btn-run{display:none}
+.cmd-card.running .btn-stop{display:inline-flex}
 .log-panel{background:#1a1a18;border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow);flex:1;min-height:0}
 .log-header{padding:10px 14px;background:#111;display:flex;align-items:center;gap:8px;border-bottom:1px solid #333}
 .log-header span{font-size:12px;color:#888;flex:1}
@@ -881,6 +963,9 @@ header h1{font-size:16px;font-weight:600}
 .modal-body h4:first-child{margin-top:0}
 .placeholder-list{list-style:none;padding:0}
 .placeholder-list li{font-family:'Menlo','Monaco',monospace;font-size:12px;padding:3px 8px;background:var(--bg);border-radius:4px;margin-bottom:4px;color:var(--teal-dark)}
+.var-tag{font-family:'Menlo','Monaco',monospace;font-size:10px;padding:2px 6px;border-radius:3px;white-space:nowrap}
+.var-tag.used{background:#d1fae5;color:#065f46;border:1px solid #a7f3d0}
+.var-tag.unused{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
 .toast{position:fixed;bottom:20px;right:20px;padding:10px 16px;border-radius:var(--radius);font-size:13px;font-weight:500;z-index:999;animation:slide-in .2s ease;box-shadow:0 4px 12px rgba(0,0,0,.15)}
 .toast.ok{background:#d1fae5;color:#065f46}.toast.err{background:#fee2e2;color:#991b1b}
 @keyframes slide-in{from{transform:translateY(10px);opacity:0}}
@@ -903,32 +988,44 @@ header h1{font-size:16px;font-weight:600}
     <div class="tab-content active" id="tab-dashboard" style="overflow:hidden;">
       <div class="dashboard">
         <div class="commands-grid">
-          <div class="cmd-card">
+          <div class="cmd-card" data-cmd="fetch-questions">
             <h3>1 · Fetch questions</h3>
             <p>Download form schema from Kobo/Ona and write questions into config.yml, auto-categorized.</p>
-            <button class="btn btn-primary" onclick="runCmd('fetch-questions')">▶ Run</button>
+            <div class="btn-row">
+              <button class="btn btn-primary btn-run" onclick="runCmd('fetch-questions')">▶ Run</button>
+              <button class="btn btn-danger btn-stop" onclick="stopCmd()">■ Stop</button>
+            </div>
           </div>
-          <div class="cmd-card">
-            <h3>2 · Generate template</h3>
-            <p>Build a starter Word template from charts in config.yml. Overwrites existing.</p>
-            <button class="btn btn-primary" onclick="runCmd('generate-template')">▶ Run</button>
-          </div>
-          <div class="cmd-card">
-            <h3>2b · AI suggest charts</h3>
-            <p>Ask AI to propose a charts: config block from your questions. Output printed to logs — paste into config.</p>
-            <button class="btn btn-primary" onclick="runCmd('suggest-charts')">▶ Run</button>
-          </div>
-          <div class="cmd-card">
-            <h3>3 · Download data</h3>
+          <div class="cmd-card" data-cmd="download">
+            <h3>2 · Download data</h3>
             <p>Extract submissions, apply filters, export to configured destination.</p>
             <div class="sample-row">
               <label>Sample</label>
               <input type="number" id="sample-download" placeholder="all" min="1">
               <span style="font-size:11px;color:var(--muted)">rows</span>
             </div>
-            <button class="btn btn-primary" onclick="runCmd('download',{sample:getSample('sample-download')})">▶ Run</button>
+            <div class="btn-row">
+              <button class="btn btn-primary btn-run" onclick="runCmd('download',{sample:getSample('sample-download')})">▶ Run</button>
+              <button class="btn btn-danger btn-stop" onclick="stopCmd()">■ Stop</button>
+            </div>
           </div>
-          <div class="cmd-card">
+          <div class="cmd-card" data-cmd="generate-template">
+            <h3>3 · Generate template</h3>
+            <p>Build a starter Word template from charts in config.yml. Overwrites existing.</p>
+            <div class="btn-row">
+              <button class="btn btn-primary btn-run" onclick="openGenTplModal()">▶ Run</button>
+              <button class="btn btn-danger btn-stop" onclick="stopCmd()">■ Stop</button>
+            </div>
+          </div>
+          <div class="cmd-card" data-cmd="suggest-charts">
+            <h3>3b · AI suggest charts</h3>
+            <p>Ask AI to propose a charts: config block from your questions. Output printed to logs — paste into config.</p>
+            <div class="btn-row">
+              <button class="btn btn-primary btn-run" onclick="runCmd('suggest-charts')">▶ Run</button>
+              <button class="btn btn-danger btn-stop" onclick="stopCmd()">■ Stop</button>
+            </div>
+          </div>
+          <div class="cmd-card" data-cmd="build-report">
             <h3>4 · Build report</h3>
             <p>Generate Word report with embedded charts from downloaded data.</p>
             <div class="sample-row">
@@ -942,7 +1039,10 @@ header h1{font-size:16px;font-weight:600}
                 <option value="">— no split —</option>
               </select>
             </div>
-            <button class="btn btn-primary" onclick="runCmd('build-report',{sample:getSample('sample-report'),split_by:getSplitBy()})">▶ Run</button>
+            <div class="btn-row">
+              <button class="btn btn-primary btn-run" onclick="runCmd('build-report',{sample:getSample('sample-report'),split_by:getSplitBy()})">▶ Run</button>
+              <button class="btn btn-danger btn-stop" onclick="stopCmd()">■ Stop</button>
+            </div>
           </div>
         </div>
         <div class="dashboard-right">
@@ -1105,8 +1205,8 @@ header h1{font-size:16px;font-weight:600}
           <h2>Word templates</h2>
           <button class="btn btn-ghost btn-sm" onclick="loadTemplates()">↺ Refresh</button>
           <span style="margin-left:auto;display:flex;gap:8px;">
-            <button class="btn btn-ghost btn-sm" id="btn-generate-tpl" onclick="generateTemplate()">⚙ Generate template</button>
-            <button class="btn btn-primary btn-sm" onclick="openAiTemplateModal()">✦ AI Generate</button>
+            <button class="btn btn-ghost btn-sm" id="btn-generate-tpl" onclick="openGenTplModal()">⚙ Generate template</button>
+            <button class="btn btn-primary btn-sm" id="btn-ai-generate-tpl" onclick="openAiTemplateModal()">✦ AI Generate</button>
             <label class="btn btn-primary btn-sm" style="cursor:pointer;">
               ↑ Upload .docx
               <input type="file" accept=".docx" style="display:none" onchange="uploadTemplate(this)">
@@ -1423,35 +1523,41 @@ async function saveQuestions(){
 async function runCmd(command,opts={}){
   if(running){toast('Already running','err');return;}
   running=true;setDot('running');
+  const activeCard=document.querySelector(`.cmd-card[data-cmd="${command}"]`);
+  if(activeCard)activeCard.classList.add('running');
   document.getElementById('status-label').textContent=command;
   document.getElementById('log-body').innerHTML='';
   document.getElementById('log-title').textContent='Running: '+command;
   const body={};if(opts.sample)body.sample=opts.sample;if(opts.split_by)body.split_by=opts.split_by;
-  const res=await fetch('/api/run/'+command,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const reader=res.body.getReader();const dec=new TextDecoder();let buf='';
-  while(true){
-    const{done,value}=await reader.read();if(done)break;
-    buf+=dec.decode(value,{stream:true});
-    const parts=buf.split('\n\n');buf=parts.pop();
-    for(const part of parts){
-      const lines=part.trim().split('\n');let ev='message',data='';
-      for(const l of lines){if(l.startsWith('event: '))ev=l.slice(7);if(l.startsWith('data: '))data=l.slice(6);}
-      if(!data)continue;
-      const p=JSON.parse(data);
-      if(ev==='log')appendLog(p.line,p.level);
-      else if(ev==='status'&&p.status!=='running'){
-        setDot(p.status);
-        document.getElementById('log-title').textContent=command+' — '+p.status;
-        document.getElementById('status-label').textContent=p.status==='success'?'✓ done':'✗ error';
-        running=false;
-        if(p.status==='success'&&command==='build-report')loadReports();
-        if(p.status==='success'&&command==='download')loadDataFiles();
-        if(p.status==='success'&&command==='fetch-questions'){loadQuestions();loadSplitByOptions();}
+  try{
+    const res=await fetch('/api/run/'+command,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const reader=res.body.getReader();const dec=new TextDecoder();let buf='';
+    while(true){
+      const{done,value}=await reader.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const parts=buf.split('\n\n');buf=parts.pop();
+      for(const part of parts){
+        const lines=part.trim().split('\n');let ev='message',data='';
+        for(const l of lines){if(l.startsWith('event: '))ev=l.slice(7);if(l.startsWith('data: '))data=l.slice(6);}
+        if(!data)continue;
+        const p=JSON.parse(data);
+        if(ev==='log')appendLog(p.line,p.level);
+        else if(ev==='status'&&p.status!=='running'){
+          setDot(p.status);
+          document.getElementById('log-title').textContent=command+' — '+p.status;
+          document.getElementById('status-label').textContent=p.status==='success'?'✓ done':'✗ error';
+          running=false;
+          if(p.status==='success'&&command==='build-report'){loadReports();loadDashboardState();}
+          if(p.status==='success'&&command==='download'){loadDataFiles();loadDashboardState();}
+          if(p.status==='success'&&command==='fetch-questions'){loadQuestions();loadSplitByOptions();loadDashboardState();}
+          if(p.status==='success'&&command==='generate-template')loadDashboardState();
+        }
+        else if(ev==='done')running=false;
       }
-      else if(ev==='done')running=false;
     }
-  }
+  }catch(e){}
   running=false;
+  if(activeCard)activeCard.classList.remove('running');
 }
 function appendLog(line,level='info'){
   const b=document.getElementById('log-body');
@@ -1464,7 +1570,8 @@ async function loadReports(){
   const c=document.getElementById('reports-container');c.innerHTML='<p class="empty-state">Loading…</p>';
   const data=await(await fetch('/api/reports')).json();
   if(!data.files.length){c.innerHTML='<p class="empty-state">No reports yet.</p>';return;}
-  c.innerHTML='<table class="file-table"><thead><tr><th>File</th><th>Size</th><th>Generated</th><th></th></tr></thead><tbody>'+
+  const zipBtn=data.files.length>1?`<div style="margin-bottom:10px;"><a href="/api/reports/download-zip" download="reports.zip"><button class="btn btn-primary btn-sm">↓ Download all as ZIP (${data.files.length} files)</button></a></div>`:'';
+  c.innerHTML=zipBtn+'<table class="file-table"><thead><tr><th>File</th><th>Size</th><th>Generated</th><th></th></tr></thead><tbody>'+
     data.files.map(f=>`<tr><td><span class="file-name">${f.name}</span></td><td style="color:var(--muted)">${f.size_kb} KB</td><td style="color:var(--muted)">${f.modified}</td><td style="text-align:right;display:flex;gap:6px;justify-content:flex-end;"><a href="/api/reports/download/${encodeURIComponent(f.name)}" download><button class="btn btn-primary btn-sm">↓ Download</button></a><button class="btn btn-danger btn-sm" onclick="deleteReport('${f.name}')">Delete</button></td></tr>`).join('')+
     '</tbody></table>';
 }
@@ -1507,33 +1614,99 @@ async function uploadTemplate(input){
   if(res.ok){toast('Uploaded '+data.name,'ok');loadTemplates();}
   else{toast(data.detail||'Upload failed','err');}
 }
-async function generateTemplate(){
+async function openGenTplModal(){
+  const modal=document.getElementById('gen-tpl-modal');
+  modal.style.display='flex';
+  // load config to populate variables panel
+  try{
+    const res=await fetch('/api/config');
+    const data=await res.json();
+    const cfg=data.exists?jsyaml.load(data.content)||{}:{};
+    _renderGenTplVars(cfg);
+  }catch(e){
+    document.getElementById('gen-tpl-vars').innerHTML='<span style="color:var(--muted);font-size:11px;">Could not load config.</span>';
+  }
+}
+function closeGenTplModal(){document.getElementById('gen-tpl-modal').style.display='none';}
+function _renderGenTplVars(cfg){
+  const charts=(cfg.charts||[]);
+  const summaries=(cfg.summaries||[]);
+  const indicators=(cfg.indicators||[]);
+  const container=document.getElementById('gen-tpl-vars');
+  const std=['report_title','period','n_submissions','generated_at','summary_text','observations','recommendations'];
+  let html='';
+  html+='<div style="margin-bottom:10px;">';
+  html+='<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Standard (always included)</div>';
+  html+='<div style="display:flex;flex-wrap:wrap;gap:4px;">'+std.map(v=>`<span class="var-tag used">{{ ${v} }}</span>`).join('')+'</div>';
+  html+='</div>';
+  if(charts.length){
+    html+='<div style="margin-bottom:10px;">';
+    html+='<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Charts ('+charts.length+')</div>';
+    html+='<div style="display:flex;flex-wrap:wrap;gap:4px;">'+charts.map(c=>`<span class="var-tag used" title="${c.title||''}">{{ chart_${c.name} }}</span>`).join('')+'</div>';
+    html+='</div>';
+  }else{
+    html+='<div style="margin-bottom:10px;"><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Charts</div>';
+    html+='<span style="font-size:11px;color:#dc2626;">None configured — add charts to config.yml first.</span></div>';
+  }
+  if(summaries.length){
+    html+='<div style="margin-bottom:10px;">';
+    html+='<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Summaries ('+summaries.length+')</div>';
+    html+='<div style="display:flex;flex-wrap:wrap;gap:4px;">'+summaries.map(s=>`<span class="var-tag used" title="${s.label||''}">{{ summary_${s.name} }}</span>`).join('')+'</div>';
+    html+='</div>';
+  }
+  if(indicators.length){
+    html+='<div style="margin-bottom:10px;">';
+    html+='<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Indicators ('+indicators.length+')</div>';
+    html+='<div style="display:flex;flex-wrap:wrap;gap:4px;">'+indicators.map(i=>`<span class="var-tag used" title="${i.label||''}">{{ ind_${i.name} }}</span>`).join('')+'</div>';
+    html+='</div>';
+  }
+  container.innerHTML=html;
+}
+async function runGenTpl(){
   if(running){toast('A command is already running','err');return;}
+  const context=document.getElementById('gen-tpl-context').value.trim();
+  const summaryPrompt=document.getElementById('gen-tpl-summary-prompt').value.trim();
+  closeGenTplModal();
   const btn=document.getElementById('btn-generate-tpl');
   if(btn){btn.disabled=true;btn.textContent='⚙ Generating…';}
   running=true;setDot('running');
+  const activeCard=document.querySelector('.cmd-card[data-cmd="generate-template"]');
+  if(activeCard)activeCard.classList.add('running');
   document.getElementById('status-label').textContent='generate-template';
-  const res=await fetch('/api/run/generate-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
-  const reader=res.body.getReader();const dec=new TextDecoder();let buf='',ok=false;
-  while(true){
-    const{done,value}=await reader.read();if(done)break;
-    buf+=dec.decode(value,{stream:true});
-    const parts=buf.split('\n\n');buf=parts.pop();
-    for(const part of parts){
-      const lines=part.trim().split('\n');let ev='message',data='';
-      for(const l of lines){if(l.startsWith('event: '))ev=l.slice(7);if(l.startsWith('data: '))data=l.slice(6);}
-      if(!data)continue;const p=JSON.parse(data);
-      if(ev==='status'&&p.status!=='running'){
-        ok=p.status==='success';setDot(p.status);
-        document.getElementById('status-label').textContent=ok?'✓ done':'✗ error';
-        running=false;
+  document.getElementById('log-body').innerHTML='';
+  document.getElementById('log-title').textContent='Running: generate-template';
+  const body={};
+  if(context)body.context=context;
+  if(summaryPrompt)body.summary_prompt=summaryPrompt;
+  let ok=false;
+  try{
+    const res=await fetch('/api/run/generate-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const reader=res.body.getReader();const dec=new TextDecoder();let buf='';
+    while(true){
+      const{done,value}=await reader.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const parts=buf.split('\n\n');buf=parts.pop();
+      for(const part of parts){
+        const lines=part.trim().split('\n');let ev='message',data='';
+        for(const l of lines){if(l.startsWith('event: '))ev=l.slice(7);if(l.startsWith('data: '))data=l.slice(6);}
+        if(!data)continue;const p=JSON.parse(data);
+        if(ev==='log')appendLog(p.line,p.level);
+        else if(ev==='status'&&p.status!=='running'){
+          ok=p.status==='success';setDot(p.status);
+          document.getElementById('log-title').textContent='generate-template — '+p.status;
+          document.getElementById('status-label').textContent=ok?'✓ done':'✗ error';
+          running=false;
+          if(ok){loadTemplates();loadDashboardState();}
+        }
+        else if(ev==='done')running=false;
       }
     }
-  }
+  }catch(e){}
   running=false;
+  if(activeCard)activeCard.classList.remove('running');
   if(btn){btn.disabled=false;btn.textContent='⚙ Generate template';}
-  if(ok){toast('Template generated','ok');loadTemplates();}
-  else{toast('Generation failed — check logs on Dashboard','err');}
+  if(ok)toast('Template generated','ok');
+  else toast('Generation failed — check logs','err');
 }
 async function previewTemplate(name){
   const res=await fetch('/api/templates/preview/'+encodeURIComponent(name));
@@ -1590,7 +1763,7 @@ const CHART_META={
 };
 const CHART_OPT_ROWS={
   'cm-topn-row':['bar','horizontal_bar','pie','donut','treemap','waterfall','funnel','table','likert'],
-  'cm-color-row':['bar','horizontal_bar','pie','donut','line','area','histogram','scatter','box_plot','waterfall','funnel','bullet_chart','likert'],
+  'cm-color-row':['bar','horizontal_bar','stacked_bar','grouped_bar','pie','donut','line','area','histogram','scatter','box_plot','heatmap','treemap','waterfall','funnel','table','bullet_chart','likert','scorecard','pyramid','dot_map'],
   'cm-sort-row':['bar','horizontal_bar','grouped_bar','waterfall'],
   'cm-normalize-row':['stacked_bar'],
   'cm-freq-row':['line','area'],
@@ -1615,11 +1788,28 @@ function renderChartsList(){
       <div class="chart-card-name"><span class="type-badge">${ch.type||''}</span>${ch.name||''}</div>
       <div class="chart-card-meta">${ch.title||''} · columns: ${(ch.questions||[]).join(', ')||'—'}</div>
     </div>
+    <button class="btn btn-ghost btn-sm" onclick="previewChartQuick(${i})">Preview</button>
     <button class="btn btn-ghost btn-sm" onclick="openChartModal(${i})">Edit</button>
     <button class="btn btn-danger btn-sm" onclick="deleteChart(${i})">Delete</button>
   </div>`).join('');
 }
 function deleteChart(i){if(!confirm('Delete chart "'+(_charts[i]||{}).name+'"?'))return;_charts.splice(i,1);renderChartsList();}
+async function previewChartQuick(i){
+  const ch=_charts[i];if(!ch)return;
+  const modal=document.getElementById('quick-preview-modal');
+  document.getElementById('qp-title').textContent=(ch.name||'chart')+' — '+(ch.type||'');
+  document.getElementById('qp-area').innerHTML='<span style="color:var(--muted);">Generating preview…</span>';
+  modal.style.display='flex';
+  try{
+    const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart:ch})});
+    const data=await res.json();
+    if(res.ok){
+      document.getElementById('qp-area').innerHTML=`<img src="data:image/png;base64,${data.image}" style="max-width:100%;max-height:70vh;border-radius:4px;border:1px solid var(--border);">`;
+    }else{
+      document.getElementById('qp-area').innerHTML=`<span style="color:#dc2626;">${data.detail||'Preview failed'}</span>`;
+    }
+  }catch(e){document.getElementById('qp-area').innerHTML=`<span style="color:#dc2626;">Error: ${e.message}</span>`;}
+}
 function renderIndicatorsList(){
   const c=document.getElementById('indicators-list');
   if(!_indicators.length){c.innerHTML='<p class="empty-state" style="padding:12px 0 4px;">No indicators configured.</p>';return;}
@@ -1692,6 +1882,7 @@ async function openChartModal(idx){
   loadPreviewFileOptions();
   // clear fields
   ['cm-name','cm-title','cm-width','cm-color','cm-topn','cm-bins','cm-target','cm-columns','cm-male','cm-female','cm-colorby','cm-xlabel','cm-ylabel','cm-distinct-by','cm-sample-n'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('cm-color-picker').value='#1D9E75';
   ['cm-sort','cm-normalize','cm-freq','cm-stat-scorecard','cm-expand-multi','cm-data-type'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('cm-preview-area').innerHTML='Select a data file (or leave blank for auto-detect) and click Preview.';
   document.getElementById('cm-preview-area').style.color='var(--muted)';
@@ -1706,7 +1897,7 @@ async function openChartModal(idx){
     (ch.questions||[]).forEach((q,i)=>{if(qInputs[i]){qInputs[i].value=q;showColumnChoices(qInputs[i]);}});
     const o=ch.options||{};
     if(o.width_inches)document.getElementById('cm-width').value=o.width_inches;
-    if(o.color)document.getElementById('cm-color').value=o.color;
+    if(o.color){document.getElementById('cm-color').value=o.color;if(/^#[0-9A-Fa-f]{6}$/.test(o.color))document.getElementById('cm-color-picker').value=o.color;}
     if(o.top_n)document.getElementById('cm-topn').value=o.top_n;
     if(o.sort)document.getElementById('cm-sort').value=o.sort;
     if(o.normalize)document.getElementById('cm-normalize').value=String(o.normalize);
@@ -1856,6 +2047,46 @@ async function previewIndicator(){
   }catch(e){parea.innerHTML=`<span style="color:#dc2626;">Error: ${e.message}</span>`;}
 }
 loadConfig();
+loadDashboardState();
+async function loadDashboardState(){
+  try{
+    const s=await(await fetch('/api/state')).json();
+    applyCardState(s);
+  }catch(e){}
+}
+function applyCardState(s){
+  const rules={
+    'fetch-questions': true,
+    'download':        s.has_questions,
+    'generate-template': s.has_questions && s.has_data,
+    'suggest-charts':  s.has_questions && s.has_data,
+    'build-report':    s.has_questions && s.has_data && s.has_templates,
+  };
+  document.querySelectorAll('.cmd-card[data-cmd]').forEach(card=>{
+    const cmd=card.dataset.cmd;
+    const enabled=rules[cmd]!==undefined?rules[cmd]:true;
+    card.classList.toggle('disabled',!enabled);
+  });
+  // Mirror state to Templates tab action buttons
+  const canGenTpl=!!(s.has_questions && s.has_data);
+  const canAiTpl=!!(s.has_questions && s.has_data && s.has_ai);
+  const btnGenTpl=document.getElementById('btn-generate-tpl');
+  const btnAiTpl=document.getElementById('btn-ai-generate-tpl');
+  if(btnGenTpl){
+    btnGenTpl.disabled=!canGenTpl;
+    btnGenTpl.title=canGenTpl?'':'Requires questions and downloaded data';
+  }
+  if(btnAiTpl){
+    btnAiTpl.disabled=!canAiTpl;
+    btnAiTpl.title=canAiTpl?'':'Requires questions, data, and AI configured';
+  }
+}
+async function stopCmd(){
+  try{
+    await fetch('/api/stop',{method:'POST'});
+    appendLog('■ Stopped by user','warning');
+  }catch(e){}
+}
 function switchChartView(v){
   document.getElementById('cm-form-view').style.display=v==='form'?'block':'none';
   document.getElementById('cm-ai-view').style.display=v==='ai'?'block':'none';
@@ -2098,44 +2329,102 @@ async function previewSummary(){
     }
   }catch(e){parea.style.color='#dc2626';parea.textContent='Error: '+e.message;}
 }
-function openAiTemplateModal(){document.getElementById('ai-tpl-modal').style.display='flex';}
+async function openAiTemplateModal(){
+  if(running){toast('A command is already running','err');return;}
+  document.getElementById('ai-tpl-modal').style.display='flex';
+  try{
+    const res=await fetch('/api/config');
+    const data=await res.json();
+    const cfg=data.exists?jsyaml.load(data.content)||{}:{};
+    _renderAiTplVars(cfg);
+    // Pre-fill context from gen-tpl modal if already filled there
+    const existingCtx=document.getElementById('gen-tpl-context')?.value||'';
+    const existingSmry=document.getElementById('gen-tpl-summary-prompt')?.value||'';
+    if(existingCtx&&!document.getElementById('ai-tpl-context').value)
+      document.getElementById('ai-tpl-context').value=existingCtx;
+    if(existingSmry&&!document.getElementById('ai-tpl-summary-prompt').value)
+      document.getElementById('ai-tpl-summary-prompt').value=existingSmry;
+  }catch(e){
+    document.getElementById('ai-tpl-vars').innerHTML='<span style="color:var(--muted);font-size:11px;">Could not load config.</span>';
+  }
+}
+function _renderAiTplVars(cfg){
+  // Reuse same render logic as gen-tpl modal but target ai-tpl-vars
+  const charts=(cfg.charts||[]);
+  const summaries=(cfg.summaries||[]);
+  const indicators=(cfg.indicators||[]);
+  const container=document.getElementById('ai-tpl-vars');
+  let html='';
+  if(!charts.length&&!summaries.length&&!indicators.length){
+    html='<span style="color:#dc2626;font-size:11px;">No charts, summaries, or indicators configured. Add them in Config for a richer AI template.</span>';
+    container.innerHTML=html;return;
+  }
+  if(charts.length){
+    html+='<div style="margin-bottom:8px;">';
+    html+='<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Charts ('+charts.length+')</div>';
+    html+='<div style="display:flex;flex-wrap:wrap;gap:4px;">'+charts.map(c=>`<span class="var-tag used" title="${c.title||''}">${c.name} <span style="opacity:.6">(${c.type||''})</span></span>`).join('')+'</div>';
+    html+='</div>';
+  }
+  if(summaries.length){
+    html+='<div style="margin-bottom:8px;">';
+    html+='<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Summaries ('+summaries.length+')</div>';
+    html+='<div style="display:flex;flex-wrap:wrap;gap:4px;">'+summaries.map(s=>`<span class="var-tag used" title="${s.label||''}">${s.name}</span>`).join('')+'</div>';
+    html+='</div>';
+  }
+  if(indicators.length){
+    html+='<div style="margin-bottom:8px;">';
+    html+='<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Indicators ('+indicators.length+')</div>';
+    html+='<div style="display:flex;flex-wrap:wrap;gap:4px;">'+indicators.map(i=>`<span class="var-tag used" title="${i.label||''}">${i.name}</span>`).join('')+'</div>';
+    html+='</div>';
+  }
+  container.innerHTML=html;
+}
 function closeAiTemplateModal(){document.getElementById('ai-tpl-modal').style.display='none';}
 async function runAiGenerateTemplate(){
-  const desc=document.getElementById('ai-tpl-desc').value.trim();
-  if(!desc){alert('Please enter a project description.');return;}
+  if(running){toast('A command is already running','err');return;}
+  const context=document.getElementById('ai-tpl-context').value.trim();
+  if(!context){alert('Please enter a background & context description for the report.');return;}
+  const summaryPrompt=document.getElementById('ai-tpl-summary-prompt').value.trim();
   const pages=parseInt(document.getElementById('ai-tpl-pages').value)||10;
   const language=document.getElementById('ai-tpl-lang').value.trim()||'English';
   closeAiTemplateModal();
-  if(running){toast('A command is already running','err');return;}
   running=true;setDot('running');
+  const activeCard=document.querySelector('.cmd-card[data-cmd="ai-generate-template"]');
+  if(activeCard)activeCard.classList.add('running');
   document.getElementById('status-label').textContent='ai-generate-template';
-  const logBody=document.getElementById('log-body');
-  logBody.innerHTML='';
+  document.getElementById('log-body').innerHTML='';
   document.getElementById('log-title').textContent='Running: ai-generate-template';
   document.querySelectorAll('.tab,.tab-content').forEach(el=>el.classList.remove('active'));
   document.querySelector('[data-tab="dashboard"]').classList.add('active');
   document.getElementById('tab-dashboard').classList.add('active');
-  const res=await fetch('/api/run/ai-generate-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:desc,pages,language})});
-  const reader=res.body.getReader();const dec=new TextDecoder();let buf='';
-  while(true){
-    const{done,value}=await reader.read();if(done)break;
-    buf+=dec.decode(value,{stream:true});
-    const parts=buf.split('\n\n');buf=parts.pop();
-    for(const part of parts){
-      const lines=part.trim().split('\n');let ev='message',data='';
-      for(const l of lines){if(l.startsWith('event: '))ev=l.slice(7);if(l.startsWith('data: '))data=l.slice(6);}
-      if(!data)continue;const p=JSON.parse(data);
-      if(ev==='log')appendLog(p.line,p.level||'info');
-      if(ev==='status'&&p.status!=='running'){
-        setDot(p.status);
-        document.getElementById('status-label').textContent=p.status==='success'?'✓ done':'✗ error';
-        running=false;
-        if(p.status==='success')toast('AI template generated — check Templates tab','ok');
-        else toast('Generation failed — check logs','err');
+  const body={description:context,pages,language,context};
+  if(summaryPrompt)body.summary_prompt=summaryPrompt;
+  try{
+    const res=await fetch('/api/run/ai-generate-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const reader=res.body.getReader();const dec=new TextDecoder();let buf='';
+    while(true){
+      const{done,value}=await reader.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const parts=buf.split('\n\n');buf=parts.pop();
+      for(const part of parts){
+        const lines=part.trim().split('\n');let ev='message',data='';
+        for(const l of lines){if(l.startsWith('event: '))ev=l.slice(7);if(l.startsWith('data: '))data=l.slice(6);}
+        if(!data)continue;const p=JSON.parse(data);
+        if(ev==='log')appendLog(p.line,p.level||'info');
+        if(ev==='status'&&p.status!=='running'){
+          setDot(p.status);
+          document.getElementById('log-title').textContent='ai-generate-template — '+p.status;
+          document.getElementById('status-label').textContent=p.status==='success'?'✓ done':'✗ error';
+          running=false;
+          if(p.status==='success'){toast('AI template generated — check Templates tab','ok');loadDashboardState();}
+          else toast('Generation failed — check logs','err');
+        }
+        else if(ev==='done')running=false;
       }
     }
-  }
+  }catch(e){}
   running=false;
+  if(activeCard)activeCard.classList.remove('running');
 }
 </script>
 <!-- Chart modal -->
@@ -2171,7 +2460,7 @@ async function runAiGenerateTemplate(){
       <div id="cm-questions-wrap"></div>
       <div class="modal-body"><h4>Options</h4></div>
       <div class="form-row"><label>Width (in)</label><input id="cm-width" type="number" step="0.5" placeholder="5.5 (default)"></div>
-      <div class="form-row" id="cm-color-row"><label>Color</label><input id="cm-color" type="text" placeholder="#1D9E75"></div>
+      <div class="form-row" id="cm-color-row"><label>Color</label><div style="display:flex;gap:6px;align-items:center;flex:1;"><input type="color" id="cm-color-picker" value="#1D9E75" oninput="document.getElementById('cm-color').value=this.value" style="width:36px;height:28px;padding:2px;border:1px solid var(--border);border-radius:4px;cursor:pointer;flex-shrink:0;"><input id="cm-color" type="text" placeholder="#1D9E75" style="flex:1;" oninput="if(/^#[0-9A-Fa-f]{6}$/.test(this.value))document.getElementById('cm-color-picker').value=this.value"></div></div>
       <div class="form-row" id="cm-topn-row"><label>top_n</label><input id="cm-topn" type="number" placeholder="15 (default)"></div>
       <div class="form-row" id="cm-sort-row"><label>Sort</label><select id="cm-sort"><option value="">default (value)</option><option value="value">value</option><option value="label">label</option><option value="none">none</option></select></div>
       <div class="form-row" id="cm-normalize-row"><label>Normalize</label><select id="cm-normalize"><option value="">no</option><option value="true">yes (100% stacked)</option></select></div>
@@ -2215,6 +2504,18 @@ async function runAiGenerateTemplate(){
     <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;">
       <button class="btn btn-ghost btn-sm" onclick="closeChartModal()">Cancel</button>
       <button class="btn btn-primary btn-sm" onclick="saveChartFromModal()">Save chart</button>
+    </div>
+  </div>
+</div>
+<!-- Quick preview modal -->
+<div id="quick-preview-modal" class="modal-overlay" style="display:none;align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="width:700px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;">
+    <div class="modal-header">
+      <h3 id="qp-title" style="font-size:14px;"></h3>
+      <button onclick="document.getElementById('quick-preview-modal').style.display='none'">✕</button>
+    </div>
+    <div style="padding:16px;overflow-y:auto;text-align:center;" id="qp-area">
+      <span style="color:var(--muted);">Loading…</span>
     </div>
   </div>
 </div>
@@ -2336,26 +2637,61 @@ async function runAiGenerateTemplate(){
     </div>
   </div>
 </div>
-<div id="ai-tpl-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeAiTemplateModal()">
-  <div class="modal" style="width:520px;">
-    <div class="modal-header"><h3>AI Generate Template</h3><button onclick="closeAiTemplateModal()">✕</button></div>
-    <div class="modal-body">
+<div id="gen-tpl-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeGenTplModal()">
+  <div class="modal" style="width:560px;max-height:90vh;display:flex;flex-direction:column;">
+    <div class="modal-header"><h3>Generate Template</h3><button onclick="closeGenTplModal()">✕</button></div>
+    <div class="modal-body" style="overflow-y:auto;flex:1;">
       <div class="form-row" style="align-items:flex-start;">
-        <label style="padding-top:4px;">Description</label>
-        <textarea id="ai-tpl-desc" rows="4" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="Humanitarian monitoring report for nutrition program in Sahel region. Covers beneficiary reach, food security indicators, and geographic distribution."></textarea>
+        <label style="padding-top:4px;min-width:130px;">Background &amp; context</label>
+        <textarea id="gen-tpl-context" rows="3" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="Humanitarian monitoring report for a nutrition program in the Sahel region. Covers beneficiary reach, food security, and geographic distribution across three target zones."></textarea>
       </div>
-      <div class="form-row">
-        <label>Pages</label>
-        <input id="ai-tpl-pages" type="number" min="2" max="50" value="10" style="width:80px;">
-        <span style="font-size:11px;color:var(--muted);margin-left:4px;">target page count</span>
+      <div class="form-row" style="align-items:flex-start;margin-top:10px;">
+        <label style="padding-top:4px;min-width:130px;">Executive summary prompt</label>
+        <textarea id="gen-tpl-summary-prompt" rows="2" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="Summarize key findings, coverage rates, and any critical gaps observed this quarter."></textarea>
       </div>
-      <div class="form-row">
-        <label>Language</label>
-        <input id="ai-tpl-lang" type="text" value="English" placeholder="English">
+      <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
+        <div style="font-size:11px;font-weight:600;color:var(--fg);margin-bottom:8px;">Variables included in this template</div>
+        <div id="gen-tpl-vars" style="font-size:11px;"><span style="color:var(--muted);">Loading…</span></div>
+        <p style="font-size:10px;color:var(--muted);margin-top:8px;">All variables from your config will be placed as placeholders in the generated .docx. Edit charts, summaries, or indicators in Config to change this list.</p>
       </div>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px;">Requires <code>ai:</code> section in config.yml with a valid API key. Output saved as <code>ai_report_template.docx</code> in your templates folder.</p>
     </div>
-    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;">
+      <button class="btn btn-ghost btn-sm" onclick="closeGenTplModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="runGenTpl()">▶ Generate</button>
+    </div>
+  </div>
+</div>
+<div id="ai-tpl-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeAiTemplateModal()">
+  <div class="modal" style="width:580px;max-height:90vh;display:flex;flex-direction:column;">
+    <div class="modal-header"><h3>✦ AI Generate Template</h3><button onclick="closeAiTemplateModal()">✕</button></div>
+    <div class="modal-body" style="overflow-y:auto;flex:1;">
+      <div class="form-row" style="align-items:flex-start;">
+        <label style="padding-top:4px;min-width:140px;">Background &amp; context</label>
+        <textarea id="ai-tpl-context" rows="3" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="Humanitarian monitoring report for a nutrition program in the Sahel region. Covers beneficiary reach, food security, and geographic distribution across three target zones."></textarea>
+      </div>
+      <div class="form-row" style="align-items:flex-start;margin-top:8px;">
+        <label style="padding-top:4px;min-width:140px;">Executive summary prompt</label>
+        <textarea id="ai-tpl-summary-prompt" rows="2" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="Summarize key findings, coverage rates, and any critical gaps observed this quarter."></textarea>
+      </div>
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px;">
+        <div style="font-size:11px;font-weight:600;color:var(--fg);margin-bottom:8px;">Variables the AI will use</div>
+        <div id="ai-tpl-vars" style="font-size:11px;"><span style="color:var(--muted);">Loading…</span></div>
+        <p style="font-size:10px;color:var(--muted);margin-top:6px;">The AI will place each of these into a contextually appropriate section. Add or edit charts, summaries, and indicators in Config first.</p>
+      </div>
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px;display:flex;gap:16px;flex-wrap:wrap;">
+        <div class="form-row" style="margin:0;flex:0 0 auto;gap:6px;">
+          <label style="min-width:unset;">Pages</label>
+          <input id="ai-tpl-pages" type="number" min="2" max="50" value="10" style="width:64px;">
+          <span style="font-size:11px;color:var(--muted);">target</span>
+        </div>
+        <div class="form-row" style="margin:0;flex:0 0 auto;gap:6px;">
+          <label style="min-width:unset;">Language</label>
+          <input id="ai-tpl-lang" type="text" value="English" placeholder="English" style="width:100px;">
+        </div>
+      </div>
+      <p style="font-size:10px;color:var(--muted);margin-top:10px;">Output saved as <code>ai_report_template.docx</code>. Requires <code>ai:</code> section in config.yml.</p>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;">
       <button class="btn btn-ghost btn-sm" onclick="closeAiTemplateModal()">Cancel</button>
       <button class="btn btn-primary btn-sm" onclick="runAiGenerateTemplate()">✦ Generate</button>
     </div>
