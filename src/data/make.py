@@ -58,6 +58,21 @@ def cmd_ai_generate_template(description, pages, language, out):
         out_path = Path(out)
     ai_generate_template(cfg, out_path, description, pages, language)
 
+@cli.command("suggest-charts")
+@click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
+def cmd_suggest_charts(out):
+    """Ask AI to suggest a charts: config block from your questions."""
+    from src.reports.ai_chart_suggester import suggest_charts
+    cfg = load_config(CONFIG_PATH)
+    if not cfg.get("ai"):
+        click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
+        sys.exit(1)
+    if not cfg.get("questions"):
+        click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
+        sys.exit(1)
+    suggest_charts(cfg, out_path=out)
+
+
 def _run_classify(cfg, sample=None, rediscover=False):
     """Run text classification for any questions with classify.enabled: true.
 

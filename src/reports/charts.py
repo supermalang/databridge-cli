@@ -160,7 +160,7 @@ def chart_stacked_bar(df, q, title, out, opts):
     if normalize:
         ax.set_ylim(0, 100)
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}%"))
-    ax.legend(title=s, bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=9)
+    ax.legend(title=s, loc="lower center", bbox_to_anchor=(0.5, -0.22), ncol=4, fontsize=9)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
@@ -343,7 +343,7 @@ def chart_grouped_bar(df, q, title, out, opts):
     fig, ax = plt.subplots(figsize=_fs(opts, (9, 5)))
     pivot.plot(kind="bar", ax=ax, color=PALETTE[:len(pivot.columns)], alpha=0.87, width=0.75)
     ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl)
-    ax.legend(title=grp, bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=9)
+    ax.legend(title=grp, loc="lower center", bbox_to_anchor=(0.5, -0.22), ncol=4, fontsize=9)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
@@ -515,7 +515,7 @@ def chart_dot_map(df, q, title, out, opts):
                     mask = cats == cat
                     ax.scatter(xs[mask], ys[mask], s=dot_size, color=PALETTE[i % len(PALETTE)],
                                alpha=0.75, edgecolors="white", linewidth=0.4, label=cat, zorder=3)
-                ax.legend(title=color_by, bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
+                ax.legend(title=color_by, loc="lower center", bbox_to_anchor=(0.5, -0.12), ncol=4, fontsize=8)
             else:
                 ax.scatter(xs, ys, s=dot_size, color=_color(opts), alpha=0.75,
                            edgecolors="white", linewidth=0.4, zorder=3)
@@ -533,7 +533,7 @@ def chart_dot_map(df, q, title, out, opts):
                 ax.scatter(tmp[lon_col][mask], tmp[lat_col][mask], s=dot_size,
                            color=PALETTE[i % len(PALETTE)], alpha=0.75,
                            edgecolors="white", linewidth=0.4, label=cat)
-            ax.legend(title=color_by, bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
+            ax.legend(title=color_by, loc="lower center", bbox_to_anchor=(0.5, -0.12), ncol=4, fontsize=8)
         else:
             ax.scatter(tmp[lon_col], tmp[lat_col], s=dot_size, color=_color(opts),
                        alpha=0.75, edgecolors="white", linewidth=0.4)

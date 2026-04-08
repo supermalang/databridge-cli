@@ -69,6 +69,7 @@ ALLOWED_COMMANDS = {
     "fetch-questions":      [],
     "generate-template":    [],
     "ai-generate-template": ["--description", "--pages", "--language"],
+    "suggest-charts":       [],
     "download":             ["--sample"],
     "build-report":         ["--sample", "--split-by"],
 }
@@ -911,6 +912,11 @@ header h1{font-size:16px;font-weight:600}
             <h3>2 · Generate template</h3>
             <p>Build a starter Word template from charts in config.yml. Overwrites existing.</p>
             <button class="btn btn-primary" onclick="runCmd('generate-template')">▶ Run</button>
+          </div>
+          <div class="cmd-card">
+            <h3>2b · AI suggest charts</h3>
+            <p>Ask AI to propose a charts: config block from your questions. Output printed to logs — paste into config.</p>
+            <button class="btn btn-primary" onclick="runCmd('suggest-charts')">▶ Run</button>
           </div>
           <div class="cmd-card">
             <h3>3 · Download data</h3>
