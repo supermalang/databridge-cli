@@ -422,6 +422,59 @@ def aggregate_repeat(repeat_df: pd.DataFrame, agg_spec: Dict) -> pd.DataFrame:
     return grouped.size().reset_index(name="count")
 
 
+def join_repeat_to_main(
+    repeat_df: pd.DataFrame,
+    main_df: pd.DataFrame,
+    join_cols: List[str],
+) -> pd.DataFrame:
+    """Left-join selected main-table columns into a repeat-group DataFrame.
+
+    Args:
+        repeat_df: the repeat table (has _parent_index)
+        main_df:   the main submissions table (has _id / _index / _uuid)
+        join_cols: list of main_df column names (export_labels) to bring in
+
+    Returns:
+        A new DataFrame with repeat rows + the requested parent columns appended.
+        If a join column already exists in repeat_df it is suffixed _main on the
+        parent side to avoid overwriting repeat data.
+    """
+    id_col = next((c for c in ("_id", "_index", "_uuid") if c in main_df.columns), None)
+    if id_col is None:
+        log.warning("join_parent: no id column (_id/_index/_uuid) found in main_df — skipping join")
+        return repeat_df
+
+    missing = [c for c in join_cols if c not in main_df.columns]
+    if missing:
+        log.warning(f"join_parent: columns not found in main_df: {missing} — skipping those")
+        join_cols = [c for c in join_cols if c in main_df.columns]
+    if not join_cols:
+        return repeat_df
+
+    parent_slice = main_df[[id_col] + join_cols].copy()
+
+    # Suffix any column that already exists in repeat_df to avoid silent overwrites
+    rename_map = {c: f"{c}_main" for c in join_cols if c in repeat_df.columns}
+    if rename_map:
+        log.warning(
+            f"join_parent: columns {list(rename_map)} already exist in repeat table — "
+            f"renaming to {list(rename_map.values())} on the parent side"
+        )
+        parent_slice = parent_slice.rename(columns=rename_map)
+
+    merged = repeat_df.merge(
+        parent_slice,
+        left_on="_parent_index",
+        right_on=id_col,
+        how="left",
+    )
+    # Drop the redundant id column from the right side (it duplicates _parent_index)
+    if id_col != "_parent_index" and id_col in merged.columns:
+        merged = merged.drop(columns=[id_col])
+
+    return merged
+
+
 def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sample: bool = False) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """Load the main processed DataFrame plus any repeat-group tables from disk.
 

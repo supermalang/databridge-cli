@@ -66,6 +66,11 @@ def _resolve_source(s: Dict, main_df: pd.DataFrame, repeat_tables: Dict) -> pd.D
     else:
         df = main_df
 
+    join_cols = s.get("join_parent")
+    if join_cols and source and source != "main":
+        from src.data.transform import join_repeat_to_main
+        df = join_repeat_to_main(df, main_df, join_cols)
+
     if filter_expr:
         try:
             df = df.query(filter_expr)

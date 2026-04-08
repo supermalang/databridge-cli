@@ -128,12 +128,18 @@ charts: []
 #   waterfall | funnel | table | bullet_chart | likert | scorecard | pyramid
 #
 # Per-chart data scoping (optional — applied on top of global filters):
-#   source : "main" (default) | repeat-group path e.g. "household/members"
-#            Explicit source avoids the auto-heuristic and prevents ambiguity.
-#   filter : pandas .query() expression applied after source selection.
-#            e.g. filter: "Region == 'North'"
-#   sample : limit to this many random rows before charting (integer).
-#            Useful for exploratory charts on large datasets.
+#   source      : "main" (default) | repeat-group path e.g. "household/members"
+#                 Explicit source avoids the auto-heuristic and prevents ambiguity.
+#   filter      : pandas .query() expression applied after source selection.
+#                 e.g. filter: "Region == 'North'"
+#   sample      : limit to this many random rows before charting (integer).
+#                 Useful for exploratory charts on large datasets.
+#   join_parent : list of main-table columns (export_labels) to bring into the repeat
+#                 table before filtering, aggregating, or charting.
+#                 Only meaningful when source: points to a repeat group.
+#                 If a column name already exists in the repeat table, the parent-side
+#                 version is renamed to <col>_main to avoid overwriting repeat data.
+#                 e.g. join_parent: [Region, Gender]
 #
 # Repeat-group aggregation (requires source: pointing to a repeat table):
 #   aggregate:
@@ -167,6 +173,26 @@ charts: []
 #       group_by: _parent_index
 #       count_as: n_members
 #     questions: [n_members]
+#
+# Example — join parent fields then cross-tabulate (member ages grouped by region):
+#   - name: member_age_by_region
+#     title: Household member age by region
+#     type: box_plot
+#     source: "household/members"
+#     join_parent: [Region]        # Region comes from main table, Age from repeat
+#     questions: [Age, Region]
+#
+# Example — join + filter + aggregate (adult count per household, northern sites only):
+#   - name: adult_count_north
+#     title: Adults per household (North)
+#     type: bar
+#     source: "household/members"
+#     join_parent: [Region]
+#     filter: "Age >= 18 and Region == 'North'"
+#     aggregate:
+#       group_by: _parent_index
+#       count_as: adult_count
+#     questions: [adult_count]
 #
 # Common options (all chart types):
 #   top_n          : max categories to show (default 15, pie/donut default 8)
@@ -258,14 +284,24 @@ indicators: []
 #     format: text
 #
 # Per-indicator data scoping (optional):
-#   source : "main" (default) | repeat-group path e.g. "household/members"
-#   filter : pandas .query() expression applied before computing
-#   sample : limit to N random rows before computing
+#   source      : "main" (default) | repeat-group path e.g. "household/members"
+#   filter      : pandas .query() expression applied before computing
+#   sample      : limit to N random rows before computing
+#   join_parent : list of main-table columns to bring into the repeat table before
+#                 computing (same semantics as on charts — see above)
 #
 # Example — count adult members from a repeat group:
 #   - name: total_adults
 #     source: "household/members"
 #     filter: "Age >= 18"
+#     stat: count
+#     format: number
+#
+# Example — count adult women in northern sites (uses join_parent to access Region):
+#   - name: adult_women_north
+#     source: "household/members"
+#     join_parent: [Region, Gender]
+#     filter: "Age >= 18 and Region == 'North' and Gender == 'Female'"
 #     stat: count
 #     format: number
 #
@@ -302,9 +338,10 @@ indicators: []
 #   ai                : AI-generated paragraph (requires ai: section)
 #
 # Per-summary data scoping (optional — same keys as charts):
-#   source : "main" | repeat-group path
-#   filter : pandas .query() expression
-#   sample : limit to N random rows
+#   source      : "main" | repeat-group path
+#   filter      : pandas .query() expression
+#   sample      : limit to N random rows
+#   join_parent : list of main-table columns to bring into the repeat table
 summaries: []
 # summaries:
 #   - name: region_breakdown

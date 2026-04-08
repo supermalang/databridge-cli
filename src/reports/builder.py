@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 from docx.shared import Inches
 from docxtpl import DocxTemplate, InlineImage
-from src.data.transform import load_processed_data, apply_local_scope, aggregate_repeat
+from src.data.transform import load_processed_data, apply_local_scope, aggregate_repeat, join_repeat_to_main
 from src.reports.charts import generate_chart, CHART_DIR
 from src.reports.indicators import compute_indicators
 from src.reports.narrator import generate_narrative
@@ -153,6 +153,11 @@ class ReportBuilder:
             # 1. Select explicit source or auto-pick
             source = c.get("source")
             chart_df = _pick_df(resolved_questions, df, repeat_tables, source=source)
+
+            # 1b. Join parent fields into repeat table if requested
+            join_parent = c.get("join_parent")
+            if join_parent and source and source != "main":
+                chart_df = join_repeat_to_main(chart_df, df, join_parent)
 
             # 2. Apply per-chart filter and sample
             filter_expr = c.get("filter")
