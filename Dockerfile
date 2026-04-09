@@ -2292,6 +2292,7 @@ function updateSummaryForm(){
   document.getElementById('sm-topn-row').style.display=(stat==='distribution'||stat==='crosstab')?'flex':'none';
   document.getElementById('sm-freq-row').style.display=stat==='trend'?'flex':'none';
   document.getElementById('sm-prompt-row').style.display=stat==='ai'?'flex':'none';
+  document.getElementById('sm-example-row').style.display=stat==='ai'?'flex':'none';
   document.getElementById('sm-language-row').style.display=stat==='ai'?'flex':'none';
 }
 async function loadSummaryPreviewFileOptions(){
@@ -2309,6 +2310,7 @@ function openSummaryModal(idx){
   document.getElementById('sm-ai-result').style.display='none';
   ['sm-name','sm-label','sm-question1','sm-question2','sm-topn','sm-language'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('sm-prompt').value='';
+  document.getElementById('sm-example').value='';
   document.getElementById('sm-stat').value='distribution';
   document.getElementById('sm-freq').value='month';
   document.getElementById('sm-modal-title').textContent=idx===null?'Add summary':'Edit summary';
@@ -2327,6 +2329,7 @@ function openSummaryModal(idx){
     document.getElementById('sm-topn').value=s.top_n||'';
     document.getElementById('sm-freq').value=s.freq||'month';
     document.getElementById('sm-prompt').value=s.prompt||'';
+    document.getElementById('sm-example').value=s.example||'';
     document.getElementById('sm-language').value=s.language||'';
     updateSummaryForm();
   }
@@ -2346,6 +2349,7 @@ function saveSummaryFromModal(){
   if(stat==='trend')s.freq=document.getElementById('sm-freq').value;
   if(stat==='ai'){
     const pr=document.getElementById('sm-prompt').value.trim();if(pr)s.prompt=pr;
+    const ex=document.getElementById('sm-example').value.trim();if(ex)s.example=ex;
     const lg=document.getElementById('sm-language').value.trim();if(lg)s.language=lg;
   }
   if(_editSumIdx===null)_summaries.push(s);
@@ -2405,6 +2409,7 @@ async function previewSummary(){
   if(stat==='trend')s.freq=document.getElementById('sm-freq').value;
   if(stat==='ai'){
     const pr=document.getElementById('sm-prompt').value.trim();if(pr)s.prompt=pr;
+    const ex=document.getElementById('sm-example').value.trim();if(ex)s.example=ex;
     const lg=document.getElementById('sm-language').value.trim();if(lg)s.language=lg;
   }
   parea.style.color='var(--muted)';parea.textContent='Computing…';
@@ -2705,6 +2710,7 @@ async function runAiGenerateTemplate(){
         </select>
       </div>
       <div class="form-row" id="sm-prompt-row" style="display:none;align-items:flex-start;"><label style="padding-top:4px;">Prompt</label><textarea id="sm-prompt" rows="3" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="e.g. Focus on gender gaps and regional disparities"></textarea></div>
+      <div class="form-row" id="sm-example-row" style="display:none;align-items:flex-start;"><label style="padding-top:4px;">Example</label><textarea id="sm-example" rows="3" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;" placeholder="Paste an example paragraph to guide the AI tone and structure (numbers will not be copied)"></textarea></div>
       <div class="form-row" id="sm-language-row" style="display:none;"><label>Language</label><input id="sm-language" placeholder="e.g. English, French (optional)"></div>
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px;"><label style="font-size:11px;color:var(--muted);">Data file</label><select id="sm-preview-file" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;"><option value="">— auto-detect —</option></select><input id="sm-sample-n" type="number" min="1" placeholder="rows" title="Sample N rows for preview" style="width:70px;padding:5px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;"></div>
       <div id="sm-preview-area" style="margin-top:10px;min-height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--muted);text-align:center;">Click Preview to compute the summary text.</div>
