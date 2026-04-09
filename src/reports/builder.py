@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 from docx.shared import Inches
 from docxtpl import DocxTemplate, InlineImage
-from src.data.transform import load_processed_data, apply_local_scope, aggregate_repeat, join_repeat_to_main
+from src.data.transform import load_processed_data, apply_local_scope, aggregate_repeat, join_repeat_to_main, apply_computed_columns
 from src.reports.charts import generate_chart, CHART_DIR
 from src.reports.indicators import compute_indicators
 from src.reports.narrator import generate_narrative
@@ -76,6 +76,7 @@ class ReportBuilder:
 
     def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None, session: Optional[str] = None) -> List[Path]:
         df, repeat_tables = load_processed_data(self.cfg, sample_size=sample_size, random_sample=random_sample, session=session)
+        df = apply_computed_columns(df, self.cfg, repeat_tables)
         split_col = split_by or self.report_cfg.get("split_by")
         if split_col:
             if split_col not in df.columns:

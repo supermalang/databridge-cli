@@ -146,7 +146,7 @@ def _run_classify(cfg, sample=None, rediscover=False):
 def cmd_download(sample):
     """Download submissions, apply filters, export to configured destination."""
     from src.data.extract import get_client
-    from src.data.transform import load_data, apply_filters, export_data
+    from src.data.transform import load_data, apply_filters, apply_computed_columns, export_data
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
@@ -157,6 +157,7 @@ def cmd_download(sample):
     log.info("Transforming data ...")
     df, repeat_tables = load_data(raw, cfg)
     df, repeat_tables = apply_filters(df, cfg, repeat_tables)
+    df = apply_computed_columns(df, cfg, repeat_tables)
     log.info(f"Exporting {len(df)} rows ...")
     export_data(df, cfg, repeat_tables)
     _run_classify(cfg, sample=sample)

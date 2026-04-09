@@ -257,6 +257,64 @@ def apply_filters(df: pd.DataFrame, cfg: Dict,
     return df, repeat_tables
 
 
+def apply_computed_columns(
+    df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None
+) -> pd.DataFrame:
+    """Append derived columns defined in config computed_columns.
+
+    Two modes:
+      - questions + combine : row-wise combination of main-table columns (fixed nested group)
+      - from_repeat + stat  : per-submission aggregation of a repeat-group table (no row explosion)
+    """
+    for col in cfg.get("computed_columns", []):
+        name = col.get("name")
+        if not name:
+            continue
+        try:
+            if col.get("from_repeat"):
+                # --- Repeat aggregation mode ---
+                repeat_name = col["from_repeat"]
+                rdf = (repeat_tables or {}).get(repeat_name)
+                if rdf is None:
+                    log.warning(f"computed_column '{name}': repeat table '{repeat_name}' not found — skipped")
+                    continue
+                question = col.get("question")
+                stat = col.get("stat", "sum")
+                if not question or question == "count":
+                    aggregated = rdf.groupby("_parent_index").size()
+                else:
+                    if question not in rdf.columns:
+                        log.warning(f"computed_column '{name}': column '{question}' not in repeat table — skipped")
+                        continue
+                    aggregated = rdf.groupby("_parent_index")[question].agg(stat)
+                id_col = next((c for c in ("_id", "_index", "_uuid") if c in df.columns), None)
+                if not id_col:
+                    log.warning(f"computed_column '{name}': no id column in main table — skipped")
+                    continue
+                df[name] = df[id_col].map(aggregated).fillna(0)
+                log.info(f"Computed column '{name}' = {stat}({repeat_name}.{question or 'rows'})")
+            else:
+                # --- Main-table row-wise combine mode ---
+                questions = col.get("questions", [])
+                combine = col.get("combine", "sum")
+                if not questions:
+                    continue
+                missing = [q for q in questions if q not in df.columns]
+                if missing:
+                    log.warning(f"computed_column '{name}': columns not found: {missing} — skipped")
+                    continue
+                ops = {"sum": "sum", "mean": "mean", "min": "min", "max": "max"}
+                if combine not in ops:
+                    log.warning(f"computed_column '{name}': unknown combine '{combine}' — skipped")
+                    continue
+                numeric_cols = df[questions].apply(pd.to_numeric, errors="coerce")
+                df[name] = getattr(numeric_cols, combine)(axis=1)
+                log.info(f"Computed column '{name}' = {combine}({questions})")
+        except Exception as e:
+            log.warning(f"computed_column '{name}' failed: {e} — skipped")
+    return df
+
+
 def export_data(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
     fmt = cfg.get("export", {}).get("format", "csv")
     if fmt in ("csv", "json", "xlsx"):

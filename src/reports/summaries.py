@@ -65,6 +65,18 @@ def _resolve_source(s: Dict, main_df: pd.DataFrame, repeat_tables: Dict) -> pd.D
             df = main_df
     else:
         df = main_df
+        # Auto-detect: if no explicit source, pick the DataFrame (main or repeat table)
+        # that contains the most of the requested question columns.
+        # Same heuristic as _pick_df() in builder.py — makes summaries consistent with charts.
+        if repeat_tables:
+            questions = s.get("questions", [])
+            if questions:
+                best_hits = sum(1 for q in questions if q in df.columns)
+                for rdf in repeat_tables.values():
+                    hits = sum(1 for q in questions if q in rdf.columns)
+                    if hits > best_hits:
+                        best_hits = hits
+                        df = rdf
 
     join_cols = s.get("join_parent")
     if join_cols and source and source != "main":

@@ -38,6 +38,22 @@ filters: []
 #   - "Region != 'Test'"
 #   - "submission_date >= '2025-01-01'"
 
+# Derived columns appended to the export table (always 1 row per submission — no row explosion).
+# Computed at download time and again at build-report time so charts/indicators can reference them.
+computed_columns: []
+# computed_columns:
+#
+#   # Mode 1: combine columns already in the main table (fixed nested group questions)
+#   - name: total_personnes_handicapees
+#     questions: [Garcons, Filles, Hommes, Femmes]   # export_label values
+#     combine: sum              # sum|mean|min|max per row (default: sum)
+#
+#   # Mode 2: aggregate from a repeat group table, joined back to main (no row explosion)
+#   - name: total_membres_menage
+#     from_repeat: household_members    # repeat table safe_name (slashes → underscores)
+#     question: Nombre                  # column to aggregate (omit or use "count" for row count)
+#     stat: sum                         # sum|count|mean|min|max (default: sum)
+
 # chart name -> {{ chart_<name> }} placeholder in Word template
 charts: []
 # charts:
