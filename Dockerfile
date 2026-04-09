@@ -1014,6 +1014,7 @@ header h1{font-size:16px;font-weight:600}
 .q-accordion[open]>summary::before{transform:rotate(90deg)}
 .q-accordion>summary:hover{background:#ece9e3}
 .q-accordion-count{font-weight:normal;color:var(--muted);margin-left:2px}
+.badge-repeat{display:inline-block;background:#fce7f3;color:#9d174d;border-radius:4px;font-size:10px;font-weight:600;padding:1px 6px;margin-left:6px;vertical-align:middle}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000}
 .modal{background:var(--surface);border-radius:var(--radius);box-shadow:0 8px 30px rgba(0,0,0,.2);width:480px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column}
 .modal-header{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border)}
@@ -1549,7 +1550,9 @@ function renderQuestions(){
   let html='';
   groups.forEach((items,grpName)=>{
     const label=grpName||'— no group —';
-    html+=`<details class="q-accordion"><summary>${label}<span class="q-accordion-count">(${items.length})</span></summary>${makeTable(items)}</details>`;
+    const isRepeat=items.some(({q})=>q.repeat_group);
+    const repeatBadge=isRepeat?`<span class="badge-repeat">repeat</span>`:'';
+    html+=`<details class="q-accordion"><summary>${label}${repeatBadge}<span class="q-accordion-count">(${items.length})</span></summary>${makeTable(items)}</details>`;
   });
   c.innerHTML=html;
 }
