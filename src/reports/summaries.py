@@ -252,7 +252,7 @@ def _ai_text(
     user_prompt = (
         f"Write a concise paragraph in {lang} summarizing the following data.\n"
         + (f"Focus: {prompt}\n" if prompt else "")
-        + (f"\nExample of the desired style and format (do not copy the numbers, only the tone and structure):\n{example}\n" if example else "")
+        + (f"\nIMPORTANT: Your output must follow this exact format and structure. Use the example below as a strict template — same length, same layout, same style. Only substitute the actual data values:\n{example}\n" if example else "")
         + "\nDATA:\n"
         + "\n".join(data_lines)
         + "\n\nReturn only the paragraph text — no headers, no JSON, no markdown."
