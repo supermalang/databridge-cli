@@ -74,8 +74,8 @@ class ReportBuilder:
         self.report_cfg = cfg.get("report", {})
         self.charts_cfg: List[Dict] = cfg.get("charts", [])
 
-    def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None) -> List[Path]:
-        df, repeat_tables = load_processed_data(self.cfg, sample_size=sample_size, random_sample=random_sample)
+    def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None, session: Optional[str] = None) -> List[Path]:
+        df, repeat_tables = load_processed_data(self.cfg, sample_size=sample_size, random_sample=random_sample, session=session)
         split_col = split_by or self.report_cfg.get("split_by")
         if split_col:
             if split_col not in df.columns:

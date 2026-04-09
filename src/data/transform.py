@@ -35,11 +35,15 @@ def _norm(s: str) -> str:
 
 
 def _decode_multi(value, choices: dict) -> str:
-    """Decode space-separated select_multiple codes to human-readable labels."""
+    """Decode space-separated select_multiple codes to human-readable labels (pipe-separated).
+
+    Uses " | " as separator so multi-word labels (e.g. "Petit Commerce") are preserved
+    when expand_multi splits the column later.
+    """
     if not value or str(value).strip() in ("", "nan"):
         return value
     parts = str(value).strip().split()
-    return " ".join(choices.get(p, p) for p in parts)
+    return " | ".join(choices.get(p, p) for p in parts)
 
 
 def apply_choice_labels(df: pd.DataFrame, questions: list) -> pd.DataFrame:
@@ -340,6 +344,33 @@ def _export_supabase(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.Da
             log.info(f"Repeat group exported → Supabase '{table}_{safe_name}' ({len(recs)} rows)")
 
 
+def list_sessions(cfg: dict) -> list:
+    """Return available download sessions sorted newest-first.
+
+    Each entry is a dict with keys: session_id, label, main_file, files.
+    session_id = 'YYYYMMDD_HHMMSS' shared by all files from one download run.
+    """
+    out_dir = Path(cfg.get("export", {}).get("output_dir", "data/processed"))
+    alias   = cfg.get("form", {}).get("alias", "form")
+    fmt     = cfg.get("export", {}).get("format", "csv")
+    ext     = "xlsx" if fmt == "xlsx" else ("json" if fmt == "json" else "csv")
+    sessions: Dict[str, Dict] = {}
+    for f in out_dir.glob(f"{alias}_*.{ext}"):
+        parts = f.stem.rsplit("_", 2)          # […, YYYYMMDD, HHMMSS]
+        if len(parts) < 3:
+            continue
+        sid = f"{parts[-2]}_{parts[-1]}"       # YYYYMMDD_HHMMSS
+        sessions.setdefault(sid, {"session_id": sid, "files": [], "main_file": None})
+        sessions[sid]["files"].append(f.name)
+        if f.stem.startswith(f"{alias}_data_"):
+            sessions[sid]["main_file"] = f.name
+    result = []
+    for sid, info in sorted(sessions.items(), reverse=True):
+        info["label"] = f"{sid[:4]}-{sid[4:6]}-{sid[6:8]} {sid[9:11]}:{sid[11:13]}:{sid[13:15]}"
+        result.append(info)
+    return result
+
+
 def apply_local_scope(
     df: pd.DataFrame,
     repeat_tables: Dict[str, pd.DataFrame],
@@ -475,8 +506,12 @@ def join_repeat_to_main(
     return merged
 
 
-def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sample: bool = False) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sample: bool = False, session: Optional[str] = None) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """Load the main processed DataFrame plus any repeat-group tables from disk.
+
+    Args:
+        session: Optional session ID (YYYYMMDD_HHMMSS) to load a specific download run.
+                 Defaults to the latest session when not provided.
 
     Returns:
         (main_df, repeat_tables) where repeat_tables is {safe_group_name: DataFrame}
@@ -485,10 +520,16 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
     out_dir = Path(cfg.get("export", {}).get("output_dir", "data/processed"))
     alias = cfg.get("form", {}).get("alias", "form")
 
-    def _latest(pattern):
+    def _latest(pattern, session=session):
         matches = sorted(out_dir.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True)
+        if session:
+            matches = [m for m in matches if m.stem.endswith(session)]
         if not matches:
-            raise FileNotFoundError(f"No data matching {out_dir}/{pattern}. Run 'download' first.")
+            raise FileNotFoundError(
+                f"No data matching {out_dir}/{pattern}"
+                + (f" for session {session}" if session else "")
+                + ". Run 'download' first."
+            )
         return matches[0]
 
     if fmt == "csv":
@@ -527,7 +568,10 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
         # Main file is {alias}_data_{ts}.{ext} — skip it
         ext = "csv" if fmt == "csv" else "json"
         main_stem_prefix = f"{alias}_data_"
-        for f in sorted(out_dir.glob(f"{alias}_*.{ext}"), key=lambda x: x.stat().st_mtime, reverse=True):
+        candidates = sorted(out_dir.glob(f"{alias}_*.{ext}"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if session:
+            candidates = [f for f in candidates if f.stem.endswith(session)]
+        for f in candidates:
             if f.stem.startswith(main_stem_prefix):
                 continue
             # stem = {alias}_{safe_name}_{YYYYMMDD}_{HHMMSS}

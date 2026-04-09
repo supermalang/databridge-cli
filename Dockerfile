@@ -72,12 +72,13 @@ ALLOWED_COMMANDS = {
     "ai-generate-template": ["--description", "--pages", "--language", "--context", "--summary-prompt"],
     "suggest-charts":       [],
     "download":             ["--sample"],
-    "build-report":         ["--sample", "--split-by"],
+    "build-report":         ["--sample", "--split-by", "--session"],
 }
 
 class RunPayload(BaseModel):
     sample: Optional[int] = None
     split_by: Optional[str] = None
+    session: Optional[str] = None
     description: Optional[str] = None
     pages: Optional[int] = None
     language: Optional[str] = None
@@ -546,6 +547,8 @@ async def run_command(command: str, payload: RunPayload):
         cmd += ["--context", payload.context]
     if payload.summary_prompt and "--summary-prompt" in ALLOWED_COMMANDS[command]:
         cmd += ["--summary-prompt", payload.summary_prompt]
+    if payload.session and "--session" in ALLOWED_COMMANDS[command]:
+        cmd += ["--session", payload.session]
     return StreamingResponse(
         _stream(command, cmd),
         media_type="text/event-stream",
@@ -698,6 +701,14 @@ async def list_data_files():
             files.append({"name": f.name, "size_kb": round(s.st_size/1024,1),
                            "modified": datetime.fromtimestamp(s.st_mtime).strftime("%Y-%m-%d %H:%M")})
     return {"files": files}
+
+@app.get("/api/data/sessions")
+async def list_data_sessions():
+    from src.data.transform import list_sessions
+    from src.utils.config import load_config
+    cfg = load_config(CONFIG_PATH)
+    sessions = list_sessions(cfg)
+    return {"sessions": sessions}
 
 @app.get("/api/debug/raw-columns")
 async def debug_raw_columns():
@@ -1039,8 +1050,14 @@ header h1{font-size:16px;font-weight:600}
                 <option value="">— no split —</option>
               </select>
             </div>
+            <div class="sample-row" style="margin-top:6px;">
+              <label>Session</label>
+              <select id="session-report" style="flex:1;padding:4px 6px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px;background:white;">
+                <option value="">— latest —</option>
+              </select>
+            </div>
             <div class="btn-row">
-              <button class="btn btn-primary btn-run" onclick="runCmd('build-report',{sample:getSample('sample-report'),split_by:getSplitBy()})">▶ Run</button>
+              <button class="btn btn-primary btn-run" onclick="runCmd('build-report',{sample:getSample('sample-report'),split_by:getSplitBy(),session:getSession()})">▶ Run</button>
               <button class="btn btn-danger btn-stop" onclick="stopCmd()">■ Stop</button>
             </div>
           </div>
@@ -1233,6 +1250,7 @@ function toggleDashboardTerminal(){
   }
 }
 loadSplitByOptions();
+loadSessions();
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>{
     document.querySelectorAll('.tab,.tab-content').forEach(el=>el.classList.remove('active'));
@@ -1417,6 +1435,19 @@ async function saveFormSection(section){
 }
 function getSample(id){const v=parseInt(document.getElementById(id).value);return isNaN(v)?null:v;}
 function getSplitBy(){const v=document.getElementById('split-by-report').value;return v||null;}
+function getSession(){const v=document.getElementById('session-report').value;return v||null;}
+let _sessions=[];
+async function loadSessions(){
+  try{
+    const res=await fetch('/api/data/sessions');const data=await res.json();
+    _sessions=data.sessions||[];
+    const sel=document.getElementById('session-report');
+    const current=sel.value;
+    sel.innerHTML='<option value="">— latest —</option>';
+    _sessions.forEach((s,i)=>{const o=document.createElement('option');o.value=s.session_id;o.textContent=s.label+(i===0?' (latest)':'');sel.appendChild(o);});
+    if(current)sel.value=current;
+  }catch(e){}
+}
 async function loadSplitByOptions(){
   try{
     const res=await fetch('/api/config');const data=await res.json();
@@ -1548,7 +1579,7 @@ async function runCmd(command,opts={}){
           document.getElementById('status-label').textContent=p.status==='success'?'✓ done':'✗ error';
           running=false;
           if(p.status==='success'&&command==='build-report'){loadReports();loadDashboardState();}
-          if(p.status==='success'&&command==='download'){loadDataFiles();loadDashboardState();}
+          if(p.status==='success'&&command==='download'){loadDataFiles();loadSessions();loadDashboardState();}
           if(p.status==='success'&&command==='fetch-questions'){loadQuestions();loadSplitByOptions();loadDashboardState();}
           if(p.status==='success'&&command==='generate-template')loadDashboardState();
         }
@@ -1800,8 +1831,11 @@ async function previewChartQuick(i){
   document.getElementById('qp-title').textContent=(ch.name||'chart')+' — '+(ch.type||'');
   document.getElementById('qp-area').innerHTML='<span style="color:var(--muted);">Generating preview…</span>';
   modal.style.display='flex';
+  const sessionId=document.getElementById('session-report').value||null;
+  const sessionInfo=sessionId?_sessions.find(s=>s.session_id===sessionId):null;
+  const dataFile=sessionInfo&&sessionInfo.main_file?sessionInfo.main_file:null;
   try{
-    const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart:ch})});
+    const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart:ch,data_file:dataFile})});
     const data=await res.json();
     if(res.ok){
       document.getElementById('qp-area').innerHTML=`<img src="data:image/png;base64,${data.image}" style="max-width:100%;max-height:70vh;border-radius:4px;border:1px solid var(--border);">`;
