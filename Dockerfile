@@ -1014,6 +1014,7 @@ header h1{font-size:16px;font-weight:600}
 .q-accordion[open]>summary::before{transform:rotate(90deg)}
 .q-accordion>summary:hover{background:#ece9e3}
 .q-accordion-count{font-weight:normal;color:var(--muted);margin-left:2px}
+.q-accordion .q-accordion{margin-left:16px;margin-top:6px;margin-bottom:4px;}
 .badge-repeat{display:inline-block;background:#fce7f3;color:#9d174d;border-radius:4px;font-size:10px;font-weight:600;padding:1px 6px;margin-left:6px;vertical-align:middle}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000}
 .modal{background:var(--surface);border-radius:var(--radius);box-shadow:0 8px 30px rgba(0,0,0,.2);width:480px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column}
@@ -1519,13 +1520,36 @@ async function loadSplitByOptions(){
   }catch(e){}
 }
 let _questions=[];
+function _buildGroupTree(questions){
+  const root={children:new Map(),items:[]};
+  questions.forEach((q,i)=>{
+    const parts=(q.group||'').split('/').filter(Boolean);
+    let node=root;
+    for(const part of parts){
+      if(!node.children.has(part))node.children.set(part,{children:new Map(),items:[]});
+      node=node.children.get(part);
+    }
+    node.items.push({q,i});
+  });
+  return root;
+}
+function _subtreeItems(node){return [...node.items,...Array.from(node.children.values()).flatMap(c=>_subtreeItems(c))];}
+function _makeGroupAccordion(label,isRepeat,count,body){
+  const badge=isRepeat?`<span class="badge-repeat">repeat</span>`:'';
+  return `<details class="q-accordion"><summary>${label}${badge}<span class="q-accordion-count">(${count})</span></summary>${body}</details>`;
+}
+function _renderGroupNode(key,node,makeTableFn){
+  const all=_subtreeItems(node);
+  const isRepeat=all.some(({q})=>q.repeat_group===key);
+  let body='';
+  node.children.forEach((child,ckey)=>{body+=_renderGroupNode(ckey,child,makeTableFn);});
+  if(node.items.length)body+=makeTableFn(node.items);
+  return _makeGroupAccordion(key,isRepeat,all.length,body);
+}
 function renderQuestions(){
   const c=document.getElementById('questions-container');
   updateSelectionUI();
   if(!_questions.length){c.innerHTML='<p class="empty-state">No questions yet. Run Fetch questions first.</p>';return;}
-  // Group questions by group field, preserving global indices
-  const groups=new Map();
-  _questions.forEach((q,i)=>{const grp=q.group||'';if(!groups.has(grp))groups.set(grp,[]);groups.get(grp).push({q,i});});
   const makeRow=({q,i})=>{
     const choices=q.choices&&Object.keys(q.choices).length?q.choices:null;
     const choicesHtml=choices
@@ -1547,13 +1571,10 @@ function renderQuestions(){
     `<th>kobo_key</th><th>Label</th><th>Type</th><th>Category</th>`+
     `<th style="min-width:180px;">Export label <span style="font-weight:normal;color:var(--muted)">(editable)</span></th>`+
     `<th>Choices</th></tr></thead><tbody>${items.map(makeRow).join('')}</tbody></table>`;
+  const root=_buildGroupTree(_questions);
   let html='';
-  groups.forEach((items,grpName)=>{
-    const label=grpName||'— no group —';
-    const isRepeat=items.some(({q})=>q.repeat_group);
-    const repeatBadge=isRepeat?`<span class="badge-repeat">repeat</span>`:'';
-    html+=`<details class="q-accordion"><summary>${label}${repeatBadge}<span class="q-accordion-count">(${items.length})</span></summary>${makeTable(items)}</details>`;
-  });
+  if(root.items.length)html+=_makeGroupAccordion('— no group —',false,root.items.length,makeTable(root.items));
+  root.children.forEach((child,key)=>{html+=_renderGroupNode(key,child,makeTable);});
   c.innerHTML=html;
 }
 async function loadQuestions(){
