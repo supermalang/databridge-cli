@@ -65,18 +65,26 @@ def _resolve_source(s: Dict, main_df: pd.DataFrame, repeat_tables: Dict) -> pd.D
             df = main_df
     else:
         df = main_df
-        # Auto-detect: if no explicit source, pick the DataFrame (main or repeat table)
-        # that contains the most of the requested question columns.
-        # Same heuristic as _pick_df() in builder.py — makes summaries consistent with charts.
+        # Auto-detect: pick the DataFrame that best contains all requested columns.
+        # Priority 1 — first DataFrame (main first, then repeat tables) that has ALL columns.
+        # Priority 2 — fallback to max-hits when no single DataFrame has a clean match.
         if repeat_tables:
             questions = s.get("questions", [])
             if questions:
-                best_hits = sum(1 for q in questions if q in df.columns)
-                for rdf in repeat_tables.values():
-                    hits = sum(1 for q in questions if q in rdf.columns)
-                    if hits > best_hits:
-                        best_hits = hits
-                        df = rdf
+                candidates = [("main", main_df)] + list(repeat_tables.items())
+                found_all = next(
+                    (cdf for _, cdf in candidates if all(q in cdf.columns for q in questions)),
+                    None,
+                )
+                if found_all is not None:
+                    df = found_all
+                else:
+                    best_hits = sum(1 for q in questions if q in df.columns)
+                    for rdf in repeat_tables.values():
+                        hits = sum(1 for q in questions if q in rdf.columns)
+                        if hits > best_hits:
+                            best_hits = hits
+                            df = rdf
 
     join_cols = s.get("join_parent")
     if join_cols and source and source != "main":
