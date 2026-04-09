@@ -6,7 +6,8 @@ heatmap, treemap, waterfall, funnel, table,
 bullet_chart, likert, scorecard, pyramid, dot_map
 
 New options supported across chart types:
-  color        : hex string — overrides default palette color for single-series charts
+  color        : hex string — overrides default palette color; for single-series sets the bar/line
+                 color; for multi-series (stacked_bar, grouped_bar, etc.) overrides the first segment
   sort         : "value" (default) | "label" | "none" — sort order for bar/horizontal_bar
   normalize    : true/false — 100% stacked bar (stacked_bar only)
   freq         : "day"|"week"|"month"|"year" — time grouping for line/area
@@ -16,9 +17,10 @@ New options supported across chart types:
   color_by     : column name to color dots by category (dot_map)
   size         : dot size in points (dot_map, default 20)
   distinct_by  : column name — deduplicate df by this column before charting
-  expand_multi : true/false — split space-separated select_multiple values before counting
+  expand_multi : true/false — split pipe-separated select_multiple values before counting
                  (bar, horizontal_bar, pie, donut, treemap, waterfall, funnel, table, likert)
-                 Note: choice labels containing spaces will be split incorrectly (Kobo limitation)
+                 Works correctly with multi-word labels (e.g. "Petit Commerce") because
+                 apply_choice_labels uses " | " as separator for multi-select columns
 """
 import logging
 from pathlib import Path
@@ -38,7 +40,7 @@ _rc = {
     "axes.titlesize":12,"axes.titleweight":"bold","axes.titlepad":10,
 }
 if "axes.titleloc" in plt.rcParams:
-    _rc["axes.titleloc"] = "left"
+    _rc["axes.titleloc"] = "center"
 plt.rcParams.update(_rc)
 CHART_DIR = Path("data/processed/charts")
 
@@ -56,13 +58,22 @@ def generate_chart(chart_cfg: Dict, df: pd.DataFrame, out_dir: Path = CHART_DIR)
             log.warning(f"Chart '{name}': distinct_by column '{distinct_by}' not found — ignored")
         else:
             df = df.drop_duplicates(subset=[distinct_by], keep="first")
-    # expand_multi: explode space-separated select_multiple values (first question column only)
+    # expand_multi: explode pipe-separated select_multiple values (first question column only)
+    # Detect separator: " | " (labeled data), "|" (raw data), or skip if neither found
     if opts.get("expand_multi") and questions:
         col = questions[0]
         df = df.copy()
         df[col] = df[col].astype(str).str.strip()
-        df = df.assign(**{col: df[col].str.split(" ")}).explode(col)
-        df = df[df[col].notna() & (df[col] != "") & (df[col] != "nan")]
+        if df[col].str.contains(r" \| ", regex=True).any():
+            sep = " | "
+        elif df[col].str.contains(r"\|", regex=True).any():
+            sep = "|"
+        else:
+            sep = None
+        if sep is not None:
+            df = df.assign(**{col: df[col].str.split(sep)}).explode(col)
+            df[col] = df[col].str.strip()
+            df = df[df[col].notna() & (df[col] != "") & (df[col] != "nan")]
     try:
         fn = CHART_DISPATCH.get(chart_type)
         if not fn: log.warning(f"Unknown chart type '{chart_type}'"); return None
@@ -83,6 +94,13 @@ def _top(s, n=15):
 def _color(opts, index=0):
     """Return single color: opts.color if set, else PALETTE[index]."""
     return opts.get("color", PALETTE[index])
+
+def _palette(opts, n):
+    """Return palette of n colors; if opts.color is set, override the first slot."""
+    p = list(PALETTE)
+    if opts.get("color"):
+        p[0] = opts["color"]
+    return p[:n]
 
 def _sort(counts, opts):
     """Sort a Series by opts.sort: 'value' (default) | 'label' | 'none'."""
@@ -127,7 +145,15 @@ def chart_bar(df, q, title, out, opts):
     counts = _sort(_top(df[c].dropna(), opts.get("top_n", 15)), opts)
     xl, yl = _labels(opts, c, "Count")
     fig, ax = plt.subplots(figsize=_fs(opts))
-    ax.bar(counts.index, counts.values, color=_color(opts), alpha=0.87)
+    bars = ax.bar(counts.index, counts.values, color=_color(opts), alpha=0.87)
+    total = counts.sum()
+    max_v = counts.values.max() if len(counts) else 1
+    for b in bars:
+        h = b.get_height()
+        pct = h / total * 100 if total else 0
+        ax.text(b.get_x() + b.get_width() / 2, h + max_v * 0.01,
+                f"{int(h)}\n({pct:.1f}%)", ha="center", va="bottom", fontsize=8, color="#444")
+    ax.margins(y=0.15)
     ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
@@ -138,10 +164,14 @@ def chart_horizontal_bar(df, q, title, out, opts):
     xl, yl = _labels(opts, "Count", "")
     fig, ax = plt.subplots(figsize=_fs(opts, (7, max(3, len(counts)*0.4))))
     bars = ax.barh(counts.index, counts.values, color=_color(opts), alpha=0.87)
+    total = counts.sum()
+    max_v = counts.values.max() if len(counts) else 1
     for b in bars:
         w = b.get_width()
-        ax.text(w + max(counts.values)*0.01, b.get_y()+b.get_height()/2, f"{int(w)}", va="center", fontsize=9)
-    ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl); ax.margins(x=0.12)
+        pct = w / total * 100 if total else 0
+        ax.text(w + max_v * 0.01, b.get_y() + b.get_height() / 2,
+                f"{int(w)} ({pct:.1f}%)", va="center", fontsize=9)
+    ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl); ax.margins(x=0.18)
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 def chart_stacked_bar(df, q, title, out, opts):
@@ -155,11 +185,21 @@ def chart_stacked_bar(df, q, title, out, opts):
         pivot = pivot.div(pivot.sum(axis=1), axis=0) * 100
     xl, yl = _labels(opts, "", "%" if normalize else "Count")
     fig, ax = plt.subplots(figsize=_fs(opts, (8, 5)))
-    pivot.plot(kind="bar", stacked=True, ax=ax, color=PALETTE[:len(pivot.columns)], alpha=0.87)
+    pivot.plot(kind="bar", stacked=True, ax=ax, color=_palette(opts, len(pivot.columns)), alpha=0.87)
     ax.set_title(title); ax.set_ylabel(yl); ax.set_xlabel(xl)
     if normalize:
         ax.set_ylim(0, 100)
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}%"))
+    # value labels inside segments
+    min_show = (pivot.values.max() * 0.05) if pivot.values.max() > 0 else 1
+    for container in ax.containers:
+        for rect in container:
+            h = rect.get_height()
+            if h < min_show:
+                continue
+            ax.text(rect.get_x() + rect.get_width() / 2, rect.get_y() + h / 2,
+                    f"{h:.1f}%" if normalize else f"{int(h)}",
+                    ha="center", va="center", fontsize=8, color="white", fontweight="bold")
     ax.legend(title=s, loc="lower center", bbox_to_anchor=(0.5, -0.22), ncol=4, fontsize=9)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
@@ -255,9 +295,10 @@ def chart_box_plot(df, q, title, out, opts):
     top_cats = df[cat].value_counts().head(n).index
     groups = [pd.to_numeric(df[df[cat]==c][num], errors="coerce").dropna() for c in top_cats]
     fig, ax = plt.subplots(figsize=_fs(opts, (8, 5)))
+    pal = _palette(opts, len(PALETTE))
     bp = ax.boxplot(groups, patch_artist=True, labels=top_cats)
     for i, patch in enumerate(bp["boxes"]):
-        patch.set_facecolor(PALETTE[i % len(PALETTE)]); patch.set_alpha(0.75)
+        patch.set_facecolor(pal[i % len(pal)]); patch.set_alpha(0.75)
     ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
@@ -283,9 +324,12 @@ def chart_heatmap(df, q, title, out, opts):
 def chart_treemap(df, q, title, out, opts):
     import squarify
     c = q[0]; counts = _top(df[c].dropna(), opts.get("top_n", 15))
+    total = counts.sum()
+    labels = [f"{idx}\n{int(val)} ({val/total*100:.1f}%)" for idx, val in zip(counts.index, counts.values)]
     fig, ax = plt.subplots(figsize=_fs(opts, (8, 5)))
-    squarify.plot(sizes=counts.values, label=counts.index,
-                  color=PALETTE[:len(counts)], alpha=0.8, ax=ax)
+    squarify.plot(sizes=counts.values, label=labels,
+                  color=_palette(opts, len(counts)), alpha=0.8, ax=ax,
+                  text_kwargs={"fontsize": 8})
     ax.set_title(title); ax.axis("off")
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
@@ -294,22 +338,30 @@ def chart_waterfall(df, q, title, out, opts):
     counts = _sort(_top(df[c].dropna(), opts.get("top_n", 12)), opts)
     running = counts.cumsum(); bottoms = [0] + list(running.values[:-1])
     xl, yl = _labels(opts, c, "Cumulative count")
+    pal = _palette(opts, len(PALETTE))
     fig, ax = plt.subplots(figsize=_fs(opts, (8, 4)))
     for i, (label, val, bottom) in enumerate(zip(counts.index, counts.values, bottoms)):
-        ax.bar(label, val, bottom=bottom, color=PALETTE[i % len(PALETTE)], alpha=0.85, edgecolor="white")
+        color = pal[i % len(pal)]
+        ax.bar(label, val, bottom=bottom, color=color, alpha=0.85, edgecolor="white")
+        ax.text(i, bottom + val / 2, f"{int(val)}",
+                ha="center", va="center", fontsize=8,
+                color=_label_color(color), fontweight="bold")
     ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 def chart_funnel(df, q, title, out, opts):
     c = q[0]; counts = _top(df[c].dropna(), opts.get("top_n", 10)).sort_values(ascending=False)
+    pal = _palette(opts, len(PALETTE))
+    total = counts.sum()
     fig, ax = plt.subplots(figsize=_fs(opts, (7, max(3, len(counts)*0.5))))
     max_val = counts.values[0]
     for i, (label, val) in enumerate(zip(counts.index, counts.values)):
         w = val / max_val; left = (1 - w) / 2
-        color = PALETTE[i % len(PALETTE)]
+        color = pal[i % len(pal)]
+        pct = val / total * 100 if total else 0
         ax.barh(i, w, left=left, color=color, alpha=0.85, height=0.6)
-        ax.text(0.5, i, f"{label}  ({val})", ha="center", va="center",
+        ax.text(0.5, i, f"{label}  ({int(val)}, {pct:.1f}%)", ha="center", va="center",
                 fontsize=9, color=_label_color(color), fontweight="bold")
     ax.set_xlim(0, 1); ax.axis("off"); ax.set_title(title)
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
@@ -345,7 +397,15 @@ def chart_grouped_bar(df, q, title, out, opts):
         pivot = pivot.sort_index()
     xl, yl = _labels(opts, cat, "Count")
     fig, ax = plt.subplots(figsize=_fs(opts, (9, 5)))
-    pivot.plot(kind="bar", ax=ax, color=PALETTE[:len(pivot.columns)], alpha=0.87, width=0.75)
+    pivot.plot(kind="bar", ax=ax, color=_palette(opts, len(pivot.columns)), alpha=0.87, width=0.75)
+    max_v = float(pivot.values.max()) if pivot.size else 1
+    for container in ax.containers:
+        for rect in container:
+            h = rect.get_height()
+            if h > 0:
+                ax.text(rect.get_x() + rect.get_width() / 2, h + max_v * 0.01,
+                        f"{int(h)}", ha="center", va="bottom", fontsize=8, color="#444")
+    ax.margins(y=0.15)
     ax.set_title(title); ax.set_xlabel(xl); ax.set_ylabel(yl)
     ax.legend(title=grp, loc="lower center", bbox_to_anchor=(0.5, -0.22), ncol=4, fontsize=9)
     plt.xticks(rotation=30, ha="right")
@@ -476,9 +536,11 @@ def chart_pyramid(df, q, title, out, opts):
     male = df[df[gender_col] == male_val][age_col].value_counts().reindex(age_order, fill_value=0)
     female = df[df[gender_col] == female_val][age_col].value_counts().reindex(age_order, fill_value=0)
 
+    male_color = opts.get("color", PALETTE[1])
+    female_color = PALETTE[5]
     fig, ax = plt.subplots(figsize=_fs(opts, (8, max(4, len(age_order) * 0.45))))
-    ax.barh(age_order, -male.values, color=PALETTE[1], alpha=0.85, label=male_val)
-    ax.barh(age_order, female.values, color=PALETTE[5], alpha=0.85, label=female_val)
+    ax.barh(age_order, -male.values, color=male_color, alpha=0.85, label=male_val)
+    ax.barh(age_order, female.values, color=female_color, alpha=0.85, label=female_val)
     ax.axvline(0, color="#888888", linewidth=1)
     max_val = max(male.max(), female.max()) if len(male) and len(female) else 1
     ax.set_xlim(-max_val * 1.2, max_val * 1.2)

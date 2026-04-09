@@ -710,6 +710,49 @@ async def list_data_sessions():
     sessions = list_sessions(cfg)
     return {"sessions": sessions}
 
+@app.get("/api/data/sessions/{session_id}/download")
+async def download_session_zip(session_id: str):
+    from src.data.transform import list_sessions
+    from src.utils.config import load_config
+    if "/" in session_id or ".." in session_id:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    cfg = load_config(CONFIG_PATH)
+    sessions = list_sessions(cfg)
+    session = next((s for s in sessions if s["session_id"] == session_id), None)
+    if not session or not session["files"]:
+        raise HTTPException(status_code=404, detail="Session not found")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fname in session["files"]:
+            fpath = DATA_DIR / fname
+            if fpath.exists():
+                zf.write(fpath, fname)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=session_{session_id}.zip"},
+    )
+
+@app.delete("/api/data/sessions/{session_id}")
+async def delete_session_files(session_id: str):
+    from src.data.transform import list_sessions
+    from src.utils.config import load_config
+    if "/" in session_id or ".." in session_id:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    cfg = load_config(CONFIG_PATH)
+    sessions = list_sessions(cfg)
+    session = next((s for s in sessions if s["session_id"] == session_id), None)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    deleted = []
+    for fname in session["files"]:
+        fpath = DATA_DIR / fname
+        if fpath.exists():
+            fpath.unlink()
+            deleted.append(fname)
+    return {"ok": True, "deleted": deleted}
+
 @app.get("/api/debug/raw-columns")
 async def debug_raw_columns():
     """Fetch 1 submission and show raw API columns vs config kobo_keys."""
@@ -1028,14 +1071,6 @@ header h1{font-size:16px;font-weight:600}
               <button class="btn btn-danger btn-stop" onclick="stopCmd()">■ Stop</button>
             </div>
           </div>
-          <div class="cmd-card" data-cmd="suggest-charts">
-            <h3>3b · AI suggest charts</h3>
-            <p>Ask AI to propose a charts: config block from your questions. Output printed to logs — paste into config.</p>
-            <div class="btn-row">
-              <button class="btn btn-primary btn-run" onclick="runCmd('suggest-charts')">▶ Run</button>
-              <button class="btn btn-danger btn-stop" onclick="stopCmd()">■ Stop</button>
-            </div>
-          </div>
           <div class="cmd-card" data-cmd="build-report">
             <h3>4 · Build report</h3>
             <p>Generate Word report with embedded charts from downloaded data.</p>
@@ -1059,6 +1094,19 @@ header h1{font-size:16px;font-weight:600}
             <div class="btn-row">
               <button class="btn btn-primary btn-run" onclick="runCmd('build-report',{sample:getSample('sample-report'),split_by:getSplitBy(),session:getSession()})">▶ Run</button>
               <button class="btn btn-danger btn-stop" onclick="stopCmd()">■ Stop</button>
+            </div>
+          </div>
+          <div class="cmd-card cmd-accordion collapsed" data-cmd="suggest-charts" style="grid-column:1/-1">
+            <h3 class="accordion-toggle" onclick="toggleAccordion(this)" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;margin-bottom:0;user-select:none;">
+              <span>3b · AI suggest charts</span>
+              <span class="accordion-arrow" style="font-size:10px;color:var(--muted);transition:transform .2s;">▶</span>
+            </h3>
+            <div class="accordion-body" style="display:none;margin-top:10px;">
+              <p>Ask AI to propose a charts: config block from your questions. Output printed to logs — paste into config.</p>
+              <div class="btn-row">
+                <button class="btn btn-primary btn-run" onclick="runCmd('suggest-charts')">▶ Run</button>
+                <button class="btn btn-danger btn-stop" onclick="stopCmd()">■ Stop</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1433,10 +1481,11 @@ async function saveFormSection(section){
   showMsg(saveRes.ok?'Saved ✓':(saveData.detail||'Failed'),saveRes.ok?'ok':'err');
   if(saveRes.ok)loadSplitByOptions();
 }
+function toggleAccordion(h3){const card=h3.closest('.cmd-accordion');const body=card.querySelector('.accordion-body');const arrow=h3.querySelector('.accordion-arrow');const open=body.style.display==='none';body.style.display=open?'block':'none';arrow.style.transform=open?'rotate(90deg)':'rotate(0deg)';card.classList.toggle('collapsed',!open);}
 function getSample(id){const v=parseInt(document.getElementById(id).value);return isNaN(v)?null:v;}
 function getSplitBy(){const v=document.getElementById('split-by-report').value;return v||null;}
 function getSession(){const v=document.getElementById('session-report').value;return v||null;}
-let _sessions=[];
+let _sessions=[];let _previewSessions=[];
 async function loadSessions(){
   try{
     const res=await fetch('/api/data/sessions');const data=await res.json();
@@ -1612,15 +1661,21 @@ async function deleteReport(name){
 }
 async function loadDataFiles(){
   const c=document.getElementById('data-container');c.innerHTML='<p class="empty-state">Loading…</p>';
-  const data=await(await fetch('/api/data')).json();
-  if(!data.files.length){c.innerHTML='<p class="empty-state">No data files yet. Run Download data first.</p>';return;}
-  c.innerHTML='<table class="file-table"><thead><tr><th>File</th><th>Size</th><th>Generated</th><th></th></tr></thead><tbody>'+
-    data.files.map(f=>`<tr><td><span class="file-name">${f.name}</span></td><td style="color:var(--muted)">${f.size_kb} KB</td><td style="color:var(--muted)">${f.modified}</td><td style="text-align:right;display:flex;gap:6px;justify-content:flex-end;"><a href="/api/data/download/${encodeURIComponent(f.name)}" download><button class="btn btn-primary btn-sm">↓ Download</button></a><button class="btn btn-danger btn-sm" onclick="deleteDataFile('${f.name}')">Delete</button></td></tr>`).join('')+
+  const data=await(await fetch('/api/data/sessions')).json();
+  const sessions=data.sessions||[];
+  if(!sessions.length){c.innerHTML='<p class="empty-state">No data files yet. Run Download data first.</p>';return;}
+  c.innerHTML='<table class="file-table"><thead><tr><th>Session</th><th>Files</th><th></th></tr></thead><tbody>'+
+    sessions.map((s,i)=>{
+      const label=s.label+(i===0?' <span style="font-size:10px;color:var(--teal)">(latest)</span>':'');
+      const fileCount=s.files.length+' file'+(s.files.length!==1?'s':'');
+      return `<tr><td><span class="file-name">${label}</span></td><td style="color:var(--muted);font-size:12px;">${fileCount}</td><td style="text-align:right;display:flex;gap:6px;justify-content:flex-end;"><a href="/api/data/sessions/${encodeURIComponent(s.session_id)}/download" download><button class="btn btn-primary btn-sm">↓ Download ZIP</button></a><button class="btn btn-danger btn-sm" onclick="deleteSession('${s.session_id}')">Delete</button></td></tr>`;
+    }).join('')+
     '</tbody></table>';
 }
-async function deleteDataFile(name){
-  if(!confirm('Delete '+name+'?'))return;
-  await fetch('/api/data/'+encodeURIComponent(name),{method:'DELETE'});loadDataFiles();
+async function deleteSession(sid){
+  if(!confirm('Delete all files from session '+sid+'?'))return;
+  await fetch('/api/data/sessions/'+encodeURIComponent(sid),{method:'DELETE'});
+  loadDataFiles();loadSessions();
 }
 async function loadTemplates(){
   const c=document.getElementById('templates-container');c.innerHTML='<p class="empty-state">Loading…</p>';
@@ -1899,10 +1954,11 @@ function updateChartForm(){
 }
 async function loadPreviewFileOptions(){
   try{
-    const data=await(await fetch('/api/data')).json();
+    const res=await fetch('/api/data/sessions');const data=await res.json();
+    _previewSessions=data.sessions||[];
     const sel=document.getElementById('cm-preview-file');
     sel.innerHTML='<option value="">— auto-detect —</option>';
-    (data.files||[]).forEach(f=>{const o=document.createElement('option');o.value=f.name;o.textContent=f.name+' ('+f.size_kb+' KB)';sel.appendChild(o);});
+    _previewSessions.forEach((s,i)=>{const o=document.createElement('option');o.value=s.session_id;o.textContent=s.label+(i===0?' (latest)':'');sel.appendChild(o);});
   }catch(e){}
 }
 async function openChartModal(idx){
@@ -1982,7 +2038,9 @@ async function previewChart(){
   if(!chart.name||!chart.questions.length){document.getElementById('cm-preview-area').innerHTML='<span style="color:#dc2626;">Enter a name and at least one column name first.</span>';return;}
   const parea=document.getElementById('cm-preview-area');
   parea.innerHTML='<span style="color:var(--muted);">Generating preview…</span>';
-  const dataFile=document.getElementById('cm-preview-file').value||null;
+  const selSessionId=document.getElementById('cm-preview-file').value||null;
+  const selSessionInfo=selSessionId?_previewSessions.find(s=>s.session_id===selSessionId):null;
+  const dataFile=selSessionInfo&&selSessionInfo.main_file?selSessionInfo.main_file:null;
   const sampleN=parseInt(document.getElementById('cm-sample-n').value)||null;
   try{
     const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart,data_file:dataFile,sample_n:sampleN})});
@@ -2514,7 +2572,7 @@ async function runAiGenerateTemplate(){
       <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
           <span style="font-size:12px;font-weight:600;">Preview</span>
-          <select id="cm-preview-file" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:220px;"><option value="">— auto-detect data file —</option></select>
+          <select id="cm-preview-file" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:220px;"><option value="">— auto-detect —</option></select>
           <input id="cm-sample-n" type="number" min="1" placeholder="rows" title="Sample N rows for preview" style="width:70px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
           <button class="btn btn-ghost btn-sm" onclick="previewChart()">▶ Preview</button>
         </div>

@@ -23,16 +23,16 @@ CHART TYPE CATALOG
 ==================
 Each entry: type | requires | key options | notes
 
-bar              | 1 categorical              | top_n, sort(value|label|none), color, group_by
-horizontal_bar   | 1 categorical              | top_n, sort, color, group_by  — best for long labels
+bar              | 1 categorical              | top_n, sort(value|label|none)
+horizontal_bar   | 1 categorical              | top_n, sort  — best for long labels
 stacked_bar      | 2 categorical [x, stack]   | top_n, normalize(true=100%)
 grouped_bar      | 2 categorical [cat, group] | top_n, sort
 pie              | 1 categorical              | top_n
 donut            | 1 categorical              | top_n
 line             | 1 date [+ 1 numeric]       | freq(day|week|month|year)
 area             | 1 date [+ 1 numeric]       | freq
-histogram        | 1 quantitative             | bins, group_by
-scatter          | 2 quantitative             | color, xlabel, ylabel
+histogram        | 1 quantitative             | bins
+scatter          | 2 quantitative             | xlabel, ylabel
 box_plot         | 1 quantitative + 1 cat     | top_n  — distribution per group
 heatmap          | 2 categorical              | top_n  — frequency matrix
 treemap          | 1 categorical              | top_n
@@ -45,7 +45,7 @@ scorecard        | 1+ any                     | stat(count|mean|sum), columns(in
 pyramid          | age_group + gender cols    | male_value, female_value
 dot_map          | lat + lon cols             | basemap(true/false), color_by, size
 
-Common options (all types): width_inches, height_inches, xlabel, ylabel
+Common options (all types): width_inches, height_inches, color(hex), xlabel, ylabel
 Dedup / multi: distinct_by(col), expand_multi(true)
 Scoping: filter("pandas query"), sample(int), source("repeat/path"), join_parent([cols])
 """
