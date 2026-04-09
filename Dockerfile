@@ -1007,6 +1007,13 @@ header h1{font-size:16px;font-weight:600}
 .badge-cat-categorical{background:#dbeafe;color:#1e40af}.badge-cat-quantitative{background:#dcfce7;color:#166534}
 .badge-cat-qualitative{background:#fef9c3;color:#854d0e}.badge-cat-geographical{background:#f3e8ff;color:#6b21a8}
 .badge-cat-date{background:#ffedd5;color:#9a3412}.badge-cat-undefined{background:#f1f5f9;color:#64748b}
+.q-accordion{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;overflow:hidden}
+.q-accordion>summary{padding:8px 12px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;background:var(--bg);list-style:none}
+.q-accordion>summary::-webkit-details-marker{display:none}
+.q-accordion>summary::before{content:'▶';font-size:9px;color:var(--muted);transition:transform .15s;flex-shrink:0}
+.q-accordion[open]>summary::before{transform:rotate(90deg)}
+.q-accordion>summary:hover{background:#ece9e3}
+.q-accordion-count{font-weight:normal;color:var(--muted);margin-left:2px}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000}
 .modal{background:var(--surface);border-radius:var(--radius);box-shadow:0 8px 30px rgba(0,0,0,.2);width:480px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column}
 .modal-header{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border)}
@@ -1515,29 +1522,36 @@ function renderQuestions(){
   const c=document.getElementById('questions-container');
   updateSelectionUI();
   if(!_questions.length){c.innerHTML='<p class="empty-state">No questions yet. Run Fetch questions first.</p>';return;}
-  c.innerHTML='<table class="file-table"><thead><tr>'+
-    '<th style="width:32px;"><input type="checkbox" id="q-check-all" onchange="toggleAllQuestions(this.checked)" title="Select all"></th>'+
-    '<th>kobo_key</th><th>Label</th><th>Type</th><th>Category</th>'+
-    '<th style="min-width:180px;">Export label <span style="font-weight:normal;color:var(--muted)">(editable)</span></th>'+
-    '<th>Choices</th>'+
-    '</tr></thead><tbody>'+
-    _questions.map((q,i)=>{
-      const choices=q.choices&&Object.keys(q.choices).length?q.choices:null;
-      const choicesHtml=choices
-        ?`<details style="cursor:pointer;"><summary style="font-size:11px;color:var(--muted);list-style:none;user-select:none;">${Object.keys(choices).length} values ▾</summary><div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px;">`+
-          Object.entries(choices).map(([k,v])=>`<span title="${k}" style="display:inline-block;background:var(--bg2,#f0f0f0);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:10px;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;">${v}</span>`).join('')+
-          `</div></details>`
-        :`<span style="color:var(--muted);font-size:11px;">—</span>`;
-      return `<tr id="qrow-${i}">
-      <td><input type="checkbox" class="q-check" data-idx="${i}" onchange="updateSelectionUI()"></td>
-      <td style="color:var(--muted);font-size:11px;font-family:monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${q.kobo_key||''}">${q.kobo_key||''}</td>
-      <td style="font-size:12px;">${q.label||''}</td>
-      <td style="color:var(--muted);font-size:11px;">${q.type||''}</td>
-      <td><span class="badge-cat badge-cat-${q.category||'undefined'}">${q.category||''}</span></td>
-      <td><input class="export-label-input" data-idx="${i}" value="${(q.export_label||'').replace(/"/g,'&quot;')}" style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;" oninput="markDirty(this)"></td>
-      <td style="max-width:200px;">${choicesHtml}</td>
-    </tr>`;}).join('')+
-    '</tbody></table>';
+  // Group questions by group field, preserving global indices
+  const groups=new Map();
+  _questions.forEach((q,i)=>{const grp=q.group||'';if(!groups.has(grp))groups.set(grp,[]);groups.get(grp).push({q,i});});
+  const makeRow=({q,i})=>{
+    const choices=q.choices&&Object.keys(q.choices).length?q.choices:null;
+    const choicesHtml=choices
+      ?`<details style="cursor:pointer;"><summary style="font-size:11px;color:var(--muted);list-style:none;user-select:none;">${Object.keys(choices).length} values ▾</summary><div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px;">`+
+        Object.entries(choices).map(([k,v])=>`<span title="${k}" style="display:inline-block;background:var(--bg2,#f0f0f0);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:10px;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;">${v}</span>`).join('')+
+        `</div></details>`
+      :`<span style="color:var(--muted);font-size:11px;">—</span>`;
+    return `<tr id="qrow-${i}">
+    <td><input type="checkbox" class="q-check" data-idx="${i}" onchange="updateSelectionUI()"></td>
+    <td style="color:var(--muted);font-size:11px;font-family:monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${q.kobo_key||''}">${q.kobo_key||''}</td>
+    <td style="font-size:12px;">${q.label||''}</td>
+    <td style="color:var(--muted);font-size:11px;">${q.type||''}</td>
+    <td><span class="badge-cat badge-cat-${q.category||'undefined'}">${q.category||''}</span></td>
+    <td><input class="export-label-input" data-idx="${i}" value="${(q.export_label||'').replace(/"/g,'&quot;')}" style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;" oninput="markDirty(this)"></td>
+    <td style="max-width:200px;">${choicesHtml}</td>
+  </tr>`;};
+  const makeTable=items=>`<table class="file-table"><thead><tr>`+
+    `<th style="width:32px;"><input type="checkbox" title="Select all in group" onchange="this.closest('.q-accordion').querySelectorAll('.q-check').forEach(cb=>{cb.checked=this.checked});updateSelectionUI();"></th>`+
+    `<th>kobo_key</th><th>Label</th><th>Type</th><th>Category</th>`+
+    `<th style="min-width:180px;">Export label <span style="font-weight:normal;color:var(--muted)">(editable)</span></th>`+
+    `<th>Choices</th></tr></thead><tbody>${items.map(makeRow).join('')}</tbody></table>`;
+  let html='';
+  groups.forEach((items,grpName)=>{
+    const label=grpName||'— no group —';
+    html+=`<details class="q-accordion"><summary>${label}<span class="q-accordion-count">(${items.length})</span></summary>${makeTable(items)}</details>`;
+  });
+  c.innerHTML=html;
 }
 async function loadQuestions(){
   const c=document.getElementById('questions-container');
