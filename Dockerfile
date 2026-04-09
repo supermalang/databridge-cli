@@ -2107,10 +2107,11 @@ function saveIndicatorFromModal(){
 }
 async function loadIndicatorPreviewFileOptions(){
   try{
-    const data=await(await fetch('/api/data')).json();
+    const res=await fetch('/api/data/sessions');const data=await res.json();
+    _previewSessions=data.sessions||[];
     const sel=document.getElementById('im-preview-file');
     sel.innerHTML='<option value="">— auto-detect —</option>';
-    (data.files||[]).forEach(f=>{const o=document.createElement('option');o.value=f.name;o.textContent=f.name+' ('+f.size_kb+' KB)';sel.appendChild(o);});
+    _previewSessions.forEach((s,i)=>{const o=document.createElement('option');o.value=s.session_id;o.textContent=s.label+(i===0?' (latest)':'');sel.appendChild(o);});
   }catch(e){}
 }
 async function previewIndicator(){
@@ -2125,7 +2126,9 @@ async function previewIndicator(){
   const dec=document.getElementById('im-decimals').value;if(dec!=='')ind.decimals=parseInt(dec);
   const dby=document.getElementById('im-dedup-by').value.trim();if(dby)ind.dedup_by=dby;
   parea.innerHTML='<span style="color:var(--muted);">Computing…</span>';parea.style.color='';
-  const dataFile=document.getElementById('im-preview-file').value||null;
+  const selSessionId=document.getElementById('im-preview-file').value||null;
+  const selSessionInfo=selSessionId?_previewSessions.find(s=>s.session_id===selSessionId):null;
+  const dataFile=selSessionInfo&&selSessionInfo.main_file?selSessionInfo.main_file:null;
   const sampleN=parseInt(document.getElementById('im-sample-n').value)||null;
   try{
     const res=await fetch('/api/indicators/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indicator:ind,data_file:dataFile,sample_n:sampleN})});
@@ -2297,10 +2300,11 @@ function updateSummaryForm(){
 }
 async function loadSummaryPreviewFileOptions(){
   try{
-    const data=await(await fetch('/api/data')).json();
+    const res=await fetch('/api/data/sessions');const data=await res.json();
+    _previewSessions=data.sessions||[];
     const sel=document.getElementById('sm-preview-file');
     sel.innerHTML='<option value="">— auto-detect —</option>';
-    (data.files||[]).forEach(f=>{const o=document.createElement('option');o.value=f.name;o.textContent=f.name+' ('+f.size_kb+' KB)';sel.appendChild(o);});
+    _previewSessions.forEach((s,i)=>{const o=document.createElement('option');o.value=s.session_id;o.textContent=s.label+(i===0?' (latest)':'');sel.appendChild(o);});
   }catch(e){}
 }
 function openSummaryModal(idx){
@@ -2413,7 +2417,9 @@ async function previewSummary(){
     const lg=document.getElementById('sm-language').value.trim();if(lg)s.language=lg;
   }
   parea.style.color='var(--muted)';parea.textContent='Computing…';
-  const dataFile=document.getElementById('sm-preview-file').value||null;
+  const selSessionId=document.getElementById('sm-preview-file').value||null;
+  const selSessionInfo=selSessionId?_previewSessions.find(s=>s.session_id===selSessionId):null;
+  const dataFile=selSessionInfo&&selSessionInfo.main_file?selSessionInfo.main_file:null;
   const sampleN=parseInt(document.getElementById('sm-sample-n').value)||null;
   try{
     const res=await fetch('/api/summaries/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({summary:s,data_file:dataFile,sample_n:sampleN})});
