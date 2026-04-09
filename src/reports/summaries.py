@@ -250,16 +250,17 @@ def _ai_text(
             data_lines.append(f"{q}: {', '.join(parts)}")
 
     user_prompt = (
-        f"Write a concise paragraph in {lang} summarizing the following data.\n"
+        f"Write a summary in {lang} of the following data.\n"
         + (f"Focus: {prompt}\n" if prompt else "")
-        + (f"\nIMPORTANT: Your output must follow this exact format and structure. Use the example below as a strict template — same length, same layout, same style. Only substitute the actual data values:\n{example}\n" if example else "")
         + "\nDATA:\n"
         + "\n".join(data_lines)
-        + "\n\nReturn only the paragraph text — no headers, no JSON, no markdown."
+        + (f"\n\nIMPORTANT: Your output must strictly follow this example — same format, same length, same structure. Only replace the values with those from the data above:\n{example}" if example else "")
+        + "\n\nReturn only the output text — no headers, no JSON, no markdown."
     )
     system_prompt = (
-        "You are a humanitarian data analyst. Write clear, professional narrative "
-        "text for a monitoring report. Be concise and data-driven."
+        "You are a humanitarian data analyst. Write clear, professional text "
+        "for a monitoring report. Be concise and data-driven."
+        + (" When an example format is provided, it overrides all default style choices — match it exactly." if example else "")
     )
 
     from src.reports.narrator import _call_openai, _call_anthropic
