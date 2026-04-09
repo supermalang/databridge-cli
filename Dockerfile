@@ -929,8 +929,8 @@ header h1{font-size:16px;font-weight:600}
 .tabs-bar{background:var(--surface);border-bottom:1px solid var(--border);display:flex;padding:0 20px}
 .tab{padding:12px 18px;cursor:pointer;border-bottom:2px solid transparent;font-size:13px;color:var(--muted);transition:all .15s;user-select:none}
 .tab:hover{color:var(--text)}.tab.active{color:var(--teal-dark);border-bottom-color:var(--teal);font-weight:500}
-.tab-content{display:none;height:100%;overflow:auto}.tab-content.active{display:flex;flex-direction:column}
-.dashboard{padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;height:100%;overflow:hidden}
+.tab-content{display:none;overflow:hidden}.tab-content.active{display:flex;flex-direction:column;flex:1;min-height:0}
+.dashboard{padding:20px;display:grid;grid-template-columns:2fr 3fr;gap:16px;flex:1;min-height:0;overflow:hidden}
 .dashboard-right{display:flex;flex-direction:column;gap:16px;min-height:0;overflow:hidden}
 .dashboard-terminal{background:#1a1a18;border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow);flex-shrink:0}
 .dashboard-terminal-toggle{padding:8px 14px;background:#111;color:#888;font-size:11px;font-family:monospace;border-bottom:1px solid #333;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
@@ -1032,7 +1032,7 @@ header h1{font-size:16px;font-weight:600}
     <span id="status-label" style="font-size:12px;color:rgba(255,255,255,.7);margin-left:8px;"></span>
     <div class="status-dot" id="status-dot"></div>
   </header>
-  <div style="display:flex;flex-direction:column;overflow:hidden;">
+  <div style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0;">
     <div class="tabs-bar">
       <div class="tab active" data-tab="dashboard">Dashboard</div>
       <div class="tab" data-tab="config">Config</div>
