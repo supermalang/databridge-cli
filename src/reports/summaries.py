@@ -130,7 +130,7 @@ def _compute_summary(s: Dict, df: pd.DataFrame, ai_cfg: Optional[Dict]) -> str:
         return _correlation_text(df, questions, s.get("method", "pearson"))
 
     if stat == "ai":
-        return _ai_text(df, questions, s.get("prompt", ""), ai_cfg, s.get("language"))
+        return _ai_text(df, questions, s.get("prompt", ""), ai_cfg, s.get("language"), s.get("example"))
 
     raise ValueError(f"unknown stat '{stat}'")
 
@@ -214,6 +214,7 @@ def _ai_text(
     prompt: str,
     ai_cfg: Optional[Dict],
     language: Optional[str],
+    example: Optional[str] = None,
 ) -> str:
     if not ai_cfg:
         raise ValueError("stat 'ai' requires an ai: section in config.yml")
@@ -251,6 +252,7 @@ def _ai_text(
     user_prompt = (
         f"Write a concise paragraph in {lang} summarizing the following data.\n"
         + (f"Focus: {prompt}\n" if prompt else "")
+        + (f"\nExample of the desired style and format (do not copy the numbers, only the tone and structure):\n{example}\n" if example else "")
         + "\nDATA:\n"
         + "\n".join(data_lines)
         + "\n\nReturn only the paragraph text — no headers, no JSON, no markdown."
