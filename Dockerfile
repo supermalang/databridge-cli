@@ -362,6 +362,7 @@ class ChartPreviewPayload(BaseModel):
     chart: dict
     data_file: Optional[str] = None
     sample_n: Optional[int] = None
+    split_filters: Optional[list] = None  # [{"col": "Region", "val": "North"}, ...]
 
 @app.post("/api/charts/preview")
 async def preview_chart(payload: ChartPreviewPayload):
@@ -397,6 +398,12 @@ async def preview_chart(payload: ChartPreviewPayload):
         pass
     if payload.sample_n and payload.sample_n > 0:
         df = df.head(payload.sample_n)
+    if payload.split_filters:
+        for sf in payload.split_filters:
+            col = (sf.get("col") or "").strip()
+            val = (sf.get("val") or "").strip()
+            if col and val and col in df.columns:
+                df = df[df[col].astype(str) == val]
     questions = payload.chart.get("questions", [])
     df = _pick_preview_df(df, questions, _questions)
     missing = [q for q in questions if q not in df.columns]
@@ -941,8 +948,8 @@ header h1{font-size:16px;font-weight:600}
 .dashboard-terminal.open .dashboard-terminal-body{display:flex}
 .dashboard-terminal.open{flex-shrink:1;min-height:0;height:250px}
 .dashboard-terminal iframe{flex:1;border:none;min-height:0}
-.commands-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start;min-width:0;overflow-y:auto}
-.cmd-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+.commands-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr auto;gap:12px;height:100%;min-width:0;overflow-y:auto}
+.cmd-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);overflow-y:auto}
 .cmd-card h3{font-size:13px;font-weight:600;margin-bottom:4px}
 .cmd-card p{font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5}
 .sample-row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
@@ -1919,17 +1926,21 @@ function renderChartsList(){
   </div>`).join('');
 }
 function deleteChart(i){if(!confirm('Delete chart "'+(_charts[i]||{}).name+'"?'))return;_charts.splice(i,1);renderChartsList();}
-async function previewChartQuick(i){
-  const ch=_charts[i];if(!ch)return;
-  const modal=document.getElementById('quick-preview-modal');
-  document.getElementById('qp-title').textContent=(ch.name||'chart')+' — '+(ch.type||'');
+let _qpChartIdx=null,_qpDataFile=null;
+function _qpPopulateSplitCols(){
+  ['qp-split1-col','qp-split2-col'].forEach(id=>{
+    const s=document.getElementById(id);if(!s)return;
+    s.innerHTML='<option value="">— column —</option>';
+    (_questions||[]).forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;s.appendChild(o);}});
+  });
+}
+async function _qpFetch(ch,dataFile){
+  const sf=[];
+  const s1c=document.getElementById('qp-split1-col').value;const s1v=document.getElementById('qp-split1-val').value.trim();if(s1c&&s1v)sf.push({col:s1c,val:s1v});
+  const s2c=document.getElementById('qp-split2-col').value;const s2v=document.getElementById('qp-split2-val').value.trim();if(s2c&&s2v)sf.push({col:s2c,val:s2v});
   document.getElementById('qp-area').innerHTML='<span style="color:var(--muted);">Generating preview…</span>';
-  modal.style.display='flex';
-  const sessionId=document.getElementById('session-report').value||null;
-  const sessionInfo=sessionId?_sessions.find(s=>s.session_id===sessionId):null;
-  const dataFile=sessionInfo&&sessionInfo.main_file?sessionInfo.main_file:null;
   try{
-    const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart:ch,data_file:dataFile})});
+    const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart:ch,data_file:dataFile,split_filters:sf.length?sf:null})});
     const data=await res.json();
     if(res.ok){
       document.getElementById('qp-area').innerHTML=`<img src="data:image/png;base64,${data.image}" style="max-width:100%;max-height:70vh;border-radius:4px;border:1px solid var(--border);">`;
@@ -1937,6 +1948,20 @@ async function previewChartQuick(i){
       document.getElementById('qp-area').innerHTML=`<span style="color:#dc2626;">${data.detail||'Preview failed'}</span>`;
     }
   }catch(e){document.getElementById('qp-area').innerHTML=`<span style="color:#dc2626;">Error: ${e.message}</span>`;}
+}
+function _qpRerun(){if(_qpChartIdx===null)return;_qpFetch(_charts[_qpChartIdx],_qpDataFile);}
+async function previewChartQuick(i){
+  const ch=_charts[i];if(!ch)return;
+  _qpChartIdx=i;
+  document.getElementById('qp-title').textContent=(ch.name||'chart')+' — '+(ch.type||'');
+  _qpPopulateSplitCols();
+  document.getElementById('qp-split1-val').value='';
+  document.getElementById('qp-split2-val').value='';
+  document.getElementById('quick-preview-modal').style.display='flex';
+  const sessionId=document.getElementById('session-report').value||null;
+  const sessionInfo=sessionId?_sessions.find(s=>s.session_id===sessionId):null;
+  _qpDataFile=sessionInfo&&sessionInfo.main_file?sessionInfo.main_file:null;
+  _qpFetch(ch,_qpDataFile);
 }
 function renderIndicatorsList(){
   const c=document.getElementById('indicators-list');
@@ -2000,6 +2025,11 @@ async function loadPreviewFileOptions(){
     sel.innerHTML='<option value="">— auto-detect —</option>';
     _previewSessions.forEach((s,i)=>{const o=document.createElement('option');o.value=s.session_id;o.textContent=s.label+(i===0?' (latest)':'');sel.appendChild(o);});
   }catch(e){}
+  ['cm-split1-col','cm-split2-col'].forEach(id=>{
+    const s=document.getElementById(id);if(!s)return;
+    s.innerHTML='<option value="">— column —</option>';
+    (_questions||[]).forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;s.appendChild(o);}});
+  });
 }
 async function openChartModal(idx){
   if(!_questions.length){const d=await(await fetch('/api/questions')).json();_questions=d.questions||[];}
@@ -2011,7 +2041,7 @@ async function openChartModal(idx){
   updateChartForm();
   loadPreviewFileOptions();
   // clear fields
-  ['cm-name','cm-title','cm-width','cm-color','cm-topn','cm-bins','cm-target','cm-columns','cm-male','cm-female','cm-colorby','cm-xlabel','cm-ylabel','cm-distinct-by','cm-sample-n'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['cm-name','cm-title','cm-width','cm-color','cm-topn','cm-bins','cm-target','cm-columns','cm-male','cm-female','cm-colorby','cm-xlabel','cm-ylabel','cm-distinct-by','cm-sample-n','cm-split1-col','cm-split1-val','cm-split2-col','cm-split2-val'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('cm-color-picker').value='#1D9E75';
   ['cm-sort','cm-normalize','cm-freq','cm-stat-scorecard','cm-expand-multi','cm-data-type'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('cm-preview-area').innerHTML='Select a data file (or leave blank for auto-detect) and click Preview.';
@@ -2082,8 +2112,11 @@ async function previewChart(){
   const selSessionInfo=selSessionId?_previewSessions.find(s=>s.session_id===selSessionId):null;
   const dataFile=selSessionInfo&&selSessionInfo.main_file?selSessionInfo.main_file:null;
   const sampleN=parseInt(document.getElementById('cm-sample-n').value)||null;
+  const _cmSplitFilters=[];
+  const _cms1c=document.getElementById('cm-split1-col').value;const _cms1v=document.getElementById('cm-split1-val').value.trim();if(_cms1c&&_cms1v)_cmSplitFilters.push({col:_cms1c,val:_cms1v});
+  const _cms2c=document.getElementById('cm-split2-col').value;const _cms2v=document.getElementById('cm-split2-val').value.trim();if(_cms2c&&_cms2v)_cmSplitFilters.push({col:_cms2c,val:_cms2v});
   try{
-    const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart,data_file:dataFile,sample_n:sampleN})});
+    const res=await fetch('/api/charts/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chart,data_file:dataFile,sample_n:sampleN,split_filters:_cmSplitFilters.length?_cmSplitFilters:null})});
     const data=await res.json();
     if(res.ok){
       parea.innerHTML=`<img src="data:image/png;base64,${data.image}" style="max-width:100%;border-radius:4px;border:1px solid var(--border);">`;
@@ -2628,6 +2661,16 @@ async function runAiGenerateTemplate(){
           <input id="cm-sample-n" type="number" min="1" placeholder="rows" title="Sample N rows for preview" style="width:70px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
           <button class="btn btn-ghost btn-sm" onclick="previewChart()">▶ Preview</button>
         </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <span style="font-size:11px;color:var(--muted);min-width:44px;">Split 1</span>
+          <select id="cm-split1-col" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:160px;"><option value="">— column —</option></select>
+          <input id="cm-split1-val" type="text" placeholder="value" style="width:100px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+          <span style="font-size:11px;color:var(--muted);min-width:44px;">Split 2</span>
+          <select id="cm-split2-col" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:160px;"><option value="">— column —</option></select>
+          <input id="cm-split2-val" type="text" placeholder="value" style="width:100px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
+        </div>
         <div id="cm-preview-area" style="text-align:center;color:var(--muted);font-size:12px;min-height:40px;">Select a data file (or leave blank for auto-detect) and click Preview.</div>
       </div>
     </div>
@@ -2657,6 +2700,15 @@ async function runAiGenerateTemplate(){
     <div class="modal-header">
       <h3 id="qp-title" style="font-size:14px;"></h3>
       <button onclick="document.getElementById('quick-preview-modal').style.display='none'">✕</button>
+    </div>
+    <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--bg);flex-shrink:0;">
+      <span style="font-size:11px;color:var(--muted);font-weight:600;">Split 1</span>
+      <select id="qp-split1-col" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;max-width:140px;"><option value="">— column —</option></select>
+      <input id="qp-split1-val" type="text" placeholder="value" style="width:90px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
+      <span style="font-size:11px;color:var(--muted);font-weight:600;margin-left:6px;">Split 2</span>
+      <select id="qp-split2-col" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;max-width:140px;"><option value="">— column —</option></select>
+      <input id="qp-split2-val" type="text" placeholder="value" style="width:90px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
+      <button class="btn btn-ghost btn-sm" onclick="_qpRerun()">▶ Re-run</button>
     </div>
     <div style="padding:16px;overflow-y:auto;text-align:center;" id="qp-area">
       <span style="color:var(--muted);">Loading…</span>
