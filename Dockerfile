@@ -427,14 +427,25 @@ async def preview_chart(payload: ChartPreviewPayload):
         pass
     if payload.sample_n and payload.sample_n > 0:
         df = df.head(payload.sample_n)
+    main_df = df  # keep reference to main table for cross-table filter joins
     questions = payload.chart.get("questions", [])
     df = _pick_preview_df(df, questions, _questions)
     if payload.split_filters:
         for sf in payload.split_filters:
             col = (sf.get("col") or "").strip()
             val = (sf.get("val") or "").strip()
-            if col and val and col in df.columns:
-                df = df[df[col].astype(str) == val]
+            if not col or not val:
+                continue
+            if col not in df.columns and col in main_df.columns:
+                # Filter column lives in the main table but chart uses a repeat/view table.
+                # Join it in via _parent_index so the filter can be applied.
+                try:
+                    from src.data.transform import join_repeat_to_main
+                    df = join_repeat_to_main(df, main_df, [col])
+                except Exception:
+                    pass
+            if col in df.columns:
+                df = df[df[col].astype(str).str.strip() == val.strip()]
     missing = [q for q in questions if q not in df.columns]
     if missing:
         available = sorted(df.columns.tolist())
