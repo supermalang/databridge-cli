@@ -1907,14 +1907,15 @@ const CHART_OPT_ROWS={
 function renderChartsList(){
   const c=document.getElementById('charts-list');
   if(!_charts.length){c.innerHTML='<p class="empty-state" style="padding:12px 0 4px;">No charts configured.</p>';return;}
-  c.innerHTML=_charts.map((ch,i)=>`<div class="chart-card">
+  const _chartsSorted=_charts.map((ch,i)=>({...ch,_i:i})).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  c.innerHTML=_chartsSorted.map((ch)=>`<div class="chart-card">
     <div class="chart-card-info">
       <div class="chart-card-name"><span class="type-badge">${ch.type||''}</span>${ch.name||''}</div>
       <div class="chart-card-meta">${ch.title||''} · columns: ${(ch.questions||[]).join(', ')||'—'}</div>
     </div>
-    <button class="btn btn-ghost btn-sm" onclick="previewChartQuick(${i})">Preview</button>
-    <button class="btn btn-ghost btn-sm" onclick="openChartModal(${i})">Edit</button>
-    <button class="btn btn-danger btn-sm" onclick="deleteChart(${i})">Delete</button>
+    <button class="btn btn-ghost btn-sm" onclick="previewChartQuick(${ch._i})">Preview</button>
+    <button class="btn btn-ghost btn-sm" onclick="openChartModal(${ch._i})">Edit</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteChart(${ch._i})">Delete</button>
   </div>`).join('');
 }
 function deleteChart(i){if(!confirm('Delete chart "'+(_charts[i]||{}).name+'"?'))return;_charts.splice(i,1);renderChartsList();}
@@ -1940,11 +1941,12 @@ async function previewChartQuick(i){
 function renderIndicatorsList(){
   const c=document.getElementById('indicators-list');
   if(!_indicators.length){c.innerHTML='<p class="empty-state" style="padding:12px 0 4px;">No indicators configured.</p>';return;}
-  c.innerHTML=_indicators.map((ind,i)=>`<div class="ind-row">
+  const _indSorted=_indicators.map((ind,i)=>({...ind,_i:i})).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  c.innerHTML=_indSorted.map((ind)=>`<div class="ind-row">
     <span class="ind-name">${ind.name||''}</span>
     <span class="ind-meta">${ind.label||''} · ${ind.stat||''} of ${ind.question||''} · format: ${ind.format||''}</span>
-    <button class="btn btn-ghost btn-sm" onclick="openIndicatorModal(${i})">Edit</button>
-    <button class="btn btn-danger btn-sm" onclick="deleteIndicator(${i})">Delete</button>
+    <button class="btn btn-ghost btn-sm" onclick="openIndicatorModal(${ind._i})">Edit</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteIndicator(${ind._i})">Delete</button>
   </div>`).join('');
 }
 function deleteIndicator(i){if(!confirm('Delete indicator "'+(_indicators[i]||{}).name+'"?'))return;_indicators.splice(i,1);renderIndicatorsList();}
@@ -2319,11 +2321,12 @@ function acceptAiIndicator(){
 function renderSummariesList(){
   const c=document.getElementById('summaries-list');
   if(!_summaries.length){c.innerHTML='<p class="empty-state" style="padding:12px 0 4px;">No summaries configured.</p>';return;}
-  c.innerHTML=_summaries.map((s,i)=>`<div class="ind-row">
+  const _sumSorted=_summaries.map((s,i)=>({...s,_i:i})).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  c.innerHTML=_sumSorted.map((s)=>`<div class="ind-row">
     <span class="ind-name">${s.name||''}</span>
     <span class="ind-meta">${s.label||''} · ${s.stat||''} of ${(s.questions||[]).join(', ')}</span>
-    <button class="btn btn-ghost btn-sm" onclick="openSummaryModal(${i})">Edit</button>
-    <button class="btn btn-danger btn-sm" onclick="deleteSummary(${i})">Delete</button>
+    <button class="btn btn-ghost btn-sm" onclick="openSummaryModal(${s._i})">Edit</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteSummary(${s._i})">Delete</button>
   </div>`).join('');
 }
 function deleteSummary(i){if(!confirm('Delete summary "'+(_summaries[i]||{}).name+'"?'))return;_summaries.splice(i,1);renderSummariesList();}
