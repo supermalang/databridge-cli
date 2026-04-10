@@ -1521,7 +1521,7 @@ async function loadSplitByOptions(){
     const current=sel.value;
     sel.innerHTML='<option value="">— no split —</option>';
     const qs=(cfg&&cfg.questions)||[];
-    qs.forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;sel.appendChild(o);}});
+    qs.filter(q=>q.category==='categorical'&&!q.repeat_group).forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;sel.appendChild(o);}});
     const configSplit=cfg&&cfg.report&&cfg.report.split_by;
     sel.value=configSplit||current||'';
   }catch(e){}
@@ -1931,7 +1931,7 @@ function _qpPopulateSplitCols(){
   ['qp-split1-col','qp-split2-col'].forEach(id=>{
     const s=document.getElementById(id);if(!s)return;
     s.innerHTML='<option value="">— column —</option>';
-    (_questions||[]).forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;s.appendChild(o);}});
+    (_questions||[]).filter(q=>q.category==='categorical'&&!q.repeat_group).forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;s.appendChild(o);}});
   });
 }
 async function _qpFetch(ch,dataFile){
@@ -2028,7 +2028,7 @@ async function loadPreviewFileOptions(){
   ['cm-split1-col','cm-split2-col'].forEach(id=>{
     const s=document.getElementById(id);if(!s)return;
     s.innerHTML='<option value="">— column —</option>';
-    (_questions||[]).forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;s.appendChild(o);}});
+    (_questions||[]).filter(q=>q.category==='categorical'&&!q.repeat_group).forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;s.appendChild(o);}});
   });
 }
 async function openChartModal(idx){
