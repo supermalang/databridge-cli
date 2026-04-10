@@ -427,14 +427,14 @@ async def preview_chart(payload: ChartPreviewPayload):
         pass
     if payload.sample_n and payload.sample_n > 0:
         df = df.head(payload.sample_n)
+    questions = payload.chart.get("questions", [])
+    df = _pick_preview_df(df, questions, _questions)
     if payload.split_filters:
         for sf in payload.split_filters:
             col = (sf.get("col") or "").strip()
             val = (sf.get("val") or "").strip()
             if col and val and col in df.columns:
                 df = df[df[col].astype(str) == val]
-    questions = payload.chart.get("questions", [])
-    df = _pick_preview_df(df, questions, _questions)
     missing = [q for q in questions if q not in df.columns]
     if missing:
         available = sorted(df.columns.tolist())
