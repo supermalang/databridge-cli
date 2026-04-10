@@ -105,6 +105,22 @@ filters:
   - "Region != 'Test'"
   - "submission_date >= '2025-01-01'"
 
+# Named virtual tables — computed once per render, reused by charts/summaries/indicators.
+# Eliminates redundant join+filter work when multiple items share the same source.
+# Reference a view with source: <view_name> on any chart, summary, or indicator.
+views:
+  - name: villages_with_dept            # enriched view: repeat + parent fields joined in
+    source: villages                    # repeat group path (or "main")
+    join_parent: [Departement, Region]  # columns to bring in from main table
+    filter: "Number of Students > 0"   # optional pandas .query() filter
+
+  - name: dept_student_totals           # aggregated view: one row per department
+    source: villages
+    join_parent: [Departement]
+    group_by: Departement
+    question: Number of Students        # column to aggregate
+    agg: sum                            # sum | mean | count | max | min (default: sum)
+
 # Each chart → {{ chart_<n> }} placeholder in Word template
 charts:
   - name: satisfaction_overview            # → {{ chart_satisfaction_overview }} in template

@@ -140,10 +140,31 @@ def _freq_count(series, freq):
 
 # ── chart functions ────────────────────────────────────────────────────────────
 
+def _grouped_counts(df, category_col, opts):
+    """Return a Series of values per category.
+
+    If opts.value_col is set: groupby(category)[value_col].agg(opts.agg) — for
+    pre-joined repeat data where you want sums/means instead of row counts.
+    Otherwise: value_counts() — the default categorical frequency behaviour.
+    """
+    top_n = opts.get("top_n", 15)
+    value_col = opts.get("value_col")
+    if value_col and value_col in df.columns:
+        agg_fn = opts.get("agg", "sum")
+        grouped = (
+            pd.to_numeric(df[value_col], errors="coerce")
+            .groupby(df[category_col])
+            .agg(agg_fn)
+            .dropna()
+        )
+        return _sort(grouped.nlargest(top_n), opts)
+    return _sort(_top(df[category_col].dropna(), top_n), opts)
+
+
 def chart_bar(df, q, title, out, opts):
     c = q[0]
-    counts = _sort(_top(df[c].dropna(), opts.get("top_n", 15)), opts)
-    xl, yl = _labels(opts, c, "Count")
+    counts = _grouped_counts(df, c, opts)
+    xl, yl = _labels(opts, c, opts.get("value_col", "Count"))
     fig, ax = plt.subplots(figsize=_fs(opts))
     bars = ax.bar(counts.index, counts.values, color=_color(opts), alpha=0.87)
     total = counts.sum()
@@ -160,8 +181,8 @@ def chart_bar(df, q, title, out, opts):
 
 def chart_horizontal_bar(df, q, title, out, opts):
     c = q[0]
-    counts = _sort(_top(df[c].dropna(), opts.get("top_n", 15)), opts)
-    xl, yl = _labels(opts, "Count", "")
+    counts = _grouped_counts(df, c, opts)
+    xl, yl = _labels(opts, opts.get("value_col", "Count"), "")
     fig, ax = plt.subplots(figsize=_fs(opts, (7, max(3, len(counts)*0.4))))
     bars = ax.barh(counts.index, counts.values, color=_color(opts), alpha=0.87)
     total = counts.sum()

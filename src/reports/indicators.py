@@ -13,6 +13,13 @@ Supported stats:
   min / max      : min/max of numeric column
   percent        : % of rows where column == filter_value
   most_common    : most frequent value in column
+  grouped_agg    : two-step aggregation across a parent column — first aggregates
+                   repeat rows per group (agg: sum|mean|count|max|min), then applies
+                   outer_stat (sum|mean|count|max|min) to the resulting group values.
+                   Requires group_by (use with join_parent to bring in parent columns).
+                   e.g. "average total students across all departments":
+                     source: villages, join_parent: [Departement],
+                     group_by: Departement, agg: sum, outer_stat: mean
 
 Supported formats:
   number       : integer with thousands separator  → "4,832"
@@ -163,6 +170,22 @@ def _compute(ind: Dict, df: pd.DataFrame):
     if stat == "most_common":
         vc = series.dropna().value_counts()
         return str(vc.index[0]) if len(vc) else "N/A"
+
+    if stat == "grouped_agg":
+        group_by = ind.get("group_by")
+        if not group_by:
+            raise ValueError("stat 'grouped_agg' requires 'group_by'")
+        if group_by not in df.columns:
+            raise ValueError(f"group_by column '{group_by}' not found — did you forget join_parent?")
+        agg_fn = ind.get("agg", "sum")
+        outer_stat = ind.get("outer_stat", "sum")
+        numeric = pd.to_numeric(series, errors="coerce")
+        grouped = numeric.groupby(df[group_by]).agg(agg_fn).dropna()
+        outer_ops = {"sum": grouped.sum, "mean": grouped.mean,
+                     "count": grouped.count, "max": grouped.max, "min": grouped.min}
+        if outer_stat not in outer_ops:
+            raise ValueError(f"unknown outer_stat '{outer_stat}' — use sum|mean|count|max|min")
+        return outer_ops[outer_stat]()
 
     # numeric stats
     numeric = pd.to_numeric(series, errors="coerce").dropna()

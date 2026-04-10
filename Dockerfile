@@ -422,6 +422,41 @@ async def preview_chart(payload: ChartPreviewPayload):
         img_b64 = base64.b64encode(png_path.read_bytes()).decode()
     return {"image": img_b64}
 
+@app.get("/api/data/column-values")
+async def get_column_values(col: str, file: Optional[str] = None):
+    import pandas as pd
+    if file:
+        if "/" in file or ".." in file:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        data_path = DATA_DIR / file
+        if not data_path.exists():
+            raise HTTPException(status_code=404, detail=f"Data file not found: {file}")
+        ext = data_path.suffix.lower()
+        if ext == ".csv": df = pd.read_csv(data_path)
+        elif ext == ".json": df = pd.read_json(data_path)
+        elif ext == ".xlsx": df = pd.read_excel(data_path)
+        else: raise HTTPException(status_code=400, detail="Unsupported file type")
+    else:
+        candidates = sorted(DATA_DIR.glob("*_data*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not candidates:
+            candidates = sorted(DATA_DIR.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not candidates:
+            raise HTTPException(status_code=400, detail="No data file found.")
+        df = pd.read_csv(candidates[0])
+    try:
+        async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as _f:
+            _cfg = yaml.safe_load(await _f.read()) or {}
+        _questions_cfg = _cfg.get("questions", [])
+        if _questions_cfg:
+            from src.data.transform import apply_choice_labels
+            df = apply_choice_labels(df, _questions_cfg)
+    except Exception:
+        pass
+    if col not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{col}' not found")
+    values = sorted(df[col].dropna().astype(str).unique().tolist())
+    return {"values": values}
+
 class IndicatorPreviewPayload(BaseModel):
     indicator: dict
     data_file: Optional[str] = None
@@ -1933,6 +1968,7 @@ function _qpPopulateSplitCols(){
     s.innerHTML='<option value="">— column —</option>';
     (_questions||[]).filter(q=>q.category==='categorical'&&!q.repeat_group).forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;s.appendChild(o);}});
   });
+  ['qp-split1-val','qp-split2-val'].forEach(id=>{const s=document.getElementById(id);if(s)s.innerHTML='<option value="">— value —</option>';});
 }
 async function _qpFetch(ch,dataFile){
   const sf=[];
@@ -1950,6 +1986,28 @@ async function _qpFetch(ch,dataFile){
   }catch(e){document.getElementById('qp-area').innerHTML=`<span style="color:#dc2626;">Error: ${e.message}</span>`;}
 }
 function _qpRerun(){if(_qpChartIdx===null)return;_qpFetch(_charts[_qpChartIdx],_qpDataFile);}
+async function _populateSplitValSelect(colName,valSelectId,dataFile){
+  const sel=document.getElementById(valSelectId);if(!sel)return;
+  sel.innerHTML='<option value="">— value —</option>';
+  if(!colName)return;
+  try{
+    const params=new URLSearchParams({col:colName});
+    if(dataFile)params.set('file',dataFile);
+    const res=await fetch('/api/data/column-values?'+params);
+    if(res.ok){const data=await res.json();(data.values||[]).forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});}
+  }catch(e){}
+}
+async function _qpUpdateSplitVal(n){
+  const col=document.getElementById('qp-split'+n+'-col').value;
+  await _populateSplitValSelect(col,'qp-split'+n+'-val',_qpDataFile);
+}
+async function _cmUpdateSplitVal(n){
+  const col=document.getElementById('cm-split'+n+'-col').value;
+  const selSessionId=document.getElementById('cm-preview-file').value||null;
+  const selSessionInfo=selSessionId?_previewSessions.find(s=>s.session_id===selSessionId):null;
+  const dataFile=selSessionInfo&&selSessionInfo.main_file?selSessionInfo.main_file:null;
+  await _populateSplitValSelect(col,'cm-split'+n+'-val',dataFile);
+}
 async function previewChartQuick(i){
   const ch=_charts[i];if(!ch)return;
   _qpChartIdx=i;
@@ -2030,6 +2088,7 @@ async function loadPreviewFileOptions(){
     s.innerHTML='<option value="">— column —</option>';
     (_questions||[]).filter(q=>q.category==='categorical'&&!q.repeat_group).forEach(q=>{const lbl=q.export_label||q.label||q.kobo_key;if(lbl){const o=document.createElement('option');o.value=lbl;o.textContent=lbl;s.appendChild(o);}});
   });
+  ['cm-split1-val','cm-split2-val'].forEach(id=>{const s=document.getElementById(id);if(s)s.innerHTML='<option value="">— value —</option>';});
 }
 async function openChartModal(idx){
   if(!_questions.length){const d=await(await fetch('/api/questions')).json();_questions=d.questions||[];}
@@ -2663,13 +2722,13 @@ async function runAiGenerateTemplate(){
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
           <span style="font-size:11px;color:var(--muted);min-width:44px;">Split 1</span>
-          <select id="cm-split1-col" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:160px;"><option value="">— column —</option></select>
-          <input id="cm-split1-val" type="text" placeholder="value" style="width:100px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
+          <select id="cm-split1-col" onchange="_cmUpdateSplitVal(1)" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:160px;"><option value="">— column —</option></select>
+          <select id="cm-split1-val" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:160px;"><option value="">— value —</option></select>
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
           <span style="font-size:11px;color:var(--muted);min-width:44px;">Split 2</span>
-          <select id="cm-split2-col" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:160px;"><option value="">— column —</option></select>
-          <input id="cm-split2-val" type="text" placeholder="value" style="width:100px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
+          <select id="cm-split2-col" onchange="_cmUpdateSplitVal(2)" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:160px;"><option value="">— column —</option></select>
+          <select id="cm-split2-val" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;flex:1;max-width:160px;"><option value="">— value —</option></select>
         </div>
         <div id="cm-preview-area" style="text-align:center;color:var(--muted);font-size:12px;min-height:40px;">Select a data file (or leave blank for auto-detect) and click Preview.</div>
       </div>
@@ -2703,11 +2762,11 @@ async function runAiGenerateTemplate(){
     </div>
     <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--bg);flex-shrink:0;">
       <span style="font-size:11px;color:var(--muted);font-weight:600;">Split 1</span>
-      <select id="qp-split1-col" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;max-width:140px;"><option value="">— column —</option></select>
-      <input id="qp-split1-val" type="text" placeholder="value" style="width:90px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
+      <select id="qp-split1-col" onchange="_qpUpdateSplitVal(1)" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;max-width:140px;"><option value="">— column —</option></select>
+      <select id="qp-split1-val" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;max-width:140px;"><option value="">— value —</option></select>
       <span style="font-size:11px;color:var(--muted);font-weight:600;margin-left:6px;">Split 2</span>
-      <select id="qp-split2-col" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;max-width:140px;"><option value="">— column —</option></select>
-      <input id="qp-split2-val" type="text" placeholder="value" style="width:90px;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
+      <select id="qp-split2-col" onchange="_qpUpdateSplitVal(2)" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;max-width:140px;"><option value="">— column —</option></select>
+      <select id="qp-split2-val" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;max-width:140px;"><option value="">— value —</option></select>
       <button class="btn btn-ghost btn-sm" onclick="_qpRerun()">▶ Re-run</button>
     </div>
     <div style="padding:16px;overflow-y:auto;text-align:center;" id="qp-area">

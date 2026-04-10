@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 from docx.shared import Inches
 from docxtpl import DocxTemplate, InlineImage
-from src.data.transform import load_processed_data, apply_local_scope, aggregate_repeat, join_repeat_to_main, apply_computed_columns
+from src.data.transform import load_processed_data, apply_local_scope, aggregate_repeat, join_repeat_to_main, apply_computed_columns, build_views
 from src.reports.charts import generate_chart, CHART_DIR
 from src.reports.indicators import compute_indicators
 from src.reports.narrator import generate_narrative
@@ -102,6 +102,14 @@ class ReportBuilder:
         if not template_path.exists():
             raise FileNotFoundError(f"Template not found: {template_path}\nRun generate-template or see TEMPLATE_GUIDE.md")
         tpl = DocxTemplate(template_path)
+
+        # Compute named virtual views and inject into repeat_tables so all
+        # consumers (charts, summaries, indicators) can reference them by name.
+        # Called here so views see the already split-filtered df and repeat_tables.
+        views = build_views(self.cfg, df, repeat_tables)
+        if views:
+            repeat_tables = {**repeat_tables, **views}
+
         stats_table = self._stats_table(df)
         indicators  = compute_indicators(self.cfg.get("indicators", []), df, repeat_tables)
         summaries   = compute_summaries(self.cfg.get("summaries", []), df, self.cfg.get("ai"), repeat_tables)

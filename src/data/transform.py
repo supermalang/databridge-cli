@@ -315,6 +315,70 @@ def apply_computed_columns(
     return df
 
 
+def build_views(
+    cfg: Dict,
+    main_df: pd.DataFrame,
+    repeat_tables: Dict[str, pd.DataFrame],
+) -> Dict[str, pd.DataFrame]:
+    """Compute named virtual tables defined in config views: section.
+
+    Each view is derived from a source table via optional join, filter,
+    and group aggregation. Results are computed once and reused by any
+    chart, summary, or indicator that references the view name as source.
+
+    Returns a dict {view_name: DataFrame} to be merged into repeat_tables.
+    """
+    views: Dict[str, pd.DataFrame] = {}
+    for v in cfg.get("views", []):
+        name = v.get("name")
+        if not name:
+            continue
+        try:
+            source = v.get("source", "main")
+            if source == "main":
+                df = main_df.copy()
+            else:
+                base = repeat_tables.get(source)
+                if base is None:
+                    log.warning(f"View '{name}': source '{source}' not found — skipped")
+                    continue
+                df = base.copy()
+
+            # Join parent fields into repeat table
+            join_cols = v.get("join_parent")
+            if join_cols and source != "main":
+                df = join_repeat_to_main(df, main_df, join_cols)
+
+            # Apply filter
+            filter_expr = v.get("filter")
+            if filter_expr:
+                try:
+                    df = df.query(filter_expr)
+                except Exception as e:
+                    log.warning(f"View '{name}': filter '{filter_expr}' failed: {e} — skipped")
+
+            # Optional group aggregation → one row per group value
+            group_by = v.get("group_by")
+            question = v.get("question")
+            if group_by and question:
+                agg_fn = v.get("agg", "sum")
+                if group_by not in df.columns:
+                    log.warning(f"View '{name}': group_by column '{group_by}' not found — skipped aggregation")
+                elif question not in df.columns:
+                    log.warning(f"View '{name}': question column '{question}' not found — skipped aggregation")
+                else:
+                    numeric = pd.to_numeric(df[question], errors="coerce")
+                    agg_result = numeric.groupby(df[group_by]).agg(agg_fn).reset_index()
+                    agg_result.columns = [group_by, question]
+                    df = agg_result
+
+            views[name] = df
+            log.info(f"View '{name}' computed: {len(df)} rows, {len(df.columns)} columns")
+        except Exception as e:
+            log.warning(f"View '{name}' failed: {e} — skipped")
+    return views
+
+
 def export_data(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
     fmt = cfg.get("export", {}).get("format", "csv")
     if fmt in ("csv", "json", "xlsx"):

@@ -12,6 +12,8 @@ Supported stat types:
   data_quality      : Completeness %, duplicate count, outlier flags per column
   keyword_frequency : Top-N word/token frequencies for one text column
   correlation       : Pearson or Spearman correlation pairs for numeric columns
+  grouped_agg       : Aggregate a numeric column grouped by a parent column
+                      (use with source + join_parent + group_by + agg)
   ai                : AI-generated paragraph (requires ai: config section)
 
 Per-item scoping (optional on any summary):
@@ -148,6 +150,15 @@ def _compute_summary(s: Dict, df: pd.DataFrame, ai_cfg: Optional[Dict]) -> str:
         if len(questions) < 2:
             raise ValueError("stat 'correlation' requires at least two questions")
         return _correlation_text(df, questions, s.get("method", "pearson"))
+
+    if stat == "grouped_agg":
+        if not questions:
+            raise ValueError("stat 'grouped_agg' requires at least one question")
+        group_by = s.get("group_by")
+        if not group_by:
+            raise ValueError("stat 'grouped_agg' requires a 'group_by' field")
+        agg = s.get("agg", "sum")
+        return _grouped_agg_text(df, group_by, questions[0], agg, top_n)
 
     if stat == "ai":
         return _ai_text(df, questions, s.get("prompt", ""), ai_cfg, s.get("language"), s.get("example"))
@@ -293,6 +304,48 @@ def _ai_text(
             base_url=ai_cfg.get("base_url"),
         )
     return raw.strip()
+
+
+def _grouped_agg_text(
+    df: pd.DataFrame,
+    group_col: str,
+    value_col: str,
+    agg: str,
+    top_n: int,
+) -> str:
+    """Aggregate value_col by group_col and narrate the top-N results.
+
+    agg: sum | mean | count | max | min
+    Typical use: repeat table joined with a parent column, then grouped.
+    """
+    if group_col not in df.columns:
+        return f"Column '{group_col}' not found."
+    if value_col not in df.columns:
+        return f"Column '{value_col}' not found."
+
+    numeric = pd.to_numeric(df[value_col], errors="coerce")
+    tmp = df[[group_col]].copy()
+    tmp["_val"] = numeric
+
+    if agg == "count":
+        grouped = tmp.groupby(group_col)["_val"].count()
+    elif agg == "mean":
+        grouped = tmp.groupby(group_col)["_val"].mean()
+    elif agg == "max":
+        grouped = tmp.groupby(group_col)["_val"].max()
+    elif agg == "min":
+        grouped = tmp.groupby(group_col)["_val"].min()
+    else:  # default: sum
+        grouped = tmp.groupby(group_col)["_val"].sum()
+
+    grouped = grouped.dropna().sort_values(ascending=False).head(top_n)
+    if grouped.empty:
+        return "No data available."
+
+    agg_label = {"sum": "Total", "mean": "Average", "count": "Count",
+                 "max": "Max", "min": "Min"}.get(agg, agg.capitalize())
+    parts = [f"{label}: {val:,.1f}" for label, val in grouped.items()]
+    return f"{agg_label} {value_col} by {group_col} — {'; '.join(parts)}."
 
 
 def _data_quality_text(df: pd.DataFrame, questions: List[str]) -> str:
