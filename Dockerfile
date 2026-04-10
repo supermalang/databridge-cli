@@ -931,7 +931,7 @@ header h1{font-size:16px;font-weight:600}
 .tab:hover{color:var(--text)}.tab.active{color:var(--teal-dark);border-bottom-color:var(--teal);font-weight:500}
 .tab-content{display:none;overflow:hidden}.tab-content.active{display:flex;flex-direction:column;flex:1;min-height:0}
 .dashboard{padding:20px;display:grid;grid-template-columns:2fr 3fr;gap:16px;flex:1;min-height:0;overflow:hidden}
-.dashboard-right{display:flex;flex-direction:column;gap:16px;min-height:0;overflow:hidden}
+.dashboard-right{display:flex;flex-direction:column;gap:16px;min-height:0;overflow:hidden;min-width:0}
 .dashboard-terminal{background:#1a1a18;border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow);flex-shrink:0}
 .dashboard-terminal-toggle{padding:8px 14px;background:#111;color:#888;font-size:11px;font-family:monospace;border-bottom:1px solid #333;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
 .dashboard-terminal-toggle:hover{color:#bbb}
@@ -939,9 +939,9 @@ header h1{font-size:16px;font-weight:600}
 .dashboard-terminal.open .toggle-icon{transform:rotate(90deg)}
 .dashboard-terminal-body{display:none;flex:1;flex-direction:column;min-height:0}
 .dashboard-terminal.open .dashboard-terminal-body{display:flex}
-.dashboard-terminal.open{flex-shrink:1;min-height:0}
+.dashboard-terminal.open{flex-shrink:1;min-height:0;height:250px}
 .dashboard-terminal iframe{flex:1;border:none;min-height:0}
-.commands-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start}
+.commands-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start;min-width:0;overflow-y:auto}
 .cmd-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
 .cmd-card h3{font-size:13px;font-weight:600;margin-bottom:4px}
 .cmd-card p{font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5}
@@ -958,7 +958,7 @@ header h1{font-size:16px;font-weight:600}
 .cmd-card .btn-stop{display:none}
 .cmd-card.running .btn-run{display:none}
 .cmd-card.running .btn-stop{display:inline-flex}
-.log-panel{background:#1a1a18;border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow);flex:1;min-height:0}
+.log-panel{background:#1a1a18;border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow);flex:1;min-height:80px}
 .log-header{padding:10px 14px;background:#111;display:flex;align-items:center;gap:8px;border-bottom:1px solid #333}
 .log-header span{font-size:12px;color:#888;flex:1}
 .log-body{flex:1;overflow-y:auto;padding:12px 14px;font-family:'Menlo','Monaco',monospace;font-size:12px;line-height:1.7}
