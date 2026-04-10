@@ -372,6 +372,31 @@ def build_views(
                     agg_result.columns = [group_by, question]
                     df = agg_result
 
+            # Apply column renames and type overrides
+            col_specs = v.get("columns", [])
+            if col_specs:
+                rename_map = {}
+                for cs in col_specs:
+                    original = cs.get("name")
+                    renamed  = cs.get("rename")
+                    col_type = cs.get("type")
+                    if not original or original not in df.columns:
+                        continue
+                    if col_type:
+                        try:
+                            if col_type in ("number", "numeric"):
+                                df[original] = pd.to_numeric(df[original], errors="coerce")
+                            elif col_type == "date":
+                                df[original] = pd.to_datetime(df[original], errors="coerce")
+                            elif col_type in ("text", "string"):
+                                df[original] = df[original].astype(str).replace("nan", pd.NA)
+                        except Exception as te:
+                            log.warning(f"View '{name}': type cast '{original}' → {col_type} failed: {te}")
+                    if renamed and renamed != original:
+                        rename_map[original] = renamed
+                if rename_map:
+                    df = df.rename(columns=rename_map)
+
             views[name] = df
             log.info(f"View '{name}' computed: {len(df)} rows, {len(df.columns)} columns")
         except Exception as e:

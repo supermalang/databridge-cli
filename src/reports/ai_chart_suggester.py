@@ -47,7 +47,10 @@ dot_map          | lat + lon cols             | basemap(true/false), color_by, s
 
 Common options (all types): width_inches, height_inches, color(hex), xlabel, ylabel
 Dedup / multi: distinct_by(col), expand_multi(true)
-Scoping: filter("pandas query"), sample(int), source("repeat/path"), join_parent([cols])
+Scoping: filter("pandas query"), sample(int), source("repeat/path"|"view_name"), join_parent([cols])
+Grouped aggregation (bar/horizontal_bar): value_col(col), agg(sum|mean|count|max|min)
+  — use value_col when the x-axis is a category and bars should show a numeric aggregate
+    rather than row counts. Pair with a named view as source for pre-joined data.
 """
 
 
@@ -162,6 +165,27 @@ def _user_prompt(cfg: Dict) -> str:
         lines.append("REPEAT GROUP COLUMNS (use source: 'group/path' to access):")
         for rg, cols in repeat_groups.items():
             lines.append(f"  {rg}: {', '.join(cols)}")
+        lines.append("")
+
+    # Named views — pre-joined/aggregated tables the LLM can reference as source
+    views = cfg.get("views", [])
+    if views:
+        lines.append("NAMED VIEWS (use source: 'view_name' — pre-joined or aggregated tables):")
+        for v in views:
+            name = v.get("name", "")
+            src  = v.get("source", "main")
+            jp   = ", ".join(v.get("join_parent", []))
+            gb   = v.get("group_by", "")
+            q_v  = v.get("question", "")
+            desc = f"source={src}"
+            if jp:  desc += f", joined with: {jp}"
+            if gb:  desc += f", grouped by: {gb}"
+            if q_v: desc += f", aggregates {q_v} ({v.get('agg', 'sum')})"
+            col_names = [cs.get("rename") or cs.get("name") for cs in v.get("columns", [])]
+            if col_names:
+                desc += f", columns: {', '.join(col_names)}"
+            lines.append(f"  {name}: {desc}")
+        lines.append("  Tip: for bar/horizontal_bar charts on aggregated views, use options.value_col to plot the numeric column instead of row counts.")
         lines.append("")
 
     # Existing charts — avoid duplicates

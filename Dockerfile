@@ -568,6 +568,134 @@ async def preview_summary(payload: SummaryPreviewPayload):
         raise HTTPException(status_code=400, detail=f"Summary error: {e}")
     return {"text": text, "n_rows": len(df)}
 
+class ViewPreviewPayload(BaseModel):
+    view: dict
+    data_file: Optional[str] = None
+    sample_n: Optional[int] = None
+
+@app.post("/api/views/preview")
+async def preview_view(payload: ViewPreviewPayload):
+    import pandas as pd
+    from src.data.transform import join_repeat_to_main, apply_choice_labels
+    _questions_cfg = []
+    if payload.data_file:
+        data_path = DATA_DIR / payload.data_file
+        if "/" in payload.data_file or ".." in payload.data_file:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        if not data_path.exists():
+            raise HTTPException(status_code=404, detail=f"Data file not found: {payload.data_file}")
+        ext = data_path.suffix.lower()
+        if ext == ".csv": main_df = pd.read_csv(data_path)
+        elif ext == ".json": main_df = pd.read_json(data_path)
+        elif ext == ".xlsx": main_df = pd.read_excel(data_path)
+        else: raise HTTPException(status_code=400, detail="Unsupported file type")
+    else:
+        candidates = sorted(DATA_DIR.glob("*_data*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not candidates:
+            candidates = sorted(DATA_DIR.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if not candidates:
+            raise HTTPException(status_code=400, detail="No data file found. Run Download first.")
+        main_df = pd.read_csv(candidates[0])
+    try:
+        async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as _f:
+            _cfg = yaml.safe_load(await _f.read()) or {}
+        _questions_cfg = _cfg.get("questions", [])
+        if _questions_cfg:
+            main_df = apply_choice_labels(main_df, _questions_cfg)
+    except Exception:
+        pass
+    if payload.sample_n and payload.sample_n > 0:
+        main_df = main_df.head(payload.sample_n)
+    v = payload.view
+    source = v.get("source", "main")
+    # Resolve source: main or a repeat table file
+    if source == "main":
+        df = main_df.copy()
+    else:
+        safe_source = source.replace("/", "_")
+        repeat_candidates = sorted(
+            list(DATA_DIR.glob(f"*_{safe_source}_*.csv")) + list(DATA_DIR.glob(f"*_{safe_source}.csv")),
+            key=lambda x: x.stat().st_mtime, reverse=True
+        )
+        if not repeat_candidates:
+            raise HTTPException(status_code=400, detail=f"Repeat table file for source '{source}' not found. Run Download first.")
+        df = pd.read_csv(repeat_candidates[0])
+        if _questions_cfg:
+            try: df = apply_choice_labels(df, _questions_cfg)
+            except Exception: pass
+        # Join parent columns into repeat df
+        join_cols = v.get("join_parent")
+        if join_cols:
+            df = join_repeat_to_main(df, main_df, join_cols)
+    # Apply filter
+    filter_expr = v.get("filter")
+    if filter_expr:
+        try: df = df.query(filter_expr)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Filter error: {e}")
+    # Apply group aggregation
+    group_by = v.get("group_by")
+    question = v.get("question")
+    if group_by and question:
+        agg_fn = v.get("agg", "sum")
+        if group_by not in df.columns:
+            raise HTTPException(status_code=400, detail=f"group_by column '{group_by}' not found")
+        if question not in df.columns:
+            raise HTTPException(status_code=400, detail=f"question column '{question}' not found")
+        numeric = pd.to_numeric(df[question], errors="coerce")
+        agg_result = numeric.groupby(df[group_by]).agg(agg_fn).reset_index()
+        agg_result.columns = [group_by, question]
+        df = agg_result
+    # Apply column renames and type overrides
+    col_specs = v.get("columns", [])
+    rename_map = {}
+    for cs in col_specs:
+        original = cs.get("name")
+        renamed  = cs.get("rename")
+        col_type = cs.get("type")
+        if not original or original not in df.columns:
+            continue
+        if col_type:
+            try:
+                if col_type in ("number", "numeric"):
+                    df[original] = pd.to_numeric(df[original], errors="coerce")
+                elif col_type == "date":
+                    df[original] = pd.to_datetime(df[original], errors="coerce").astype(str)
+                elif col_type in ("text", "string"):
+                    df[original] = df[original].fillna("").astype(str)
+            except Exception: pass
+        if renamed and renamed != original:
+            rename_map[original] = renamed
+    if rename_map:
+        df = df.rename(columns=rename_map)
+    # Auto-detect column types for UI
+    col_info = []
+    for col in df.columns:
+        numeric = pd.to_numeric(df[col], errors="coerce")
+        if numeric.notna().sum() > len(df) * 0.5:
+            detected = "number"
+        else:
+            sample = df[col].dropna().astype(str).head(5)
+            try:
+                import re as _re
+                if sample.apply(lambda x: bool(_re.match(r'\d{4}-\d{2}-\d{2}', x))).any():
+                    detected = "date"
+                else:
+                    detected = "text"
+            except Exception:
+                detected = "text"
+        col_info.append({"name": col, "detected_type": detected})
+    n_rows = len(df)
+    preview_rows = df.head(50)
+    # Serialize safely (NaN → None)
+    import math
+    def _safe(v):
+        if v is None: return None
+        if isinstance(v, float) and math.isnan(v): return None
+        return v
+    rows = [{col: _safe(row[col]) for col in preview_rows.columns} for _, row in preview_rows.iterrows()]
+    return {"columns": col_info, "data": rows, "n_rows": n_rows}
+
 @app.post("/api/run/{command}")
 async def run_command(command: str, payload: RunPayload):
     if command not in ALLOWED_COMMANDS:
@@ -1295,6 +1423,15 @@ header h1{font-size:16px;font-weight:600}
             <div id="summaries-list"><p class="empty-state" style="padding:12px 0 4px;">No summaries configured.</p></div>
             <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('summaries')">Save</button></div>
           </div>
+          <div class="form-section" id="section-views">
+            <div class="form-section-title">
+              Views
+              <span style="font-weight:normal;font-size:11px;color:var(--muted);">Virtual data tables — computed once, reused by charts/summaries/indicators</span>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="openViewModal(null)">+ Add view</button>
+            </div>
+            <div id="views-list"><p class="empty-state" style="padding:12px 0 4px;">No views configured.</p></div>
+            <div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="saveFormSection('views')">Save</button></div>
+          </div>
         </div>
         <div id="config-yaml-view" style="display:none;flex:1;overflow:hidden;">
           <div class="editor-wrap"><textarea id="config-editor"></textarea></div>
@@ -1462,10 +1599,12 @@ async function loadFormValues(){
   _charts=Array.isArray(cfg.charts)?cfg.charts:[];
   _indicators=Array.isArray(cfg.indicators)?cfg.indicators:[];
   _summaries=Array.isArray(cfg.summaries)?cfg.summaries:[];
+  _views=Array.isArray(cfg.views)?cfg.views:[];
   renderFilters();
   renderChartsList();
   renderIndicatorsList();
   renderSummariesList();
+  renderViewsList();
   toggleDbFields();
   loadQuestions();
 }
@@ -1510,6 +1649,8 @@ async function saveFormSection(section){
     cfg.indicators=_indicators;
   }else if(section==='summaries'){
     cfg.summaries=_summaries;
+  }else if(section==='views'){
+    cfg.views=_views;
   }else if(section==='ai'){
     const provider=document.getElementById('cfg-ai-provider').value;
     const key=document.getElementById('cfg-ai-key').value.trim();
@@ -1903,7 +2044,7 @@ async function deleteTemplate(name){
 }
 function toast(msg,type='ok'){const el=document.createElement('div');el.className='toast '+type;el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),3000);}
 // ── Charts & Indicators ───────────────────────────────────────────────
-let _charts=[],_indicators=[],_summaries=[],_editChartIdx=null,_editIndIdx=null,_editSumIdx=null;
+let _charts=[],_indicators=[],_summaries=[],_views=[],_editChartIdx=null,_editIndIdx=null,_editSumIdx=null,_editViewIdx=null;
 const CHART_META={
   bar:{q:['categorical'],hint:'1 categorical column'},
   horizontal_bar:{q:['categorical'],hint:'1 categorical column'},
@@ -2890,6 +3031,181 @@ async function runAiGenerateTemplate(){
       <button class="btn btn-ghost btn-sm" onclick="closeSummaryModal()">Cancel</button>
       <button class="btn btn-ghost btn-sm" onclick="previewSummary()">Preview</button>
       <button class="btn btn-primary btn-sm" onclick="saveSummaryFromModal()">Save summary</button>
+    </div>
+  </div>
+</div>
+<script>
+// ── Views ─────────────────────────────────────────────────────────────────────
+function renderViewsList(){
+  const c=document.getElementById('views-list');
+  if(!_views.length){c.innerHTML='<p class="empty-state" style="padding:12px 0 4px;">No views configured.</p>';return;}
+  const sorted=_views.map((v,i)=>({...v,_i:i})).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  c.innerHTML=sorted.map(v=>`<div class="ind-row">
+    <span class="ind-name">${v.name||''}</span>
+    <span class="ind-meta">source: ${v.source||'main'}${v.join_parent?' · join: '+v.join_parent.join(', '):''}${v.group_by?' · group by: '+v.group_by:''}${(v.columns||[]).length?' · '+v.columns.length+' col override(s)':''}</span>
+    <button class="btn btn-ghost btn-sm" onclick="openViewModal(${v._i})">Edit</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteView(${v._i})">Delete</button>
+  </div>`).join('');
+}
+function deleteView(i){if(!confirm('Delete view "'+(_views[i]||{}).name+'"?'))return;_views.splice(i,1);renderViewsList();}
+function openViewModal(i){
+  _editViewIdx=i;
+  document.getElementById('vm-modal-title').textContent=i===null?'Add view':'Edit view';
+  document.getElementById('vm-name').value='';
+  document.getElementById('vm-source').value='main';
+  document.getElementById('vm-join-parent').value='';
+  document.getElementById('vm-filter').value='';
+  document.getElementById('vm-group-by').value='';
+  document.getElementById('vm-question').value='';
+  document.getElementById('vm-agg').value='sum';
+  document.getElementById('vm-preview-area').innerHTML='';
+  document.getElementById('vm-col-editor').innerHTML='';
+  document.getElementById('vm-preview-file').value='';
+  if(i!==null){
+    const v=_views[i];
+    document.getElementById('vm-name').value=v.name||'';
+    document.getElementById('vm-source').value=v.source||'main';
+    document.getElementById('vm-join-parent').value=(v.join_parent||[]).join(', ');
+    document.getElementById('vm-filter').value=v.filter||'';
+    document.getElementById('vm-group-by').value=v.group_by||'';
+    document.getElementById('vm-question').value=v.question||'';
+    document.getElementById('vm-agg').value=v.agg||'sum';
+    if((v.columns||[]).length) _renderColEditor(v.columns);
+  }
+  document.getElementById('view-modal').style.display='flex';
+  loadViewPreviewFileOptions();
+}
+function closeViewModal(){document.getElementById('view-modal').style.display='none';}
+function _buildViewFromModal(){
+  const v={name:document.getElementById('vm-name').value.trim(),source:document.getElementById('vm-source').value.trim()||'main'};
+  const jp=document.getElementById('vm-join-parent').value.trim();
+  if(jp)v.join_parent=jp.split(',').map(s=>s.trim()).filter(Boolean);
+  const f=document.getElementById('vm-filter').value.trim();if(f)v.filter=f;
+  const gb=document.getElementById('vm-group-by').value.trim();if(gb)v.group_by=gb;
+  const q=document.getElementById('vm-question').value.trim();if(q)v.question=q;
+  const agg=document.getElementById('vm-agg').value;if(agg&&agg!=='sum')v.agg=agg;
+  // Collect column overrides from editor
+  const rows=document.querySelectorAll('#vm-col-editor .vm-col-row');
+  const cols=[];
+  rows.forEach(row=>{
+    const orig=row.dataset.orig;
+    const rename=row.querySelector('.vm-rename').value.trim();
+    const type=row.querySelector('.vm-type').value;
+    const entry={name:orig};
+    if(rename&&rename!==orig)entry.rename=rename;
+    if(type)entry.type=type;
+    if(entry.rename||entry.type)cols.push(entry);
+    else cols.push({name:orig});
+  });
+  if(cols.length)v.columns=cols;
+  return v;
+}
+function saveViewFromModal(){
+  const v=_buildViewFromModal();
+  if(!v.name){alert('View name is required');return;}
+  if(_editViewIdx===null)_views.push(v);
+  else _views[_editViewIdx]=v;
+  renderViewsList();
+  closeViewModal();
+}
+function _renderColEditor(cols){
+  const container=document.getElementById('vm-col-editor');
+  container.innerHTML='<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Column overrides — rename or set type:</div>'
+    +cols.map(cs=>`<div class="vm-col-row" data-orig="${cs.name}" style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+      <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${cs.name}">${cs.name}</span>
+      <input class="vm-rename" placeholder="rename (optional)" value="${cs.rename||cs.name}" style="flex:1;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+      <select class="vm-type" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+        <option value="" ${!cs.type?'selected':''}>auto</option>
+        <option value="text" ${cs.type==='text'?'selected':''}>text</option>
+        <option value="number" ${cs.type==='number'?'selected':''}>number</option>
+        <option value="date" ${cs.type==='date'?'selected':''}>date</option>
+      </select>
+    </div>`).join('');
+}
+async function loadViewPreviewFileOptions(){
+  try{
+    const res=await fetch('/api/data/sessions');const data=await res.json();
+    _previewSessions=data.sessions||[];
+    const sel=document.getElementById('vm-preview-file');
+    sel.innerHTML='<option value="">— auto-detect —</option>';
+    _previewSessions.forEach((s,i)=>{const o=document.createElement('option');o.value=s.session_id;o.textContent=s.label+(i===0?' (latest)':'');sel.appendChild(o);});
+  }catch(e){}
+}
+async function previewView(){
+  const v=_buildViewFromModal();
+  const parea=document.getElementById('vm-preview-area');
+  if(!v.name&&!v.source){parea.innerHTML='<span style="color:#dc2626;">Configure source first.</span>';return;}
+  parea.innerHTML='<span style="color:var(--muted);">Loading preview…</span>';
+  const selFile=document.getElementById('vm-preview-file').value||null;
+  const sessions=window._previewSessions||[];
+  const sessionInfo=selFile?sessions.find(s=>s.session_id===selFile):null;
+  const dataFile=sessionInfo&&sessionInfo.main_file?sessionInfo.main_file:null;
+  const sampleN=parseInt(document.getElementById('vm-sample-n').value)||200;
+  try{
+    const res=await fetch('/api/views/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({view:v,data_file:dataFile,sample_n:sampleN})});
+    const data=await res.json();
+    if(!res.ok){parea.innerHTML=`<span style="color:#dc2626;">${data.detail||'Preview failed'}</span>`;return;}
+    // Render column editor from detected types (merge with existing col_specs)
+    const existingCols=(v.columns||[]);
+    const mergedCols=data.columns.map(ci=>{
+      const ex=existingCols.find(e=>e.name===ci.name||(e.rename&&e.rename===ci.name));
+      return{name:ci.name,type:ex?ex.type||'':ci.detected_type==='number'?'number':ci.detected_type==='date'?'date':'',rename:ex?ex.rename||'':''};
+    });
+    _renderColEditor(mergedCols);
+    // Render data table
+    const cols=data.columns.map(c=>c.name);
+    const rows=data.data;
+    const tableHtml=`<div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:4px;margin-top:8px;">
+      <table style="border-collapse:collapse;font-size:11px;width:100%;white-space:nowrap;">
+        <thead style="position:sticky;top:0;background:var(--surface);z-index:1;">
+          <tr>${cols.map(c=>`<th style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:left;color:var(--muted);">${c}</th>`).join('')}</tr>
+        </thead>
+        <tbody>
+          ${rows.map((r,ri)=>`<tr style="background:${ri%2===0?'var(--bg)':'var(--surface)'};">
+            ${cols.map(c=>`<td style="padding:3px 8px;border-bottom:1px solid var(--border);">${r[c]!=null?r[c]:''}</td>`).join('')}
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">Showing ${rows.length} of ${data.n_rows.toLocaleString()} rows</div>`;
+    parea.innerHTML=tableHtml;
+  }catch(e){parea.innerHTML=`<span style="color:#dc2626;">Error: ${e.message}</span>`;}
+}
+</script>
+<div id="view-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeViewModal()">
+  <div class="modal" style="width:560px;max-height:90vh;display:flex;flex-direction:column;">
+    <div class="modal-header">
+      <h3 id="vm-modal-title">Add view</h3>
+      <button onclick="closeViewModal()">✕</button>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;flex:1;">
+      <div class="form-row"><label>Name</label><input id="vm-name" placeholder="e.g. villages_with_dept"></div>
+      <div class="form-row"><label>Source</label><input id="vm-source" placeholder="main or repeat group path e.g. household/members" value="main"></div>
+      <div class="form-row"><label>Join parent</label><input id="vm-join-parent" placeholder="Comma-separated columns from main table e.g. Departement, Region"></div>
+      <div class="form-row"><label>Filter</label><input id="vm-filter" placeholder="pandas .query() e.g. NumStudents > 0"></div>
+      <div style="font-size:11px;color:var(--muted);margin:6px 0 10px;">Aggregation (optional — collapses to one row per group)</div>
+      <div class="form-row"><label>Group by</label><input id="vm-group-by" placeholder="Column to group on e.g. Departement"></div>
+      <div class="form-row"><label>Question</label><input id="vm-question" placeholder="Column to aggregate e.g. Number of Students"></div>
+      <div class="form-row"><label>Agg</label>
+        <select id="vm-agg" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+          <option value="sum">sum</option><option value="mean">mean</option><option value="count">count</option><option value="max">max</option><option value="min">min</option>
+        </select>
+      </div>
+      <div id="vm-col-editor" style="margin-top:10px;"></div>
+      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <label style="font-size:12px;color:var(--muted);">Data session</label>
+          <select id="vm-preview-file" style="padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);flex:1;min-width:0;" onchange=""></select>
+          <label style="font-size:12px;color:var(--muted);">Rows</label>
+          <input id="vm-sample-n" type="number" value="200" min="10" max="2000" style="width:70px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+        </div>
+        <div id="vm-preview-area"></div>
+      </div>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="closeViewModal()">Cancel</button>
+      <button class="btn btn-ghost btn-sm" onclick="previewView()">Preview</button>
+      <button class="btn btn-primary btn-sm" onclick="saveViewFromModal()">Save view</button>
     </div>
   </div>
 </div>

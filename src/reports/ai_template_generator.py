@@ -241,6 +241,20 @@ def _user_prompt(cfg: Dict, description: str, pages: int, language: str, summary
             lines.append(f"  - {s['name']} ({stat}): {detail}")
         lines.append("")
 
+    # Named views — inform LLM of pre-built data tables so it can note them in chart hints
+    views = cfg.get("views", [])
+    if views:
+        lines.append("Named data views (virtual tables used as chart/summary sources):")
+        for v in views:
+            name = v.get("name", "")
+            gb   = v.get("group_by", "")
+            q_v  = v.get("question", "")
+            desc = f"source: {v.get('source', 'main')}"
+            if v.get("join_parent"): desc += f", joined with {', '.join(v['join_parent'])}"
+            if gb and q_v:           desc += f", {v.get('agg','sum')}({q_v}) by {gb}"
+            lines.append(f"  - {name}: {desc}")
+        lines.append("")
+
     # Improvement 1 — pass actual question labels grouped by category
     questions = cfg.get("questions", [])
     if questions:
