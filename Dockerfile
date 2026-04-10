@@ -247,6 +247,35 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "Return JSON only, no markdown fences."
         )
         user = f"Available columns:\n{labels}\n\nRequest: {prompt}\n\nRemember: questions array values must be exact column names from the numbered list above."
+    elif kind == "view":
+        # Also collect repeat group info from questions
+        repeat_groups: dict = {}
+        for q in questions:
+            rg = q.get("repeat_group") if q else None
+            if rg:
+                label = q.get("export_label") or q.get("label") or q.get("kobo_key", "")
+                repeat_groups.setdefault(rg, []).append(label)
+        repeat_info = ""
+        if repeat_groups:
+            parts = [f"{rg}: {', '.join(cols)}" for rg, cols in repeat_groups.items()]
+            repeat_info = "\n\nRepeat groups (use source: 'group/path'):\n" + "\n".join(parts)
+        system = (
+            "You are a data engineer. Given survey columns and a description, return a single view "
+            "config as JSON with keys: name, source, join_parent (array, optional), filter (string, optional), "
+            "group_by (string, optional), question (string, optional), agg (string, optional), columns (array, optional). "
+            "A view is a named virtual table: it starts from a source (main table or a repeat group path), "
+            "optionally joins parent columns into repeat rows, optionally filters rows, and optionally collapses "
+            "to one row per group via group_by + question + agg. "
+            "source: use 'main' for the submissions table, or a repeat group path string (e.g. 'household/members'). "
+            "join_parent: array of main-table column names to bring into a repeat-group source. Only valid when source != 'main'. "
+            "filter: pandas .query() expression applied after the join (e.g. 'NumStudents > 0'). "
+            "group_by + question + agg: optional aggregation — group_by is the column to group on, question is the numeric column to aggregate, agg is sum|mean|count|max|min (default sum). "
+            "columns: optional array of {name, rename, type} objects to rename or cast columns. type: text|number|date. "
+            "name must be snake_case. "
+            "CRITICAL: join_parent values, group_by, and question must be exact column names from the provided list. "
+            "Return JSON only, no markdown fences."
+        )
+        user = f"Available columns:\n{labels}{repeat_info}\n\nRequest: {prompt}\n\nRemember: join_parent, group_by, and question must be exact column names from the lists above."
     else:
         system = (
             "You are a data analyst. Given survey columns with their categories and a description, return a single indicator "
@@ -3108,19 +3137,65 @@ function saveViewFromModal(){
   renderViewsList();
   closeViewModal();
 }
+function _selOpt(val,cur){return val===cur?"selected":"";}
 function _renderColEditor(cols){
-  const container=document.getElementById('vm-col-editor');
-  container.innerHTML='<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Column overrides — rename or set type:</div>'
-    +cols.map(cs=>`<div class="vm-col-row" data-orig="${cs.name}" style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
-      <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${cs.name}">${cs.name}</span>
-      <input class="vm-rename" placeholder="rename (optional)" value="${cs.rename||cs.name}" style="flex:1;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-      <select class="vm-type" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-        <option value="" ${!cs.type?'selected':''}>auto</option>
-        <option value="text" ${cs.type==='text'?'selected':''}>text</option>
-        <option value="number" ${cs.type==='number'?'selected':''}>number</option>
-        <option value="date" ${cs.type==='date'?'selected':''}>date</option>
-      </select>
-    </div>`).join('');
+  const container=document.getElementById("vm-col-editor");
+  const rows=cols.map(function(cs){
+    const name=cs.name||"";
+    const rename=cs.rename||name;
+    const t=cs.type||"";
+    return "<div class=\"vm-col-row\" data-orig=\""+name+"\" style=\"display:flex;gap:6px;align-items:center;margin-bottom:4px;\">"
+      +"<span style=\"flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;\" title=\""+name+"\">"+name+"</span>"
+      +"<input class=\"vm-rename\" placeholder=\"rename (optional)\" value=\""+rename+"\" style=\"flex:1;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);\">"
+      +"<select class=\"vm-type\" style=\"padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);\">"
+      +"<option value=\"\" "+_selOpt("",t)+">auto</option>"
+      +"<option value=\"text\" "+_selOpt("text",t)+">text</option>"
+      +"<option value=\"number\" "+_selOpt("number",t)+">number</option>"
+      +"<option value=\"date\" "+_selOpt("date",t)+">date</option>"
+      +"</select></div>";
+  });
+  container.innerHTML="<div style=\"font-size:11px;color:var(--muted);margin-bottom:6px;\">Column overrides — rename or set type:</div>"+rows.join("");
+}
+function switchViewModalTab(tab){
+  document.getElementById('vm-form-view').style.display=tab==='form'?'block':'none';
+  document.getElementById('vm-ai-view').style.display=tab==='ai'?'block':'none';
+  document.getElementById('vm-preview-btn').style.display=tab==='form'?'':'none';
+  document.getElementById('vm-btn-form').classList.toggle('active',tab==='form');
+  document.getElementById('vm-btn-ai').classList.toggle('active',tab==='ai');
+}
+async function suggestView(){
+  const prompt=document.getElementById('vm-ai-prompt').value.trim();
+  if(!prompt){alert('Please describe the view you want.');return;}
+  const btn=document.getElementById('vm-ai-btn');
+  const statusEl=document.getElementById('vm-ai-status');
+  btn.disabled=true;statusEl.textContent='Thinking…';statusEl.style.color='var(--muted)';
+  document.getElementById('vm-ai-result').style.display='none';
+  try{
+    const res=await fetch('/api/ai/suggest',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({kind:'view',prompt,questions:_questions})});
+    const data=await res.json();
+    if(res.ok&&data.ok){
+      document.getElementById('vm-ai-result-pre').textContent=JSON.stringify(data.result,null,2);
+      document.getElementById('vm-ai-result').style.display='block';
+      statusEl.textContent='';window._aiViewSuggestion=data.result;
+    }else{
+      statusEl.textContent=data.message||data.detail||'Failed';statusEl.style.color='#dc2626';
+    }
+  }catch(e){statusEl.textContent='Error: '+e.message;statusEl.style.color='#dc2626';}
+  btn.disabled=false;
+}
+function acceptAiView(){
+  const v=window._aiViewSuggestion;
+  if(!v)return;
+  document.getElementById('vm-name').value=v.name||'';
+  document.getElementById('vm-source').value=v.source||'main';
+  document.getElementById('vm-join-parent').value=(v.join_parent||[]).join(', ');
+  document.getElementById('vm-filter').value=v.filter||'';
+  document.getElementById('vm-group-by').value=v.group_by||'';
+  document.getElementById('vm-question').value=v.question||'';
+  document.getElementById('vm-agg').value=v.agg||'sum';
+  if((v.columns||[]).length)_renderColEditor(v.columns);
+  switchViewModalTab('form');
 }
 async function loadViewPreviewFileOptions(){
   try{
@@ -3147,27 +3222,27 @@ async function previewView(){
     if(!res.ok){parea.innerHTML=`<span style="color:#dc2626;">${data.detail||'Preview failed'}</span>`;return;}
     // Render column editor from detected types (merge with existing col_specs)
     const existingCols=(v.columns||[]);
-    const mergedCols=data.columns.map(ci=>{
-      const ex=existingCols.find(e=>e.name===ci.name||(e.rename&&e.rename===ci.name));
-      return{name:ci.name,type:ex?ex.type||'':ci.detected_type==='number'?'number':ci.detected_type==='date'?'date':'',rename:ex?ex.rename||'':''};
+    const mergedCols=data.columns.map(function(ci){
+      const ex=existingCols.find(function(e){return e.name===ci.name||(e.rename&&e.rename===ci.name);});
+      const dt=ci.detected_type;
+      const inferredType=dt==="number"?"number":dt==="date"?"date":"";
+      return{name:ci.name,type:ex?(ex.type||""):inferredType,rename:ex?(ex.rename||""):""};
     });
     _renderColEditor(mergedCols);
     // Render data table
-    const cols=data.columns.map(c=>c.name);
+    const cols=data.columns.map(function(c){return c.name;});
     const rows=data.data;
-    const tableHtml=`<div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:4px;margin-top:8px;">
-      <table style="border-collapse:collapse;font-size:11px;width:100%;white-space:nowrap;">
-        <thead style="position:sticky;top:0;background:var(--surface);z-index:1;">
-          <tr>${cols.map(c=>`<th style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:left;color:var(--muted);">${c}</th>`).join('')}</tr>
-        </thead>
-        <tbody>
-          ${rows.map((r,ri)=>`<tr style="background:${ri%2===0?'var(--bg)':'var(--surface)'};">
-            ${cols.map(c=>`<td style="padding:3px 8px;border-bottom:1px solid var(--border);">${r[c]!=null?r[c]:''}</td>`).join('')}
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">Showing ${rows.length} of ${data.n_rows.toLocaleString()} rows</div>`;
+    const thHtml=cols.map(function(c){return "<th style=\"padding:4px 8px;border-bottom:1px solid var(--border);text-align:left;color:var(--muted);\">"+c+"</th>";}).join("");
+    const tbHtml=rows.map(function(r,ri){
+      const bg=ri%2===0?"var(--bg)":"var(--surface)";
+      const tds=cols.map(function(c){const v=r[c]!=null?r[c]:"";return "<td style=\"padding:3px 8px;border-bottom:1px solid var(--border);\">"+v+"</td>";}).join("");
+      return "<tr style=\"background:"+bg+"\">"+tds+"</tr>";
+    }).join("");
+    const tableHtml="<div style=\"overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:4px;margin-top:8px;\">"
+      +"<table style=\"border-collapse:collapse;font-size:11px;width:100%;white-space:nowrap;\">"
+      +"<thead style=\"position:sticky;top:0;background:var(--surface);z-index:1;\"><tr>"+thHtml+"</tr></thead>"
+      +"<tbody>"+tbHtml+"</tbody></table></div>"
+      +"<div style=\"font-size:11px;color:var(--muted);margin-top:4px;\">Showing "+rows.length+" of "+data.n_rows.toLocaleString()+" rows</div>";
     parea.innerHTML=tableHtml;
   }catch(e){parea.innerHTML=`<span style="color:#dc2626;">Error: ${e.message}</span>`;}
 }
@@ -3176,9 +3251,13 @@ async function previewView(){
   <div class="modal" style="width:560px;max-height:90vh;display:flex;flex-direction:column;">
     <div class="modal-header">
       <h3 id="vm-modal-title">Add view</h3>
+      <div class="config-view-toggle" style="margin-right:8px;">
+        <button class="view-btn active" id="vm-btn-form" onclick="switchViewModalTab('form')">Form</button>
+        <button class="view-btn" id="vm-btn-ai" onclick="switchViewModalTab('ai')">AI</button>
+      </div>
       <button onclick="closeViewModal()">✕</button>
     </div>
-    <div class="modal-body" style="overflow-y:auto;flex:1;">
+    <div id="vm-form-view" class="modal-body" style="overflow-y:auto;flex:1;">
       <div class="form-row"><label>Name</label><input id="vm-name" placeholder="e.g. villages_with_dept"></div>
       <div class="form-row"><label>Source</label><input id="vm-source" placeholder="main or repeat group path e.g. household/members" value="main"></div>
       <div class="form-row"><label>Join parent</label><input id="vm-join-parent" placeholder="Comma-separated columns from main table e.g. Departement, Region"></div>
@@ -3202,9 +3281,22 @@ async function previewView(){
         <div id="vm-preview-area"></div>
       </div>
     </div>
+    </div>
+    <div id="vm-ai-view" class="modal-body" style="display:none;overflow-y:auto;flex:1;">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Describe the view you need — AI will generate the config and populate the form.</p>
+      <textarea id="vm-ai-prompt" rows="3" placeholder="e.g. A table of villages joined with their department from the main table, filtered to records with students, grouped by department summing the number of students" style="width:100%;box-sizing:border-box;padding:8px;font-size:13px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);resize:vertical;"></textarea>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
+        <button class="btn btn-primary btn-sm" id="vm-ai-btn" onclick="suggestView()">✦ Generate</button>
+        <span id="vm-ai-status" style="font-size:12px;color:var(--muted);"></span>
+      </div>
+      <div id="vm-ai-result" style="display:none;margin-top:10px;">
+        <pre id="vm-ai-result-pre" style="font-size:11px;color:var(--muted);white-space:pre-wrap;word-break:break-all;margin-bottom:10px;"></pre>
+        <button class="btn btn-primary btn-sm" onclick="acceptAiView()">✓ Accept &amp; populate form</button>
+      </div>
+    </div>
     <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="closeViewModal()">Cancel</button>
-      <button class="btn btn-ghost btn-sm" onclick="previewView()">Preview</button>
+      <button class="btn btn-ghost btn-sm" id="vm-preview-btn" onclick="previewView()">Preview</button>
       <button class="btn btn-primary btn-sm" onclick="saveViewFromModal()">Save view</button>
     </div>
   </div>
