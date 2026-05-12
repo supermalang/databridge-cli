@@ -1,0 +1,83 @@
+{
+  "name": "databridge-cli",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "remoteUser": "vscode",
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "installOhMyZsh": true,
+      "configureZshAsDefaultShell": true
+    }
+  },
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    "CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS": "true",
+    "PYTHONUNBUFFERED": "1",
+    "PLAYWRIGHT_BROWSERS_PATH": "/home/vscode/.cache/ms-playwright"
+  },
+  "mounts": [
+    //"source=claude-config,target=/home/vscode/.claude,type=volume",
+    //"source=claude-skills,target=/home/vscode/.claude/skills,type=volume",
+    "source=npm-global,target=/home/vscode/.npm-global,type=volume",
+    "source=zsh-history,target=/home/vscode/.zsh_history,type=volume"
+  ],
+  "forwardPorts": [3846, 9323],
+  "portsAttributes": {
+    "3846": {
+      "label": "vibe-annotations",
+      "onAutoForward": "silent"
+    },
+    "9323": {
+      "label": "Playwright report",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "npm install -g --prefix=/home/vscode/.npm-global @anthropic-ai/claude-code @playwright/mcp vibe-annotations-server typescript tsx && npx --yes playwright install chromium --with-deps && claude plugin marketplace add https://github.com/obra/superpowers.git && claude plugin marketplace add anthropics/claude-plugins-official && claude plugin install superpowers@superpowers-dev && mkdir -p ~/.claude/skills && ([ -d ~/.claude/skills/superpowers ] || git clone --depth=1 https://github.com/obra/superpowers.git ~/.claude/skills/superpowers) && { [ -d \"$PWD/.claude/skills/impeccable\" ] && ln -sfn \"$PWD/.claude/skills/impeccable\" ~/.claude/skills/impeccable || true; }",
+  "postStartCommand": "vibe-annotations-server start >/dev/null 2>&1 & printf '\\n\\xf0\\x9f\\x9a\\x80 Dev container ready\\n   claude                    \\xe2\\x86\\x92 start Claude Code\\n   pytest                    \\xe2\\x86\\x92 run tests\\n   (vibe-annotations on :3846)\\n\\n'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "ms-playwright.playwright",
+        "esbenp.prettier-vscode",
+        "eamodio.gitlens",
+        "mhutchie.git-graph",
+        "GitHub.vscode-pull-request-github",
+        "usernamehw.errorlens",
+        "christian-kohler.path-intellisense",
+        "streetsidesoftware.code-spell-checker",
+        "mikestead.dotenv",
+        "yzhang.markdown-all-in-one"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll": "explicit"
+        },
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+          }
+        },
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  }
+}
