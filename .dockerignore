@@ -1,8 +1,0 @@
-.env
-config.yml
-data/
-reports/
-__pycache__/
-*.pyc
-.git/
-.DS_Store

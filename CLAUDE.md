@@ -6,13 +6,38 @@ This file gives Claude Code full context about this project.
 
 ## What this project does
 
-**kobo-reporter** is a CLI tool that:
+**kobo-reporter** is a CLI + web tool that:
 1. Fetches survey form schemas from Kobo/Ona platforms
 2. Lets the user configure which questions to extract, how to visualize them, and where to export
 3. Downloads submission data, applies filters, and exports to file or database
 4. Generates Word reports (.docx) with embedded charts and editable text sections
 
-Everything is driven by a single `config.yml` file.
+Everything is driven by a single `config.yml` file. The web UI is a React app talking to a FastAPI backend; both run on the same host (no Docker required).
+
+---
+
+## Architecture at a glance
+
+Three layers in two languages, all running on the same machine inside the dev container.
+
+| Layer | Language | Lives in | What it does |
+|---|---|---|---|
+| **CLI + data + reports** | Python (pandas, matplotlib, docxtpl) | `src/` | All real work: fetch schemas, download submissions, apply filters, render 21 chart types, fill Word templates |
+| **HTTP API + log streamer** | Python (FastAPI + uvicorn) | `web/main.py` | Exposes `/api/*` REST endpoints, runs CLI commands as subprocesses and streams stdout as SSE |
+| **Web UI** | JSX/React (compiled by Vite) | `frontend/src/` → `frontend/dist/` | Six-tab dashboard that calls `/api/*`; authored as `.jsx` + `styles.css`, shipped as plain HTML/JS |
+
+**Why `web/` and `frontend/` are separate folders:**
+- `web/` is a Python package — FastAPI imports it (`from web.main import app`). It needs `__init__.py` and Python-importable structure.
+- `frontend/` is a Vite project root — owns `package.json`, `node_modules/`, `vite.config.js`, and its own entry `index.html`. Vite assumes it owns its directory.
+
+Mixing them would mean either npm crawling Python files or Python's import machinery sitting next to `node_modules/`. The split is the standard layout for a Python-backend + JS-frontend project.
+
+**Two run modes, no Docker:**
+
+| Mode | Command | Ports | When to use |
+|---|---|---|---|
+| Dev (HMR) | `./scripts/dev.sh` | uvicorn `:8000` + vite `:51730` (proxies `/api`) | UI iteration — saves rebuild in ~2s |
+| Prod-like | `./scripts/serve.sh` | uvicorn `:8000` only (serves built React + API) | Demo, share, pre-deploy |
 
 ---
 
@@ -21,25 +46,56 @@ Everything is driven by a single `config.yml` file.
 ```
 databridge-cli/
 ├── CLAUDE.md                         ← you are here
-├── Dockerfile                        ← web files (main.py, index.html) generated inline via heredoc
-├── docker-compose.yml                ← app + ttyd terminal, Traefik labels (no Traefik service)
-├── requirements.txt                  ← Python deps
+├── requirements.txt                  ← Python deps (CLI + FastAPI)
 ├── sample.config.yml                 ← config template (copy to config.yml)
 ├── .env.example                      ← env vars template (copy to .env)
 ├── TEMPLATE_GUIDE.md                 ← manual Word template instructions
 │
-├── src/
+├── src/                              ← CLI code
 │   ├── data/
 │   │   ├── make.py                   ← CLI entry point (click group, 4 commands)
 │   │   ├── extract.py                ← KoboClient — API auth, pagination, schema fetch
 │   │   ├── questions.py              ← fetch schema → auto-categorize → write to config.yml
-│   │   └── transform.py             ← flatten submissions, apply filters, multi-target export
+│   │   └── transform.py              ← flatten submissions, apply filters, multi-target export
 │   ├── reports/
 │   │   ├── builder.py                ← ReportBuilder — renders Word template via docxtpl
 │   │   ├── charts.py                 ← 21 chart types via matplotlib (CHART_DISPATCH dict)
-│   │   └── template_generator.py    ← auto-generates starter .docx from config
+│   │   └── template_generator.py     ← auto-generates starter .docx from config
 │   └── utils/
 │       └── config.py                 ← load_config(), write_config(), env: var resolution
+│
+├── web/
+│   ├── __init__.py
+│   └── main.py                       ← FastAPI app: /api/* endpoints, SSE log streaming,
+│                                       serves frontend/dist/ in prod-like mode
+│
+├── frontend/                         ← React + Vite (the UI)
+│   ├── package.json                  ← deps: react, react-dom, vite, js-yaml
+│   ├── vite.config.js                ← dev server on :51730, proxies /api & /terminal → :8000
+│   ├── index.html                    ← Vite entry — mounts <App />
+│   └── src/
+│       ├── main.jsx                  ← ReactDOM root + ToastProvider
+│       ├── App.jsx                   ← Topbar + tab nav + project switcher
+│       ├── styles.css                ← Design tokens + component styles (all CSS lives here)
+│       ├── lib/config.js             ← loadConfig / saveConfigPatch / saveConfigText helpers
+│       ├── hooks/useCommand.js       ← POST /api/run/* + parse SSE stream into log lines
+│       ├── components/
+│       │   ├── BottomTerminal.jsx    ← sticky bottom log/terminal with sessions + filter
+│       │   ├── FileTable.jsx         ← reusable file-listing table
+│       │   ├── Modal.jsx             ← reusable modal overlay
+│       │   ├── Sparkline.jsx         ← small SVG sparkline
+│       │   └── Toast.jsx             ← ToastProvider + useToast() hook
+│       └── pages/
+│           ├── Dashboard.jsx         ← greeting + pipeline strip + KPIs + runs + AI queue + usage
+│           ├── Sources.jsx           ← platform picker + connection + AI narrative + output
+│           ├── Questions.jsx         ← group tree + searchable, inline-editable export labels
+│           ├── Composition.jsx       ← filters + charts + indicators + summaries + views + templates
+│           ├── Reports.jsx           ← generated .docx files + data sessions
+│           └── Templates.jsx         ← .docx template list (standalone tab)
+│
+├── scripts/
+│   ├── dev.sh                        ← uvicorn (:8000) + vite (:51730) together with HMR
+│   └── serve.sh                      ← npm run build + uvicorn — single-port prod-like
 │
 ├── data/
 │   ├── raw/                          ← gitignored
@@ -52,9 +108,39 @@ databridge-cli/
 
 ---
 
+## Dev workflow
+
+**For UI work** — both servers, HMR on the React side:
+
+```bash
+./scripts/dev.sh
+```
+
+Runs FastAPI on `:8000` (with `--reload`) and Vite on `:51730` (with HMR). Vite proxies
+`/api/*` and `/terminal/` to uvicorn, so you hit `:51730` from the dev container's
+forwarded port and everything works end-to-end. First run installs npm deps automatically.
+
+**For a prod-like local run** — single port, no HMR:
+
+```bash
+./scripts/serve.sh
+```
+
+Runs `npm run build` once, then uvicorn on `:8000` serving the built React bundle from
+`frontend/dist/` plus all `/api/*` routes. Override with `HOST=… PORT=…` env vars.
+
+**First-time setup in this dev container:**
+
+```bash
+pip install -r requirements.txt
+# (npm deps install automatically the first time you run dev.sh / serve.sh)
+```
+
+---
+
 ## Four CLI commands
 
-All commands run from project root. Set `PYTHONPATH=.` or run via Docker.
+All commands run from project root. Set `PYTHONPATH=.`.
 
 ```bash
 # 1. Fetch questions from Kobo/Ona form → writes into config.yml
@@ -76,6 +162,9 @@ python3 src/data/make.py build-report --split-by Site                  # one rep
 python3 src/data/make.py build-report --split-by Site --split-sample 3 # first 3 sites only
 ```
 
+The same four commands are exposed in the web UI as POST `/api/run/{command}` with
+SSE-style streamed logs.
+
 ---
 
 ## config.yml — full annotated structure
@@ -86,7 +175,7 @@ api:
   token: env:KOBO_TOKEN                    # env: prefix reads from environment variable
 
 form:
-  uid: aAbBcCdDeEfFgGhH                   # Kobo/Ona asset UID
+  uid: aAbBcCdDeEfFgGhH                    # Kobo/Ona asset UID
   alias: monitoring_survey                 # used as filename prefix in exports
 
 # Auto-filled by fetch-questions — user then edits (delete unwanted, fix categories)
@@ -106,49 +195,56 @@ filters:
   - "submission_date >= '2025-01-01'"
 
 # Named virtual tables — computed once per render, reused by charts/summaries/indicators.
-# Eliminates redundant join+filter work when multiple items share the same source.
-# Reference a view with source: <view_name> on any chart, summary, or indicator.
 views:
-  - name: villages_with_dept            # enriched view: repeat + parent fields joined in
+  - name: villages_with_dept
     source: villages                    # repeat group path (or "main")
-    join_parent: [Departement, Region]  # columns to bring in from main table
-    filter: "Number of Students > 0"   # optional pandas .query() filter
+    join_parent: [Departement, Region]
+    filter: "Number of Students > 0"
 
-  - name: dept_student_totals           # aggregated view: one row per department
+  - name: dept_student_totals           # aggregated view
     source: villages
     join_parent: [Departement]
     group_by: Departement
-    question: Number of Students        # column to aggregate
-    agg: sum                            # sum | mean | count | max | min (default: sum)
+    question: Number of Students
+    agg: sum                            # sum | mean | count | max | min
 
 # Each chart → {{ chart_<n> }} placeholder in Word template
 charts:
-  - name: satisfaction_overview            # → {{ chart_satisfaction_overview }} in template
+  - name: satisfaction_overview
     title: Overall satisfaction
-    type: horizontal_bar                   # see full list below
-    questions: [Satisfaction]              # references export_label values
+    type: horizontal_bar
+    questions: [Satisfaction]
     options:
       top_n: 10
       width_inches: 5.5
+
+# AI narrative (fills {{ summary_text }}, {{ observations }}, {{ recommendations }})
+ai:
+  provider: openai                      # openai | anthropic
+  model: gpt-4o
+  api_key: env:OPENAI_API_KEY
+  base_url: ""                          # optional — Azure, Groq, Mistral, Ollama
+  language: English
+  max_tokens: 1500
 
 export:
   format: csv                              # csv | json | xlsx | mysql | postgres | supabase
   output_dir: data/processed
   database:
     host: localhost
-    port: 5432                             # 5432 postgres, 3306 mysql
+    port: 5432
     name: kobo_reports
     user: env:DB_USER
     password: env:DB_PASSWORD
     table: submissions
-    # supabase_url: https://xxx.supabase.co
-    # supabase_key: env:SUPABASE_KEY
 
 report:
   template: templates/report_template.docx
   output_dir: reports
   title: Monitoring Report
   period: Q1 2025
+  filename_pattern: "{form.alias}_{period}_{split}.docx"
+  split_by: region                       # optional — generate one .docx per unique value
 ```
 
 ---
@@ -215,54 +311,37 @@ Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
 {{ period }}
 {{ n_submissions }}
 {{ generated_at }}
-{{ summary_text }}         ← intentionally left empty for collaborator editing
-{{ observations }}         ← intentionally left empty
-{{ recommendations }}      ← intentionally left empty
+{{ summary_text }}         ← AI-filled if ai: is configured, else left blank
+{{ observations }}
+{{ recommendations }}
 
 {{ ind_<name> }}        ← one per indicator in config.yml indicators section
-                            e.g. {{ ind_total_beneficiaries }} → "4,832"
-                                 {{ ind_pct_female }}          → "58.3%"
-                                 {{ ind_top_region }}          → "Nouakchott"
-
 {{ summary_<name> }}    ← one per summary in config.yml summaries section
-                            e.g. {{ summary_region_breakdown }} → "Leading response: North (45%). Others: South (30%)."
-                                 {{ summary_age_profile }}      → "n=382, mean=34.5, median=32.0, range 18.0–65.0."
-                                 {{ summary_context_analysis }} → AI-generated paragraph
-
 {{ chart_<n> }}         ← one per chart in config.yml
-                            e.g. {{ chart_satisfaction_overview }}
-
-{% for row in stats_table %}
-  {{ row.label }}  n={{ row.n }}  mean={{ row.mean }}  median={{ row.median }}
-{% endfor %}
+{{ split_value }}       ← when --split-by is set, the current group's value
 ```
 
 **Critical rule:** each `{{ chart_... }}` must be a single unbroken XML run in the .docx.
-Use `generate-template` command to auto-generate correct placeholders — never type them manually.
+Use `generate-template` to auto-generate correct placeholders — never type them manually.
 
 ---
 
-## Docker deployment
+## Web UI
 
-```bash
-cp .env.example .env              # fill KOBO_TOKEN, APP_DOMAIN, BASIC_AUTH_USERS
-cp sample.config.yml config.yml   # fill api.token, form.uid
-docker compose up -d --build
-```
+The React app under `frontend/src/pages/` has six tabs that mirror the pipeline:
 
-- Web UI: `https://<APP_DOMAIN>` — Dashboard / Config editor / Reports / Terminal tabs
-- Terminal: `https://<APP_DOMAIN>/terminal/` — ttyd web terminal, working dir `/app`
-- Requires existing Traefik with external network `traefik-public` and `websecure` entrypoint
-- `web/main.py` and `web/static/index.html` are generated inside the image via Dockerfile heredoc
-  — do **not** create a `web/` directory locally, it will conflict with the build
+| Tab | Purpose | Backend endpoints |
+|---|---|---|
+| Dashboard | Greeting + pipeline strip + KPIs + runs + AI queue + project usage | `/api/state`, `/api/run/{cmd}`, `/api/data/sessions` |
+| ① Sources | Platform picker (Ona/Kobo) · API & form · AI Narrative · Output formats | `/api/config`, `/api/ai/test` |
+| ② Questions | Group accordions with inline `export_label` editing, bulk keep/delete | `/api/questions` |
+| ③ Composition | Filters · Charts · Indicators · Summaries · Views · Templates | `/api/config`, `/api/templates` |
+| ④ Reports | Generated `.docx` reports + downloaded data sessions | `/api/reports`, `/api/data/sessions` |
+| Templates | Standalone template management (also embedded in Composition) | `/api/templates*` |
 
-Volumes mounted at runtime:
-```
-./config.yml   → /app/config.yml
-./data/        → /app/data/
-./reports/     → /app/reports/
-./templates/   → /app/templates/
-```
+The **BottomTerminal** is a sticky bottom drawer rendered on the Dashboard page: pipeline-
+run / fetch-questions log sessions plus a ttyd `shell` session (only works if you also run
+ttyd separately — not required).
 
 ---
 
@@ -280,15 +359,21 @@ if isinstance(obj, str) and obj.startswith("env:"):
 On re-run, existing `category` and `export_label` per `kobo_key` are carried over.
 New questions from the schema are appended with fresh defaults.
 
-### SSE log streaming (web/main.py — embedded in Dockerfile)
-CLI commands run as subprocesses via `asyncio.create_subprocess_exec`.
-stdout/stderr merged and streamed line-by-line via Server-Sent Events.
-`X-Accel-Buffering: no` header prevents Traefik from buffering the SSE stream.
+### SSE log streaming (web/main.py)
+CLI commands run as subprocesses via `asyncio.create_subprocess_exec`. stdout/stderr
+merged and streamed line-by-line via SSE-style frames (event: log/status/done + data: JSON).
 Only 4 whitelisted commands can be triggered — no arbitrary shell execution.
 
+The React side reads it with `fetch().body.getReader()` in `hooks/useCommand.js` (EventSource
+is GET-only).
+
+### Frontend ↔ backend wiring in dev
+Vite (`:51730`) proxies `/api/*` → uvicorn (`:8000`). All `fetch('/api/…')` calls in the
+React app go through the proxy. Same code paths work in prod-like mode (single port).
+
 ### Filter syntax (src/data/transform.py)
-Filters use `pandas.DataFrame.query()` — SQL-like expressions.
-Column names reference `export_label` values, not original `kobo_key` paths.
+Filters use `pandas.DataFrame.query()` — SQL-like expressions. Column names reference
+`export_label` values, not original `kobo_key` paths.
 
 ### Export routing (src/data/transform.py)
 ```python
@@ -300,7 +385,6 @@ Database drivers are optional imports — only install what you need.
 
 ### Chart output path
 Charts are saved to `data/processed/charts/<chart_name>.png` at `build-report` time.
-The `CHART_DIR` constant in `charts.py` controls this.
 
 ---
 
@@ -309,41 +393,38 @@ The `CHART_DIR` constant in `charts.py` controls this.
 | Variable | Required | Description |
 |---|---|---|
 | `KOBO_TOKEN` | Yes | Kobo or Ona API token |
-| `APP_DOMAIN` | Docker only | Domain for Traefik routing |
-| `BASIC_AUTH_USERS` | Docker only | htpasswd format for basic auth |
 | `DB_USER` | DB export only | Database username |
 | `DB_PASSWORD` | DB export only | Database password |
 | `SUPABASE_KEY` | Supabase only | Supabase service role key |
+| `OPENAI_API_KEY` | AI narrative (OpenAI) | API key for the AI provider |
 
 ---
 
-## Common tasks for Claude Code
+## Common tasks
 
 ### Add a new chart type
 1. Add function to `src/reports/charts.py` with signature `fn(df, questions, title, out_path, opts)`
-2. Add entry to `CHART_DISPATCH` dict at the bottom of the file
-3. Update chart type table in `TEMPLATE_GUIDE.md` and `README.md`
+2. Add entry to `CHART_DISPATCH` dict
+3. Add the type to the `CHART_TYPES` list in `frontend/src/pages/Composition.jsx`
+4. Update the chart-type table here and in `README.md`
 
 ### Add a new export target
 1. Add `_export_<target>()` function in `src/data/transform.py`
 2. Add branch in `export_data()` routing function
-3. Add optional import at top of the new function (not module level)
-4. Document new env vars in `.env.example` and `README.md`
+3. Add optional import inside the function (not module level)
+4. Add a chip in the format chip-tabs in `frontend/src/pages/Sources.jsx`
+5. Document new env vars in `.env.example`
 
 ### Add a new CLI command
 1. Add `@cli.command("command-name")` function in `src/data/make.py`
-2. Add command to `ALLOWED_COMMANDS` dict in `web/main.py` (in the Dockerfile heredoc)
-3. Add a button card in `web/static/index.html` (in the Dockerfile heredoc)
+2. Add the command name to `ALLOWED_COMMANDS` dict in `web/main.py`
+3. Expose it from the UI — either as a button in the Run-pipeline wizard
+   (`frontend/src/pages/Dashboard.jsx`) or wherever it fits
 
-### Modify the web UI or FastAPI backend
-Both `web/main.py` and `web/static/index.html` live inside the Dockerfile as heredoc blocks.
-Edit them there directly — they do not exist as separate files on disk.
+### Modify the web UI
+React components are real files in `frontend/src/`. Edit them, Vite picks up the change
+via HMR (in dev). All CSS lives in `frontend/src/styles.css` — design tokens at the top,
+component styles below.
 
-### Test locally without Docker
-```bash
-pip3 install -r requirements.txt
-pip3 install fastapi uvicorn aiofiles python-multipart
-# The web UI won't work locally (web/ isn't a real folder)
-# But the CLI works:
-PYTHONPATH=. KOBO_TOKEN=xxx python3 src/data/make.py --help
-```
+### Modify the FastAPI backend
+`web/main.py` is a real file. `uvicorn --reload` (started by `dev.sh`) restarts on save.

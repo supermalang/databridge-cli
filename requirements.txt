@@ -9,6 +9,11 @@ squarify>=0.4.3
 python-docx>=1.1.0
 docxtpl>=0.16.0
 click>=8.1.0
+# Web server (FastAPI + uvicorn) — used by web/main.py and scripts/{dev,serve}.sh
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+aiofiles>=23.2.1
 # Uncomment for database export:
 # sqlalchemy>=2.0.0
 # psycopg2-binary>=2.9.0
