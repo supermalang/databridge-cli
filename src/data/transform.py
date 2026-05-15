@@ -272,25 +272,38 @@ def apply_filters(
 
 
 def apply_computed_columns(
-    df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None
+    df: pd.DataFrame,
+    cfg: Dict,
+    repeat_tables: Dict[str, pd.DataFrame] = None,
+    *,
+    strict: bool = False,
 ) -> pd.DataFrame:
     """Append derived columns defined in config computed_columns.
 
     Two modes:
       - questions + combine : row-wise combination of main-table columns (fixed nested group)
       - from_repeat + stat  : per-submission aggregation of a repeat-group table (no row explosion)
+
+    Args:
+        strict: When True, any missing column / repeat table / bad combine raises
+                ValueError. When False (default), the issue is logged as a warning
+                and the computed column is skipped.
     """
+    def _fail(msg: str):
+        if strict:
+            raise ValueError(msg)
+        log.warning(msg)
+
     for col in cfg.get("computed_columns", []):
         name = col.get("name")
         if not name:
             continue
         try:
             if col.get("from_repeat"):
-                # --- Repeat aggregation mode ---
                 repeat_name = col["from_repeat"]
                 rdf = (repeat_tables or {}).get(repeat_name)
                 if rdf is None:
-                    log.warning(f"computed_column '{name}': repeat table '{repeat_name}' not found — skipped")
+                    _fail(f"computed_column '{name}': repeat table '{repeat_name}' not found — skipped")
                     continue
                 question = col.get("question")
                 stat = col.get("stat", "sum")
@@ -298,34 +311,35 @@ def apply_computed_columns(
                     aggregated = rdf.groupby("_parent_index").size()
                 else:
                     if question not in rdf.columns:
-                        log.warning(f"computed_column '{name}': column '{question}' not in repeat table — skipped")
+                        _fail(f"computed_column '{name}': column '{question}' not in repeat table — skipped")
                         continue
                     aggregated = rdf.groupby("_parent_index")[question].agg(stat)
                 id_col = next((c for c in ("_id", "_index", "_uuid") if c in df.columns), None)
                 if not id_col:
-                    log.warning(f"computed_column '{name}': no id column in main table — skipped")
+                    _fail(f"computed_column '{name}': no id column in main table — skipped")
                     continue
                 df[name] = df[id_col].map(aggregated).fillna(0)
                 log.info(f"Computed column '{name}' = {stat}({repeat_name}.{question or 'rows'})")
             else:
-                # --- Main-table row-wise combine mode ---
                 questions = col.get("questions", [])
                 combine = col.get("combine", "sum")
                 if not questions:
                     continue
                 missing = [q for q in questions if q not in df.columns]
                 if missing:
-                    log.warning(f"computed_column '{name}': columns not found: {missing} — skipped")
+                    _fail(f"computed_column '{name}': columns not found: {missing} — skipped")
                     continue
                 ops = {"sum": "sum", "mean": "mean", "min": "min", "max": "max"}
                 if combine not in ops:
-                    log.warning(f"computed_column '{name}': unknown combine '{combine}' — skipped")
+                    _fail(f"computed_column '{name}': unknown combine '{combine}' — skipped")
                     continue
                 numeric_cols = df[questions].apply(pd.to_numeric, errors="coerce")
                 df[name] = getattr(numeric_cols, combine)(axis=1)
                 log.info(f"Computed column '{name}' = {combine}({questions})")
+        except ValueError:
+            raise
         except Exception as e:
-            log.warning(f"computed_column '{name}' failed: {e} — skipped")
+            _fail(f"computed_column '{name}' failed: {e} — skipped")
     return df
 
 
@@ -333,6 +347,8 @@ def build_views(
     cfg: Dict,
     main_df: pd.DataFrame,
     repeat_tables: Dict[str, pd.DataFrame],
+    *,
+    strict: bool = False,
 ) -> Dict[str, pd.DataFrame]:
     """Compute named virtual tables defined in config views: section.
 
@@ -340,8 +356,17 @@ def build_views(
     and group aggregation. Results are computed once and reused by any
     chart, summary, or indicator that references the view name as source.
 
+    Args:
+        strict: When True, a view whose source/columns/filter can't resolve raises
+                ValueError. When False (default), the view is skipped with a warning.
+
     Returns a dict {view_name: DataFrame} to be merged into repeat_tables.
     """
+    def _fail(msg: str):
+        if strict:
+            raise ValueError(msg)
+        log.warning(msg)
+
     views: Dict[str, pd.DataFrame] = {}
     for v in cfg.get("views", []):
         name = v.get("name")
@@ -354,39 +379,36 @@ def build_views(
             else:
                 base = repeat_tables.get(source)
                 if base is None:
-                    log.warning(f"View '{name}': source '{source}' not found — skipped")
+                    _fail(f"View '{name}': source '{source}' not found — skipped")
                     continue
                 df = base.copy()
 
-            # Join parent fields into repeat table
             join_cols = v.get("join_parent")
             if join_cols and source != "main":
                 df = join_repeat_to_main(df, main_df, join_cols)
 
-            # Apply filter
             filter_expr = v.get("filter")
             if filter_expr:
                 try:
                     df = df.query(filter_expr)
                 except Exception as e:
-                    log.warning(f"View '{name}': filter '{filter_expr}' failed: {e} — skipped")
+                    _fail(f"View '{name}': filter '{filter_expr}' failed: {e} — skipped")
+                    continue
 
-            # Optional group aggregation → one row per group value
             group_by = v.get("group_by")
             question = v.get("question")
             if group_by and question:
                 agg_fn = v.get("agg", "sum")
                 if group_by not in df.columns:
-                    log.warning(f"View '{name}': group_by column '{group_by}' not found — skipped aggregation")
+                    _fail(f"View '{name}': group_by column '{group_by}' not found — skipped aggregation")
                 elif question not in df.columns:
-                    log.warning(f"View '{name}': question column '{question}' not found — skipped aggregation")
+                    _fail(f"View '{name}': question column '{question}' not found — skipped aggregation")
                 else:
                     numeric = pd.to_numeric(df[question], errors="coerce")
                     agg_result = numeric.groupby(df[group_by]).agg(agg_fn).reset_index()
                     agg_result.columns = [group_by, question]
                     df = agg_result
 
-            # Apply column renames and type overrides
             col_specs = v.get("columns", [])
             if col_specs:
                 rename_map = {}
@@ -413,8 +435,10 @@ def build_views(
 
             views[name] = df
             log.info(f"View '{name}' computed: {len(df)} rows, {len(df.columns)} columns")
+        except ValueError:
+            raise
         except Exception as e:
-            log.warning(f"View '{name}' failed: {e} — skipped")
+            _fail(f"View '{name}' failed: {e} — skipped")
     return views
 
 

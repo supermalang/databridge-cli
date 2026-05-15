@@ -105,3 +105,28 @@ def test_apply_filters_strict_mode_raises_on_bad_filter(config, submissions):
     config["filters"] = ["NonexistentColumn > 0"]
     with pytest.raises(ValueError, match="NonexistentColumn"):
         apply_filters(df, config, repeats, strict=True)
+
+
+def test_apply_computed_columns_strict_raises_on_missing_column(config, submissions):
+    df, repeats = load_data(submissions, config)
+    config["computed_columns"] = [
+        {"name": "bad", "questions": ["Nonexistent"], "combine": "sum"},
+    ]
+    with pytest.raises(ValueError, match="Nonexistent"):
+        apply_computed_columns(df, config, repeats, strict=True)
+
+
+def test_apply_computed_columns_strict_raises_on_missing_repeat(config, submissions):
+    df, repeats = load_data(submissions, config)
+    config["computed_columns"] = [
+        {"name": "bad", "from_repeat": "no_such_table", "question": "count"},
+    ]
+    with pytest.raises(ValueError, match="no_such_table"):
+        apply_computed_columns(df, config, repeats, strict=True)
+
+
+def test_build_views_strict_raises_on_missing_source(config, submissions):
+    df, repeats = load_data(submissions, config)
+    config["views"] = [{"name": "bad", "source": "no_such_source"}]
+    with pytest.raises(ValueError, match="no_such_source"):
+        build_views(config, df, repeats, strict=True)
