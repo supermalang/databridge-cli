@@ -6,6 +6,12 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
+# Lazy-imported in _export_sql so users without sqlalchemy installed can still
+# use file exports. Exposed at module level so tests can monkeypatch.
+create_engine = None  # set on first use
+
+VALID_IF_EXISTS = ("fail", "replace", "append")
+
 
 def _repeat_path(q: Dict) -> str:
     """Return the full slash-path to the repeat array for a question.
@@ -508,20 +514,35 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
 
 
 def _export_sql(df: pd.DataFrame, cfg: Dict, dialect: str, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
-    from sqlalchemy import create_engine
+    global create_engine
+    if create_engine is None:
+        from sqlalchemy import create_engine as _ce
+        create_engine = _ce
+
     db = cfg.get("export", {}).get("database", {})
+    if_exists = db.get("if_exists", "replace")
+    if if_exists not in VALID_IF_EXISTS:
+        raise ValueError(
+            f"export.database.if_exists must be one of {VALID_IF_EXISTS}, got '{if_exists}'"
+        )
+    if "if_exists" not in db:
+        log.warning(
+            "export.database.if_exists not set — defaulting to 'replace', which DROPS the target table on every run. "
+            "Set it explicitly (replace|append|fail) in config.yml to silence this warning."
+        )
+
     h, p = db.get("host", "localhost"), int(db.get("port", 5432 if dialect == "postgres" else 3306))
     n, u, pw, t = db.get("name"), db.get("user"), db.get("password", ""), db.get("table", "submissions")
     url = (f"postgresql+psycopg2://{u}:{pw}@{h}:{p}/{n}" if dialect == "postgres"
            else f"mysql+pymysql://{u}:{pw}@{h}:{p}/{n}?charset=utf8mb4")
     engine = create_engine(url)
-    df.to_sql(t, engine, if_exists="replace", index=False)
-    log.info(f"Data exported → {dialect}://{h}:{p}/{n}.{t}")
+    df.to_sql(t, engine, if_exists=if_exists, index=False)
+    log.info(f"Data exported → {dialect}://{h}:{p}/{n}.{t} (if_exists={if_exists})")
     if repeat_tables:
         for name, rdf in repeat_tables.items():
             safe_name = name.replace("/", "_")
-            rdf.to_sql(f"{t}_{safe_name}", engine, if_exists="replace", index=False)
-            log.info(f"Repeat group exported → {dialect}://{h}:{p}/{n}.{t}_{safe_name}")
+            rdf.to_sql(f"{t}_{safe_name}", engine, if_exists=if_exists, index=False)
+            log.info(f"Repeat group exported → {dialect}://{h}:{p}/{n}.{t}_{safe_name} (if_exists={if_exists})")
 
 
 def _export_supabase(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
