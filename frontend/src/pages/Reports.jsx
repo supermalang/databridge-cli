@@ -39,7 +39,7 @@ export default function Reports() {
   };
 
   return (
-    <>
+    <div className="page">
       <PageHeader
         eyebrow="Step 04 · Reports"
         title="Browse"
@@ -115,6 +115,6 @@ export default function Reports() {
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }

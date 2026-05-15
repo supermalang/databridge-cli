@@ -48,7 +48,7 @@ export default function Templates() {
   };
 
   return (
-    <>
+    <div className="page">
       <PageHeader
         eyebrow="Settings · Templates"
         title="Word"
@@ -110,6 +110,6 @@ export default function Templates() {
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }

@@ -9,6 +9,12 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 51730,
     strictPort: true,
+    // WSL2 / dev-container filesystems often miss native FS events, so HMR
+    // can silently stop firing. Polling is the canonical fix.
+    watch: {
+      usePolling: true,
+      interval: 200,
+    },
     proxy: {
       '/api': 'http://localhost:8000',
       '/terminal': { target: 'http://localhost:8000', ws: true },

@@ -50,30 +50,11 @@ export default function App() {
     <div className="layout">
       <header>
         <div className="brand">
-          <div className="brand-logo">D</div>
-          <h1>Databridge</h1>
-          <span className="badge">v2.0</span>
+          <h1>databridge-cli</h1>
+          <span className="badge">v1.0</span>
         </div>
 
-        <nav className="tabs-bar" style={{ borderBottom: 'none', padding: 0, flex: 1, marginLeft: 24, gap: 4 }}>
-          {TABS.map(t => (
-            <div
-              key={t.id}
-              className={`tab ${active === t.id ? 'active' : ''}`}
-              data-tab={t.id}
-              onClick={() => setActive(t.id)}
-              style={t.secondary ? { marginLeft: 'auto', color: 'var(--ink-3)', fontSize: 12.5 } : undefined}
-            >
-              {t.step && <span className="tab__num">{t.step}</span>}
-              {t.label}
-              {counts[t.id] != null && counts[t.id] > 0 && (
-                <span className="tab__num" style={{ marginLeft: 4 }}>{counts[t.id]}</span>
-              )}
-            </div>
-          ))}
-        </nav>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
           <button className="project-switcher" title="Switch project" type="button">
             <span className="project-switcher__avatar">{PROJECT.avatar}</span>
             <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
@@ -91,6 +72,24 @@ export default function App() {
           <button className="iconbtn iconbtn--avatar" title="Account">{USER.initials}</button>
         </div>
       </header>
+
+      <nav className="tabs-bar">
+        {TABS.map(t => (
+          <div
+            key={t.id}
+            className={`tab ${active === t.id ? 'active' : ''}`}
+            data-tab={t.id}
+            onClick={() => setActive(t.id)}
+            style={t.secondary ? { marginLeft: 'auto', color: 'var(--ink-3)', fontSize: 12.5 } : undefined}
+          >
+            {t.step && <span className="tab__num">{t.step}</span>}
+            {t.label}
+            {counts[t.id] != null && counts[t.id] > 0 && (
+              <span className="tab__num" style={{ marginLeft: 4 }}>{counts[t.id]}</span>
+            )}
+          </div>
+        ))}
+      </nav>
 
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
         <div className="tab-content active" id={`tab-${active}`} style={{ overflow: 'auto', flex: 1 }}>
