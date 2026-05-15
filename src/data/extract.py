@@ -13,7 +13,7 @@ class DataClient:
 
     RETRY_STATUSES = (429, 500, 502, 503, 504)
     RETRY_TOTAL = 5
-    RETRY_BACKOFF = 1.0  # 1s, 2s, 4s, 8s, 16s
+    RETRY_BACKOFF = 1.0  # urllib3 sleep schedule: 0s, 2s, 4s, 8s, 16s
 
     def __init__(self, cfg: Dict):
         api = cfg.get("api", {})

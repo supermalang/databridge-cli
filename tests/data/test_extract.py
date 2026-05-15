@@ -1,6 +1,7 @@
 """Tests for src.data.extract — HTTP retry, Session reuse, pagination."""
 import pytest
 import responses
+from requests.exceptions import RetryError
 
 from src.data.extract import KoboClient
 
@@ -35,7 +36,7 @@ def test_get_gives_up_after_max_retries(kobo_cfg):
         responses.add(responses.GET, url, status=503)
 
     client = KoboClient(kobo_cfg)
-    with pytest.raises(Exception):  # urllib3 raises MaxRetryError wrapped as RetryError
+    with pytest.raises(RetryError):
         client.get_submissions()
 
 
@@ -51,3 +52,8 @@ def test_session_is_reused_across_pages(kobo_cfg):
     # Same Session object should have been used for both requests
     assert client.session is not None
     assert len(responses.calls) == 2
+
+    # Auth header should be carried by the session on every call — fails if the
+    # session is recreated per request (the headers wouldn't be set).
+    for call in responses.calls:
+        assert call.request.headers.get("Authorization") == "Token test"
