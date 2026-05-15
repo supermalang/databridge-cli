@@ -6,6 +6,12 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
+# Lazy-imported in _export_sql so users without sqlalchemy installed can still
+# use file exports. Exposed at module level so tests can monkeypatch.
+create_engine = None  # set on first use
+
+VALID_IF_EXISTS = ("fail", "replace", "append")
+
 
 def _repeat_path(q: Dict) -> str:
     """Return the full slash-path to the repeat array for a question.
@@ -69,7 +75,12 @@ def apply_choice_labels(df: pd.DataFrame, questions: list) -> pd.DataFrame:
     return df
 
 
-def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+def load_data(
+    submissions: List[Dict],
+    cfg: Dict,
+    *,
+    strict: bool = False,
+) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """Load submissions into a main DataFrame + separate DataFrames for repeat groups.
 
     Returns:
@@ -93,12 +104,11 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
     col_map: Dict[str, str] = {}
     used_labels: Dict[str, int] = {}
     missing: List[str] = []
+    fuzzy_matches: List[Dict[str, str]] = []
     for q in main_questions:
         key = q["kobo_key"]
-        # json_normalize uses "." as separator; kobo_keys use "/" for group paths
         flat_key = key.replace("/", ".")
         label = q.get("export_label") or q.get("label") or key
-        # Deduplicate labels to avoid column collisions
         if label in used_labels:
             used_labels[label] += 1
             label = f"{label}_{used_labels[label]}"
@@ -109,8 +119,6 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
         elif key in flat.columns:
             col_map[key] = label
         else:
-            # Fallback: match by field name only (last path segment), ignoring group prefix.
-            # Handles cases where config group path differs from what the API returns.
             field_name = key.split("/")[-1]
             candidates = [
                 c for c in flat.columns
@@ -119,13 +127,9 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
                 or c.endswith(f".{field_name}")
             ]
             if len(candidates) == 1:
-                log.warning(
-                    f"kobo_key '{key}' not found; matched by field name to '{candidates[0]}'"
-                )
+                fuzzy_matches.append({"kobo_key": key, "matched_to": candidates[0], "via": "field-name"})
                 col_map[candidates[0]] = label
             else:
-                # Final fallback: unicode-normalize both sides, compare by field name.
-                # Catches e.g. kobo_key "groupe_socio-économique" vs API "groupe_socioeconomique".
                 norm_field = _norm(field_name)
                 candidates_norm = [
                     c for c in flat.columns
@@ -134,12 +138,23 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
                     or _norm(c.split(".")[-1]) == norm_field
                 ]
                 if len(candidates_norm) == 1:
-                    log.warning(
-                        f"kobo_key '{key}' matched by normalisation to '{candidates_norm[0]}'"
-                    )
+                    fuzzy_matches.append({"kobo_key": key, "matched_to": candidates_norm[0], "via": "unicode-norm"})
                     col_map[candidates_norm[0]] = label
                 else:
                     missing.append(key)
+
+    if fuzzy_matches:
+        for fm in fuzzy_matches:
+            log.warning(f"kobo_key '{fm['kobo_key']}' matched by {fm['via']} to '{fm['matched_to']}'")
+        log.warning(
+            f"{len(fuzzy_matches)} question(s) matched by fallback — verify these are the columns you expect."
+        )
+        if strict:
+            raise ValueError(
+                f"Strict mode: {len(fuzzy_matches)} fuzzy schema match(es) detected — refusing to proceed. "
+                f"Fix kobo_key paths in config.yml or re-run without --strict."
+            )
+
     if missing:
         raw_cols = sorted(flat.columns.tolist())
         log.warning(f"Keys not found in submissions: {missing}")
@@ -198,6 +213,11 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
         else:
             log.info(f"No data for repeat group '{group_name}'")
 
+    df.attrs["schema_match_report"] = {
+        "fuzzy_matches": fuzzy_matches,
+        "missing": missing,
+    }
+
     return df, repeat_tables
 
 
@@ -224,9 +244,20 @@ def _cast(series: pd.Series, category: str) -> pd.Series:
     return series.astype(str).replace("nan", None)
 
 
-def apply_filters(df: pd.DataFrame, cfg: Dict,
-                   repeat_tables: Dict[str, pd.DataFrame] = None) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
-    """Apply filters to main table and remove orphaned repeat rows."""
+def apply_filters(
+    df: pd.DataFrame,
+    cfg: Dict,
+    repeat_tables: Dict[str, pd.DataFrame] = None,
+    *,
+    strict: bool = False,
+) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+    """Apply filters to main table and remove orphaned repeat rows.
+
+    Args:
+        strict: When True, a filter that fails to evaluate (bad column, syntax,
+                etc.) raises ValueError. When False (default), the failure is
+                logged as a warning and the filter is skipped.
+    """
     if repeat_tables is None:
         repeat_tables = {}
     filters: List[str] = cfg.get("filters", [])
@@ -238,7 +269,10 @@ def apply_filters(df: pd.DataFrame, cfg: Dict,
             df = df.query(condition)
             log.info(f"  Filter '{condition}' → {len(df)} rows")
         except Exception as e:
-            log.warning(f"  Filter '{condition}' failed: {e} — skipped")
+            msg = f"Filter '{condition}' failed: {e}"
+            if strict:
+                raise ValueError(msg) from e
+            log.warning(f"  {msg} — skipped")
     log.info(f"Filters applied: {original} → {len(df)} rows")
     # Remove orphaned repeat rows whose parent was filtered out
     id_col = None
@@ -258,25 +292,38 @@ def apply_filters(df: pd.DataFrame, cfg: Dict,
 
 
 def apply_computed_columns(
-    df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None
+    df: pd.DataFrame,
+    cfg: Dict,
+    repeat_tables: Dict[str, pd.DataFrame] = None,
+    *,
+    strict: bool = False,
 ) -> pd.DataFrame:
     """Append derived columns defined in config computed_columns.
 
     Two modes:
       - questions + combine : row-wise combination of main-table columns (fixed nested group)
       - from_repeat + stat  : per-submission aggregation of a repeat-group table (no row explosion)
+
+    Args:
+        strict: When True, any missing column / repeat table / bad combine raises
+                ValueError. When False (default), the issue is logged as a warning
+                and the computed column is skipped.
     """
+    def _fail(msg: str):
+        if strict:
+            raise ValueError(msg)
+        log.warning(msg)
+
     for col in cfg.get("computed_columns", []):
         name = col.get("name")
         if not name:
             continue
         try:
             if col.get("from_repeat"):
-                # --- Repeat aggregation mode ---
                 repeat_name = col["from_repeat"]
                 rdf = (repeat_tables or {}).get(repeat_name)
                 if rdf is None:
-                    log.warning(f"computed_column '{name}': repeat table '{repeat_name}' not found — skipped")
+                    _fail(f"computed_column '{name}': repeat table '{repeat_name}' not found — skipped")
                     continue
                 question = col.get("question")
                 stat = col.get("stat", "sum")
@@ -284,34 +331,35 @@ def apply_computed_columns(
                     aggregated = rdf.groupby("_parent_index").size()
                 else:
                     if question not in rdf.columns:
-                        log.warning(f"computed_column '{name}': column '{question}' not in repeat table — skipped")
+                        _fail(f"computed_column '{name}': column '{question}' not in repeat table — skipped")
                         continue
                     aggregated = rdf.groupby("_parent_index")[question].agg(stat)
                 id_col = next((c for c in ("_id", "_index", "_uuid") if c in df.columns), None)
                 if not id_col:
-                    log.warning(f"computed_column '{name}': no id column in main table — skipped")
+                    _fail(f"computed_column '{name}': no id column in main table — skipped")
                     continue
                 df[name] = df[id_col].map(aggregated).fillna(0)
                 log.info(f"Computed column '{name}' = {stat}({repeat_name}.{question or 'rows'})")
             else:
-                # --- Main-table row-wise combine mode ---
                 questions = col.get("questions", [])
                 combine = col.get("combine", "sum")
                 if not questions:
                     continue
                 missing = [q for q in questions if q not in df.columns]
                 if missing:
-                    log.warning(f"computed_column '{name}': columns not found: {missing} — skipped")
+                    _fail(f"computed_column '{name}': columns not found: {missing} — skipped")
                     continue
                 ops = {"sum": "sum", "mean": "mean", "min": "min", "max": "max"}
                 if combine not in ops:
-                    log.warning(f"computed_column '{name}': unknown combine '{combine}' — skipped")
+                    _fail(f"computed_column '{name}': unknown combine '{combine}' — skipped")
                     continue
                 numeric_cols = df[questions].apply(pd.to_numeric, errors="coerce")
                 df[name] = getattr(numeric_cols, combine)(axis=1)
                 log.info(f"Computed column '{name}' = {combine}({questions})")
+        except ValueError:
+            raise
         except Exception as e:
-            log.warning(f"computed_column '{name}' failed: {e} — skipped")
+            _fail(f"computed_column '{name}' failed: {e} — skipped")
     return df
 
 
@@ -319,6 +367,8 @@ def build_views(
     cfg: Dict,
     main_df: pd.DataFrame,
     repeat_tables: Dict[str, pd.DataFrame],
+    *,
+    strict: bool = False,
 ) -> Dict[str, pd.DataFrame]:
     """Compute named virtual tables defined in config views: section.
 
@@ -326,8 +376,17 @@ def build_views(
     and group aggregation. Results are computed once and reused by any
     chart, summary, or indicator that references the view name as source.
 
+    Args:
+        strict: When True, a view whose source/columns/filter can't resolve raises
+                ValueError. When False (default), the view is skipped with a warning.
+
     Returns a dict {view_name: DataFrame} to be merged into repeat_tables.
     """
+    def _fail(msg: str):
+        if strict:
+            raise ValueError(msg)
+        log.warning(msg)
+
     views: Dict[str, pd.DataFrame] = {}
     for v in cfg.get("views", []):
         name = v.get("name")
@@ -340,39 +399,37 @@ def build_views(
             else:
                 base = repeat_tables.get(source)
                 if base is None:
-                    log.warning(f"View '{name}': source '{source}' not found — skipped")
+                    _fail(f"View '{name}': source '{source}' not found — skipped")
                     continue
                 df = base.copy()
 
-            # Join parent fields into repeat table
             join_cols = v.get("join_parent")
             if join_cols and source != "main":
                 df = join_repeat_to_main(df, main_df, join_cols)
 
-            # Apply filter
             filter_expr = v.get("filter")
             if filter_expr:
                 try:
                     df = df.query(filter_expr)
                 except Exception as e:
-                    log.warning(f"View '{name}': filter '{filter_expr}' failed: {e} — skipped")
+                    _fail(f"View '{name}': filter '{filter_expr}' failed: {e} — skipped")
+                    continue
 
-            # Optional group aggregation → one row per group value
             group_by = v.get("group_by")
             question = v.get("question")
             if group_by and question:
                 agg_fn = v.get("agg", "sum")
                 if group_by not in df.columns:
-                    log.warning(f"View '{name}': group_by column '{group_by}' not found — skipped aggregation")
-                elif question not in df.columns:
-                    log.warning(f"View '{name}': question column '{question}' not found — skipped aggregation")
-                else:
-                    numeric = pd.to_numeric(df[question], errors="coerce")
-                    agg_result = numeric.groupby(df[group_by]).agg(agg_fn).reset_index()
-                    agg_result.columns = [group_by, question]
-                    df = agg_result
+                    _fail(f"View '{name}': group_by column '{group_by}' not found — skipped")
+                    continue
+                if question not in df.columns:
+                    _fail(f"View '{name}': question column '{question}' not found — skipped")
+                    continue
+                numeric = pd.to_numeric(df[question], errors="coerce")
+                agg_result = numeric.groupby(df[group_by]).agg(agg_fn).reset_index()
+                agg_result.columns = [group_by, question]
+                df = agg_result
 
-            # Apply column renames and type overrides
             col_specs = v.get("columns", [])
             if col_specs:
                 rename_map = {}
@@ -399,8 +456,10 @@ def build_views(
 
             views[name] = df
             log.info(f"View '{name}' computed: {len(df)} rows, {len(df.columns)} columns")
+        except ValueError:
+            raise
         except Exception as e:
-            log.warning(f"View '{name}' failed: {e} — skipped")
+            _fail(f"View '{name}' failed: {e} — skipped")
     return views
 
 
@@ -455,20 +514,35 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
 
 
 def _export_sql(df: pd.DataFrame, cfg: Dict, dialect: str, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
-    from sqlalchemy import create_engine
+    global create_engine
+    if create_engine is None:
+        from sqlalchemy import create_engine as _ce
+        create_engine = _ce
+
     db = cfg.get("export", {}).get("database", {})
+    if_exists = db.get("if_exists", "replace")
+    if if_exists not in VALID_IF_EXISTS:
+        raise ValueError(
+            f"export.database.if_exists must be one of {VALID_IF_EXISTS}, got '{if_exists}'"
+        )
+    if "if_exists" not in db:
+        log.warning(
+            "export.database.if_exists not set — defaulting to 'replace', which DROPS the target table on every run. "
+            "Set it explicitly (replace|append|fail) in config.yml to silence this warning."
+        )
+
     h, p = db.get("host", "localhost"), int(db.get("port", 5432 if dialect == "postgres" else 3306))
     n, u, pw, t = db.get("name"), db.get("user"), db.get("password", ""), db.get("table", "submissions")
     url = (f"postgresql+psycopg2://{u}:{pw}@{h}:{p}/{n}" if dialect == "postgres"
            else f"mysql+pymysql://{u}:{pw}@{h}:{p}/{n}?charset=utf8mb4")
     engine = create_engine(url)
-    df.to_sql(t, engine, if_exists="replace", index=False)
-    log.info(f"Data exported → {dialect}://{h}:{p}/{n}.{t}")
+    df.to_sql(t, engine, if_exists=if_exists, index=False)
+    log.info(f"Data exported → {dialect}://{h}:{p}/{n}.{t} (if_exists={if_exists})")
     if repeat_tables:
         for name, rdf in repeat_tables.items():
             safe_name = name.replace("/", "_")
-            rdf.to_sql(f"{t}_{safe_name}", engine, if_exists="replace", index=False)
-            log.info(f"Repeat group exported → {dialect}://{h}:{p}/{n}.{t}_{safe_name}")
+            rdf.to_sql(f"{t}_{safe_name}", engine, if_exists=if_exists, index=False)
+            log.info(f"Repeat group exported → {dialect}://{h}:{p}/{n}.{t}_{safe_name} (if_exists={if_exists})")
 
 
 def _export_supabase(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
