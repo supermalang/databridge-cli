@@ -16,26 +16,45 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger(__name__)
 
 @click.group()
-def cli():
+@click.option(
+    "--config", "config_path",
+    default="config.yml",
+    type=click.Path(dir_okay=False),
+    help="Path to config.yml. Defaults to ./config.yml.",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    default=False,
+    help="Fail on any filter / computed_column / view / schema-drift warning instead of skipping.",
+)
+@click.pass_context
+def cli(ctx, config_path, strict):
     """kobo-reporter — Extract Kobo/Ona data and generate Word reports."""
-    pass
+    ctx.ensure_object(dict)
+    ctx.obj["config_path"] = Path(config_path)
+    ctx.obj["strict"] = strict
 
 @cli.command("fetch-questions")
-def cmd_fetch_questions():
+@click.pass_context
+def cmd_fetch_questions(ctx):
     """Fetch form schema from Kobo/Ona and write questions into config.yml."""
     from src.data.extract import get_client
     from src.data.questions import fetch_and_write_questions
-    cfg = load_config(CONFIG_PATH)
-    fetch_and_write_questions(get_client(cfg), cfg, CONFIG_PATH)
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
+    fetch_and_write_questions(get_client(cfg), cfg, config_path)
 
 @cli.command("generate-template")
 @click.option("--out", default=None, help="Output path. Defaults to report.template in config.yml.")
 @click.option("--context", default=None, help="Background and context shown at the top of the template.")
 @click.option("--summary-prompt", default=None, help="Prompt/guidance shown in the executive summary section.")
-def cmd_generate_template(out, context, summary_prompt):
+@click.pass_context
+def cmd_generate_template(ctx, out, context, summary_prompt):
     """Auto-generate a starter Word template from config.yml."""
     from src.reports.template_generator import generate_template
-    cfg = load_config(CONFIG_PATH)
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
     if not cfg.get("charts"):
         click.echo("Warning: no charts in config.yml — template will have no chart placeholders.", err=True)
     out_path = Path(out) if out else Path(cfg.get("report",{}).get("template","templates/report_template.docx"))
@@ -48,10 +67,12 @@ def cmd_generate_template(out, context, summary_prompt):
 @click.option("--context", default=None, help="Background and context (alias for --description if provided separately).")
 @click.option("--summary-prompt", default=None, help="Guidance for the executive summary section.")
 @click.option("--out", default=None, help="Output path. Defaults to ai_<template> from config.yml.")
-def cmd_ai_generate_template(description, pages, language, context, summary_prompt, out):
+@click.pass_context
+def cmd_ai_generate_template(ctx, description, pages, language, context, summary_prompt, out):
     """AI-generate a structured Word template based on project description and config."""
     from src.reports.ai_template_generator import ai_generate_template
-    cfg = load_config(CONFIG_PATH)
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
     if not cfg.get("ai"):
         click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
         sys.exit(1)
@@ -66,10 +87,12 @@ def cmd_ai_generate_template(description, pages, language, context, summary_prom
 
 @cli.command("suggest-charts")
 @click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
-def cmd_suggest_charts(out):
+@click.pass_context
+def cmd_suggest_charts(ctx, out):
     """Ask AI to suggest a charts: config block from your questions."""
     from src.reports.ai_chart_suggester import suggest_charts
-    cfg = load_config(CONFIG_PATH)
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
     if not cfg.get("ai"):
         click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
         sys.exit(1)
@@ -79,7 +102,7 @@ def cmd_suggest_charts(out):
     suggest_charts(cfg, out_path=out)
 
 
-def _run_classify(cfg, sample=None, rediscover=False):
+def _run_classify(cfg, config_path, sample=None, rediscover=False):
     """Run text classification for any questions with classify.enabled: true.
 
     Called automatically at the end of download. Silently skips if no AI config
@@ -133,7 +156,7 @@ def _run_classify(cfg, sample=None, rediscover=False):
         log.info(f"  Done — {n_classified}/{len(df)} rows classified.")
 
     if changed:
-        write_config(cfg, CONFIG_PATH)
+        write_config(cfg, config_path)
         log.info("Themes saved to config.yml.")
 
     log.info("Saving classified data ...")
@@ -143,11 +166,14 @@ def _run_classify(cfg, sample=None, rediscover=False):
 
 @cli.command("download")
 @click.option("--sample", default=None, type=int, help="Limit to first N submissions.")
-def cmd_download(sample):
+@click.pass_context
+def cmd_download(ctx, sample):
     """Download submissions, apply filters, export to configured destination."""
     from src.data.extract import get_client
     from src.data.transform import load_data, apply_filters, apply_computed_columns, export_data
-    cfg = load_config(CONFIG_PATH)
+    config_path = ctx.obj["config_path"]
+    strict = ctx.obj["strict"]
+    cfg = load_config(config_path)
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
         sys.exit(1)
@@ -155,19 +181,21 @@ def cmd_download(sample):
     log.info("Downloading submissions ...")
     raw = client.get_submissions(sample_size=sample)
     log.info("Transforming data ...")
-    df, repeat_tables = load_data(raw, cfg)
-    df, repeat_tables = apply_filters(df, cfg, repeat_tables)
-    df = apply_computed_columns(df, cfg, repeat_tables)
+    df, repeat_tables = load_data(raw, cfg, strict=strict)
+    df, repeat_tables = apply_filters(df, cfg, repeat_tables, strict=strict)
+    df = apply_computed_columns(df, cfg, repeat_tables, strict=strict)
     log.info(f"Exporting {len(df)} rows ...")
     export_data(df, cfg, repeat_tables)
-    _run_classify(cfg, sample=sample)
+    _run_classify(cfg, config_path, sample=sample)
 
 
 @cli.command("list-sessions")
-def cmd_list_sessions():
+@click.pass_context
+def cmd_list_sessions(ctx):
     """List available downloaded data sessions."""
     from src.data.transform import list_sessions
-    cfg = load_config(CONFIG_PATH)
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
     sessions = list_sessions(cfg)
     if not sessions:
         click.echo("No sessions found. Run 'download' first.")
@@ -187,9 +215,11 @@ def cmd_list_sessions():
 @click.option("--split-sample", "split_sample", default=None, type=int,
               help="When splitting, generate reports for only the first N split values.")
 @click.option("--session", default=None, help="Session ID (YYYYMMDD_HHMMSS) to use. Defaults to latest.")
-def cmd_build_report(sample, random_sample, split_by, split_sample, session):
+@click.pass_context
+def cmd_build_report(ctx, sample, random_sample, split_by, split_sample, session):
     """Build a Word report from previously downloaded data."""
-    cfg = load_config(CONFIG_PATH)
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
     if not cfg.get("charts"):
         click.echo("No charts in config.yml. Add chart configs first.", err=True)
         sys.exit(1)
