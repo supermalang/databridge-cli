@@ -219,12 +219,13 @@ def cmd_list_sessions(ctx):
 def cmd_build_report(ctx, sample, random_sample, split_by, split_sample, session):
     """Build a Word report from previously downloaded data."""
     config_path = ctx.obj["config_path"]
+    strict = ctx.obj["strict"]
     cfg = load_config(config_path)
     if not cfg.get("charts"):
         click.echo("No charts in config.yml. Add chart configs first.", err=True)
         sys.exit(1)
     from src.reports.builder import ReportBuilder
-    ReportBuilder(cfg).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample, session=session)
+    ReportBuilder(cfg, strict=strict).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample, session=session)
 
 if __name__ == "__main__":
     cli()
