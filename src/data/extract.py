@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import requests
 
 log = logging.getLogger(__name__)
@@ -10,6 +10,10 @@ SUPPORTED_PLATFORMS = ("kobo", "ona")
 
 class DataClient:
     """Base class for Kobo / Ona API clients."""
+
+    RETRY_STATUSES = (429, 500, 502, 503, 504)
+    RETRY_TOTAL = 5
+    RETRY_BACKOFF = 1.0  # 1s, 2s, 4s, 8s, 16s
 
     def __init__(self, cfg: Dict):
         api = cfg.get("api", {})
@@ -27,6 +31,25 @@ class DataClient:
         self.form_uid = cfg.get("form", {}).get("uid", "")
         if not self.form_uid:
             raise ValueError("form.uid must be set in config.yml")
+        self.session = self._build_session()
+
+    def _build_session(self) -> requests.Session:
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+
+        retry = Retry(
+            total=self.RETRY_TOTAL,
+            backoff_factor=self.RETRY_BACKOFF,
+            status_forcelist=self.RETRY_STATUSES,
+            allowed_methods=frozenset(["GET"]),
+            raise_on_status=True,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        s = requests.Session()
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
+        s.headers.update(self.headers)
+        return s
 
     def get_form_schema(self) -> Dict:
         raise NotImplementedError
@@ -34,9 +57,9 @@ class DataClient:
     def get_submissions(self, sample_size: Optional[int] = None) -> List[Dict]:
         raise NotImplementedError
 
-    def _get(self, endpoint: str, params: Dict = None) -> any:
+    def _get(self, endpoint: str, params: Dict = None) -> Any:
         url = f"{self.base_url}/{endpoint}"
-        resp = requests.get(url, headers=self.headers, params=params or {}, timeout=self.timeout)
+        resp = self.session.get(url, params=params or {}, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
 
