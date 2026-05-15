@@ -132,7 +132,7 @@ def load_data(
                     or _norm(c.split(".")[-1]) == norm_field
                 ]
                 if len(candidates_norm) == 1:
-                    fuzzy_matches.append({"kobo_key": key, "matched_to": candidates_norm[0], "via": "normalised"})
+                    fuzzy_matches.append({"kobo_key": key, "matched_to": candidates_norm[0], "via": "unicode-norm"})
                     col_map[candidates_norm[0]] = label
                 else:
                     missing.append(key)
