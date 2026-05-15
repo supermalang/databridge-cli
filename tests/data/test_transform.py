@@ -55,7 +55,7 @@ def test_apply_filters_removes_orphan_repeat_rows(config, submissions):
     assert len(filtered_repeats["household_members"]) == 1
 
 
-def test_apply_computed_columns_repeat_aggregation_sum(config, submissions):
+def test_apply_computed_columns_repeat_count(config, submissions):
     df, repeats = load_data(submissions, config)
     config["computed_columns"] = [
         {"name": "household_size", "from_repeat": "household_members", "question": "count"},
