@@ -88,3 +88,20 @@ def test_build_views_joins_parent_and_filters(config, submissions):
     assert len(view) == 2
     assert set(view["Member name"].tolist()) == {"Bob", "Carol"}
     assert (view["Region"] == "North").all()
+
+
+def test_apply_filters_lenient_mode_warns_on_bad_filter(config, submissions, caplog):
+    df, repeats = load_data(submissions, config)
+    config["filters"] = ["NonexistentColumn > 0"]
+    import logging
+    with caplog.at_level(logging.WARNING):
+        df2, _ = apply_filters(df, config, repeats)  # default: strict=False
+    assert len(df2) == 2  # filter silently skipped
+    assert any("NonexistentColumn" in r.message for r in caplog.records)
+
+
+def test_apply_filters_strict_mode_raises_on_bad_filter(config, submissions):
+    df, repeats = load_data(submissions, config)
+    config["filters"] = ["NonexistentColumn > 0"]
+    with pytest.raises(ValueError, match="NonexistentColumn"):
+        apply_filters(df, config, repeats, strict=True)

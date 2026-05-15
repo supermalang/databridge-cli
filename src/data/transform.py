@@ -224,9 +224,20 @@ def _cast(series: pd.Series, category: str) -> pd.Series:
     return series.astype(str).replace("nan", None)
 
 
-def apply_filters(df: pd.DataFrame, cfg: Dict,
-                   repeat_tables: Dict[str, pd.DataFrame] = None) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
-    """Apply filters to main table and remove orphaned repeat rows."""
+def apply_filters(
+    df: pd.DataFrame,
+    cfg: Dict,
+    repeat_tables: Dict[str, pd.DataFrame] = None,
+    *,
+    strict: bool = False,
+) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+    """Apply filters to main table and remove orphaned repeat rows.
+
+    Args:
+        strict: When True, a filter that fails to evaluate (bad column, syntax,
+                etc.) raises ValueError. When False (default), the failure is
+                logged as a warning and the filter is skipped.
+    """
     if repeat_tables is None:
         repeat_tables = {}
     filters: List[str] = cfg.get("filters", [])
@@ -238,7 +249,10 @@ def apply_filters(df: pd.DataFrame, cfg: Dict,
             df = df.query(condition)
             log.info(f"  Filter '{condition}' → {len(df)} rows")
         except Exception as e:
-            log.warning(f"  Filter '{condition}' failed: {e} — skipped")
+            msg = f"Filter '{condition}' failed: {e}"
+            if strict:
+                raise ValueError(msg) from e
+            log.warning(f"  {msg} — skipped")
     log.info(f"Filters applied: {original} → {len(df)} rows")
     # Remove orphaned repeat rows whose parent was filtered out
     id_col = None
