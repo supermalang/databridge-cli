@@ -400,14 +400,15 @@ def build_views(
             if group_by and question:
                 agg_fn = v.get("agg", "sum")
                 if group_by not in df.columns:
-                    _fail(f"View '{name}': group_by column '{group_by}' not found — skipped aggregation")
-                elif question not in df.columns:
-                    _fail(f"View '{name}': question column '{question}' not found — skipped aggregation")
-                else:
-                    numeric = pd.to_numeric(df[question], errors="coerce")
-                    agg_result = numeric.groupby(df[group_by]).agg(agg_fn).reset_index()
-                    agg_result.columns = [group_by, question]
-                    df = agg_result
+                    _fail(f"View '{name}': group_by column '{group_by}' not found — skipped")
+                    continue
+                if question not in df.columns:
+                    _fail(f"View '{name}': question column '{question}' not found — skipped")
+                    continue
+                numeric = pd.to_numeric(df[question], errors="coerce")
+                agg_result = numeric.groupby(df[group_by]).agg(agg_fn).reset_index()
+                agg_result.columns = [group_by, question]
+                df = agg_result
 
             col_specs = v.get("columns", [])
             if col_specs:

@@ -130,3 +130,27 @@ def test_build_views_strict_raises_on_missing_source(config, submissions):
     config["views"] = [{"name": "bad", "source": "no_such_source"}]
     with pytest.raises(ValueError, match="no_such_source"):
         build_views(config, df, repeats, strict=True)
+
+
+def test_apply_computed_columns_lenient_mode_warns_on_missing_column(config, submissions, caplog):
+    df, repeats = load_data(submissions, config)
+    config["computed_columns"] = [
+        {"name": "bad", "questions": ["Nonexistent"], "combine": "sum"},
+    ]
+    import logging
+    with caplog.at_level(logging.WARNING):
+        out = apply_computed_columns(df, config, repeats)  # default: strict=False
+    # The computed column should not have been added — warning logged, skipped.
+    assert "bad" not in out.columns
+    assert any("Nonexistent" in r.message for r in caplog.records)
+
+
+def test_build_views_lenient_mode_warns_on_missing_source(config, submissions, caplog):
+    df, repeats = load_data(submissions, config)
+    config["views"] = [{"name": "ghost", "source": "no_such_source"}]
+    import logging
+    with caplog.at_level(logging.WARNING):
+        views = build_views(config, df, repeats)  # default: strict=False
+    # The view should not exist — warning logged, skipped.
+    assert "ghost" not in views
+    assert any("no_such_source" in r.message for r in caplog.records)
