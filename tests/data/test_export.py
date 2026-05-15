@@ -1,6 +1,7 @@
 """Tests for src.data.transform._export_sql — if_exists option."""
 from unittest.mock import patch, MagicMock
 import pandas as pd
+import pytest
 
 from src.data.transform import _export_sql
 
@@ -34,7 +35,8 @@ def test_export_sql_respects_append():
 
 
 def test_export_sql_rejects_invalid_if_exists():
-    import pytest
     df = pd.DataFrame({"a": [1, 2]})
-    with pytest.raises(ValueError, match="if_exists"):
-        _export_sql(df, _cfg(if_exists="upsert_or_whatever"), "postgres", None)
+    with patch("src.data.transform.create_engine") as mock_engine:
+        mock_engine.return_value = MagicMock()
+        with pytest.raises(ValueError, match="if_exists"):
+            _export_sql(df, _cfg(if_exists="upsert_or_whatever"), "postgres", None)
