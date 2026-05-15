@@ -69,7 +69,12 @@ def apply_choice_labels(df: pd.DataFrame, questions: list) -> pd.DataFrame:
     return df
 
 
-def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+def load_data(
+    submissions: List[Dict],
+    cfg: Dict,
+    *,
+    strict: bool = False,
+) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """Load submissions into a main DataFrame + separate DataFrames for repeat groups.
 
     Returns:
@@ -93,12 +98,11 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
     col_map: Dict[str, str] = {}
     used_labels: Dict[str, int] = {}
     missing: List[str] = []
+    fuzzy_matches: List[Dict[str, str]] = []
     for q in main_questions:
         key = q["kobo_key"]
-        # json_normalize uses "." as separator; kobo_keys use "/" for group paths
         flat_key = key.replace("/", ".")
         label = q.get("export_label") or q.get("label") or key
-        # Deduplicate labels to avoid column collisions
         if label in used_labels:
             used_labels[label] += 1
             label = f"{label}_{used_labels[label]}"
@@ -109,8 +113,6 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
         elif key in flat.columns:
             col_map[key] = label
         else:
-            # Fallback: match by field name only (last path segment), ignoring group prefix.
-            # Handles cases where config group path differs from what the API returns.
             field_name = key.split("/")[-1]
             candidates = [
                 c for c in flat.columns
@@ -119,13 +121,9 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
                 or c.endswith(f".{field_name}")
             ]
             if len(candidates) == 1:
-                log.warning(
-                    f"kobo_key '{key}' not found; matched by field name to '{candidates[0]}'"
-                )
+                fuzzy_matches.append({"kobo_key": key, "matched_to": candidates[0], "via": "field-name"})
                 col_map[candidates[0]] = label
             else:
-                # Final fallback: unicode-normalize both sides, compare by field name.
-                # Catches e.g. kobo_key "groupe_socio-économique" vs API "groupe_socioeconomique".
                 norm_field = _norm(field_name)
                 candidates_norm = [
                     c for c in flat.columns
@@ -134,12 +132,23 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
                     or _norm(c.split(".")[-1]) == norm_field
                 ]
                 if len(candidates_norm) == 1:
-                    log.warning(
-                        f"kobo_key '{key}' matched by normalisation to '{candidates_norm[0]}'"
-                    )
+                    fuzzy_matches.append({"kobo_key": key, "matched_to": candidates_norm[0], "via": "normalised"})
                     col_map[candidates_norm[0]] = label
                 else:
                     missing.append(key)
+
+    if fuzzy_matches:
+        for fm in fuzzy_matches:
+            log.warning(f"kobo_key '{fm['kobo_key']}' matched by {fm['via']} to '{fm['matched_to']}'")
+        log.warning(
+            f"{len(fuzzy_matches)} question(s) matched by fallback — verify these are the columns you expect."
+        )
+        if strict:
+            raise ValueError(
+                f"Strict mode: {len(fuzzy_matches)} fuzzy schema match(es) detected — refusing to proceed. "
+                f"Fix kobo_key paths in config.yml or re-run without --strict."
+            )
+
     if missing:
         raw_cols = sorted(flat.columns.tolist())
         log.warning(f"Keys not found in submissions: {missing}")
@@ -197,6 +206,11 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
             log.info(f"Loaded {len(rdf)} rows for repeat group '{group_name}'")
         else:
             log.info(f"No data for repeat group '{group_name}'")
+
+    df.attrs["schema_match_report"] = {
+        "fuzzy_matches": fuzzy_matches,
+        "missing": missing,
+    }
 
     return df, repeat_tables
 

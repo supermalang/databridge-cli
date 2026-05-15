@@ -154,3 +154,23 @@ def test_build_views_lenient_mode_warns_on_missing_source(config, submissions, c
     # The view should not exist — warning logged, skipped.
     assert "ghost" not in views
     assert any("no_such_source" in r.message for r in caplog.records)
+
+
+def test_load_data_reports_fuzzy_match_when_kobo_key_differs(config, submissions):
+    # Mangle the config so age has a slightly different kobo_key — but the field
+    # name still matches the submission column "demographics.age" (json_normalize form).
+    for q in config["questions"]:
+        if q["kobo_key"] == "demographics/age":
+            q["kobo_key"] = "wrong_group/age"
+    df, _ = load_data(submissions, config)
+    report = df.attrs.get("schema_match_report", {})
+    assert report.get("fuzzy_matches"), "expected at least one fuzzy match to be reported"
+    assert any("age" in m["matched_to"] for m in report["fuzzy_matches"])
+
+
+def test_load_data_strict_raises_on_fuzzy_match(config, submissions):
+    for q in config["questions"]:
+        if q["kobo_key"] == "demographics/age":
+            q["kobo_key"] = "wrong_group/age"
+    with pytest.raises(ValueError, match="fuzzy"):
+        load_data(submissions, config, strict=True)
