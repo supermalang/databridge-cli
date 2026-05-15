@@ -9,7 +9,7 @@ import sys, logging
 from pathlib import Path
 import click
 from dotenv import load_dotenv
-from src.utils.config import load_config, CONFIG_PATH
+from src.utils.config import load_config
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
