@@ -100,3 +100,32 @@ def find_numeric_outliers(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]
             "examples": examples,
         })
     return findings
+
+
+def find_duplicates(df: pd.DataFrame) -> List[Dict]:
+    """Flag rows that share an identifier column.
+
+    Looks for canonical Kobo identifiers in this priority order:
+      _uuid > _id > _index
+    """
+    if df is None or len(df) == 0:
+        return []
+    id_col = next((c for c in ("_uuid", "_id", "_index") if c in df.columns), None)
+    if id_col is None:
+        return []
+    counts = df[id_col].value_counts()
+    dup_ids = counts[counts > 1]
+    if dup_ids.empty:
+        return []
+    affected_rows = int(dup_ids.sum())  # total rows involved in any duplicate group
+    n = len(df)
+    pct = affected_rows / n
+    return [{
+        "severity": "error",  # duplicated identifiers are always serious
+        "column":   id_col,
+        "kind":     "duplicate_id",
+        "message":  f"{affected_rows} rows share a duplicated {id_col} across {len(dup_ids)} group(s)",
+        "count":    affected_rows,
+        "pct":      round(pct, 4),
+        "examples": [str(v) for v in dup_ids.head(5).index.tolist()],
+    }]

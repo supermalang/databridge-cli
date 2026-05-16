@@ -83,3 +83,35 @@ def test_outliers_handles_all_nan_column_without_crashing():
     questions = [{"export_label": "age", "category": "quantitative"}]
     findings = find_numeric_outliers(df, questions)
     assert findings == []
+
+
+from src.data.validate import find_duplicates
+
+
+def test_duplicates_on_unique_id_column():
+    df = pd.DataFrame({"_id": ["a", "b", "c", "d"]})
+    findings = find_duplicates(df)
+    assert findings == []
+
+
+def test_duplicates_flags_repeated_id():
+    df = pd.DataFrame({"_id": ["a", "b", "a", "c"]})
+    findings = find_duplicates(df)
+    assert len(findings) == 1
+    f = findings[0]
+    assert f["kind"] == "duplicate_id"
+    assert f["count"] == 2   # two rows share the duplicate id (a appears twice)
+    assert "a" in f["examples"]
+
+
+def test_duplicates_returns_empty_when_no_id_column_present():
+    df = pd.DataFrame({"x": [1, 2, 3]})
+    findings = find_duplicates(df)
+    assert findings == []  # no _id / _uuid / _index — nothing to dedup on
+
+
+def test_duplicates_prefers_underscore_uuid_over_underscore_id():
+    # If _uuid is present it's treated as the canonical key.
+    df = pd.DataFrame({"_id": ["A", "B", "C"], "_uuid": ["u1", "u1", "u2"]})
+    findings = find_duplicates(df)
+    assert findings and findings[0]["column"] == "_uuid"
