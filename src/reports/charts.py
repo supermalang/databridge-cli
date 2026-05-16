@@ -632,6 +632,61 @@ def chart_dot_map(df, q, title, out, opts):
     plt.tight_layout(); fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 
+def chart_period_bar(df, questions, title, out_path, opts):
+    """Bar chart of an indicator's value across periods.
+
+    Expects opts to contain:
+        metric:   indicator name (without the ind_ prefix) — informational only
+        periods:  list of {"slug", "label", "value"} dicts (passed by builder Task 18)
+    """
+    periods = opts.get("periods", [])
+    if not periods:
+        log.warning("period_bar: opts.periods is empty — chart skipped")
+        return
+    labels = [p["label"] for p in periods]
+    raw_values = []
+    for p in periods:
+        v = p.get("value", "0")
+        try:
+            raw_values.append(float(str(v).replace(",", "").replace("%", "").strip()))
+        except (TypeError, ValueError):
+            raw_values.append(0.0)
+    fig, ax = plt.subplots(figsize=_fs(opts, (6, 4)))
+    bars = ax.bar(labels, raw_values, color=_color(opts))
+    ax.set_title(title)
+    ax.set_ylabel(opts.get("ylabel", opts.get("metric", "value")))
+    for b, v in zip(bars, raw_values):
+        ax.annotate(f"{v:,.1f}", xy=(b.get_x() + b.get_width()/2, v), ha="center", va="bottom", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
+def chart_period_line(df, questions, title, out_path, opts):
+    """Line chart of an indicator's value across periods (time trend)."""
+    periods = opts.get("periods", [])
+    if not periods:
+        log.warning("period_line: opts.periods is empty — chart skipped")
+        return
+    labels = [p["label"] for p in periods]
+    raw_values = []
+    for p in periods:
+        v = p.get("value", "0")
+        try:
+            raw_values.append(float(str(v).replace(",", "").replace("%", "").strip()))
+        except (TypeError, ValueError):
+            raw_values.append(0.0)
+    fig, ax = plt.subplots(figsize=_fs(opts, (6, 4)))
+    ax.plot(labels, raw_values, marker="o", color=_color(opts), linewidth=2)
+    ax.set_title(title)
+    ax.set_ylabel(opts.get("ylabel", opts.get("metric", "value")))
+    for x, y in zip(labels, raw_values):
+        ax.annotate(f"{y:,.1f}", (x, y), textcoords="offset points", xytext=(0, 8), ha="center", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
 CHART_DISPATCH = {
     "bar": chart_bar, "horizontal_bar": chart_horizontal_bar, "stacked_bar": chart_stacked_bar,
     "pie": chart_pie, "donut": chart_donut, "line": chart_line, "area": chart_area,
@@ -641,4 +696,6 @@ CHART_DISPATCH = {
     "grouped_bar": chart_grouped_bar, "bullet_chart": chart_bullet_chart,
     "likert": chart_likert, "scorecard": chart_scorecard, "pyramid": chart_pyramid,
     "dot_map": chart_dot_map,
+    "period_bar": chart_period_bar,
+    "period_line": chart_period_line,
 }
