@@ -115,3 +115,37 @@ def test_duplicates_prefers_underscore_uuid_over_underscore_id():
     df = pd.DataFrame({"_id": ["A", "B", "C"], "_uuid": ["u1", "u1", "u2"]})
     findings = find_duplicates(df)
     assert findings and findings[0]["column"] == "_uuid"
+
+
+from src.data.validate import find_type_issues
+
+
+def test_type_issues_no_findings_when_quantitative_column_is_clean():
+    df = pd.DataFrame({"age": ["1", "2", "3"]})
+    questions = [{"export_label": "age", "category": "quantitative"}]
+    assert find_type_issues(df, questions) == []
+
+
+def test_type_issues_flags_non_numeric_in_quantitative_column():
+    df = pd.DataFrame({"age": ["12", "n/a", "20", "TBD", "25"]})
+    questions = [{"export_label": "age", "category": "quantitative"}]
+    findings = find_type_issues(df, questions)
+    assert len(findings) == 1
+    f = findings[0]
+    assert f["column"] == "age"
+    assert f["kind"] == "type_quantitative_nonnumeric"
+    assert f["count"] == 2
+    assert "n/a" in f["examples"] or "TBD" in f["examples"]
+
+
+def test_type_issues_ignores_blank_and_nan_values():
+    df = pd.DataFrame({"age": ["1", "", None, "2"]})
+    questions = [{"export_label": "age", "category": "quantitative"}]
+    # Blank/NaN are caught by missingness detector, not type detector.
+    assert find_type_issues(df, questions) == []
+
+
+def test_type_issues_skips_categorical_columns():
+    df = pd.DataFrame({"region": ["A", "B", "weird-name"]})
+    questions = [{"export_label": "region", "category": "categorical"}]
+    assert find_type_issues(df, questions) == []

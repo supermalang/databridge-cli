@@ -129,3 +129,40 @@ def find_duplicates(df: pd.DataFrame) -> List[Dict]:
         "pct":      round(pct, 4),
         "examples": [str(v) for v in dup_ids.head(5).index.tolist()],
     }]
+
+
+def find_type_issues(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]:
+    """Flag rows where a quantitative column holds a non-numeric, non-blank string.
+
+    Distinguishes "broken data type" from "missing data": NaN and blank are
+    handled by compute_missingness; this detector targets values like 'n/a',
+    'TBD', '--', which suggest data entry sloppiness rather than absence.
+    """
+    if df is None or len(df) == 0:
+        return []
+    quant_cols = {q.get("export_label") for q in questions if q.get("category") == "quantitative"}
+    findings: List[Dict] = []
+    n = len(df)
+    for col in df.columns:
+        if col not in quant_cols:
+            continue
+        s = df[col]
+        as_str = s.astype(str).str.strip()
+        coerced = pd.to_numeric(as_str, errors="coerce")
+        bad_mask = coerced.isna() & (as_str != "") & ~s.isna()
+        count = int(bad_mask.sum())
+        if count == 0:
+            continue
+        pct = count / n
+        sev = _severity_for_pct(pct) or "info"
+        examples = as_str[bad_mask].head(5).tolist()
+        findings.append({
+            "severity": sev,
+            "column":   str(col),
+            "kind":     "type_quantitative_nonnumeric",
+            "message":  f"{count} non-numeric value(s) in a quantitative column",
+            "count":    count,
+            "pct":      round(pct, 4),
+            "examples": examples,
+        })
+    return findings
