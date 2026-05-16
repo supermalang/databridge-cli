@@ -60,6 +60,12 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
             _editable(doc,f"{{{{ summary_{name} }}}}")
     _divider(doc); _heading(doc,"Placeholder Reference",1)
     _note(doc,"Delete this section before sharing."); _ref_table(doc,cfg)
+    # Provenance footer — single Jinja line; ReportBuilder fills it in.
+    p = doc.add_paragraph()
+    p.style = doc.styles["Normal"]
+    run = p.add_run("{{ provenance.footer }}")
+    run.italic = True
+    run.font.size = Pt(8)
     out_path.parent.mkdir(parents=True,exist_ok=True)
     doc.save(out_path)
     log.info(f"Template saved → {out_path}")

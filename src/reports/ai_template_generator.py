@@ -56,7 +56,13 @@ SYSTEM_PROMPT = (
     "  - intro text items should be short orienting sentences in the report language, referencing {{ period }} and {{ n_submissions }} where relevant\n"
     "  - For a N-page report, create approximately N/2 top-level sections\n"
     "  - Do NOT invent chart, indicator, or summary names — use only those provided\n"
-    "  - Return JSON only"
+    "  - Return JSON only\n\n"
+    "Additional optional placeholders (use sparingly, typically once at the report's end):\n"
+    "  {{ provenance.footer }}               one-line audit footer (recommended)\n"
+    "  {{ provenance.generated_at }}         ISO timestamp the report was generated\n"
+    "  {{ provenance.data_downloaded_at }}   timestamp the underlying data file was downloaded\n"
+    "  {{ provenance.n_submissions }}        int — number of submissions used\n"
+    "  {{ provenance.config_hash }}          12-char hash of the config used"
 )
 
 # Format slots: {description} {pages} {language} {summary_prompt_line}
