@@ -62,7 +62,12 @@ SYSTEM_PROMPT = (
     "  {{ provenance.generated_at }}         ISO timestamp the report was generated\n"
     "  {{ provenance.data_downloaded_at }}   timestamp the underlying data file was downloaded\n"
     "  {{ provenance.n_submissions }}        int — number of submissions used\n"
-    "  {{ provenance.config_hash }}          12-char hash of the config used"
+    "  {{ provenance.config_hash }}          12-char hash of the config used\n\n"
+    "Per-period indicator placeholders (available when periods.registry has 2+ entries):\n"
+    "  {{ ind_<name>_p_<slug> }}     value for that indicator in the named period\n"
+    "  {{ ind_<name>_delta }}         current value minus the baseline value\n"
+    "  {{ ind_<name>_pct_change }}    percent change from baseline to current period\n"
+    "  {{ provenance.period_label }}  the active period label (e.g. '2024 Q2')"
 )
 
 # Format slots: {description} {pages} {language} {summary_prompt_line}
