@@ -649,4 +649,5 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .validate-finding__msg    { color: var(--ink-2); font-size: 13px; margin-top: 4px; line-height: 1.45; }
 .validate-finding__examples { font-family: var(--font-mono, monospace); color: var(--ink-3); font-size: 12px; margin-top: 6px; }
 .validate-finding__count  { color: var(--ink-3); font-size: 12px; white-space: nowrap; padding-top: 2px; }
+
 .tips-card-sm__body b{color:#5C3B07;font-weight:700}

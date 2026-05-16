@@ -195,7 +195,7 @@ def validate_dataset(cfg: Dict, df: pd.DataFrame, repeat_tables: Dict[str, pd.Da
 
     return {
         "n_rows":    int(len(df)),
-        "n_columns": int(df.shape[1]) if hasattr(df, "shape") else 0,
+        "n_columns": int(df.shape[1]),
         "checks":    findings,
         "summary":   summary,
     }
