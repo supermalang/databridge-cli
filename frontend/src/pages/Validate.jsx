@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
-import { useToast } from '../components/Toast.jsx';
 
 export default function Validate() {
-  const toast = useToast();
   const [report, setReport] = useState(null);   // null | { n_rows, n_columns, checks, summary }
   const [error,  setError]  = useState(null);
   const [loading, setLoading] = useState(true);
@@ -54,7 +52,32 @@ export default function Validate() {
           {report.checks.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>No issues found — your data looks clean.</div>
           ) : (
-            <div className="validate-findings" />
+            <div className="validate-findings">
+              {report.checks.map((f, i) => (
+                <div className="validate-finding" data-severity={f.severity} key={`${f.kind}-${f.column}-${i}`}>
+                  <div className="validate-finding__bar" />
+                  <div>
+                    <div>
+                      <span className="validate-finding__column">{f.column}</span>
+                      <span className="validate-finding__kind">{f.kind}</span>
+                    </div>
+                    <div className="validate-finding__msg">{f.message}</div>
+                    {f.examples?.length > 0 && (
+                      <div className="validate-finding__examples">
+                        Examples: {f.examples.map(v => JSON.stringify(v)).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                  <div className="validate-finding__count">
+                    {f.count.toLocaleString()} row{f.count === 1 ? '' : 's'}
+                    <br />
+                    <span style={{ color: f.severity === 'error' ? 'var(--danger, #b91c1c)' : f.severity === 'warning' ? 'var(--warn, #b45309)' : 'var(--ink-3)' }}>
+                      {(f.pct * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

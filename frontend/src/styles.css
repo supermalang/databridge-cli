@@ -624,4 +624,29 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .tips-card-sm{background:linear-gradient(180deg,#FEF7E8,#FDF1D6);border:1px solid #FCE7B0;border-radius:var(--r-lg);padding:14px 16px}
 .tips-card-sm__title{font-size:13px;font-weight:700;color:var(--warm);margin-bottom:8px;letter-spacing:-.005em}
 .tips-card-sm__body{font-size:12px;line-height:1.55;color:#7B4F08}
+
+/* ── Validate tab ───────────────────────────────────────────────────────────── */
+.validate-findings {
+  display: grid;
+  gap: 12px;
+}
+.validate-finding {
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  gap: 12px;
+  align-items: start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+}
+.validate-finding__bar { width: 4px; border-radius: 2px; align-self: stretch; }
+.validate-finding[data-severity="error"]   .validate-finding__bar { background: var(--danger, #b91c1c); }
+.validate-finding[data-severity="warning"] .validate-finding__bar { background: var(--warn,   #b45309); }
+.validate-finding[data-severity="info"]    .validate-finding__bar { background: var(--ink-3); }
+.validate-finding__column { font-family: var(--font-mono, monospace); font-weight: 600; font-size: 13px; }
+.validate-finding__kind   { color: var(--ink-3); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; margin-left: 8px; }
+.validate-finding__msg    { color: var(--ink-2); font-size: 13px; margin-top: 4px; line-height: 1.45; }
+.validate-finding__examples { font-family: var(--font-mono, monospace); color: var(--ink-3); font-size: 12px; margin-top: 6px; }
+.validate-finding__count  { color: var(--ink-3); font-size: 12px; white-space: nowrap; padding-top: 2px; }
 .tips-card-sm__body b{color:#5C3B07;font-weight:700}
