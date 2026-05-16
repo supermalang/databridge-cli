@@ -718,6 +718,34 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesti
 
 // ── Views card ───────────────────────────────────────────────────────────────
 function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest, onPreview, suggesting }) {
+  const [dims, setDims] = useState({}); // { [view.name]: { rows, cols, error } }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadOne(v) {
+      try {
+        const r = await fetch('/api/views/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ view: v }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!r.ok) {
+          setDims(prev => ({ ...prev, [v.name]: { error: data.detail || 'error' } }));
+        } else {
+          setDims(prev => ({ ...prev, [v.name]: { rows: data.n_rows, cols: (data.columns || []).length } }));
+        }
+      } catch {
+        if (!cancelled) setDims(prev => ({ ...prev, [v.name]: { error: 'network' } }));
+      }
+    }
+    for (const v of views) {
+      if (v?.name && !(v.name in dims)) loadOne(v);
+    }
+    return () => { cancelled = true; };
+  }, [views]);
+
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -743,7 +771,6 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest, onPreview, sugge
               : v.filter
                 ? `${v.source} where ${v.filter}`
                 : v.source || '—';
-          const dims = `${Math.floor(Math.random() * 30000 + 100).toLocaleString()} rows · ${Math.floor(Math.random() * 10 + 3)} cols`;
           return (
             <div className="view-row" key={`${v.name}-${i}`}>
               <div className="comp-row__icon" data-tone="green">
@@ -755,7 +782,12 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest, onPreview, sugge
                 {v.filter || '—'}
               </div>
               <div className="view-row__dims">
-                {dims}
+                {(() => {
+                  const d = dims[v.name];
+                  if (!d) return '…';
+                  if (d.error) return '—';
+                  return `${d.rows?.toLocaleString() ?? '?'} rows · ${d.cols ?? '?'} cols`;
+                })()}
                 <div className="comp-row__actions" style={{ marginTop: 6, justifyContent: 'flex-end' }}>
                   <button className="btn btn-ghost btn-sm" onClick={() => onPreview(i)}>
                     <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
