@@ -232,14 +232,15 @@ def cmd_list_sessions():
 @click.option("--split-sample", "split_sample", default=None, type=int,
               help="When splitting, generate reports for only the first N split values.")
 @click.option("--session", default=None, help="Session ID (YYYYMMDD_HHMMSS) to use. Defaults to latest.")
-def cmd_build_report(sample, random_sample, split_by, split_sample, session):
+@click.option("--period", default=None, help="Period label to build from (overrides periods.current).")
+def cmd_build_report(sample, random_sample, split_by, split_sample, session, period):
     """Build a Word report from previously downloaded data."""
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("charts"):
         click.echo("No charts in config.yml. Add chart configs first.", err=True)
         sys.exit(1)
     from src.reports.builder import ReportBuilder
-    ReportBuilder(cfg).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample, session=session)
+    ReportBuilder(cfg).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample, session=session, period=period)
 
 if __name__ == "__main__":
     cli()
