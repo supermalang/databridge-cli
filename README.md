@@ -25,6 +25,12 @@ databridge-cli
 - Web terminal (ttyd) for direct CLI access from the browser
 - Export to CSV, JSON, XLSX, MySQL, PostgreSQL, or Supabase
 
+### Trust & audit
+
+- Every value shown in the Composition tab — indicator "Latest", view dimensions — is computed live from your downloaded data. No placeholders.
+- Generated `.docx` reports include a provenance footer: when the report was generated, when the underlying data was downloaded, the number of submissions, the active filters, and a short hash of the config that produced the report. Two reports from the same config + data set have the same hash; if they differ, something in the inputs changed.
+- A pytest suite under `tests/` covers the provenance helper and a build-report smoke path. Run `pytest -v` to verify.
+
 # Installation
 ## Prerequisites
 - [Docker](https://docs.docker.com/get-docker/)
