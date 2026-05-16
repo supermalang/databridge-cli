@@ -80,7 +80,7 @@ class ReportBuilder:
         self.report_cfg = cfg.get("report", {})
         self.charts_cfg: List[Dict] = cfg.get("charts", [])
 
-    def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None, session: Optional[str] = None, period: Optional[str] = None) -> List[Path]:
+    def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None, session: Optional[str] = None, period: Optional[str] = None, compare: Optional[List[str]] = None) -> List[Path]:
         from src.utils.periods import parse_period_arg
         resolved_period = parse_period_arg(self.cfg, period)
         df, repeat_tables = load_processed_data(self.cfg, sample_size=sample_size, random_sample=random_sample, session=session, period=resolved_period)
@@ -89,7 +89,7 @@ class ReportBuilder:
         if split_col:
             if split_col not in df.columns:
                 log.warning(f"split_by column '{split_col}' not found — building single report")
-                return [self._render(df, repeat_tables, suffix="")]
+                return [self._render(df, repeat_tables, suffix="", compare=compare)]
             unique_vals = sorted(df[split_col].dropna().unique())
             if split_sample and split_sample < len(unique_vals):
                 log.info(f"Split sample: limiting to first {split_sample} of {len(unique_vals)} value(s)")
@@ -100,12 +100,12 @@ class ReportBuilder:
                 safe = str(val).replace("/", "_").replace(" ", "_")
                 # Filter repeat tables to rows whose parent submission survived the split
                 filtered_repeats = _filter_repeat_tables_by_split(df, repeat_tables, split_col, val)
-                paths.append(self._render(df[df[split_col] == val], filtered_repeats, suffix=f"_{safe}", split_value=str(val)))
+                paths.append(self._render(df[df[split_col] == val], filtered_repeats, suffix=f"_{safe}", split_value=str(val), compare=compare))
             return paths
         suffix = f"_sample{sample_size}" if sample_size else ""
-        return [self._render(df, repeat_tables, suffix=suffix)]
+        return [self._render(df, repeat_tables, suffix=suffix, compare=compare)]
 
-    def _render(self, df: "pd.DataFrame", repeat_tables: Dict, suffix: str = "", split_value: Optional[str] = None) -> Path:
+    def _render(self, df: "pd.DataFrame", repeat_tables: Dict, suffix: str = "", split_value: Optional[str] = None, compare: Optional[List[str]] = None) -> Path:
         template_path = Path(self.report_cfg.get("template","templates/report_template.docx"))
         if not template_path.exists():
             raise FileNotFoundError(f"Template not found: {template_path}\nRun generate-template or see TEMPLATE_GUIDE.md")
@@ -138,6 +138,24 @@ class ReportBuilder:
                     }
                 except FileNotFoundError:
                     continue
+        if compare:
+            from src.utils.periods import slugify, all_periods, baseline_period
+            c_registry = all_periods(self.cfg)
+            label_to_slug = {e["label"]: e["slug"] for e in c_registry}
+            slugs = [label_to_slug.get(lbl, slugify(lbl)) for lbl in compare]
+            if per_period:
+                # Filter per_period to just the requested slugs, preserving the compare order.
+                filtered = {}
+                for s in slugs:
+                    if s in per_period:
+                        filtered[s] = per_period[s]
+                per_period = filtered or None
+            if per_period:
+                base = baseline_period(self.cfg)
+                base_slug = base["slug"] if base else slugs[0]
+                for s in per_period:
+                    per_period[s]["is_baseline"] = (s == base_slug)
+
         self._last_per_period = per_period   # exposed for Task 18 (chart payload)
 
         indicators  = compute_indicators(
