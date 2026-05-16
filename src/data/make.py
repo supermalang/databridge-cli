@@ -177,7 +177,8 @@ def _run_classify(cfg, sample=None, rediscover=False):
 
 @cli.command("download")
 @click.option("--sample", default=None, type=int, help="Limit to first N submissions.")
-def cmd_download(sample):
+@click.option("--period", default=None, help="Period label to tag this download (overrides periods.current).")
+def cmd_download(sample, period):
     """Download submissions, apply filters, export to configured destination."""
     from src.data.extract import get_client
     from src.data.transform import load_data, apply_filters, apply_computed_columns, export_data
@@ -185,6 +186,13 @@ def cmd_download(sample):
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
         sys.exit(1)
+    if period:
+        from src.utils.periods import slugify
+        cfg.setdefault("periods", {})
+        cfg["periods"]["current"] = period
+        registry = cfg["periods"].setdefault("registry", [])
+        if not any(e.get("label") == period for e in registry):
+            registry.append({"label": period, "slug": slugify(period)})
     client = get_client(cfg)
     log.info("Downloading submissions ...")
     raw = client.get_submissions(sample_size=sample)
@@ -194,6 +202,9 @@ def cmd_download(sample):
     df = apply_computed_columns(df, cfg, repeat_tables)
     log.info(f"Exporting {len(df)} rows ...")
     export_data(df, cfg, repeat_tables)
+    if period:
+        from src.utils.config import write_config
+        write_config(cfg, CONFIG_PATH)
     _run_classify(cfg, sample=sample)
 
 
