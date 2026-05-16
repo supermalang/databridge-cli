@@ -48,11 +48,17 @@ def compute_indicators(
     indicators: List[Dict],
     df: pd.DataFrame,
     repeat_tables: Optional[Dict[str, pd.DataFrame]] = None,
+    per_period: Optional[Dict[str, Dict]] = None,
 ) -> Dict[str, str]:
     """Return a dict of {ind_<name>: formatted_value} for all indicators.
 
     When repeat_tables is provided, indicators can use `source:` to compute
     against a repeat-group DataFrame instead of the main table.
+
+    per_period (optional): {period_slug: {"df": main_df, "repeat_tables": {...}, "label": "...", "is_baseline": bool}}
+        When provided, each indicator is also computed against every period in per_period.
+        The result populates `ind_<name>_p_<slug>` placeholders, plus `_delta` and `_pct_change`
+        when a baseline period exists.
     """
     if repeat_tables is None:
         repeat_tables = {}
@@ -67,6 +73,33 @@ def compute_indicators(
             value = _compute(ind, ind_df)
             fmt = ind.get("format", "number")
             context[f"ind_{name}"] = _format(value, fmt, ind)
+
+            if per_period:
+                values_by_slug = {}
+                for slug, bundle in per_period.items():
+                    try:
+                        p_df  = _resolve_source(ind, bundle["df"], bundle.get("repeat_tables", {}))
+                        p_val = _compute(ind, p_df)
+                        values_by_slug[slug] = p_val
+                        context[f"ind_{name}_p_{slug}"] = _format(p_val, fmt, ind)
+                    except Exception as e:
+                        log.warning(f"Indicator '{name}' for period '{slug}' failed: {e}")
+                        context[f"ind_{name}_p_{slug}"] = "N/A"
+
+                # delta + pct change vs baseline period
+                baseline_slug = next((s for s, b in per_period.items() if b.get("is_baseline")), None)
+                if baseline_slug and baseline_slug in values_by_slug:
+                    try:
+                        base = float(values_by_slug[baseline_slug])
+                        cur  = float(value)
+                        context[f"ind_{name}_delta"] = _format(cur - base, fmt, ind)
+                        if base != 0:
+                            context[f"ind_{name}_pct_change"] = f"{((cur - base) / base) * 100:,.1f}%"
+                        else:
+                            context[f"ind_{name}_pct_change"] = "N/A"
+                    except (TypeError, ValueError):
+                        context[f"ind_{name}_delta"] = "N/A"
+                        context[f"ind_{name}_pct_change"] = "N/A"
 
             # Baseline / target extra placeholders
             baseline = ind.get("baseline")
