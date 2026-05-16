@@ -533,14 +533,16 @@ export default function Composition() {
                 <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>{summaryPreview.error}</div>
               </div>
             )}
-            {summaryPreview.text && (
+            {summaryPreview.text !== undefined && !summaryPreview.loading && !summaryPreview.error && (
               <>
                 {summaryPreview.n_rows !== undefined && (
                   <div style={{ color: 'var(--ink-3)', fontSize: 12, marginBottom: 8 }}>
                     From {summaryPreview.n_rows.toLocaleString()} row{summaryPreview.n_rows === 1 ? '' : 's'}
                   </div>
                 )}
-                <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{summaryPreview.text}</div>
+                <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+                  {summaryPreview.text || <em style={{ color: 'var(--ink-3)' }}>No output returned.</em>}
+                </div>
               </>
             )}
           </div>
