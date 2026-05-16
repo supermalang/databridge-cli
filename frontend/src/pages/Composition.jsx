@@ -307,7 +307,11 @@ export default function Composition() {
 
   return (
     <div className="comp-page">
-      <Header questionCount={questionCount} onSave={saveAll} />
+      <Header
+        questionCount={questionCount}
+        counts={{ charts: charts.length, indicators: indicators.length, summaries: summaries.length, views: views.length }}
+        onSave={saveAll}
+      />
       <div className="comp-grid">
         <div className="comp-col">
           <ChartsCard
@@ -553,8 +557,7 @@ export default function Composition() {
 }
 
 // ── Header band ──────────────────────────────────────────────────────────────
-function Header({ questionCount, onSave }) {
-  const toast = useToast();
+function Header({ questionCount, counts, onSave }) {
   return (
     <div className="comp-header">
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -566,10 +569,15 @@ function Header({ questionCount, onSave }) {
         </div>
       </div>
       <div className="comp-header__actions">
-        <button className="btn" onClick={() => toast('Preview coming next', 'err')}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-          Preview composition
-        </button>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', color: 'var(--ink-3)', fontSize: 12.5, marginRight: 12 }}>
+          <span>{counts.charts} charts</span>
+          <span>·</span>
+          <span>{counts.indicators} indicators</span>
+          <span>·</span>
+          <span>{counts.summaries} summaries</span>
+          <span>·</span>
+          <span>{counts.views} views</span>
+        </div>
         <button className="btn btn-primary" onClick={onSave}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
           Save changes
