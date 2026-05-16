@@ -615,6 +615,7 @@ async def preview_indicator(payload: IndicatorPreviewPayload):
         if not candidates:
             raise HTTPException(status_code=400, detail="No data file found. Run Download first.")
         df = pd.read_csv(candidates[0])
+    _cfg = None
     try:
         async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as _f:
             _cfg = yaml.safe_load(await _f.read()) or {}
@@ -639,7 +640,42 @@ async def preview_indicator(payload: IndicatorPreviewPayload):
         value = result.get(key, "N/A")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Indicator error: {e}")
-    return {"value": value, "n_rows": len(df)}
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    trend = []
+    try:
+        from src.utils.periods import all_periods, baseline_period
+        registry = all_periods(_cfg) if _cfg else []
+        base = baseline_period(_cfg) if _cfg else None
+        base_slug = base["slug"] if base else None
+        if len(registry) >= 2:
+            from src.data.transform import load_processed_data, apply_choice_labels
+            for entry in registry:
+                try:
+                    p_df, _p_repeats = load_processed_data(_cfg, period=entry)
+                    if _questions:
+                        try:
+                            p_df = apply_choice_labels(p_df, _questions)
+                        except Exception:
+                            pass
+                    if question:
+                        p_df = _pick_preview_df(p_df, [question], _questions)
+                    p_result = compute_indicators([ind], p_df)
+                    p_value = p_result.get(f"ind_{ind.get('name', 'preview')}", "N/A")
+                    trend.append({
+                        "slug": entry["slug"],
+                        "label": entry["label"],
+                        "value": p_value,
+                        "is_baseline": entry["slug"] == base_slug,
+                    })
+                except FileNotFoundError:
+                    continue
+                except Exception as e:
+                    _log.warning(f"Trend computation for period '{entry['slug']}' failed: {e}")
+                    continue
+    except Exception as e:
+        _log.warning(f"Trend computation failed entirely: {e}")
+    return {"value": value, "n_rows": len(df), "trend": trend}
 
 class SummaryPreviewPayload(BaseModel):
     summary: dict
