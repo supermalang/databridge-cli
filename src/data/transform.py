@@ -663,12 +663,16 @@ def join_repeat_to_main(
     return merged
 
 
-def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sample: bool = False, session: Optional[str] = None) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sample: bool = False, session: Optional[str] = None, period: Optional[Dict] = None) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """Load the main processed DataFrame plus any repeat-group tables from disk.
 
     Args:
         session: Optional session ID (YYYYMMDD_HHMMSS) to load a specific download run.
                  Defaults to the latest session when not provided.
+        period: Optional period dict (with at least a ``slug`` key) to scope file
+                discovery to a specific period.  When *None* the current period is
+                resolved from ``cfg`` via ``current_period(cfg)``.  Pass an explicit
+                dict to override (e.g. when loading a non-current period for comparison).
 
     Returns:
         (main_df, repeat_tables) where repeat_tables is {safe_group_name: DataFrame}
@@ -676,6 +680,9 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
     fmt = cfg.get("export", {}).get("format", "csv")
     out_dir = Path(cfg.get("export", {}).get("output_dir", "data/processed"))
     alias = cfg.get("form", {}).get("alias", "form")
+    from src.utils.periods import current_period
+    period = period or current_period(cfg)
+    prefix = f"{alias}_{period['slug']}" if period else alias
 
     def _latest(pattern, session=session):
         matches = sorted(out_dir.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True)
@@ -690,13 +697,13 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
         return matches[0]
 
     if fmt == "csv":
-        df = pd.read_csv(_latest(f"{alias}_data*.csv"))
+        df = pd.read_csv(_latest(f"{prefix}_data*.csv"))
     elif fmt == "json":
-        df = pd.read_json(_latest(f"{alias}_data*.json"), orient="records")
+        df = pd.read_json(_latest(f"{prefix}_data*.json"), orient="records")
     elif fmt == "xlsx":
-        df = pd.read_excel(_latest(f"{alias}_data*.xlsx"), sheet_name="main")
+        df = pd.read_excel(_latest(f"{prefix}_data*.xlsx"), sheet_name="main")
     else:
-        df = pd.read_csv(_latest(f"{alias}_data*.csv"))
+        df = pd.read_csv(_latest(f"{prefix}_data*.csv"))
 
     if sample_size:
         if random_sample:
@@ -713,7 +720,7 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
     # --- Load repeat tables ---
     repeat_tables: Dict[str, pd.DataFrame] = {}
     if fmt == "xlsx":
-        xl_path = _latest(f"{alias}_data*.xlsx")
+        xl_path = _latest(f"{prefix}_data*.xlsx")
         import openpyxl
         wb = openpyxl.load_workbook(xl_path, read_only=True)
         for sheet in wb.sheetnames:
@@ -721,19 +728,19 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
                 repeat_tables[sheet] = pd.read_excel(xl_path, sheet_name=sheet)
         wb.close()
     else:
-        # CSV / JSON: repeat files are named {alias}_{safe_group}_{ts}.{ext}
-        # Main file is {alias}_data_{ts}.{ext} — skip it
+        # CSV / JSON: repeat files are named {prefix}_{safe_group}_{ts}.{ext}
+        # Main file is {prefix}_data_{ts}.{ext} — skip it
         ext = "csv" if fmt == "csv" else "json"
-        main_stem_prefix = f"{alias}_data_"
-        candidates = sorted(out_dir.glob(f"{alias}_*.{ext}"), key=lambda x: x.stat().st_mtime, reverse=True)
+        main_stem_prefix = f"{prefix}_data_"
+        candidates = sorted(out_dir.glob(f"{prefix}_*.{ext}"), key=lambda x: x.stat().st_mtime, reverse=True)
         if session:
             candidates = [f for f in candidates if f.stem.endswith(session)]
         for f in candidates:
             if f.stem.startswith(main_stem_prefix):
                 continue
-            # stem = {alias}_{safe_name}_{YYYYMMDD}_{HHMMSS}
+            # stem = {prefix}_{safe_name}_{YYYYMMDD}_{HHMMSS}
             # rsplit on "_" twice to strip the two timestamp segments
-            remainder = f.stem[len(f"{alias}_"):]
+            remainder = f.stem[len(f"{prefix}_"):]
             parts = remainder.rsplit("_", 2)
             if len(parts) != 3:
                 continue
