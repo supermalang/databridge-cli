@@ -10,6 +10,7 @@ from src.reports.charts import generate_chart, CHART_DIR
 from src.reports.indicators import compute_indicators
 from src.reports.narrator import generate_narrative
 from src.reports.summaries import compute_summaries
+from src.utils.provenance import build_provenance, data_mtime
 
 log = logging.getLogger(__name__)
 
@@ -136,11 +137,21 @@ class ReportBuilder:
             prompts_cfg   = prompts_cfg,
         )
 
+        provenance = build_provenance(
+            self.cfg,
+            df,
+            data_downloaded_at=data_mtime(
+                Path(self.cfg.get("export", {}).get("output_dir", "data/processed")),
+                self.cfg.get("form", {}).get("alias", "form"),
+            ),
+        )
+
         context = {
             "report_title":  self.report_cfg.get("title", "Report"),
             "period":        self.report_cfg.get("period", datetime.today().strftime("%B %Y")),
             "n_submissions": len(df),
             "generated_at":  datetime.today().strftime("%d/%m/%Y %H:%M"),
+            "provenance":    provenance,
             **narrative,
             "stats_table":   stats_table,
             **indicators,
