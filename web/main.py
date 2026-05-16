@@ -1222,6 +1222,77 @@ async def preview_template(filename: str):
     return {"filename": filename, "variables": variables, "charts": charts}
 
 
+# ── Periods ─────────────────────────────────────────────────
+
+class PeriodLabelPayload(BaseModel):
+    label: str
+
+
+def _config_path() -> Path:
+    """cwd-first config path (matches /api/validate convention)."""
+    return Path("config.yml") if Path("config.yml").exists() else CONFIG_PATH
+
+
+def _load_cfg() -> dict:
+    path = _config_path()
+    if not path.exists():
+        raise HTTPException(status_code=400, detail="config.yml not found")
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f.read()) or {}
+
+
+def _save_cfg(cfg: dict) -> None:
+    path = _config_path()
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
+
+
+@app.get("/api/periods")
+async def get_periods():
+    cfg = _load_cfg()
+    p = cfg.get("periods") or {}
+    return {
+        "current":  p.get("current"),
+        "baseline": p.get("baseline"),
+        "registry": p.get("registry", []) or [],
+    }
+
+
+@app.post("/api/periods/current")
+async def set_current_period(payload: PeriodLabelPayload):
+    from src.utils.periods import slugify
+    cfg = _load_cfg()
+    cfg.setdefault("periods", {})
+    cfg["periods"]["current"] = payload.label
+    registry = cfg["periods"].setdefault("registry", [])
+    if not any(e.get("label") == payload.label for e in registry):
+        registry.append({"label": payload.label, "slug": slugify(payload.label)})
+    _save_cfg(cfg)
+    return {"current": payload.label, "registry": cfg["periods"]["registry"]}
+
+
+@app.post("/api/periods/registry")
+async def add_registry_period(payload: PeriodLabelPayload):
+    from src.utils.periods import slugify
+    cfg = _load_cfg()
+    cfg.setdefault("periods", {})
+    registry = cfg["periods"].setdefault("registry", [])
+    if not any(e.get("label") == payload.label for e in registry):
+        registry.append({"label": payload.label, "slug": slugify(payload.label)})
+    _save_cfg(cfg)
+    return {"registry": registry}
+
+
+@app.delete("/api/periods/registry/{slug}")
+async def delete_registry_period(slug: str):
+    cfg = _load_cfg()
+    p = cfg.setdefault("periods", {})
+    registry = p.get("registry", []) or []
+    p["registry"] = [e for e in registry if e.get("slug") != slug]
+    _save_cfg(cfg)
+    return {"registry": p["registry"]}
+
+
 # ── Validation ──────────────────────────────────────────────
 @app.post("/api/validate")
 async def validate():
