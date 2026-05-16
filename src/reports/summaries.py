@@ -31,13 +31,50 @@ import pandas as pd
 log = logging.getLogger(__name__)
 
 
+# ── Prompts (edit these to refine the `stat: ai` summary behavior) ──────────
+# Or override at runtime by passing `system_prompt` / `user_prompt_template`
+# to compute_summaries(), or by setting prompts.summaries in config.yml.
+
+AI_SUMMARY_SYSTEM_PROMPT = (
+    "You are a humanitarian data analyst. Write clear, professional text "
+    "for a monitoring report. Be concise and data-driven."
+)
+
+# Appended to AI_SUMMARY_SYSTEM_PROMPT when the summary item specifies `example:`
+AI_SUMMARY_EXAMPLE_ADDENDUM = (
+    " When an example format is provided, it overrides all default style choices — match it exactly."
+)
+
+# Format slots: {language} {focus_line} {data_block} {example_block}
+# focus_line and example_block are "" when absent.
+AI_SUMMARY_USER_TEMPLATE = """\
+Write a summary in {language} of the following data.
+{focus_line}
+DATA:
+{data_block}{example_block}
+
+Return only the output text — no headers, no JSON, no markdown."""
+
+# Appended to AI_SUMMARY_USER_TEMPLATE's {example_block} when the summary item specifies `example:`
+AI_SUMMARY_EXAMPLE_USER_BLOCK = (
+    "\n\nIMPORTANT: Your output must strictly follow this example — same format, "
+    "same length, same structure. Only replace the values with those from the data above:\n{example}"
+)
+
+
 def compute_summaries(
     summaries_cfg: List[Dict],
     df: pd.DataFrame,
     ai_cfg: Optional[Dict] = None,
     repeat_tables: Optional[Dict[str, pd.DataFrame]] = None,
+    prompts_cfg: Optional[Dict] = None,
+    system_prompt: str = AI_SUMMARY_SYSTEM_PROMPT,
+    user_prompt_template: str = AI_SUMMARY_USER_TEMPLATE,
 ) -> Dict[str, str]:
-    """Return {"summary_<name>": "text", ...} for all configured summaries."""
+    """Return {"summary_<name>": "text", ...} for all configured summaries.
+
+    `system_prompt` and `user_prompt_template` apply only to `stat: ai` summaries.
+    """
     if repeat_tables is None:
         repeat_tables = {}
     context = {}
@@ -47,7 +84,11 @@ def compute_summaries(
             continue
         try:
             scoped_df = _resolve_source(s, df, repeat_tables)
-            context[f"summary_{name}"] = _compute_summary(s, scoped_df, ai_cfg)
+            context[f"summary_{name}"] = _compute_summary(
+                s, scoped_df, ai_cfg, prompts_cfg,
+                system_prompt=system_prompt,
+                user_prompt_template=user_prompt_template,
+            )
         except Exception as e:
             log.warning(f"Summary '{name}' failed: {e}")
             context[f"summary_{name}"] = "N/A"
@@ -105,7 +146,12 @@ def _resolve_source(s: Dict, main_df: pd.DataFrame, repeat_tables: Dict) -> pd.D
     return df
 
 
-def _compute_summary(s: Dict, df: pd.DataFrame, ai_cfg: Optional[Dict]) -> str:
+def _compute_summary(
+    s: Dict, df: pd.DataFrame, ai_cfg: Optional[Dict],
+    prompts_cfg: Optional[Dict] = None,
+    system_prompt: str = AI_SUMMARY_SYSTEM_PROMPT,
+    user_prompt_template: str = AI_SUMMARY_USER_TEMPLATE,
+) -> str:
     stat = s.get("stat", "distribution")
     questions = s.get("questions", [])
     top_n = s.get("top_n", 5)
@@ -161,7 +207,12 @@ def _compute_summary(s: Dict, df: pd.DataFrame, ai_cfg: Optional[Dict]) -> str:
         return _grouped_agg_text(df, group_by, questions[0], agg, top_n)
 
     if stat == "ai":
-        return _ai_text(df, questions, s.get("prompt", ""), ai_cfg, s.get("language"), s.get("example"))
+        return _ai_text(
+            df, questions, s.get("prompt", ""), ai_cfg,
+            s.get("language"), s.get("example"), prompts_cfg,
+            system_prompt=system_prompt,
+            user_prompt_template=user_prompt_template,
+        )
 
     raise ValueError(f"unknown stat '{stat}'")
 
@@ -246,6 +297,9 @@ def _ai_text(
     ai_cfg: Optional[Dict],
     language: Optional[str],
     example: Optional[str] = None,
+    prompts_cfg: Optional[Dict] = None,
+    system_prompt: str = AI_SUMMARY_SYSTEM_PROMPT,
+    user_prompt_template: str = AI_SUMMARY_USER_TEMPLATE,
 ) -> str:
     if not ai_cfg:
         raise ValueError("stat 'ai' requires an ai: section in config.yml")
@@ -280,19 +334,21 @@ def _ai_text(
             parts = [f"{v} ({c/total*100:.0f}%)" for v, c in vc.items()]
             data_lines.append(f"{q}: {', '.join(parts)}")
 
-    user_prompt = (
-        f"Write a summary in {lang} of the following data.\n"
-        + (f"Focus: {prompt}\n" if prompt else "")
-        + "\nDATA:\n"
-        + "\n".join(data_lines)
-        + (f"\n\nIMPORTANT: Your output must strictly follow this example — same format, same length, same structure. Only replace the values with those from the data above:\n{example}" if example else "")
-        + "\n\nReturn only the output text — no headers, no JSON, no markdown."
+    focus_line    = f"Focus: {prompt}" if prompt else ""
+    data_block    = "\n".join(data_lines)
+    example_block = AI_SUMMARY_EXAMPLE_USER_BLOCK.format(example=example) if example else ""
+    user_prompt = user_prompt_template.format(
+        language=lang,
+        focus_line=focus_line,
+        data_block=data_block,
+        example_block=example_block,
     )
-    system_prompt = (
-        "You are a humanitarian data analyst. Write clear, professional text "
-        "for a monitoring report. Be concise and data-driven."
-        + (" When an example format is provided, it overrides all default style choices — match it exactly." if example else "")
-    )
+
+    if example:
+        system_prompt = system_prompt + AI_SUMMARY_EXAMPLE_ADDENDUM
+    from src.utils.prompts import system_prompt as _resolve_system, append_extra
+    system_prompt = _resolve_system("summaries", prompts_cfg, system_prompt)
+    user_prompt   = append_extra(user_prompt, "summaries", prompts_cfg)
 
     from src.reports.narrator import _call_openai, _call_anthropic
 

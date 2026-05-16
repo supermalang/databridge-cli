@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import yaml from 'js-yaml';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
+import { useCommand } from '../hooks/useCommand.js';
 import { loadConfig, saveConfigPatch } from '../lib/config.js';
 
 // ── chart type catalog ───────────────────────────────────────────────────────
@@ -68,6 +69,170 @@ export default function Composition() {
   const [templates,  setTemplates] = useState([]);
   const [activeTpl,  setActiveTpl] = useState('');
   const [editing,    setEditing]   = useState(null);
+  const [suggestKind, setSuggestKind] = useState(null); // null | 'chart' | 'view' | 'summary'
+  const [suggestText, setSuggestText] = useState('');
+  const [suggesting,  setSuggesting]  = useState(null); // null | 'chart' | 'view' | 'summary' (which kind is running)
+  const [preview,     setPreview]     = useState(null); // null | { chart, loading?, image?, error? }
+  const [viewPreview, setViewPreview] = useState(null); // null | { view, loading?, columns?, rows?, n_rows?, error? }
+
+  // Dispatch table for batch AI suggestions: maps kind → CLI command, YAML key,
+  // setter, and user-facing labels. Keeps the suggest flow generic for all three sections.
+  const suggestSpec = {
+    chart:   { command: 'suggest-charts',    key: 'charts',    setter: setCharts,    label: 'chart',   plural: 'charts',
+               placeholder: 'e.g. Focus on geographic distribution. Include a stacked bar of food security by region. Avoid simple count charts where possible.' },
+    view:    { command: 'suggest-views',     key: 'views',     setter: setViews,     label: 'view',    plural: 'views',
+               placeholder: 'e.g. Per-Wilaya aggregates for health and education. Join location into all repeat groups.' },
+    summary: { command: 'suggest-summaries', key: 'summaries', setter: setSummaries, label: 'summary', plural: 'summaries',
+               placeholder: 'e.g. One paragraph per topic area summarising the most important findings.' },
+  };
+
+  // Accumulate streamed log lines while a suggest-* run is active so we can extract
+  // the YAML block on completion (or the error on failure).
+  const suggestLogRef = useRef([]);
+  const { run: runCmd } = useCommand({
+    onLog: (line, _level) => { if (suggesting) suggestLogRef.current.push(line); },
+    onStatus: ({ status }) => {
+      if (!suggesting || (status !== 'success' && status !== 'error')) return;
+      const spec = suggestSpec[suggesting];
+      const lines = suggestLogRef.current;
+      suggestLogRef.current = [];
+      setSuggesting(null);
+      if (status === 'error') {
+        const errLine = [...lines].reverse().find(l => /^[A-Z][A-Za-z]+(Error|Exception):/.test(l.trim()));
+        toast(errLine ? errLine.trim() : `${spec.label} suggestion failed (no error detail in logs)`, 'err');
+        return;
+      }
+      // CLI prints a header comment then the YAML block. Find the line starting with "<key>:".
+      const yamlStart = lines.findIndex(l => new RegExp(`^\\s*${spec.key}\\s*:`).test(l));
+      if (yamlStart < 0) { toast('No suggestions parsed from output', 'err'); return; }
+      let parsed;
+      try { parsed = yaml.load(lines.slice(yamlStart).join('\n')); }
+      catch (e) { toast(`YAML parse error: ${e.message}`, 'err'); return; }
+      const suggested = Array.isArray(parsed?.[spec.key]) ? parsed[spec.key] : [];
+      if (!suggested.length) { toast('AI returned 0 suggestions', 'err'); return; }
+      spec.setter(prev => [...prev, ...suggested]);
+      toast(`Added ${suggested.length} suggested ${suggested.length === 1 ? spec.label : spec.plural} — review and Save`, 'ok');
+    },
+  });
+
+  const openSuggestModal = (kind = 'chart') => { setSuggestText(''); setSuggestKind(kind); };
+  const submitSuggestion = () => {
+    const kind = suggestKind;
+    if (!kind) return;
+    setSuggestKind(null);
+    suggestLogRef.current = [];
+    setSuggesting(kind);
+    runCmd(suggestSpec[kind].command, { user_request: suggestText.trim() });
+  };
+
+  const openChartPreview = async (i) => {
+    const chart = charts[i];
+    if (!chart) return;
+    setPreview({ chart, loading: true });
+    try {
+      const resp = await fetch('/api/charts/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chart }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        setPreview({ chart, error: data.detail || `Request failed (${resp.status})` });
+        return;
+      }
+      setPreview({ chart, image: data.image });
+    } catch (e) {
+      setPreview({ chart, error: e.message || 'Network error' });
+    }
+  };
+
+  const openViewPreview = async (i) => {
+    const view = views[i];
+    if (!view) return;
+    // Strip drop_columns AND columns (renames) from the request so the preview returns
+    // the ORIGINAL column names — drops and renames are applied client-side so the user
+    // works against the raw schema and can change either freely.
+    const viewForPreview = { ...view };
+    delete viewForPreview.drop_columns;
+    delete viewForPreview.columns;
+    const initialRemoved = new Set(view.drop_columns || []);
+    const initialRenames = new Map();
+    for (const cs of view.columns || []) {
+      if (cs?.name && cs?.rename && cs.rename !== cs.name) {
+        initialRenames.set(cs.name, cs.rename);
+      }
+    }
+    setViewPreview({ view, viewIndex: i, loading: true, removed: initialRemoved, renames: initialRenames });
+    try {
+      const resp = await fetch('/api/views/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ view: viewForPreview }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        setViewPreview({ view, viewIndex: i, error: data.detail || `Request failed (${resp.status})`, removed: initialRemoved, renames: initialRenames });
+        return;
+      }
+      setViewPreview({ view, viewIndex: i, columns: data.columns || [], rows: data.data || [], n_rows: data.n_rows, removed: initialRemoved, renames: initialRenames });
+    } catch (e) {
+      setViewPreview({ view, viewIndex: i, error: e.message || 'Network error', removed: initialRemoved, renames: initialRenames });
+    }
+  };
+
+  const toggleViewColumnDrop = (colName) => {
+    setViewPreview(p => {
+      if (!p) return p;
+      const next = new Set(p.removed);
+      if (next.has(colName)) next.delete(colName); else next.add(colName);
+      return { ...p, removed: next };
+    });
+  };
+
+  const setViewColumnRename = (origName, newName) => {
+    setViewPreview(p => {
+      if (!p) return p;
+      const next = new Map(p.renames);
+      const trimmed = (newName || '').trim();
+      if (!trimmed || trimmed === origName) next.delete(origName);
+      else next.set(origName, trimmed);
+      return { ...p, renames: next };
+    });
+  };
+
+  const applyViewPreviewChanges = () => {
+    if (!viewPreview) return;
+    const { view, viewIndex, removed, renames, columns: previewCols } = viewPreview;
+
+    // Carry over existing type overrides keyed by original name so we don't lose them.
+    const existingByName = (view.columns || []).reduce((acc, cs) => {
+      if (cs?.name) acc[cs.name] = cs;
+      return acc;
+    }, {});
+
+    // Build new columns: list — entries only for columns surviving drops, with a
+    // rename or carried-over type override.
+    const newColumns = [];
+    const droppedSet = removed || new Set();
+    for (const c of (previewCols || [])) {
+      if (droppedSet.has(c.name)) continue;
+      const newName = renames?.get(c.name);
+      const existing = existingByName[c.name];
+      const entry = { name: c.name };
+      if (newName && newName !== c.name) entry.rename = newName;
+      if (existing?.type) entry.type = existing.type;
+      if (entry.rename || entry.type) newColumns.push(entry);
+    }
+    const drop = Array.from(droppedSet);
+
+    const updated = { ...view };
+    if (newColumns.length) updated.columns = newColumns; else delete updated.columns;
+    if (drop.length) updated.drop_columns = drop; else delete updated.drop_columns;
+
+    setViews(prev => prev.map((v, i) => i === viewIndex ? updated : v));
+    setViewPreview(null);
+    toast('Updated — click Save changes at the top to persist', 'ok');
+  };
 
   const reload = useCallback(async () => {
     const c = await loadConfig();
@@ -131,7 +296,9 @@ export default function Composition() {
             onAdd={() => openEdit('chart', null)}
             onEdit={(i) => openEdit('chart', i)}
             onRemove={remove('chart', setCharts)}
-            onSuggest={() => toast('AI suggest coming next', 'err')}
+            onSuggest={() => openSuggestModal('chart')}
+            onPreview={openChartPreview}
+            suggesting={suggesting === 'chart'}
             toast={toast}
           />
           <IndicatorsCard
@@ -145,14 +312,17 @@ export default function Composition() {
             onAdd={() => openEdit('summary', null)}
             onEdit={(i) => openEdit('summary', i)}
             onRemove={remove('summary', setSummaries)}
-            onSuggest={() => toast('AI suggest coming next', 'err')}
+            onSuggest={() => openSuggestModal('summary')}
+            suggesting={suggesting === 'summary'}
           />
           <ViewsCard
             views={views}
             onAdd={() => openEdit('view', null)}
             onEdit={(i) => openEdit('view', i)}
             onRemove={remove('view', setViews)}
-            onSuggest={() => toast('AI suggest coming next', 'err')}
+            onSuggest={() => openSuggestModal('view')}
+            onPreview={openViewPreview}
+            suggesting={suggesting === 'view'}
           />
           <TemplatesCard
             templates={templates}
@@ -181,6 +351,152 @@ export default function Composition() {
       )}
       {editing?.kind === 'view' && (
         <ViewModal initial={editing.index !== null ? views[editing.index] : null} onClose={closeEdit} onSave={(item) => upsert(setViews)(item, editing.index)} />
+      )}
+
+      {suggestKind && (
+        <Modal
+          title={`Suggest ${suggestSpec[suggestKind].plural} with AI`}
+          onClose={() => setSuggestKind(null)}
+          onSave={submitSuggestion}
+          saveLabel="Suggest"
+          width={560}
+        >
+          <ModalField
+            label={`What ${suggestSpec[suggestKind].plural} would you like? (optional)`}
+            hint="Free-text guidance the AI will prioritise. Leave blank to let it choose freely from your questions."
+          >
+            <textarea
+              className="src-input"
+              rows={5}
+              value={suggestText}
+              onChange={e => setSuggestText(e.target.value)}
+              placeholder={suggestSpec[suggestKind].placeholder}
+            />
+          </ModalField>
+        </Modal>
+      )}
+
+      {preview && (
+        <Modal
+          title={`Preview · ${preview.chart?.title || preview.chart?.name || 'chart'}`}
+          onClose={() => setPreview(null)}
+          width={760}
+        >
+          <div style={{ minHeight: 280, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {preview.loading && (
+              <div style={{ color: 'var(--ink-3)' }}>Rendering preview…</div>
+            )}
+            {preview.error && (
+              <div style={{ color: 'var(--danger, #b91c1c)', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Couldn’t render this chart</div>
+                <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>{preview.error}</div>
+                <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
+                  Tip: previews need a downloaded data file in <code>data/processed/</code>. Run <code>Download</code> first if you haven’t.
+                </div>
+              </div>
+            )}
+            {preview.image && (
+              <img
+                src={`data:image/png;base64,${preview.image}`}
+                alt={preview.chart?.name || 'chart preview'}
+                style={{ maxWidth: '100%', height: 'auto', borderRadius: 4 }}
+              />
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {viewPreview && (
+        <Modal
+          title={`Preview · ${viewPreview.view?.name || 'view'}`}
+          onClose={() => setViewPreview(null)}
+          onSave={viewPreview.columns ? applyViewPreviewChanges : null}
+          saveLabel="Apply"
+          width={920}
+        >
+          <div style={{ minHeight: 200 }}>
+            {viewPreview.loading && (
+              <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 40 }}>Computing view…</div>
+            )}
+            {viewPreview.error && (
+              <div style={{ color: 'var(--danger, #b91c1c)', whiteSpace: 'pre-wrap' }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Couldn’t compute this view</div>
+                <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>{viewPreview.error}</div>
+                <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
+                  Tip: previews need a downloaded data file in <code>data/processed/</code>. Run <code>Download</code> first if you haven’t.
+                </div>
+              </div>
+            )}
+            {viewPreview.columns && (() => {
+              const removed = viewPreview.removed || new Set();
+              const renames = viewPreview.renames || new Map();
+              const visibleCols = viewPreview.columns.filter(c => !removed.has(c.name));
+              const hiddenCols  = viewPreview.columns.filter(c =>  removed.has(c.name));
+              const displayName = (c) => renames.get(c.name) || c.name;
+              return (
+                <>
+                  <div style={{ color: 'var(--ink-3)', fontSize: 12, marginBottom: 8 }}>
+                    Showing {viewPreview.rows.length} of {viewPreview.n_rows?.toLocaleString() ?? viewPreview.rows.length} row{viewPreview.n_rows === 1 ? '' : 's'} · {visibleCols.length} of {viewPreview.columns.length} column{viewPreview.columns.length === 1 ? '' : 's'}
+                    <span style={{ marginLeft: 10 }}>Click <strong>×</strong> to drop a column · click the name to rename it.</span>
+                  </div>
+                  <div style={{ maxHeight: 460, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 4 }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5, fontFamily: 'var(--font-mono, monospace)' }}>
+                      <thead>
+                        <tr>
+                          {visibleCols.map(c => (
+                            <ColumnHeader
+                              key={c.name}
+                              column={c}
+                              renamed={renames.get(c.name)}
+                              onDrop={() => toggleViewColumnDrop(c.name)}
+                              onRename={(newName) => setViewColumnRename(c.name, newName)}
+                            />
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {viewPreview.rows.map((row, ri) => (
+                          <tr key={ri} style={{ borderBottom: '1px solid var(--border)' }}>
+                            {visibleCols.map(c => {
+                              const v = row[c.name];
+                              const display = v === null || v === undefined ? '' : String(v);
+                              const isNum = c.detected_type === 'number';
+                              return (
+                                <td key={c.name} style={{ padding: '5px 10px', textAlign: isNum ? 'right' : 'left', whiteSpace: 'nowrap', color: display === '' ? 'var(--ink-3)' : 'inherit' }}>
+                                  {display === '' ? '—' : display}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                        {viewPreview.rows.length === 0 && (
+                          <tr><td colSpan={visibleCols.length || 1} style={{ padding: 20, textAlign: 'center', color: 'var(--ink-3)' }}>0 rows after filter/aggregation</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {hiddenCols.length > 0 && (
+                    <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 12, color: 'var(--ink-3)', marginRight: 4 }}>
+                        Dropped ({hiddenCols.length}):
+                      </span>
+                      {hiddenCols.map(c => (
+                        <button
+                          key={c.name}
+                          onClick={() => toggleViewColumnDrop(c.name)}
+                          title="Restore column"
+                          style={{ border: '1px solid var(--border)', background: 'var(--surface-2, #f7f7f7)', color: 'var(--ink-2)', borderRadius: 12, padding: '2px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono, monospace)' }}
+                        >
+                          + {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -214,7 +530,7 @@ function Header({ questionCount, onSave }) {
 }
 
 // ── Charts card ──────────────────────────────────────────────────────────────
-function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, toast }) {
+function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, onPreview, suggesting, toast }) {
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -223,7 +539,9 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, toast }) {
           <div className="comp-card__sub">Each chart → <code>{'{{ chart_<name> }}'}</code> token in Word template</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest}>Suggest with AI</button>
+          <button className="ai-btn" onClick={onSuggest} disabled={suggesting}>
+            {suggesting ? 'Asking AI…' : 'Suggest with AI'}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add chart</button>
         </div>
       </div>
@@ -246,7 +564,7 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, toast }) {
               </div>
             </div>
             <div className="comp-row__actions">
-              <button className="btn btn-ghost" onClick={() => toast('Preview coming next', 'err')}>
+              <button className="btn btn-ghost" onClick={() => onPreview(i)}>
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
                 Preview
               </button>
@@ -326,7 +644,7 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
 }
 
 // ── Summaries card ───────────────────────────────────────────────────────────
-function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest }) {
+function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesting }) {
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -335,7 +653,9 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest }) {
           <div className="comp-card__sub">Text paragraphs → <code>{'{{ summary_<name> }}'}</code> placeholders. Composed by the AI narrative.</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest}>Suggest with AI</button>
+          <button className="ai-btn" onClick={onSuggest} disabled={suggesting}>
+            {suggesting ? 'Asking AI…' : 'Suggest with AI'}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add summary</button>
         </div>
       </div>
@@ -373,7 +693,7 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest }) {
 }
 
 // ── Views card ───────────────────────────────────────────────────────────────
-function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest }) {
+function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest, onPreview, suggesting }) {
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -382,7 +702,9 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest }) {
           <div className="comp-card__sub">Virtual data tables — computed once, reused by charts, summaries, and indicators.</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest}>Suggest with AI</button>
+          <button className="ai-btn" onClick={onSuggest} disabled={suggesting}>
+            {suggesting ? 'Asking AI…' : 'Suggest with AI'}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add view</button>
         </div>
       </div>
@@ -411,6 +733,10 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest }) {
               <div className="view-row__dims">
                 {dims}
                 <div className="comp-row__actions" style={{ marginTop: 6, justifyContent: 'flex-end' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => onPreview(i)}>
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
+                    Preview
+                  </button>
                   <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
                   </button>
@@ -689,5 +1015,55 @@ function ModalField({ label, hint, children }) {
       </div>
       <div>{children}</div>
     </div>
+  );
+}
+
+// Sticky table header cell for the view-preview table. Supports click-to-rename
+// (Enter commits, Esc cancels, empty value clears the rename) and an × drop button.
+function ColumnHeader({ column, renamed, onDrop, onRename }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState('');
+  const displayName = renamed || column.name;
+  const startEdit = () => { setDraft(displayName); setEditing(true); };
+  const commit    = () => { onRename(draft); setEditing(false); };
+  const cancel    = () => { setEditing(false); };
+  return (
+    <th style={{ position: 'sticky', top: 0, background: 'var(--surface-2, #f7f7f7)', borderBottom: '1px solid var(--border)', padding: '6px 10px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <button
+          onClick={onDrop}
+          title={`Drop column "${column.name}"`}
+          style={{ border: 'none', background: 'transparent', color: 'var(--ink-3)', cursor: 'pointer', padding: 0, fontSize: 14, lineHeight: 1, fontFamily: 'var(--font-sans, inherit)' }}
+        >×</button>
+        {editing ? (
+          <input
+            autoFocus
+            className="src-input"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); commit(); }
+              else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+            }}
+            style={{ padding: '2px 6px', fontSize: 12.5, fontFamily: 'var(--font-mono, monospace)', minWidth: 120 }}
+          />
+        ) : (
+          <span
+            onClick={startEdit}
+            title="Click to rename"
+            style={{ cursor: 'text', borderBottom: renamed ? '1px dashed var(--accent, #0891b2)' : '1px dashed transparent' }}
+          >
+            {displayName}
+          </span>
+        )}
+        <span style={{ color: 'var(--ink-3)', fontWeight: 400, fontSize: 11 }}>{column.detected_type}</span>
+        {renamed && !editing && (
+          <span style={{ color: 'var(--ink-3)', fontWeight: 400, fontSize: 11, fontStyle: 'italic' }}>
+            was: {column.name}
+          </span>
+        )}
+      </span>
+    </th>
   );
 }

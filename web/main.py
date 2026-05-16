@@ -65,7 +65,9 @@ ALLOWED_COMMANDS = {
     "fetch-questions":      [],
     "generate-template":    ["--context", "--summary-prompt"],
     "ai-generate-template": ["--description", "--pages", "--language", "--context", "--summary-prompt"],
-    "suggest-charts":       [],
+    "suggest-charts":       ["--user-request"],
+    "suggest-views":        ["--user-request"],
+    "suggest-summaries":    ["--user-request"],
     "download":             ["--sample"],
     "build-report":         ["--sample", "--split-by", "--session"],
 }
@@ -80,6 +82,7 @@ class RunPayload(BaseModel):
     rediscover: Optional[bool] = None
     context: Optional[str] = None
     summary_prompt: Optional[str] = None
+    user_request: Optional[str] = None
 
 class QuestionsPayload(BaseModel):
     questions: list
@@ -392,62 +395,154 @@ class ChartPreviewPayload(BaseModel):
 async def preview_chart(payload: ChartPreviewPayload):
     import pandas as pd
     from src.reports.charts import generate_chart
+    from src.data.transform import apply_choice_labels, join_repeat_to_main
+
+    chart = payload.chart or {}
+    questions = chart.get("questions", [])
+    opts = chart.get("options", {}) or {}
+    # Scoping keys live at the chart top level in the canonical schema (matches builder.py),
+    # but AI-suggested charts sometimes nest them under options:. Accept either location.
+    source      = chart.get("source")      or opts.get("source")
+    join_parent = chart.get("join_parent") or opts.get("join_parent")
+    filter_expr = chart.get("filter")      or opts.get("filter")
+
+    _cfg = {}
     _questions = []
-    if payload.data_file:
-        data_path = DATA_DIR / payload.data_file
-        if "/" in payload.data_file or ".." in payload.data_file:
-            raise HTTPException(status_code=400, detail="Invalid filename")
-        if not data_path.exists():
-            raise HTTPException(status_code=404, detail=f"Data file not found: {payload.data_file}")
-        ext = data_path.suffix.lower()
-        if ext == ".csv": df = pd.read_csv(data_path)
-        elif ext == ".json": df = pd.read_json(data_path)
-        elif ext == ".xlsx": df = pd.read_excel(data_path)
-        else: raise HTTPException(status_code=400, detail="Unsupported file type")
-    else:
-        candidates = sorted(DATA_DIR.glob("*_data*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
-        if not candidates:
-            candidates = sorted(DATA_DIR.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
-        if not candidates:
-            raise HTTPException(status_code=400, detail="No data file found. Run Download first.")
-        df = pd.read_csv(candidates[0])
     try:
         async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as _f:
             _cfg = yaml.safe_load(await _f.read()) or {}
         _questions = _cfg.get("questions", [])
-        if _questions:
-            from src.data.transform import apply_choice_labels
-            df = apply_choice_labels(df, _questions)
     except Exception:
         pass
+
+    main_df: Optional["pd.DataFrame"] = None
+    repeat_tables: Dict[str, "pd.DataFrame"] = {}
+
+    if payload.data_file:
+        # Caller pinned a specific file — use it as the only table, no repeat resolution.
+        if "/" in payload.data_file or ".." in payload.data_file:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        data_path = DATA_DIR / payload.data_file
+        if not data_path.exists():
+            raise HTTPException(status_code=404, detail=f"Data file not found: {payload.data_file}")
+        ext = data_path.suffix.lower()
+        if   ext == ".csv":  main_df = pd.read_csv(data_path)
+        elif ext == ".json": main_df = pd.read_json(data_path)
+        elif ext == ".xlsx": main_df = pd.read_excel(data_path)
+        else: raise HTTPException(status_code=400, detail="Unsupported file type")
+        if _questions:
+            try:    main_df = apply_choice_labels(main_df, _questions)
+            except Exception: pass
+    else:
+        # Default path: mirror builder.py's data resolution so previews match production.
+        try:
+            from src.data.transform import load_processed_data
+            main_df, repeat_tables = load_processed_data(_cfg)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No downloaded data found in data/processed/. Run Download first. ({e})",
+            )
+        # load_processed_data applies choice labels to main_df only; do the same for repeats
+        # so categorical labels render correctly in previews.
+        if _questions:
+            for name, rdf in list(repeat_tables.items()):
+                try:    repeat_tables[name] = apply_choice_labels(rdf, _questions)
+                except Exception: pass
+
+    # Resolve which DataFrame this chart targets — same priorities as builder._pick_df.
+    # Also accept leaf repeat-group names (e.g. "group_foo_repeat") as a stand-in for
+    # the canonical underscored-full-path key ("group_parent_group_foo_repeat") since
+    # AI-suggested charts use the leaf form.
+    resolved_source_key = None  # canonical repeat_tables key, for error messages
+    def _resolve_df() -> "pd.DataFrame":
+        nonlocal resolved_source_key
+        if source == "main" or main_df is None:
+            return main_df
+        if source:
+            rdf = repeat_tables.get(source)
+            if rdf is not None:
+                resolved_source_key = source
+                return rdf
+            matches = [k for k in repeat_tables if k.endswith(f"_{source}") or k == source]
+            if len(matches) == 1:
+                resolved_source_key = matches[0]
+                return repeat_tables[matches[0]]
+            # Ambiguous or no match → fall through to auto-pick
+        best = main_df
+        best_hits = sum(1 for q in questions if q in main_df.columns)
+        for k, rdf in repeat_tables.items():
+            hits = sum(1 for q in questions if q in rdf.columns)
+            if hits > best_hits:
+                best_hits = hits
+                best = rdf
+                resolved_source_key = k
+        return best
+
+    df = _resolve_df()
+
+    # Join parent-table columns into a repeat table when join_parent is set (builder.py:191).
+    if join_parent and source and source != "main" and main_df is not None and df is not main_df:
+        try:
+            df = join_repeat_to_main(df, main_df, list(join_parent))
+        except Exception as e:
+            # Non-fatal — fall through, missing columns will be reported below.
+            pass
+
     if payload.sample_n and payload.sample_n > 0:
         df = df.head(payload.sample_n)
-    main_df = df  # keep reference to main table for cross-table filter joins
-    questions = payload.chart.get("questions", [])
-    df = _pick_preview_df(df, questions, _questions)
+
     if payload.split_filters:
         for sf in payload.split_filters:
             col = (sf.get("col") or "").strip()
             val = (sf.get("val") or "").strip()
             if not col or not val:
                 continue
-            if col not in df.columns and col in main_df.columns:
-                # Filter column lives in the main table but chart uses a repeat/view table.
-                # Join it in via _parent_index so the filter can be applied.
-                try:
-                    from src.data.transform import join_repeat_to_main
-                    df = join_repeat_to_main(df, main_df, [col])
-                except Exception:
-                    pass
+            if col not in df.columns and main_df is not None and col in main_df.columns:
+                # Filter column lives in main but chart uses a repeat/view — join it in.
+                try:    df = join_repeat_to_main(df, main_df, [col])
+                except Exception: pass
             if col in df.columns:
                 df = df[df[col].astype(str).str.strip() == val.strip()]
+
+    if filter_expr:
+        try:    df = df.query(filter_expr)
+        except Exception: pass  # don't fail preview on a bad filter
+
     missing = [q for q in questions if q not in df.columns]
     if missing:
-        available = sorted(df.columns.tolist())
-        raise HTTPException(status_code=400, detail=f"Column(s) not found in data: {missing}. Available columns: {available}")
+        # Actionable error: tell the user which table(s) each missing column lives in.
+        col_homes: Dict[str, list] = {}
+        for q in missing:
+            homes = []
+            if main_df is not None and q in main_df.columns:
+                homes.append("main")
+            for rname, rdf in repeat_tables.items():
+                if q in rdf.columns:
+                    homes.append(rname)
+            col_homes[q] = homes
+        lines = []
+        target = source or "(auto-picked)"
+        lines.append(f"This chart targets source: {target}, but the following column(s) aren't there:")
+        for q, homes in col_homes.items():
+            if homes:
+                lines.append(f"  • {q!r} — found in: {', '.join(homes)}")
+            else:
+                lines.append(f"  • {q!r} — not found in any table")
+        used_sources = {h for hs in col_homes.values() for h in hs}
+        used_sources.discard("main")
+        if source and used_sources and any(s != source for s in used_sources):
+            lines.append("")
+            lines.append(
+                "This chart's columns span multiple repeat groups, which can't be combined "
+                "in a single chart. Split it into per-source charts, or define a view that "
+                "joins/aggregates them first and use that view as source:."
+            )
+        raise HTTPException(status_code=400, detail="\n".join(lines))
+
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
-        cfg = {**payload.chart, "name": payload.chart.get("name") or "preview"}
+        cfg = {**chart, "name": chart.get("name") or "preview"}
         try:
             png_path = generate_chart(cfg, df, out_dir=out_dir)
         except Exception as e:
@@ -575,6 +670,7 @@ async def preview_summary(payload: SummaryPreviewPayload):
             raise HTTPException(status_code=400, detail="No data file found. Run Download first.")
         df = pd.read_csv(candidates[0])
     ai_cfg = None
+    prompts_cfg = None
     try:
         async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as _f:
             _cfg = yaml.safe_load(await _f.read()) or {}
@@ -586,6 +682,7 @@ async def preview_summary(payload: SummaryPreviewPayload):
         if raw_ai:
             from src.utils.config import _resolve_env
             ai_cfg = _resolve_env(raw_ai)
+        prompts_cfg = _cfg.get("prompts", {})
     except Exception:
         pass
     if payload.sample_n and payload.sample_n > 0:
@@ -598,7 +695,7 @@ async def preview_summary(payload: SummaryPreviewPayload):
         available = sorted(df.columns.tolist())
         raise HTTPException(status_code=400, detail=f"Column(s) {missing} not found. Available: {available}")
     try:
-        text = _compute_summary(s, df, ai_cfg)
+        text = _compute_summary(s, df, ai_cfg, prompts_cfg)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Summary error: {e}")
     return {"text": text, "n_rows": len(df)}
@@ -682,6 +779,12 @@ async def preview_view(payload: ViewPreviewPayload):
         agg_result.columns = [group_by, question]
         df = agg_result
     # Apply column renames and type overrides
+    # Drop unwanted columns FIRST (references original column names — matches
+    # what users select in the preview before any renames are applied).
+    drop_cols = v.get("drop_columns", []) or []
+    if drop_cols:
+        df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore")
+    # Apply renames and type overrides AFTER drops.
     col_specs = v.get("columns", [])
     rename_map = {}
     for cs in col_specs:
@@ -754,6 +857,8 @@ async def run_command(command: str, payload: RunPayload):
         cmd += ["--summary-prompt", payload.summary_prompt]
     if payload.session and "--session" in ALLOWED_COMMANDS[command]:
         cmd += ["--session", payload.session]
+    if payload.user_request and "--user-request" in ALLOWED_COMMANDS[command]:
+        cmd += ["--user-request", payload.user_request]
     return StreamingResponse(
         _stream(command, cmd),
         media_type="text/event-stream",
@@ -911,6 +1016,8 @@ async def list_data_files():
 async def list_data_sessions():
     from src.data.transform import list_sessions
     from src.utils.config import load_config
+    if not CONFIG_PATH.exists():
+        return {"sessions": []}
     cfg = load_config(CONFIG_PATH)
     sessions = list_sessions(cfg)
     return {"sessions": sessions}
@@ -921,6 +1028,8 @@ async def download_session_zip(session_id: str):
     from src.utils.config import load_config
     if "/" in session_id or ".." in session_id:
         raise HTTPException(status_code=400, detail="Invalid session ID")
+    if not CONFIG_PATH.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
     cfg = load_config(CONFIG_PATH)
     sessions = list_sessions(cfg)
     session = next((s for s in sessions if s["session_id"] == session_id), None)
@@ -945,6 +1054,8 @@ async def delete_session_files(session_id: str):
     from src.utils.config import load_config
     if "/" in session_id or ".." in session_id:
         raise HTTPException(status_code=400, detail="Invalid session ID")
+    if not CONFIG_PATH.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
     cfg = load_config(CONFIG_PATH)
     sessions = list_sessions(cfg)
     session = next((s for s in sessions if s["session_id"] == session_id), None)

@@ -66,7 +66,8 @@ def cmd_ai_generate_template(description, pages, language, context, summary_prom
 
 @cli.command("suggest-charts")
 @click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
-def cmd_suggest_charts(out):
+@click.option("--user-request", default="", help="Free-text guidance for what charts the user wants (e.g. 'focus on geographic distribution').")
+def cmd_suggest_charts(out, user_request):
     """Ask AI to suggest a charts: config block from your questions."""
     from src.reports.ai_chart_suggester import suggest_charts
     cfg = load_config(CONFIG_PATH)
@@ -76,7 +77,39 @@ def cmd_suggest_charts(out):
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
         sys.exit(1)
-    suggest_charts(cfg, out_path=out)
+    suggest_charts(cfg, out_path=out, user_request=user_request)
+
+
+@cli.command("suggest-views")
+@click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
+@click.option("--user-request", default="", help="Free-text guidance for what views the user wants.")
+def cmd_suggest_views(out, user_request):
+    """Ask AI to suggest a views: config block — virtual tables charts can use as source."""
+    from src.reports.ai_view_suggester import suggest_views
+    cfg = load_config(CONFIG_PATH)
+    if not cfg.get("ai"):
+        click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
+        sys.exit(1)
+    if not cfg.get("questions"):
+        click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
+        sys.exit(1)
+    suggest_views(cfg, out_path=out, user_request=user_request)
+
+
+@cli.command("suggest-summaries")
+@click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
+@click.option("--user-request", default="", help="Free-text guidance for what summaries the user wants.")
+def cmd_suggest_summaries(out, user_request):
+    """Ask AI to suggest a summaries: config block — text paragraphs for the report."""
+    from src.reports.ai_summary_suggester import suggest_summaries
+    cfg = load_config(CONFIG_PATH)
+    if not cfg.get("ai"):
+        click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
+        sys.exit(1)
+    if not cfg.get("questions"):
+        click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
+        sys.exit(1)
+    suggest_summaries(cfg, out_path=out, user_request=user_request)
 
 
 def _run_classify(cfg, sample=None, rediscover=False):
@@ -120,15 +153,16 @@ def _run_classify(cfg, sample=None, rediscover=False):
         themes = classify_cfg.get("themes") or []
         label = q.get("label") or col
 
+        prompts_cfg = cfg.get("prompts", {})
         if not themes or rediscover:
             log.info(f"Discovering themes for '{col}' ...")
-            themes = discover_themes(df[col], label, theme_count, ai_cfg)
+            themes = discover_themes(df[col], label, theme_count, ai_cfg, prompts_cfg=prompts_cfg)
             q["classify"]["themes"] = themes
             changed = True
 
         cluster_col = f"{col}_cluster"
         log.info(f"Classifying '{col}' → '{cluster_col}' using themes: {themes}")
-        df[cluster_col] = classify_responses(df[col], themes, label, ai_cfg)
+        df[cluster_col] = classify_responses(df[col], themes, label, ai_cfg, prompts_cfg=prompts_cfg)
         n_classified = df[cluster_col].notna().sum()
         log.info(f"  Done — {n_classified}/{len(df)} rows classified.")
 

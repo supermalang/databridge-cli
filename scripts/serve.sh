@@ -7,6 +7,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONPATH="${PYTHONPATH:-.}"
 
+# Load .env if present, so env:VAR references in config.yml resolve.
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
 # Build the React app → frontend/dist/
 echo "→ npm run build"
 (cd frontend && [ -d node_modules ] || npm install)

@@ -476,5 +476,40 @@ report:
 #   base_url: null            # optional: Azure, Groq, Mistral, Ollama endpoint
 #   language: English         # language for narrative output
 #   max_tokens: 1500
-#   # custom_prompt: |        # optional: override the system prompt entirely
-#   #   You are a humanitarian reporting assistant. ...
+
+# ── Prompt customization ──────────────────────────────────────────────────────
+# Optional. Override the system prompt or append domain guidance to any of the
+# five AI features. Feature keys:
+#   narrator           — {{ summary_text }} / {{ observations }} / {{ recommendations }}
+#   summaries          — `stat: ai` summary blocks
+#   chart_suggester    — suggest-charts CLI / "Suggest charts" UI action
+#   template_generator — ai-generate-template CLI
+#   classifier         — text-classification at the end of download
+#
+# Two fields per feature, both optional:
+#   system : replaces the in-code system prompt entirely
+#   extra  : appended to the user prompt under "ADDITIONAL GUIDANCE"
+#
+# Prefer `extra` for domain rules. Only override `system` if you really need to
+# change the role or output contract — and keep the JSON-format instruction for
+# narrator / chart_suggester / template_generator (their parsers fall back to
+# empty output if the response isn't valid JSON).
+#
+# prompts:
+#   narrator:
+#     extra: |
+#       Disaggregate findings by gender wherever the data allows.
+#       Flag any indicator below 60% of target as "at risk".
+#   chart_suggester:
+#     extra: |
+#       Prefer horizontal_bar when category labels are long French place names.
+#       Never suggest treemap — our template doesn't render them well.
+#   template_generator:
+#     extra: |
+#       Always include a "Geographic Coverage" section if any geographical column exists.
+#   classifier:
+#     extra: |
+#       Normalize variants of "farmer" (agriculteur, cultivateur, paysan) to "Farmer".
+#   summaries:
+#     extra: |
+#       Use UNHCR terminology when referring to displaced populations.

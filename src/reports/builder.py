@@ -35,6 +35,11 @@ def _pick_df(
         rdf = repeat_tables.get(source)
         if rdf is not None:
             return rdf
+        # AI-suggested charts often use the leaf repeat-group name; repeat_tables
+        # keys use the full slash-replaced path. Try a suffix match before falling back.
+        matches = [k for k in repeat_tables if k.endswith(f"_{source}") or k == source]
+        if len(matches) == 1:
+            return repeat_tables[matches[0]]
         log.warning(f"source '{source}' not found in repeat_tables — falling back to auto-select")
 
     if not repeat_tables:
@@ -112,7 +117,11 @@ class ReportBuilder:
 
         stats_table = self._stats_table(df)
         indicators  = compute_indicators(self.cfg.get("indicators", []), df, repeat_tables)
-        summaries   = compute_summaries(self.cfg.get("summaries", []), df, self.cfg.get("ai"), repeat_tables)
+        prompts_cfg = self.cfg.get("prompts", {})
+        summaries   = compute_summaries(
+            self.cfg.get("summaries", []), df, self.cfg.get("ai"),
+            repeat_tables, prompts_cfg=prompts_cfg,
+        )
 
         narrative = generate_narrative(
             ai_cfg        = self.cfg.get("ai"),
@@ -124,6 +133,7 @@ class ReportBuilder:
             summaries     = summaries,
             split_value   = split_value,
             questions_cfg = self.cfg.get("questions"),
+            prompts_cfg   = prompts_cfg,
         )
 
         context = {

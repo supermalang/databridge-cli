@@ -227,6 +227,15 @@ ai:
   language: English
   max_tokens: 1500
 
+# Optional prompt overrides — see "Prompt customization" section below
+prompts:
+  narrator:
+    extra: |
+      Disaggregate findings by gender wherever the data allows.
+  chart_suggester:
+    extra: |
+      Never suggest treemap — our template doesn't render them well.
+
 export:
   format: csv                              # csv | json | xlsx | mysql | postgres | supabase
   output_dir: data/processed
@@ -299,6 +308,32 @@ Common options: `top_n`, `width_inches`, `height_inches`, `color`, `xlabel`, `yl
 Sort options (`bar`, `horizontal_bar`, `grouped_bar`, `waterfall`): `sort: value|label|none`
 
 To add a new chart type: add a function with the standard signature, add it to `CHART_DISPATCH`.
+
+---
+
+## Prompt customization (src/utils/prompts.py)
+
+Five AI features have customizable prompts via the top-level `prompts:` block in `config.yml`:
+
+| Feature key | Used by | Output contract |
+|---|---|---|
+| `narrator` | [src/reports/narrator.py](src/reports/narrator.py) | JSON: `summary_text` / `observations` / `recommendations` |
+| `summaries` | `stat: ai` blocks in [src/reports/summaries.py](src/reports/summaries.py) | Plain text |
+| `chart_suggester` | [src/reports/ai_chart_suggester.py](src/reports/ai_chart_suggester.py) | JSON: `{"charts": [...]}` |
+| `template_generator` | [src/reports/ai_template_generator.py](src/reports/ai_template_generator.py) | JSON: layout spec |
+| `classifier` | [src/data/classifier.py](src/data/classifier.py) | JSON: themes / classifications |
+
+Two fields per feature, both optional:
+- **`system`** — replaces the in-code system prompt entirely. If the feature has a JSON output contract (narrator, chart_suggester, template_generator), the override MUST keep the JSON-format instruction or the parser silently returns empty output.
+- **`extra`** — appended to the user prompt under an `ADDITIONAL GUIDANCE` header. Safer for most admin customization.
+
+Resolution lives in [src/utils/prompts.py](src/utils/prompts.py): `system_prompt(feature, prompts_cfg, default)` and `append_extra(user_prompt, feature, prompts_cfg)`. Callers pass `cfg.get("prompts", {})`.
+
+To add a new prompt site:
+1. `from src.utils.prompts import system_prompt as _resolve_system, append_extra`
+2. `system = _resolve_system("<feature>", prompts_cfg, _default_system_string)`
+3. `user = append_extra(user, "<feature>", prompts_cfg)`
+4. Document the new feature key in [sample.config.yml](sample.config.yml) and this table.
 
 ---
 

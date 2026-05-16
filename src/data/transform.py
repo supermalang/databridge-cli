@@ -372,7 +372,14 @@ def build_views(
                     agg_result.columns = [group_by, question]
                     df = agg_result
 
-            # Apply column renames and type overrides
+            # Drop unwanted columns FIRST (references original column names — matches
+            # what users select in the preview before any renames are applied).
+            drop_cols = v.get("drop_columns", []) or []
+            if drop_cols:
+                df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore")
+
+            # Apply column renames and type overrides AFTER drops, so renames only
+            # affect columns that survived the drop.
             col_specs = v.get("columns", [])
             if col_specs:
                 rename_map = {}
