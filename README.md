@@ -31,6 +31,17 @@ databridge-cli
 - Generated `.docx` reports include a provenance footer: when the report was generated, when the underlying data was downloaded, the number of submissions, the active filters, and a short hash of the config that produced the report. Two reports from the same config + data set have the same hash; if they differ, something in the inputs changed.
 - A pytest suite under `tests/` covers the provenance helper and a build-report smoke path. Run `pytest -v` to verify.
 
+### Validate (data quality)
+
+The **Validate** tab (step 3 of 5) scans your downloaded submissions and surfaces:
+
+- **Missingness** — columns where ≥5% of rows are blank or NaN, with severity escalating at 20% and 50%.
+- **Numeric outliers** — quantitative columns with values outside `Q1 − 3·IQR` to `Q3 + 3·IQR`. Catches mistyped Age=999 or NumStudents=-1 without flooding on legitimate skew.
+- **Duplicate identifiers** — rows that share `_uuid`, `_id`, or `_index` (whichever the data uses).
+- **Type-coercion issues** — quantitative columns containing non-numeric strings like `"n/a"` or `"TBD"`.
+
+Findings are computed by `src/data/validate.py` and served by `POST /api/validate`. There are no user-configurable thresholds in this MVP — the defaults are tuned for typical M&E survey data.
+
 # Installation
 ## Prerequisites
 - [Docker](https://docs.docker.com/get-docker/)
