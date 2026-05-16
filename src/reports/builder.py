@@ -119,7 +119,30 @@ class ReportBuilder:
             repeat_tables = {**repeat_tables, **views}
 
         stats_table = self._stats_table(df)
-        indicators  = compute_indicators(self.cfg.get("indicators", []), df, repeat_tables)
+
+        from src.utils.periods import all_periods, baseline_period
+        registry = all_periods(self.cfg)
+        per_period = None
+        if registry and len(registry) > 1:
+            base = baseline_period(self.cfg)
+            base_slug = base["slug"] if base else None
+            per_period = {}
+            for entry in registry:
+                try:
+                    p_df, p_repeats = load_processed_data(self.cfg, period=entry)
+                    per_period[entry["slug"]] = {
+                        "df": p_df,
+                        "repeat_tables": p_repeats,
+                        "label": entry["label"],
+                        "is_baseline": entry["slug"] == base_slug,
+                    }
+                except FileNotFoundError:
+                    continue
+        self._last_per_period = per_period   # exposed for Task 18 (chart payload)
+
+        indicators  = compute_indicators(
+            self.cfg.get("indicators", []), df, repeat_tables, per_period=per_period
+        )
         prompts_cfg = self.cfg.get("prompts", {})
         summaries   = compute_summaries(
             self.cfg.get("summaries", []), df, self.cfg.get("ai"),
