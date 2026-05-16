@@ -58,3 +58,45 @@ def compute_missingness(df: pd.DataFrame) -> List[Dict]:
             "examples": [],
         })
     return findings
+
+
+def find_numeric_outliers(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]:
+    """Flag rows where a quantitative column's value is outside [Q1 - 3*IQR, Q3 + 3*IQR].
+
+    3*IQR (vs the textbook 1.5) is a deliberate choice: M&E surveys often have
+    legitimate skew (e.g. population counts), and 1.5*IQR generates too much
+    noise. 3*IQR catches the obviously-mistyped values (Age=999, NumStudents=-1).
+    """
+    if df is None or len(df) == 0:
+        return []
+    quant_cols = {q.get("export_label") for q in questions if q.get("category") == "quantitative"}
+    findings: List[Dict] = []
+    n = len(df)
+    for col in df.columns:
+        if col not in quant_cols:
+            continue
+        s = pd.to_numeric(df[col], errors="coerce").dropna()
+        if len(s) < 4:  # IQR needs enough data to be meaningful
+            continue
+        q1, q3 = s.quantile([0.25, 0.75])
+        iqr = q3 - q1
+        if iqr == 0:
+            continue  # constant column — nothing to flag
+        lo, hi = q1 - 3 * iqr, q3 + 3 * iqr
+        outliers = s[(s < lo) | (s > hi)]
+        count = int(len(outliers))
+        if count == 0:
+            continue
+        pct = count / n
+        sev = _severity_for_pct(pct) or "info"  # outliers always show, even at 1 row
+        examples = outliers.head(5).tolist()
+        findings.append({
+            "severity": sev,
+            "column":   str(col),
+            "kind":     "outlier_iqr",
+            "message":  f"{count} value(s) outside [{lo:.1f}, {hi:.1f}] (3×IQR bounds)",
+            "count":    count,
+            "pct":      round(pct, 4),
+            "examples": examples,
+        })
+    return findings
