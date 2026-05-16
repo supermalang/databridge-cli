@@ -427,11 +427,14 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
     out_dir = Path(cfg.get("export", {}).get("output_dir", "data/processed"))
     out_dir.mkdir(parents=True, exist_ok=True)
     alias = cfg.get("form", {}).get("alias", "form")
+    from src.utils.periods import current_period
+    period = current_period(cfg)
+    prefix = f"{alias}_{period['slug']}" if period else alias
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if fmt == "xlsx":
         # XLSX: multiple sheets in one file
-        out = out_dir / f"{alias}_data_{ts}.xlsx"
+        out = out_dir / f"{prefix}_data_{ts}.xlsx"
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
             df.to_excel(writer, sheet_name="main", index=False)
             if repeat_tables:
@@ -442,10 +445,10 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
     else:
         # CSV / JSON: one file per table
         if fmt == "csv":
-            out = out_dir / f"{alias}_data_{ts}.csv"
+            out = out_dir / f"{prefix}_data_{ts}.csv"
             df.to_csv(out, index=False, encoding="utf-8-sig")
         elif fmt == "json":
-            out = out_dir / f"{alias}_data_{ts}.json"
+            out = out_dir / f"{prefix}_data_{ts}.json"
             df.to_json(out, orient="records", force_ascii=False, indent=2, date_format="iso")
         log.info(f"Data exported → {out}")
 
@@ -453,10 +456,10 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
             for name, rdf in repeat_tables.items():
                 safe_name = name.replace("/", "_")
                 if fmt == "csv":
-                    rout = out_dir / f"{alias}_{safe_name}_{ts}.csv"
+                    rout = out_dir / f"{prefix}_{safe_name}_{ts}.csv"
                     rdf.to_csv(rout, index=False, encoding="utf-8-sig")
                 elif fmt == "json":
-                    rout = out_dir / f"{alias}_{safe_name}_{ts}.json"
+                    rout = out_dir / f"{prefix}_{safe_name}_{ts}.json"
                     rdf.to_json(rout, orient="records", force_ascii=False, indent=2, date_format="iso")
                 log.info(f"Repeat group exported → {rout}")
 
