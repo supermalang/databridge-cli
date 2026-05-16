@@ -584,14 +584,34 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, onPreview, sug
 
 // ── Indicators card ──────────────────────────────────────────────────────────
 function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
-  // Mock-realistic "latest" value for each indicator (the legacy uses /api/indicators/preview;
-  // wiring that here means N HTTP calls + a real config to evaluate against — punt for now).
-  const mockLatest = (ind) => {
-    const stat = ind.stat || 'count';
-    if (stat === 'pct' || ind.format?.includes('%')) return `${(Math.random() * 50 + 20).toFixed(1)}%`;
-    if (stat === 'mean' || stat === 'median')         return (Math.random() * 10 + 1).toFixed(1);
-    return Math.floor(Math.random() * 12000 + 100).toLocaleString();
-  };
+  const [latest, setLatest] = useState({}); // { [indicator.name]: { value, error } }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadOne(ind) {
+      try {
+        const r = await fetch('/api/indicators/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ indicator: ind }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!r.ok) {
+          setLatest(prev => ({ ...prev, [ind.name]: { error: data.detail || 'error' } }));
+        } else {
+          // Endpoint returns { value, n_rows }; value may be string or number.
+          setLatest(prev => ({ ...prev, [ind.name]: { value: data.value } }));
+        }
+      } catch {
+        if (!cancelled) setLatest(prev => ({ ...prev, [ind.name]: { error: 'network' } }));
+      }
+    }
+    for (const ind of indicators) {
+      if (ind?.name && !(ind.name in latest)) loadOne(ind);
+    }
+    return () => { cancelled = true; };
+  }, [indicators]); // re-runs when indicator list changes
 
   return (
     <div className="comp-card">
@@ -627,7 +647,11 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
               {ind.label && <span style={{ color: 'var(--ink-3)', marginLeft: 6, fontFamily: 'var(--font-sans)' }}>· {ind.label}</span>}
             </div>
             <div className="ind-row__fmt">{ind.format || 'num'}</div>
-            <div><span className="value-tag">{mockLatest(ind)}</span></div>
+            <div>
+              <span className="value-tag" title={latest[ind.name]?.error ? `Error: ${latest[ind.name].error}` : ''}>
+                {latest[ind.name]?.value ?? (latest[ind.name]?.error ? '—' : '…')}
+              </span>
+            </div>
             <div className="comp-row__actions">
               <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
