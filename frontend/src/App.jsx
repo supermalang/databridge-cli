@@ -6,13 +6,15 @@ import Questions from './pages/Questions.jsx';
 import Composition from './pages/Composition.jsx';
 import Reports from './pages/Reports.jsx';
 import Templates from './pages/Templates.jsx';
+import Validate from './pages/Validate.jsx';
 
 const TABS = [
   { id: 'dashboard',   label: 'Dashboard',                         component: Dashboard },
   { id: 'sources',     label: 'Sources',     step: '1',            component: Sources },
   { id: 'questions',   label: 'Questions',   step: '2',            component: Questions },
-  { id: 'composition', label: 'Composition', step: '3',            component: Composition },
-  { id: 'reports',     label: 'Reports',     step: '4',            component: Reports },
+  { id: 'validate',    label: 'Validate',    step: '3',            component: Validate },
+  { id: 'composition', label: 'Composition', step: '4',            component: Composition },
+  { id: 'reports',     label: 'Reports',     step: '5',            component: Reports },
   { id: 'templates',   label: 'Templates',                         component: Templates, secondary: true },
 ];
 
