@@ -92,7 +92,10 @@ SYSTEM_PROMPT = (
     "    charts, or first define a view that joins/aggregates them and use source: <view>.\n"
     "  - When a chart uses a repeat-group source, parent-table categoricals used as the\n"
     "    x-axis or grouping dimension must be listed in join_parent: [...] (top-level).\n"
-    "  - Return ONLY valid JSON: {\"charts\": [ ... ]} — no markdown, no explanation"
+    "  - Return ONLY valid JSON: {\"charts\": [ ... ]} — no markdown, no explanation\n"
+    "  - When periods.registry contains 2+ entries, prefer chart type `period_line` for\n"
+    "    indicators that have a clear trend (rates, proportions, totals over time), and\n"
+    "    `period_bar` for discrete counts. Pass the indicator's name via options.metric."
 )
 
 # Format slots: {header_line} {form_alias} {user_request_line}
