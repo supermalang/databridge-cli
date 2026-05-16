@@ -64,3 +64,14 @@ def test_data_mtime_returns_string_for_existing_file(tmp_path):
 
 def test_data_mtime_returns_none_when_no_file(tmp_path):
     assert data_mtime(tmp_path, "survey") is None
+
+
+def test_provenance_footer_includes_period_label_when_set():
+    cfg = {
+        "form": {"alias": "m"},
+        "periods": {"current": "Q2 2026", "registry": [{"label": "Q2 2026"}]},
+    }
+    df = pd.DataFrame({"a": [1]})
+    prov = build_provenance(cfg, df, data_downloaded_at=None)
+    assert "Q2 2026" in prov["footer"]
+    assert prov["period_label"] == "Q2 2026"

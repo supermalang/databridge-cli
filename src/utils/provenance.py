@@ -36,6 +36,10 @@ def build_provenance(
     period_raw = (cfg.get("report") or {}).get("period")
     period = "" if period_raw is None else str(period_raw)
 
+    from src.utils.periods import current_period
+    cp = current_period(cfg)
+    period_label = cp["label"] if cp else ""
+
     # Stable hash of the config — excludes anything time-varying or secret.
     cfg_for_hash = {
         "form":       cfg.get("form", {}),
@@ -50,7 +54,9 @@ def build_provenance(
     config_hash = hashlib.sha256(blob).hexdigest()[:12]
 
     parts = [f"Generated {generated_at}", f"n={n}"]
-    if period:
+    if period_label:
+        parts.append(f"period={period_label}")
+    elif period:
         parts.append(f"period={period}")
     if data_downloaded_at:
         parts.append(f"data {data_downloaded_at}")
@@ -64,6 +70,7 @@ def build_provenance(
         "filters":            filters,
         "config_hash":        config_hash,
         "period":             period,
+        "period_label":       period_label,
         "footer":             footer,
     }
 
