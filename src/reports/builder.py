@@ -263,6 +263,32 @@ class ReportBuilder:
             if agg_spec and source and source != "main":
                 chart_df = aggregate_repeat(chart_df, agg_spec)
 
+            # Enrich period_bar / period_line with per-period computed values
+            if c.get("type") in ("period_bar", "period_line") and getattr(self, "_last_per_period", None):
+                from src.reports.indicators import compute_indicators
+                metric = (c.get("options", {}) or {}).get("metric") or c.get("metric")
+                periods_payload = []
+                if metric:
+                    for slug, bundle in self._last_per_period.items():
+                        ind_cfg = {
+                            "name":     metric,
+                            "stat":     c.get("stat", "count"),
+                            "question": c.get("question"),
+                        }
+                        try:
+                            result = compute_indicators([ind_cfg], bundle["df"], bundle.get("repeat_tables", {}))
+                            value  = result.get(f"ind_{metric}", "0")
+                        except Exception:
+                            value  = "0"
+                        periods_payload.append({
+                            "slug":  slug,
+                            "label": bundle["label"],
+                            "value": value,
+                        })
+                # Inject the payload into a COPY of resolved so the original config isn't mutated.
+                enriched_opts = {**(resolved.get("options", {}) or {}), "periods": periods_payload}
+                resolved = {**resolved, "options": enriched_opts}
+
             png = generate_chart(resolved, chart_df)
             width = Inches(c.get("options", {}).get("width_inches", 5.5))
             images[f"chart_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
