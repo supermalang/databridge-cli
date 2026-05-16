@@ -8,7 +8,7 @@ import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -17,6 +17,7 @@ def build_provenance(
     cfg: Dict,
     df: pd.DataFrame,
     data_downloaded_at: Optional[str] = None,
+    compared_periods: Optional[List[str]] = None,
 ) -> Dict:
     """Return a dict with provenance fields for Jinja rendering.
 
@@ -54,7 +55,9 @@ def build_provenance(
     config_hash = hashlib.sha256(blob).hexdigest()[:12]
 
     parts = [f"Generated {generated_at}", f"n={n}"]
-    if period_label:
+    if compared_periods:
+        parts.append("compare=" + " vs ".join(compared_periods))
+    elif period_label:
         parts.append(f"period={period_label}")
     elif period:
         parts.append(f"period={period}")
@@ -72,6 +75,7 @@ def build_provenance(
         "period":             period,
         "period_label":       period_label,
         "footer":             footer,
+        "compared_periods":   list(compared_periods or []),
     }
 
 

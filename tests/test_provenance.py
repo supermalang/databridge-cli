@@ -75,3 +75,15 @@ def test_provenance_footer_includes_period_label_when_set():
     prov = build_provenance(cfg, df, data_downloaded_at=None)
     assert "Q2 2026" in prov["footer"]
     assert prov["period_label"] == "Q2 2026"
+
+
+def test_provenance_compared_periods_in_footer():
+    cfg = {"form": {"alias": "m"},
+           "periods": {"current": "Q2 2026", "registry": [
+               {"label": "Q1 2026"}, {"label": "Q2 2026"},
+           ]}}
+    df = pd.DataFrame({"a": [1]})
+    prov = build_provenance(cfg, df, data_downloaded_at=None, compared_periods=["Q1 2026", "Q2 2026"])
+    assert "compare" in prov["footer"].lower()
+    assert "Q1 2026" in prov["footer"] and "Q2 2026" in prov["footer"]
+    assert prov["compared_periods"] == ["Q1 2026", "Q2 2026"]

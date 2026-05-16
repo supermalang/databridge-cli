@@ -187,6 +187,7 @@ class ReportBuilder:
                 Path(self.cfg.get("export", {}).get("output_dir", "data/processed")),
                 self.cfg.get("form", {}).get("alias", "form"),
             ),
+            compared_periods=compare,
         )
 
         context = {
