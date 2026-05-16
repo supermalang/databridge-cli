@@ -74,6 +74,7 @@ export default function Composition() {
   const [suggesting,  setSuggesting]  = useState(null); // null | 'chart' | 'view' | 'summary' (which kind is running)
   const [preview,     setPreview]     = useState(null); // null | { chart, loading?, image?, error? }
   const [viewPreview, setViewPreview] = useState(null); // null | { view, loading?, columns?, rows?, n_rows?, error? }
+  const [summaryPreview, setSummaryPreview] = useState(null); // null | { summary, loading?, text?, n_rows?, error? }
 
   // Dispatch table for batch AI suggestions: maps kind → CLI command, YAML key,
   // setter, and user-facing labels. Keeps the suggest flow generic for all three sections.
@@ -234,6 +235,24 @@ export default function Composition() {
     toast('Updated — click Save changes at the top to persist', 'ok');
   };
 
+  const openSummaryPreview = async (i) => {
+    const summary = summaries[i];
+    if (!summary) return;
+    setSummaryPreview({ summary, loading: true });
+    try {
+      const resp = await fetch('/api/summaries/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) setSummaryPreview({ summary, error: data.detail || `Request failed (${resp.status})` });
+      else setSummaryPreview({ summary, text: data.text || '', n_rows: data.n_rows });
+    } catch (e) {
+      setSummaryPreview({ summary, error: e.message || 'Network error' });
+    }
+  };
+
   const reload = useCallback(async () => {
     const c = await loadConfig();
     setCfg(c);
@@ -313,6 +332,7 @@ export default function Composition() {
             onEdit={(i) => openEdit('summary', i)}
             onRemove={remove('summary', setSummaries)}
             onSuggest={() => openSuggestModal('summary')}
+            onPreview={openSummaryPreview}
             suggesting={suggesting === 'summary'}
           />
           <ViewsCard
@@ -498,6 +518,34 @@ export default function Composition() {
           </div>
         </Modal>
       )}
+
+      {summaryPreview && (
+        <Modal
+          title={`Preview · ${summaryPreview.summary?.name || 'summary'}`}
+          onClose={() => setSummaryPreview(null)}
+          width={720}
+        >
+          <div style={{ minHeight: 160 }}>
+            {summaryPreview.loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 30 }}>Computing summary…</div>}
+            {summaryPreview.error && (
+              <div style={{ color: 'var(--danger, #b91c1c)', whiteSpace: 'pre-wrap' }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Couldn't compute this summary</div>
+                <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>{summaryPreview.error}</div>
+              </div>
+            )}
+            {summaryPreview.text && (
+              <>
+                {summaryPreview.n_rows !== undefined && (
+                  <div style={{ color: 'var(--ink-3)', fontSize: 12, marginBottom: 8 }}>
+                    From {summaryPreview.n_rows.toLocaleString()} row{summaryPreview.n_rows === 1 ? '' : 's'}
+                  </div>
+                )}
+                <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{summaryPreview.text}</div>
+              </>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -668,7 +716,7 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
 }
 
 // ── Summaries card ───────────────────────────────────────────────────────────
-function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesting }) {
+function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesting, onPreview }) {
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -701,7 +749,10 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesti
               <span className="sum-row__tokens">~ {Math.round(((s.prompt || '').length || 200) * 0.4 + 80)} tokens</span>
             </div>
             <div className="comp-row__actions">
-              <button className="btn btn-ghost">Preview</button>
+              <button className="btn btn-ghost" onClick={() => onPreview(i)}>
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
+                Preview
+              </button>
               <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
               </button>
