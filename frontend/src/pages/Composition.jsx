@@ -658,8 +658,8 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
         if (!r.ok) {
           setLatest(prev => ({ ...prev, [ind.name]: { error: data.detail || 'error' } }));
         } else {
-          // Endpoint returns { value, n_rows }; value may be string or number.
-          setLatest(prev => ({ ...prev, [ind.name]: { value: data.value } }));
+          // Endpoint returns { value, n_rows, trend }; value may be string or number.
+          setLatest(prev => ({ ...prev, [ind.name]: { value: data.value, trend: data.trend || [] } }));
         }
       } catch {
         if (!cancelled) setLatest(prev => ({ ...prev, [ind.name]: { error: 'network' } }));
@@ -709,6 +709,11 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
               <span className="value-tag" title={latest[ind.name]?.error ? `Error: ${latest[ind.name].error}` : ''}>
                 {latest[ind.name]?.value ?? (latest[ind.name]?.error ? '—' : '…')}
               </span>
+              {(latest[ind.name]?.trend?.length || 0) >= 2 && (
+                <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--font-mono, monospace)' }}>
+                  {latest[ind.name].trend.map(t => `${t.label}: ${t.value}`).join(' → ')}
+                </span>
+              )}
             </div>
             <div className="comp-row__actions">
               <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
