@@ -166,3 +166,36 @@ def find_type_issues(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]:
             "examples": examples,
         })
     return findings
+
+
+def validate_dataset(cfg: Dict, df: pd.DataFrame, repeat_tables: Dict[str, pd.DataFrame]) -> Dict:
+    """Run all detectors against the main DataFrame and return a report envelope.
+
+    repeat_tables is accepted for forward-compatibility (a future detector pass
+    will surface findings across repeat groups) but is unused in the MVP.
+    """
+    questions = cfg.get("questions", []) or []
+    if df is None:
+        df = pd.DataFrame()
+
+    findings: List[Dict] = []
+    findings += compute_missingness(df)
+    findings += find_numeric_outliers(df, questions)
+    findings += find_duplicates(df)
+    findings += find_type_issues(df, questions)
+
+    # Sort: errors first, then warnings, then info; within a tier, larger count first.
+    severity_rank = {"error": 0, "warning": 1, "info": 2}
+    findings.sort(key=lambda f: (severity_rank.get(f["severity"], 9), -f["count"]))
+
+    summary = {"error": 0, "warning": 0, "info": 0}
+    for f in findings:
+        if f["severity"] in summary:
+            summary[f["severity"]] += 1
+
+    return {
+        "n_rows":    int(len(df)),
+        "n_columns": int(df.shape[1]) if hasattr(df, "shape") else 0,
+        "checks":    findings,
+        "summary":   summary,
+    }

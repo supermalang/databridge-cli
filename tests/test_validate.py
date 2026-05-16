@@ -149,3 +149,38 @@ def test_type_issues_skips_categorical_columns():
     df = pd.DataFrame({"region": ["A", "B", "weird-name"]})
     questions = [{"export_label": "region", "category": "categorical"}]
     assert find_type_issues(df, questions) == []
+
+
+from src.data.validate import validate_dataset
+
+
+def test_validate_dataset_returns_envelope_shape():
+    cfg = {"questions": [{"export_label": "age", "category": "quantitative"}]}
+    df = pd.DataFrame({"age": [1, 2, 3, 4]})
+    report = validate_dataset(cfg, df, repeat_tables={})
+    assert set(report.keys()) == {"n_rows", "n_columns", "checks", "summary"}
+    assert report["n_rows"] == 4
+    assert report["n_columns"] == 1
+    assert report["summary"] == {"error": 0, "warning": 0, "info": 0}
+    assert report["checks"] == []
+
+
+def test_validate_dataset_sorts_checks_by_severity_then_count():
+    cfg = {"questions": [
+        {"export_label": "a", "category": "quantitative"},
+        {"export_label": "b", "category": "quantitative"},
+    ]}
+    # a: 1 outlier (info), b: 60% missing (error)
+    df = pd.DataFrame({"a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 999],
+                       "b": [None] * 6 + [1, 2, 3, 4]})
+    report = validate_dataset(cfg, df, repeat_tables={})
+    assert report["checks"][0]["severity"] == "error"
+    assert report["summary"]["error"] >= 1
+
+
+def test_validate_dataset_empty_df_returns_empty_report():
+    cfg = {"questions": []}
+    df = pd.DataFrame()
+    report = validate_dataset(cfg, df, repeat_tables={})
+    assert report["n_rows"] == 0
+    assert report["checks"] == []
