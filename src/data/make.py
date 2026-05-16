@@ -242,5 +242,25 @@ def cmd_build_report(sample, random_sample, split_by, split_sample, session, per
     from src.reports.builder import ReportBuilder
     ReportBuilder(cfg).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample, session=session, period=period)
 
+@cli.command("set-period")
+@click.argument("label")
+@click.option("--baseline", is_flag=True, default=False, help="Also set this period as the baseline.")
+def cmd_set_period(label, baseline):
+    """Set the current period. Auto-registers it if not already in the registry."""
+    from src.utils.periods import slugify
+    cfg = load_config(CONFIG_PATH)
+    cfg.setdefault("periods", {})
+    cfg["periods"]["current"] = label
+    if baseline:
+        cfg["periods"]["baseline"] = label
+    registry = cfg["periods"].setdefault("registry", [])
+    if not any(e.get("label") == label for e in registry):
+        registry.append({"label": label, "slug": slugify(label)})
+    from src.utils.config import write_config
+    write_config(cfg, CONFIG_PATH)
+    click.echo(f"Current period set to: {label}")
+    if baseline:
+        click.echo(f"Baseline period set to: {label}")
+
 if __name__ == "__main__":
     cli()
