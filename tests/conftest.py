@@ -8,14 +8,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
-@pytest.fixture
-def project_root() -> Path:
-    return ROOT
-
-
-@pytest.fixture
+@pytest.fixture(scope="module")
 def api_client():
-    """Synchronous httpx client wired to the FastAPI ASGI app in-process."""
+    """Synchronous test client for the FastAPI ASGI app, shared per test module.
+
+    Module scope makes it explicit that web.main's module-level state
+    (_last_status, _proc) persists across tests — we'd rather acknowledge
+    that than pretend a fresh function-scoped client isolates them.
+    """
     from fastapi.testclient import TestClient
     from web.main import app
     with TestClient(app) as c:
