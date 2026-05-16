@@ -23,7 +23,8 @@ def build_provenance(
     Args:
         cfg: full config.yml dict
         df: the main DataFrame the report was rendered from
-        data_downloaded_at: ISO timestamp of the data file's mtime, or None
+        data_downloaded_at: human-readable timestamp of the data file's mtime
+            (formatted "YYYY-MM-DD HH:MM"), or None
 
     Returns dict with keys:
         generated_at, data_downloaded_at, n_submissions, filters,
@@ -32,7 +33,8 @@ def build_provenance(
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     n = int(len(df)) if df is not None else 0
     filters = list(cfg.get("filters") or [])
-    period = (cfg.get("report") or {}).get("period", "") or ""
+    period_raw = (cfg.get("report") or {}).get("period")
+    period = "" if period_raw is None else str(period_raw)
 
     # Stable hash of the config — excludes anything time-varying or secret.
     cfg_for_hash = {
@@ -68,7 +70,7 @@ def build_provenance(
 
 def data_mtime(data_dir: Path, alias: str) -> Optional[str]:
     """Find the latest main data file for the given form alias and return its
-    mtime as an ISO string, or None if not found."""
+    mtime as a human-readable string ("YYYY-MM-DD HH:MM"), or None if not found."""
     candidates = sorted(
         Path(data_dir).glob(f"{alias}_data_*.csv"),
         key=lambda p: p.stat().st_mtime, reverse=True,

@@ -1,6 +1,4 @@
-import hashlib
 import pandas as pd
-import pytest
 from src.utils.provenance import build_provenance
 
 
@@ -51,3 +49,18 @@ def test_provenance_footer_oneliner_present():
     df = pd.DataFrame({"a": [1, 2]})
     prov = build_provenance(cfg, df, data_downloaded_at=None)
     assert "footer" in prov and "Q1" in prov["footer"] and "2" in prov["footer"]
+
+
+from src.utils.provenance import data_mtime
+
+
+def test_data_mtime_returns_string_for_existing_file(tmp_path):
+    f = tmp_path / "survey_data_2025-01.csv"
+    f.write_text("a,b\n1,2\n")
+    result = data_mtime(tmp_path, "survey")
+    assert result is not None
+    assert len(result) == 16  # YYYY-MM-DD HH:MM
+
+
+def test_data_mtime_returns_none_when_no_file(tmp_path):
+    assert data_mtime(tmp_path, "survey") is None
