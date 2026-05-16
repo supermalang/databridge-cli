@@ -1220,3 +1220,26 @@ async def preview_template(filename: str):
     charts = [p for p in placeholders if p.startswith("chart_")]
     variables = [p for p in placeholders if not p.startswith("chart_")]
     return {"filename": filename, "variables": variables, "charts": charts}
+
+
+# ── Validation ──────────────────────────────────────────────
+@app.post("/api/validate")
+async def validate():
+    """Run all validation detectors against the latest downloaded data."""
+    # Prefer cwd-relative config.yml so the endpoint composes with tests that
+    # chdir into a temp workspace; fall back to the project's CONFIG_PATH.
+    config_path = Path("config.yml") if Path("config.yml").exists() else CONFIG_PATH
+    if not config_path.exists():
+        raise HTTPException(status_code=400, detail="config.yml not found")
+    async with aiofiles.open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(await f.read()) or {}
+    try:
+        from src.data.transform import load_processed_data
+        from src.data.validate import validate_dataset
+        df, repeat_tables = load_processed_data(cfg)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=f"No downloaded data found. Run Download first. ({e})")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to load data: {e}")
+    report = validate_dataset(cfg, df, repeat_tables)
+    return report
