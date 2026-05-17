@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import yaml from 'js-yaml';
 import { useToast } from '../components/Toast.jsx';
 import { loadConfig, loadConfigText, saveConfigPatch, saveConfigText } from '../lib/config.js';
+import PeriodPicker from '../components/PeriodPicker.jsx';
 
 const PLATFORMS = [
   { id: 'ona',  name: 'Ona',          tag: 'ona.io · self-hosted',         defaultUrl: 'https://api.ona.io/api/v1' },
@@ -27,6 +28,7 @@ export default function Sources() {
   const [showToken,setShowToken]= useState(false);
   const [questionCount, setQuestionCount] = useState(0);
   const [lastCheck, setLastCheck] = useState(null);
+  const [period, setPeriod] = useState(null);
 
   const reload = useCallback(async () => {
     const c = await loadConfig();
@@ -143,7 +145,7 @@ export default function Sources() {
               questionCount={questionCount}
             />
             <AINarrativeCard cfg={cfg} set={set} />
-            <OutputCard cfg={cfg} set={set} />
+            <OutputCard cfg={cfg} set={set} period={period} setPeriod={setPeriod} />
           </div>
 
           {/* ── right rail ── */}
@@ -340,7 +342,7 @@ function AINarrativeCard({ cfg, set }) {
 }
 
 // ── Output ───────────────────────────────────────────────────────────────────
-function OutputCard({ cfg, set }) {
+function OutputCard({ cfg, set, period, setPeriod }) {
   const exp = cfg.export || {};
   const rep = cfg.report || {};
   // Output format mapping: cfg.export.format is one of csv/json/xlsx/mysql/postgres/supabase.
@@ -399,6 +401,27 @@ function OutputCard({ cfg, set }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <input className="src-input src-input--mono" value={rep.split_by || ''} placeholder="region_admin1" onChange={e => set('report.split_by')(e.target.value)} />
           {rep.split_by && <div className="src-field__hint">Will produce 1 report per unique value.</div>}
+        </div>
+      </div>
+
+      <div className="src-field">
+        <div className="src-field__label">Download for period
+          <div className="src-field__hint">Sets the active period used by download and build-report commands.</div>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <PeriodPicker value={period} onChange={async v => {
+            setPeriod(v);
+            if (v) {
+              try {
+                await fetch('/api/periods/current', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ label: v }),
+                });
+              } catch { /* leave UI as-is */ }
+            }
+          }} />
+          <div className="src-field__hint" style={{ marginTop: 6 }}>Active: {period || 'none set'}</div>
         </div>
       </div>
     </div>

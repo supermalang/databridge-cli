@@ -1040,12 +1040,14 @@ function IndicatorModal({ initial, onClose, onSave }) {
   const [stat, setStat]         = useState(initial?.stat || 'count');
   const [question, setQuestion] = useState(initial?.question || '');
   const [format, setFormat]     = useState(initial?.format || '');
+  const [compareTo, setCompareTo] = useState(initial?.compare_to || '');
   const submit = () => {
     if (!name.trim()) return alert('Name is required.');
     const item = { name: name.trim(), stat };
     if (label.trim()) item.label = label.trim();
     if (question.trim()) item.question = question.trim();
     if (format.trim()) item.format = format.trim();
+    if (compareTo) item.compare_to = compareTo;
     onSave(item);
   };
   return (
@@ -1055,6 +1057,12 @@ function IndicatorModal({ initial, onClose, onSave }) {
       <ModalField label="Stat"><select className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{INDICATOR_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
       <ModalField label="Column"><input className="src-input" value={question} onChange={e => setQuestion(e.target.value)} placeholder="Number of Students" /></ModalField>
       <ModalField label="Format" hint="Python format string"><input className="src-input" value={format} onChange={e => setFormat(e.target.value)} placeholder="{:,.0f}" /></ModalField>
+      <ModalField label="Compare to" hint="Optional. Set 'baseline' to compute delta + percent change from the baseline period.">
+        <select className="src-input" value={compareTo} onChange={e => setCompareTo(e.target.value)}>
+          <option value="">(no comparison)</option>
+          <option value="baseline">Baseline</option>
+        </select>
+      </ModalField>
     </Modal>
   );
 }
