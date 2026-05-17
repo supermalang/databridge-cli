@@ -676,3 +676,17 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .framework-node__id    { font-family: var(--font-mono, monospace); color: var(--ink-3); font-size: 11.5px; }
 .framework-node__level { color: var(--ink-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
 .framework-node__label { flex: 1; }
+
+/* ── PII card ───────────────────────────────────────────────────────────────── */
+.pii-row {
+  display: grid;
+  grid-template-columns: 1fr 180px 120px auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.pii-row__col      { font-family: var(--font-mono, monospace); font-size: 12.5px; }
+.pii-row__strategy { color: var(--ink-3); font-size: 11.5px; }
+.pii-row__decimals { color: var(--ink-3); font-size: 11.5px; }

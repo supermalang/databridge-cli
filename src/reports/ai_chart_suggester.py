@@ -99,12 +99,12 @@ SYSTEM_PROMPT = (
 )
 
 # Format slots: {header_line} {form_alias} {user_request_line}
-#               {columns_block} {repeat_groups_block} {views_block} {existing_block}
+#               {columns_block} {repeat_groups_block} {views_block} {pii_block} {existing_block}
 # Each *_block / *_line is either "" or its filled-in content terminating with "\n\n".
 USER_PROMPT_TEMPLATE = """\
 {header_line}Form: {form_alias}
 
-{user_request_line}{columns_block}{repeat_groups_block}{views_block}{existing_block}Suggest a charts: configuration block. Return JSON only."""
+{user_request_line}{columns_block}{repeat_groups_block}{views_block}{pii_block}{existing_block}Suggest a charts: configuration block. Return JSON only."""
 
 
 def suggest_charts(
@@ -251,6 +251,18 @@ def _user_prompt(cfg: Dict, template: str = USER_PROMPT_TEMPLATE, user_request: 
         existing_names = [c.get("name") for c in existing]
         existing_block = f"Charts already configured (do not duplicate): {', '.join(existing_names)}\n\n"
 
+    # PII awareness — flag redacted columns so the LLM avoids them.
+    pii_cfg = cfg.get("pii") or {}
+    pii_lines = []
+    consent_col = pii_cfg.get("consent_column")
+    if consent_col:
+        pii_lines.append(f"  consent column: {consent_col} (rows are filtered before render)")
+    for r in (pii_cfg.get("redact") or []):
+        pii_lines.append(f"  column '{r['column']}' is redacted via strategy '{r.get('strategy', '?')}'")
+    pii_block = ""
+    if pii_lines:
+        pii_block = "PII REDACTION (avoid these columns in chart suggestions — they will be masked or dropped at render time):\n" + "\n".join(pii_lines) + "\n\n"
+
     return template.format(
         header_line=header_line,
         form_alias=form_alias,
@@ -258,6 +270,7 @@ def _user_prompt(cfg: Dict, template: str = USER_PROMPT_TEMPLATE, user_request: 
         columns_block=columns_block,
         repeat_groups_block=repeat_groups_block,
         views_block=views_block,
+        pii_block=pii_block,
         existing_block=existing_block,
     )
 
