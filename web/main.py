@@ -470,6 +470,10 @@ async def preview_chart(payload: ChartPreviewPayload):
                 try:    repeat_tables[name] = apply_choice_labels(rdf, _questions)
                 except Exception: pass
 
+    # Apply PII redaction before any chart rendering — mirrors builder._render behaviour.
+    from src.utils.pii import apply_pii
+    main_df, repeat_tables = apply_pii(main_df, repeat_tables, _cfg or {})
+
     # Resolve which DataFrame this chart targets — same priorities as builder._pick_df.
     # Also accept leaf repeat-group names (e.g. "group_foo_repeat") as a stand-in for
     # the canonical underscored-full-path key ("group_parent_group_foo_repeat") since
@@ -645,6 +649,9 @@ async def preview_indicator(payload: IndicatorPreviewPayload):
             df = apply_choice_labels(df, _questions)
     except Exception:
         pass
+    # Apply PII redaction before the indicator is computed (no-op when pii: absent).
+    from src.utils.pii import apply_pii
+    df, _ = apply_pii(df, {}, _cfg or {})
     if payload.sample_n and payload.sample_n > 0:
         df = df.head(payload.sample_n)
     ind = payload.indicator
@@ -727,6 +734,7 @@ async def preview_summary(payload: SummaryPreviewPayload):
         df = pd.read_csv(candidates[0])
     ai_cfg = None
     prompts_cfg = None
+    _cfg = None
     try:
         async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as _f:
             _cfg = yaml.safe_load(await _f.read()) or {}
@@ -741,6 +749,9 @@ async def preview_summary(payload: SummaryPreviewPayload):
         prompts_cfg = _cfg.get("prompts", {})
     except Exception:
         pass
+    # Apply PII redaction before the summary is computed (no-op when pii: absent).
+    from src.utils.pii import apply_pii
+    df, _ = apply_pii(df, {}, _cfg or {})
     if payload.sample_n and payload.sample_n > 0:
         df = df.head(payload.sample_n)
     s = payload.summary
@@ -784,6 +795,7 @@ async def preview_view(payload: ViewPreviewPayload):
         if not candidates:
             raise HTTPException(status_code=400, detail="No data file found. Run Download first.")
         main_df = pd.read_csv(candidates[0])
+    _cfg = None
     try:
         async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as _f:
             _cfg = yaml.safe_load(await _f.read()) or {}
@@ -792,6 +804,9 @@ async def preview_view(payload: ViewPreviewPayload):
             main_df = apply_choice_labels(main_df, _questions_cfg)
     except Exception:
         pass
+    # Apply PII redaction to source data before view transformations (no-op when pii: absent).
+    from src.utils.pii import apply_pii
+    main_df, _ = apply_pii(main_df, {}, _cfg or {})
     if payload.sample_n and payload.sample_n > 0:
         main_df = main_df.head(payload.sample_n)
     v = payload.view
@@ -1372,6 +1387,10 @@ async def validate():
         raise HTTPException(status_code=400, detail=f"No downloaded data found. Run Download first. ({e})")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to load data: {e}")
+    # Apply PII redaction so validation runs against the post-redaction view that
+    # users will actually see (no-op when pii: absent).
+    from src.utils.pii import apply_pii
+    df, repeat_tables = apply_pii(df, repeat_tables, cfg)
     report = validate_dataset(cfg, df, repeat_tables)
     return report
 

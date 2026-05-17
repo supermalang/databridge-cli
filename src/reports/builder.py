@@ -112,6 +112,12 @@ class ReportBuilder:
             raise FileNotFoundError(f"Template not found: {template_path}\nRun generate-template or see TEMPLATE_GUIDE.md")
         tpl = DocxTemplate(template_path)
 
+        # Apply PII redaction (consent gating + column rules) before any
+        # downstream rendering — charts, indicators, summaries, views all see
+        # the redacted data.  No-op when no pii: block is configured.
+        from src.utils.pii import apply_pii
+        df, repeat_tables = apply_pii(df, repeat_tables, self.cfg)
+
         # Compute named virtual views and inject into repeat_tables so all
         # consumers (charts, summaries, indicators) can reference them by name.
         # Called here so views see the already split-filtered df and repeat_tables.
