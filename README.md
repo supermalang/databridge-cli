@@ -125,6 +125,36 @@ Results Framework
 
 **Backward compatibility**: configs without a `framework:` block behave exactly as today.
 
+### Privacy & consent (PII)
+
+Redact PII columns and gate on respondent consent at render time. Raw values stay in `data/processed/` for internal analysis; reports, previews, and exported result tables never expose them.
+
+**Config**:
+
+```yaml
+pii:
+  consent_column: "Consent_to_share_data"
+  consent_value:  "yes"                     # default
+  redact:
+    - column: "Respondent_name"
+      strategy: drop                        # remove column from output
+    - column: "Phone_number"
+      strategy: hash                        # sha256(value)[:8], deterministic
+    - column: "GPS"
+      strategy: generalize_geo
+      decimals: 2                           # ~1 km precision
+    - column: "Date_of_birth"
+      strategy: generalize_date             # year only
+    - column: "National_ID"
+      strategy: mask                        # ***
+```
+
+**Where it applies**: report rendering (`build-report`), all preview endpoints (chart/indicator/summary/view), and the Validate tab. The data files on disk are NOT redacted (they live under `data/processed/` and never leave your machine).
+
+**Suggestions**: the Validate tab surfaces columns whose name looks PII-shaped (`name`, `phone`, `email`, `gps`, `dob`, etc.) as info-level findings — a soft prompt to add them to `pii.redact`.
+
+**Backward compatibility**: configs without a `pii:` block behave exactly as today.
+
 # Installation
 ## Prerequisites
 - [Docker](https://docs.docker.com/get-docker/)

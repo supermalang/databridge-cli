@@ -281,6 +281,19 @@ framework:
       label: "10,000 vaccination doses administered"
       parent: OC1
 
+# Optional — PII redaction + consent gating. When absent, no redaction.
+pii:
+  consent_column: "Consent_to_share_data"   # rows must have this == consent_value
+  consent_value:  "yes"
+  redact:
+    - column: "Respondent_name"
+      strategy: drop
+    - column: "Phone_number"
+      strategy: hash
+    - column: "GPS"
+      strategy: generalize_geo
+      decimals: 2
+
 export:
   format: csv                              # csv | json | xlsx | mysql | postgres | supabase
   output_dir: data/processed
@@ -400,6 +413,7 @@ Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
 {{ chart_<n> }}         ← one per chart in config.yml
 {{ split_value }}       ← when --split-by is set, the current group's value
 {{ logframe }}          ← results framework hierarchy (has_framework / rows); present only when framework: is configured
+{{ provenance }}        ← footer object; when pii: rules exist, provenance.pii reads "consent=<col>, <N> columns redacted"
 ```
 
 **Critical rule:** each `{{ chart_... }}` must be a single unbroken XML run in the .docx.
