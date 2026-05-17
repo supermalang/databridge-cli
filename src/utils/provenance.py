@@ -63,6 +63,10 @@ def build_provenance(
         parts.append(f"period={period}")
     if data_downloaded_at:
         parts.append(f"data {data_downloaded_at}")
+    from src.utils.pii import pii_summary
+    pii_text = pii_summary(cfg)
+    if pii_text:
+        parts.append(f"pii: {pii_text}")
     parts.append(f"cfg {config_hash}")
     footer = " · ".join(parts)
 

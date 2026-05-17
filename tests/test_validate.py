@@ -218,3 +218,32 @@ def test_orphans_flags_broken_ref():
     assert f["column"] == "bad"
     assert "MISSING" in f["message"]
     assert f["count"] == 1
+
+
+from src.data.validate import find_potential_pii
+
+
+def test_potential_pii_flags_columns_with_pii_words_in_name():
+    df = pd.DataFrame({
+        "Respondent_name": ["A", "B"],
+        "Phone_number":    ["1", "2"],
+        "Region":          ["X", "Y"],
+    })
+    findings = find_potential_pii(df, [])
+    names = {f["column"] for f in findings}
+    assert "Respondent_name" in names
+    assert "Phone_number" in names
+    assert "Region" not in names
+
+
+def test_potential_pii_severity_is_info():
+    df = pd.DataFrame({"email": ["a@b.c"]})
+    findings = find_potential_pii(df, [])
+    assert findings[0]["severity"] == "info"
+    assert findings[0]["kind"] == "potential_pii"
+
+
+def test_potential_pii_skips_columns_already_in_pii_block():
+    df = pd.DataFrame({"Respondent_name": ["A"]})
+    findings = find_potential_pii(df, [])
+    assert len(findings) == 1  # always flags; aggregator filters later

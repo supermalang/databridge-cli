@@ -1403,3 +1403,34 @@ async def set_framework(payload: FrameworkPayload):
     }
     _save_cfg(cfg)
     return {"ok": True}
+
+
+# ── PII ─────────────────────────────────────────────────────
+
+class PIIPayload(BaseModel):
+    consent_column: Optional[str] = None
+    consent_value:  str = "yes"
+    redact:         List[Dict] = []
+
+
+@app.get("/api/pii")
+async def get_pii():
+    cfg = _load_cfg()
+    p = cfg.get("pii") or {}
+    return {
+        "consent_column": p.get("consent_column"),
+        "consent_value":  p.get("consent_value", "yes"),
+        "redact":         p.get("redact", []) or [],
+    }
+
+
+@app.post("/api/pii")
+async def set_pii(payload: PIIPayload):
+    cfg = _load_cfg()
+    cfg["pii"] = {
+        "consent_column": payload.consent_column,
+        "consent_value":  payload.consent_value,
+        "redact":         payload.redact,
+    }
+    _save_cfg(cfg)
+    return {"ok": True}

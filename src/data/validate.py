@@ -168,6 +168,36 @@ def find_type_issues(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]:
     return findings
 
 
+# Regex-style word fragments that strongly suggest a column holds PII.
+# Match case-insensitive on the whole column name string.
+_PII_PATTERNS = [
+    "name", "phone", "tel", "mobile", "email", "address",
+    "gps", "lat", "lon", "coord", "geo",
+    "id_number", "national_id", "passport",
+    "dob", "birth", "age_exact",
+]
+
+
+def find_potential_pii(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]:
+    """Suggest columns that LOOK like PII based on their column name."""
+    if df is None or len(df) == 0:
+        return []
+    findings: List[Dict] = []
+    for col in df.columns:
+        lower = str(col).lower()
+        if any(p in lower for p in _PII_PATTERNS):
+            findings.append({
+                "severity": "info",
+                "column":   str(col),
+                "kind":     "potential_pii",
+                "message":  f"Column '{col}' looks like it may contain PII — consider adding it to pii.redact",
+                "count":    int(len(df)),
+                "pct":      1.0,
+                "examples": [],
+            })
+    return findings
+
+
 def find_orphan_framework_refs(cfg: Dict) -> List[Dict]:
     """Flag indicators whose `framework_ref` points to a non-existent node.
 
@@ -207,6 +237,9 @@ def validate_dataset(cfg: Dict, df: pd.DataFrame, repeat_tables: Dict[str, pd.Da
     findings += find_duplicates(df)
     findings += find_type_issues(df, questions)
     findings += find_orphan_framework_refs(cfg)
+    pii_findings = find_potential_pii(df, questions)
+    declared_pii_cols = {r.get("column") for r in (cfg.get("pii", {}).get("redact") or [])}
+    findings += [f for f in pii_findings if f["column"] not in declared_pii_cols]
 
     # Sort: errors first, then warnings, then info; within a tier, larger count first.
     severity_rank = {"error": 0, "warning": 1, "info": 2}

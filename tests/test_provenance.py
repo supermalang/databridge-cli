@@ -87,3 +87,17 @@ def test_provenance_compared_periods_in_footer():
     assert "compare" in prov["footer"].lower()
     assert "Q1 2026" in prov["footer"] and "Q2 2026" in prov["footer"]
     assert prov["compared_periods"] == ["Q1 2026", "Q2 2026"]
+
+
+def test_provenance_footer_mentions_pii_when_configured():
+    cfg = {
+        "form": {"alias": "m"},
+        "pii":  {
+            "consent_column": "Consent",
+            "redact": [{"column": "Name", "strategy": "drop"}],
+        },
+    }
+    df = pd.DataFrame({"a": [1]})
+    prov = build_provenance(cfg, df, data_downloaded_at=None)
+    assert "consent" in prov["footer"].lower()
+    assert "redacted" in prov["footer"].lower() or "redaction" in prov["footer"].lower()
