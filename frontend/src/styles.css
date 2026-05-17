@@ -658,3 +658,21 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
   padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
 }
 .period-chip strong { color: var(--ink-2); font-weight: 600; }
+
+/* ── Framework card ─────────────────────────────────────────────────────────── */
+.framework-tree { padding: 4px 0; }
+.framework-node {
+  display: grid;
+  grid-template-columns: 60px 80px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.framework-node[data-level="goal"]    { background: rgba(13, 148, 136, 0.04); font-weight: 600; }
+.framework-node[data-level="outcome"] { padding-left: 28px; }
+.framework-node[data-level="output"]  { padding-left: 52px; color: var(--ink-2); }
+.framework-node__id    { font-family: var(--font-mono, monospace); color: var(--ink-3); font-size: 11.5px; }
+.framework-node__level { color: var(--ink-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.framework-node__label { flex: 1; }

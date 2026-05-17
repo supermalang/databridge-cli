@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import yaml from 'js-yaml';
 import Modal from '../components/Modal.jsx';
 import FrameworkPicker from '../components/FrameworkPicker.jsx';
@@ -325,6 +325,7 @@ export default function Composition() {
             suggesting={suggesting === 'chart'}
             toast={toast}
           />
+          <FrameworkCard />
           <IndicatorsCard
             indicators={indicators}
             onAdd={() => openEdit('indicator', null)}
@@ -637,6 +638,160 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, onPreview, sug
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── Framework card ───────────────────────────────────────────────────────────
+function FrameworkCard() {
+  const toast = useToast();
+  const [fw, setFw] = useState({ goal: null, outcomes: [], outputs: [] });
+  const [editing, setEditing] = useState(null);  // null | { level, index, draft }
+
+  const reload = async () => {
+    try { setFw(await (await fetch('/api/framework')).json()); }
+    catch { /* leave defaults */ }
+  };
+
+  useEffect(() => { reload(); }, []);
+
+  const save = async (next) => {
+    try {
+      const r = await fetch('/api/framework', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
+      });
+      if (r.ok) { await reload(); toast('Framework saved', 'ok'); }
+      else { toast('Save failed', 'err'); }
+    } catch (e) { toast(e.message, 'err'); }
+  };
+
+  const startEdit = (level, index = null) => {
+    let draft = { id: '', label: '', parent: '' };
+    if (level === 'goal' && fw.goal) draft = { ...fw.goal };
+    if (level === 'outcome' && index != null) draft = { ...fw.outcomes[index] };
+    if (level === 'output'  && index != null) draft = { ...fw.outputs[index] };
+    setEditing({ level, index, draft });
+  };
+
+  const commitEdit = () => {
+    const { level, index, draft } = editing;
+    if (!draft.id || !draft.label) { toast('id and label required', 'err'); return; }
+    const next = { goal: fw.goal, outcomes: [...fw.outcomes], outputs: [...fw.outputs] };
+    if (level === 'goal') next.goal = { id: draft.id, label: draft.label };
+    else if (level === 'outcome') {
+      const entry = { id: draft.id, label: draft.label, parent: draft.parent || fw.goal?.id || '' };
+      if (index == null) next.outcomes.push(entry); else next.outcomes[index] = entry;
+    }
+    else if (level === 'output') {
+      const entry = { id: draft.id, label: draft.label, parent: draft.parent };
+      if (!entry.parent) { toast('output needs a parent outcome', 'err'); return; }
+      if (index == null) next.outputs.push(entry); else next.outputs[index] = entry;
+    }
+    setEditing(null);
+    save(next);
+  };
+
+  const remove = (level, index) => {
+    if (!confirm('Delete this node?')) return;
+    const next = { goal: fw.goal, outcomes: [...fw.outcomes], outputs: [...fw.outputs] };
+    if (level === 'goal') next.goal = null;
+    else if (level === 'outcome') next.outcomes.splice(index, 1);
+    else if (level === 'output')  next.outputs.splice(index, 1);
+    save(next);
+  };
+
+  // Render tree depth-first
+  const outputsByOutcome = {};
+  for (const op of (fw.outputs || [])) (outputsByOutcome[op.parent] ||= []).push(op);
+
+  return (
+    <div className="comp-card">
+      <div className="comp-card__head">
+        <div className="comp-card__head-text">
+          <div className="comp-card__title">Results framework</div>
+          <div className="comp-card__sub">Goal → Outcomes → Outputs. Link indicators to nodes for logframe rendering.</div>
+        </div>
+        <div className="comp-card__head-actions">
+          {!fw.goal && <button className="btn btn-ghost btn-sm" onClick={() => startEdit('goal')}>+ Goal</button>}
+          <button className="btn btn-ghost btn-sm" onClick={() => startEdit('outcome')}>+ Outcome</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => startEdit('output')}>+ Output</button>
+        </div>
+      </div>
+      <div className="comp-card__body">
+        {!fw.goal && (fw.outcomes || []).length === 0 && (
+          <p className="empty-state" style={{ padding: 20 }}>No framework configured.</p>
+        )}
+        <div className="framework-tree">
+          {fw.goal && (
+            <div className="framework-node" data-level="goal">
+              <span className="framework-node__id">{fw.goal.id}</span>
+              <span className="framework-node__level">goal</span>
+              <span className="framework-node__label">{fw.goal.label}</span>
+              <span>
+                <button className="icon-btn" title="Edit" onClick={() => startEdit('goal')}>✎</button>
+                <button className="icon-btn" title="Delete" onClick={() => remove('goal')}>×</button>
+              </span>
+            </div>
+          )}
+          {(fw.outcomes || []).map((oc, i) => (
+            <Fragment key={oc.id}>
+              <div className="framework-node" data-level="outcome">
+                <span className="framework-node__id">{oc.id}</span>
+                <span className="framework-node__level">outcome</span>
+                <span className="framework-node__label">{oc.label}</span>
+                <span>
+                  <button className="icon-btn" title="Edit" onClick={() => startEdit('outcome', i)}>✎</button>
+                  <button className="icon-btn" title="Delete" onClick={() => remove('outcome', i)}>×</button>
+                </span>
+              </div>
+              {(outputsByOutcome[oc.id] || []).map((op) => {
+                const opIdx = fw.outputs.findIndex(o => o.id === op.id);
+                return (
+                  <div key={op.id} className="framework-node" data-level="output">
+                    <span className="framework-node__id">{op.id}</span>
+                    <span className="framework-node__level">output</span>
+                    <span className="framework-node__label">{op.label}</span>
+                    <span>
+                      <button className="icon-btn" title="Edit" onClick={() => startEdit('output', opIdx)}>✎</button>
+                      <button className="icon-btn" title="Delete" onClick={() => remove('output', opIdx)}>×</button>
+                    </span>
+                  </div>
+                );
+              })}
+            </Fragment>
+          ))}
+        </div>
+      </div>
+
+      {editing && (
+        <Modal
+          title={`${editing.index == null ? 'Add' : 'Edit'} ${editing.level}`}
+          onClose={() => setEditing(null)}
+          onSave={commitEdit}
+          saveLabel="Save"
+          width={520}
+        >
+          <ModalField label="ID" hint="Short opaque identifier (e.g. OP1.1)">
+            <input className="src-input" value={editing.draft.id}
+                   onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, id: e.target.value } }))} />
+          </ModalField>
+          <ModalField label="Label">
+            <input className="src-input" value={editing.draft.label}
+                   onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, label: e.target.value } }))} />
+          </ModalField>
+          {editing.level === 'output' && (
+            <ModalField label="Parent outcome">
+              <select className="src-input" value={editing.draft.parent || ''}
+                      onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, parent: e.target.value } }))}>
+                <option value="">(pick one)</option>
+                {(fw.outcomes || []).map(oc => <option key={oc.id} value={oc.id}>{oc.id} — {oc.label}</option>)}
+              </select>
+            </ModalField>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }
