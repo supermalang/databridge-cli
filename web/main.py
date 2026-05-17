@@ -187,6 +187,20 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
         category = q.get("category", "")
         col_parts.append(f'{i+1}. "{label}" ({category})' if category else f'{i+1}. "{label}"')
     labels = "\n".join(col_parts) or "unknown"
+
+    # Framework awareness (Task 12): if a framework is configured, list the nodes
+    # so the LLM can include a framework_ref in indicator suggestions.
+    framework_nodes_block = ""
+    try:
+        from src.utils.config import load_config
+        from src.utils.framework import enumerate_nodes
+        cfg = load_config(CONFIG_PATH)
+        nodes = enumerate_nodes(cfg)
+        if nodes and kind == "indicator":
+            lines = [f"  {n['id']} ({n['level']}): {n['breadcrumb']}" for n in nodes]
+            framework_nodes_block = "\n\nFRAMEWORK NODES (set framework_ref to one of these ids when the indicator aligns with a node):\n" + "\n".join(lines)
+    except Exception:
+        framework_nodes_block = ""
     if kind == "chart":
         system = (
             "You are a data visualization expert. Given available survey columns with their categories and a description, "
@@ -288,9 +302,13 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
             "Valid format values: number|decimal|percent|text. "
             "CRITICAL: the question field must be an exact column name copied verbatim from the provided numbered list — never invent, translate, or paraphrase column names. "
             "Similarly, dedup_by must be an exact column name from the list if used. "
-            "Return JSON only, no markdown fences."
+            "When the user has a results framework configured, the LLM may include a framework_ref field"
+            " pointing to a goal/outcome/output id from the FRAMEWORK NODES block in the user prompt."
+            " The framework_ref MUST exactly match one of those ids if used."
+            " Return JSON only, no markdown fences."
         )
         user = f"Available columns:\n{labels}\n\nRequest: {prompt}\n\nRemember: question (and dedup_by if used) must be exact column names from the numbered list above."
+        user = user + framework_nodes_block
     return system, user
 
 @app.post("/api/ai/suggest")
