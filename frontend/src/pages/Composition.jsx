@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import yaml from 'js-yaml';
 import Modal from '../components/Modal.jsx';
+import FrameworkPicker from '../components/FrameworkPicker.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useCommand } from '../hooks/useCommand.js';
 import { loadConfig, saveConfigPatch } from '../lib/config.js';
@@ -1041,6 +1042,7 @@ function IndicatorModal({ initial, onClose, onSave }) {
   const [question, setQuestion] = useState(initial?.question || '');
   const [format, setFormat]     = useState(initial?.format || '');
   const [compareTo, setCompareTo] = useState(initial?.compare_to || '');
+  const [frameworkRef, setFrameworkRef] = useState(initial?.framework_ref || '');
   const submit = () => {
     if (!name.trim()) return alert('Name is required.');
     const item = { name: name.trim(), stat };
@@ -1048,6 +1050,7 @@ function IndicatorModal({ initial, onClose, onSave }) {
     if (question.trim()) item.question = question.trim();
     if (format.trim()) item.format = format.trim();
     if (compareTo) item.compare_to = compareTo;
+    if (frameworkRef) item.framework_ref = frameworkRef;
     onSave(item);
   };
   return (
@@ -1062,6 +1065,9 @@ function IndicatorModal({ initial, onClose, onSave }) {
           <option value="">(no comparison)</option>
           <option value="baseline">Baseline</option>
         </select>
+      </ModalField>
+      <ModalField label="Framework link" hint="Optional. Pick a goal/outcome/output node to link this indicator to.">
+        <FrameworkPicker value={frameworkRef} onChange={v => setFrameworkRef(v || '')} />
       </ModalField>
     </Modal>
   );
