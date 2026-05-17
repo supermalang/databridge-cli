@@ -42,6 +42,47 @@ The **Validate** tab (step 3 of 5) scans your downloaded submissions and surface
 
 Findings are computed by `src/data/validate.py` and served by `POST /api/validate`. There are no user-configurable thresholds in this MVP — the defaults are tuned for typical M&E survey data.
 
+### Multi-period workflow
+
+`databridge-cli` can track data collection across multiple periods (baseline, midline, endline; or quarterly rounds) without overwriting earlier downloads.
+
+**Config**:
+
+```yaml
+periods:
+  current:  "Q2 2026"
+  baseline: "Q1 2026"
+  registry:
+    - { label: "Q1 2026", slug: "q1_2026" }
+    - { label: "Q2 2026", slug: "q2_2026" }
+```
+
+**Commands**:
+
+```bash
+# Tag a download with a period (auto-registers if new)
+python3 src/data/make.py download --period "Q3 2026"
+
+# Build the report for a specific period
+python3 src/data/make.py build-report --period "Q2 2026"
+
+# Comparison report (any number of periods)
+python3 src/data/make.py build-report --compare "Q1 2026,Q2 2026"
+
+# Switch the active period
+python3 src/data/make.py set-period "Q3 2026"
+```
+
+**Template placeholders** (in addition to the standard `{{ ind_<name> }}`):
+
+- `{{ ind_<name>_p_<slug> }}` — value for a specific period
+- `{{ ind_<name>_delta }}` — current minus baseline
+- `{{ ind_<name>_pct_change }}` — percent change from baseline
+- `{{ provenance.period_label }}` — the active period label
+- `{{ provenance.compared_periods }}` — list when --compare was used
+
+**Backward compatibility**: configs without a `periods:` block behave exactly as before. Single-period mode is the default.
+
 # Installation
 ## Prerequisites
 - [Docker](https://docs.docker.com/get-docker/)

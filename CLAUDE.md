@@ -138,7 +138,7 @@ pip install -r requirements.txt
 
 ---
 
-## Four CLI commands
+## Seven CLI commands
 
 All commands run from project root. Set `PYTHONPATH=.`.
 
@@ -152,17 +152,29 @@ python3 src/data/make.py generate-template --out templates/custom.docx
 
 # 3. Download submissions, apply filters, export to configured destination
 python3 src/data/make.py download
-python3 src/data/make.py download --sample 50   # first 50 rows only (for testing)
+python3 src/data/make.py download --sample 50          # first 50 rows only (for testing)
+python3 src/data/make.py download --period "Q3 2026"   # tag download with a period (auto-registers if new)
 
 # 4. Build Word report from downloaded data
 python3 src/data/make.py build-report
 python3 src/data/make.py build-report --sample 100
 python3 src/data/make.py build-report --sample 100 --random-sample
-python3 src/data/make.py build-report --split-by Site                  # one report per Site value
-python3 src/data/make.py build-report --split-by Site --split-sample 3 # first 3 sites only
+python3 src/data/make.py build-report --split-by Site                   # one report per Site value
+python3 src/data/make.py build-report --split-by Site --split-sample 3  # first 3 sites only
+python3 src/data/make.py build-report --period "Q2 2026"                # report for a specific period
+python3 src/data/make.py build-report --compare "Q1 2026,Q2 2026"       # comparison report across periods
+
+# 5. Switch the active period (updates periods.current in config.yml)
+python3 src/data/make.py set-period "Q3 2026"
+
+# 6. Validate downloaded data (missingness, outliers, duplicates, type issues)
+python3 src/data/make.py validate
+
+# 7. Classify open-text responses using AI (writes themes back to config.yml)
+python3 src/data/make.py classify
 ```
 
-The same four commands are exposed in the web UI as POST `/api/run/{command}` with
+The same commands are exposed in the web UI as POST `/api/run/{command}` with
 SSE-style streamed logs.
 
 ---
@@ -235,6 +247,18 @@ prompts:
   chart_suggester:
     extra: |
       Never suggest treemap — our template doesn't render them well.
+
+# Optional — multi-period support. When absent, single-period mode applies.
+periods:
+  current:  "Q2 2026"                    # active period
+  baseline: "Q1 2026"                    # canonical comparison anchor
+  registry:
+    - label: "Q1 2026"
+      slug:  "q1_2026"                   # filesystem-safe; auto-derived from label
+      started: 2026-01-01                # optional
+      ended:   2026-03-31                # optional
+    - label: "Q2 2026"
+      slug:  "q2_2026"
 
 export:
   format: csv                              # csv | json | xlsx | mysql | postgres | supabase
