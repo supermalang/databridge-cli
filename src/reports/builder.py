@@ -11,6 +11,7 @@ from src.reports.indicators import compute_indicators
 from src.reports.narrator import generate_narrative
 from src.reports.summaries import compute_summaries
 from src.utils.provenance import build_provenance, data_mtime
+from src.reports.logframe import build_logframe
 
 log = logging.getLogger(__name__)
 
@@ -161,6 +162,7 @@ class ReportBuilder:
         indicators  = compute_indicators(
             self.cfg.get("indicators", []), df, repeat_tables, per_period=per_period
         )
+        logframe = build_logframe(self.cfg, indicators)
         prompts_cfg = self.cfg.get("prompts", {})
         summaries   = compute_summaries(
             self.cfg.get("summaries", []), df, self.cfg.get("ai"),
@@ -196,6 +198,7 @@ class ReportBuilder:
             "n_submissions": len(df),
             "generated_at":  datetime.today().strftime("%d/%m/%Y %H:%M"),
             "provenance":    provenance,
+            "logframe":      logframe,
             **narrative,
             "stats_table":   stats_table,
             **indicators,
