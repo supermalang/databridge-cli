@@ -83,6 +83,48 @@ python3 src/data/make.py set-period "Q3 2026"
 
 **Backward compatibility**: configs without a `periods:` block behave exactly as before. Single-period mode is the default.
 
+### Results framework (logframe)
+
+Structure your indicators in a Goal → Outcomes → Outputs hierarchy. The framework is editable in the Composition tab and renders as a `{{ logframe }}` section in generated reports.
+
+**Config**:
+
+```yaml
+framework:
+  goal:
+    id:    GOAL
+    label: "Reduce child mortality by 25% in target districts by 2030"
+  outcomes:
+    - id: OC1
+      label: "80% of children under 5 fully vaccinated"
+      parent: GOAL
+  outputs:
+    - id: OP1.1
+      label: "10,000 vaccination doses administered"
+      parent: OC1
+
+indicators:
+  - name: vaccinations_administered
+    framework_ref: OP1.1
+    stat: sum
+    question: Number of doses
+```
+
+**Template usage**:
+
+```
+{% if logframe.has_framework %}
+Results Framework
+{% for row in logframe.rows %}
+{{ '  ' * row.indent }}{{ row.label }}{% if row.indicators %}: {% for ind in row.indicators %}{{ ind.name }}={{ ind.value }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+{% endfor %}
+{% endif %}
+```
+
+**Validation**: indicators whose `framework_ref` doesn't match any node appear as warnings in the **Validate** tab (`orphan_framework_ref` finding).
+
+**Backward compatibility**: configs without a `framework:` block behave exactly as today.
+
 # Installation
 ## Prerequisites
 - [Docker](https://docs.docker.com/get-docker/)

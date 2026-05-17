@@ -230,6 +230,13 @@ charts:
       top_n: 10
       width_inches: 5.5
 
+# Each indicator → {{ ind_<name> }} placeholder; framework_ref links it to a framework node
+indicators:
+  - name: vaccinations_administered
+    stat: sum
+    question: Number of doses
+    framework_ref: OP1.1     # optional — links indicator to a results-framework node
+
 # AI narrative (fills {{ summary_text }}, {{ observations }}, {{ recommendations }})
 ai:
   provider: openai                      # openai | anthropic
@@ -259,6 +266,20 @@ periods:
       ended:   2026-03-31                # optional
     - label: "Q2 2026"
       slug:  "q2_2026"
+
+# Optional — results framework (logframe). When absent, no framework rendering.
+framework:
+  goal:
+    id:    GOAL
+    label: "Reduce child mortality by 25% in target districts by 2030"
+  outcomes:
+    - id: OC1
+      label: "80% of children under 5 fully vaccinated"
+      parent: GOAL
+  outputs:
+    - id: OP1.1
+      label: "10,000 vaccination doses administered"
+      parent: OC1
 
 export:
   format: csv                              # csv | json | xlsx | mysql | postgres | supabase
@@ -378,6 +399,7 @@ Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
 {{ summary_<name> }}    ← one per summary in config.yml summaries section
 {{ chart_<n> }}         ← one per chart in config.yml
 {{ split_value }}       ← when --split-by is set, the current group's value
+{{ logframe }}          ← results framework hierarchy (has_framework / rows); present only when framework: is configured
 ```
 
 **Critical rule:** each `{{ chart_... }}` must be a single unbroken XML run in the .docx.
