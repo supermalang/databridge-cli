@@ -10,7 +10,7 @@ const CHART_TYPES = [
   'bar', 'horizontal_bar', 'stacked_bar', 'grouped_bar', 'pie', 'donut',
   'line', 'area', 'histogram', 'scatter', 'box_plot', 'heatmap', 'treemap',
   'waterfall', 'funnel', 'table', 'bullet_chart', 'likert', 'scorecard',
-  'pyramid', 'dot_map',
+  'pyramid', 'dot_map', 'period_bar', 'period_line',
 ];
 
 const INDICATOR_STATS = ['count', 'sum', 'mean', 'median', 'min', 'max', 'mode', 'top', 'pct'];

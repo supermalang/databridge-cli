@@ -21,6 +21,24 @@ const TABS = [
 const PROJECT = { name: 'PCP Mauritania', slug: 'pcp_mauritanie_v1', avatar: 'MR' };
 const USER = { initials: 'MK' };
 
+function ActivePeriodChip() {
+  const [cur, setCur] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await (await fetch('/api/periods')).json();
+        setCur(data.current);
+      } catch { /* noop */ }
+    })();
+  }, []);
+  if (!cur) return null;
+  return (
+    <span className="period-chip">
+      Period: <strong>{cur}</strong>
+    </span>
+  );
+}
+
 export default function App() {
   const [active, setActive] = useState('dashboard');
   const [counts, setCounts] = useState({});
@@ -57,6 +75,7 @@ export default function App() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
+          <ActivePeriodChip />
           <button className="project-switcher" title="Switch project" type="button">
             <span className="project-switcher__avatar">{PROJECT.avatar}</span>
             <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
