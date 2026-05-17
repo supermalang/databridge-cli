@@ -168,6 +168,29 @@ def find_type_issues(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]:
     return findings
 
 
+def find_orphan_framework_refs(cfg: Dict) -> List[Dict]:
+    """Flag indicators whose `framework_ref` points to a non-existent node.
+
+    Returns [] when no framework is configured (nothing to validate against).
+    """
+    from src.utils.framework import validate_refs
+    orphans = validate_refs(cfg)
+    if not orphans:
+        return []
+    return [
+        {
+            "severity": "warning",
+            "column":   o["indicator"],
+            "kind":     "orphan_framework_ref",
+            "message":  f"Indicator '{o['indicator']}' references framework node '{o['ref']}' which doesn't exist",
+            "count":    1,
+            "pct":      0.0,
+            "examples": [o["ref"]],
+        }
+        for o in orphans
+    ]
+
+
 def validate_dataset(cfg: Dict, df: pd.DataFrame, repeat_tables: Dict[str, pd.DataFrame]) -> Dict:
     """Run all detectors against the main DataFrame and return a report envelope.
 
@@ -183,6 +206,7 @@ def validate_dataset(cfg: Dict, df: pd.DataFrame, repeat_tables: Dict[str, pd.Da
     findings += find_numeric_outliers(df, questions)
     findings += find_duplicates(df)
     findings += find_type_issues(df, questions)
+    findings += find_orphan_framework_refs(cfg)
 
     # Sort: errors first, then warnings, then info; within a tier, larger count first.
     severity_rank = {"error": 0, "warning": 1, "info": 2}

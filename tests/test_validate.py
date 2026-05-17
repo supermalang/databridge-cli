@@ -184,3 +184,37 @@ def test_validate_dataset_empty_df_returns_empty_report():
     report = validate_dataset(cfg, df, repeat_tables={})
     assert report["n_rows"] == 0
     assert report["checks"] == []
+
+
+from src.data.validate import find_orphan_framework_refs
+
+
+def test_orphans_returns_nothing_when_no_framework():
+    cfg = {"indicators": [{"name": "x", "framework_ref": "Q"}]}
+    assert find_orphan_framework_refs(cfg) == []
+
+
+def test_orphans_returns_nothing_when_all_refs_resolve():
+    cfg = {
+        "framework": {"outputs": [{"id": "OP1", "label": "Output 1", "parent": "OC1"}]},
+        "indicators": [{"name": "x", "framework_ref": "OP1"}],
+    }
+    assert find_orphan_framework_refs(cfg) == []
+
+
+def test_orphans_flags_broken_ref():
+    cfg = {
+        "framework": {"outputs": [{"id": "OP1", "label": "Output 1"}]},
+        "indicators": [
+            {"name": "good", "framework_ref": "OP1"},
+            {"name": "bad",  "framework_ref": "MISSING"},
+        ],
+    }
+    findings = find_orphan_framework_refs(cfg)
+    assert len(findings) == 1
+    f = findings[0]
+    assert f["kind"] == "orphan_framework_ref"
+    assert f["severity"] == "warning"
+    assert f["column"] == "bad"
+    assert "MISSING" in f["message"]
+    assert f["count"] == 1
