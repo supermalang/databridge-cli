@@ -513,3 +513,14 @@ report:
 #   summaries:
 #     extra: |
 #       Use UNHCR terminology when referring to displaced populations.
+
+# Optional — PII redaction + consent gating. Applied at report/preview render time.
+# pii:
+#   consent_column: "Consent_to_share_data"   # rows must have this == consent_value
+#   consent_value:  "yes"
+#   redact:
+#     - {column: "Respondent_name", strategy: drop}
+#     - {column: "Phone_number",    strategy: hash}
+#     - {column: "GPS",             strategy: generalize_geo, decimals: 2}
+#     - {column: "Date_of_birth",   strategy: generalize_date}
+#     - {column: "National_ID",     strategy: mask}

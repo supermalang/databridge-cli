@@ -826,6 +826,9 @@ async def preview_view(payload: ViewPreviewPayload):
         if _questions_cfg:
             try: df = apply_choice_labels(df, _questions_cfg)
             except Exception: pass
+        # Apply PII redaction to the repeat table (apply_pii at the top only saw main_df)
+        from src.utils.pii import apply_redaction
+        df = apply_redaction(df, _cfg or {})
         # Join parent columns into repeat df
         join_cols = v.get("join_parent")
         if join_cols:
