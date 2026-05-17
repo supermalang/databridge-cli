@@ -67,7 +67,12 @@ SYSTEM_PROMPT = (
     "  {{ ind_<name>_p_<slug> }}     value for that indicator in the named period\n"
     "  {{ ind_<name>_delta }}         current value minus the baseline value\n"
     "  {{ ind_<name>_pct_change }}    percent change from baseline to current period\n"
-    "  {{ provenance.period_label }}  the active period label (e.g. '2024 Q2')"
+    "  {{ provenance.period_label }}  the active period label (e.g. '2024 Q2')\n\n"
+    "Results framework placeholders (when framework: is configured):\n"
+    "  {% if logframe.has_framework %}…{% endif %}      conditional rendering guard\n"
+    "  {% for row in logframe.rows %}…{% endfor %}      iterate over hierarchy\n"
+    "  Each row has: id, label, level, indent, indicators=[{name, value}, ...]\n"
+    "  {{ ind_<name>_framework_ref }}                    the framework node a given indicator links to"
 )
 
 # Format slots: {description} {pages} {language} {summary_prompt_line}
