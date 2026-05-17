@@ -73,6 +73,8 @@ def compute_indicators(
             value = _compute(ind, ind_df)
             fmt = ind.get("format", "number")
             context[f"ind_{name}"] = _format(value, fmt, ind)
+            if ind.get("framework_ref"):
+                context[f"ind_{name}_framework_ref"] = ind["framework_ref"]
 
             if per_period:
                 values_by_slug = {}

@@ -1,7 +1,7 @@
 import asyncio, base64, io, json, os, sys, tempfile, zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncGenerator, Dict, Optional
+from typing import AsyncGenerator, Dict, List, Optional
 
 import aiofiles, yaml
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -1356,3 +1356,32 @@ async def validate():
         raise HTTPException(status_code=400, detail=f"Failed to load data: {e}")
     report = validate_dataset(cfg, df, repeat_tables)
     return report
+
+
+class FrameworkPayload(BaseModel):
+    goal:     Optional[Dict] = None
+    outcomes: List[Dict] = []
+    outputs:  List[Dict] = []
+
+
+@app.get("/api/framework")
+async def get_framework():
+    cfg = _load_cfg()
+    fw = cfg.get("framework") or {}
+    return {
+        "goal":     fw.get("goal"),
+        "outcomes": fw.get("outcomes", []) or [],
+        "outputs":  fw.get("outputs", []) or [],
+    }
+
+
+@app.post("/api/framework")
+async def set_framework(payload: FrameworkPayload):
+    cfg = _load_cfg()
+    cfg["framework"] = {
+        "goal":     payload.goal,
+        "outcomes": payload.outcomes,
+        "outputs":  payload.outputs,
+    }
+    _save_cfg(cfg)
+    return {"ok": True}
