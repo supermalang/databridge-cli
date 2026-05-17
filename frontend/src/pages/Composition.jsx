@@ -696,9 +696,24 @@ function FrameworkCard() {
   const remove = (level, index) => {
     if (!confirm('Delete this node?')) return;
     const next = { goal: fw.goal, outcomes: [...fw.outcomes], outputs: [...fw.outputs] };
-    if (level === 'goal') next.goal = null;
-    else if (level === 'outcome') next.outcomes.splice(index, 1);
-    else if (level === 'output')  next.outputs.splice(index, 1);
+    if (level === 'goal') {
+      // Clear `parent` from outcomes that pointed to the deleted goal so the
+      // config doesn't carry a dangling reference.
+      const oldGoalId = fw.goal?.id;
+      next.goal = null;
+      if (oldGoalId) {
+        next.outcomes = next.outcomes.map(oc =>
+          oc.parent === oldGoalId ? { ...oc, parent: '' } : oc
+        );
+      }
+    } else if (level === 'outcome') {
+      // Cascade: also remove any outputs whose parent was this outcome.
+      const removedId = fw.outcomes[index].id;
+      next.outcomes.splice(index, 1);
+      next.outputs = next.outputs.filter(op => op.parent !== removedId);
+    } else if (level === 'output') {
+      next.outputs.splice(index, 1);
+    }
     save(next);
   };
 
