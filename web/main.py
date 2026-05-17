@@ -69,7 +69,7 @@ ALLOWED_COMMANDS = {
     "suggest-views":        ["--user-request"],
     "suggest-summaries":    ["--user-request"],
     "download":             ["--sample"],
-    "build-report":         ["--sample", "--split-by", "--session"],
+    "build-report":         ["--sample", "--split-by", "--session", "--period", "--compare"],
 }
 
 class RunPayload(BaseModel):
@@ -83,6 +83,8 @@ class RunPayload(BaseModel):
     context: Optional[str] = None
     summary_prompt: Optional[str] = None
     user_request: Optional[str] = None
+    period:  Optional[str] = None
+    compare: Optional[str] = None
 
 class QuestionsPayload(BaseModel):
     questions: list
@@ -895,6 +897,10 @@ async def run_command(command: str, payload: RunPayload):
         cmd += ["--session", payload.session]
     if payload.user_request and "--user-request" in ALLOWED_COMMANDS[command]:
         cmd += ["--user-request", payload.user_request]
+    if payload.period and "--period" in ALLOWED_COMMANDS[command]:
+        cmd += ["--period", payload.period]
+    if payload.compare and "--compare" in ALLOWED_COMMANDS[command]:
+        cmd += ["--compare", payload.compare]
     return StreamingResponse(
         _stream(command, cmd),
         media_type="text/event-stream",
