@@ -93,3 +93,44 @@ def test_get_prompt_unknown_name_raises_lookuperror(tmp_path, monkeypatch):
     monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
     with pytest.raises(LookupError):
         lf_client.get_prompt("not_a_real_prompt", {})
+
+
+def test_chat_calls_openai_and_returns_content(monkeypatch):
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    captured = {}
+    def fake_openai(messages, model, api_key, max_tokens, base_url, json_mode):
+        captured["messages"] = messages
+        return "OPENAI_OUT", {"input": 10, "output": 3}
+    monkeypatch.setattr(lf_client, "_call_openai", fake_openai)
+    out = lf_client.chat(
+        [{"role": "user", "content": "hi"}],
+        model="gpt-4o", provider="openai", api_key="sk-x",
+        max_tokens=100, trace_name="narrator", json_mode=True,
+    )
+    assert out == "OPENAI_OUT"
+    assert captured["messages"][0]["content"] == "hi"
+
+
+def test_chat_routes_anthropic(monkeypatch):
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    monkeypatch.setattr(lf_client, "_call_anthropic",
+                        lambda *a, **k: ("ANTHROPIC_OUT", {"input": 1, "output": 1}))
+    out = lf_client.chat([{"role": "user", "content": "hi"}],
+                         model="claude-x", provider="anthropic", api_key="k",
+                         max_tokens=50, trace_name="classifier_discover")
+    assert out == "ANTHROPIC_OUT"
+
+
+def test_chat_returns_output_even_if_tracing_raises(monkeypatch):
+    monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
+    monkeypatch.setattr(lf_client, "_call_openai",
+                        lambda *a, **k: ("OUT", {"input": 1, "output": 1}))
+    def boom():
+        raise ConnectionError("trace server down")
+    monkeypatch.setattr(lf_client, "_get_langfuse", boom)
+    out = lf_client.chat([{"role": "user", "content": "hi"}],
+                         model="gpt-4o", provider="openai", api_key="k",
+                         max_tokens=10, trace_name="narrator")
+    assert out == "OUT"
