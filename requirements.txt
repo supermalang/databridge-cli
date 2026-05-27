@@ -26,8 +26,8 @@ aiofiles>=23.2.1
 openai>=1.0.0
 # AI narrative generation (Anthropic Claude):
 anthropic>=0.20.0
-# Prompt management + LLM tracing:
-langfuse>=2.53.0
+# Prompt management + LLM tracing (code targets the v4 SDK API):
+langfuse>=4.0.0
 # Test dependencies
 pytest>=8.0
 httpx>=0.27
