@@ -179,6 +179,30 @@ def test_push_seed_prompts_requires_enabled(monkeypatch):
         lf_client.push_seed_prompts()
 
 
+def test_command_trace_noop_when_disabled(monkeypatch):
+    monkeypatch.setattr(lf_client, "is_enabled", lambda: False)
+    with lf_client.command_trace("build-report"):
+        pass  # must not raise
+
+
+def test_command_trace_uses_span_when_enabled(monkeypatch):
+    events = []
+    class _Span:
+        def __enter__(self): events.append("enter"); return self
+        def __exit__(self, *a): events.append("exit"); return False
+    class _LF:
+        def start_as_current_observation(self, *, name, as_type):
+            events.append(("obs", name, as_type)); return _Span()
+        def flush(self):
+            events.append("flush")
+    monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
+    monkeypatch.setattr(lf_client, "_get_langfuse", lambda: _LF())
+    with lf_client.command_trace("download"):
+        pass
+    assert ("obs", "download", "span") in events
+    assert "exit" in events and "flush" in events
+
+
 def test_get_prompt_uses_stale_cache_when_fetch_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(lf_client, "is_enabled", lambda: True)

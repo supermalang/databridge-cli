@@ -9,6 +9,7 @@ Public API (stable):
     push_seed_prompts(force=False) -> list[tuple[str, str]]
     flush() -> None
 """
+import contextlib
 import json
 import logging
 import os
@@ -248,3 +249,34 @@ def flush() -> None:
         _get_langfuse().flush()
     except Exception as exc:  # noqa: BLE001
         log.debug(f"flush failed: {exc}")
+
+
+@contextlib.contextmanager
+def command_trace(name: str):
+    """Group all chat() generations in this block under one parent trace.
+
+    No-op (and never raises) when Langfuse is disabled or the SDK call fails.
+    Always flushes on exit.
+    """
+    if not is_enabled():
+        yield
+        return
+
+    # Open the span in a try that does NOT wrap the yield — otherwise a body
+    # exception thrown back into this generator would re-enter the except and
+    # yield a second time ("generator didn't stop" RuntimeError).
+    span_cm = None
+    try:
+        span_cm = _get_langfuse().start_as_current_observation(name=name, as_type="span")
+    except Exception as exc:  # noqa: BLE001
+        log.debug(f"command_trace span unavailable ({type(exc).__name__}); continuing untraced.")
+        span_cm = None
+
+    try:
+        if span_cm is not None:
+            with span_cm:
+                yield
+        else:
+            yield
+    finally:
+        flush()

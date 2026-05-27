@@ -51,6 +51,7 @@ def cmd_generate_template(out, context, summary_prompt):
 def cmd_ai_generate_template(description, pages, language, context, summary_prompt, out):
     """AI-generate a structured Word template based on project description and config."""
     from src.reports.ai_template_generator import ai_generate_template
+    from src.utils import lf_client
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("ai"):
         click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
@@ -62,7 +63,8 @@ def cmd_ai_generate_template(description, pages, language, context, summary_prom
         out_path = Path(out)
     # --context overrides --description if both are passed; otherwise use description
     effective_description = context or description
-    ai_generate_template(cfg, out_path, effective_description, pages, language, summary_prompt=summary_prompt)
+    with lf_client.command_trace("ai-generate-template"):
+        ai_generate_template(cfg, out_path, effective_description, pages, language, summary_prompt=summary_prompt)
 
 @cli.command("suggest-charts")
 @click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
@@ -70,6 +72,7 @@ def cmd_ai_generate_template(description, pages, language, context, summary_prom
 def cmd_suggest_charts(out, user_request):
     """Ask AI to suggest a charts: config block from your questions."""
     from src.reports.ai_chart_suggester import suggest_charts
+    from src.utils import lf_client
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("ai"):
         click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
@@ -77,7 +80,8 @@ def cmd_suggest_charts(out, user_request):
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
         sys.exit(1)
-    suggest_charts(cfg, out_path=out, user_request=user_request)
+    with lf_client.command_trace("suggest-charts"):
+        suggest_charts(cfg, out_path=out, user_request=user_request)
 
 
 @cli.command("suggest-views")
@@ -86,6 +90,7 @@ def cmd_suggest_charts(out, user_request):
 def cmd_suggest_views(out, user_request):
     """Ask AI to suggest a views: config block — virtual tables charts can use as source."""
     from src.reports.ai_view_suggester import suggest_views
+    from src.utils import lf_client
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("ai"):
         click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
@@ -93,7 +98,8 @@ def cmd_suggest_views(out, user_request):
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
         sys.exit(1)
-    suggest_views(cfg, out_path=out, user_request=user_request)
+    with lf_client.command_trace("suggest-views"):
+        suggest_views(cfg, out_path=out, user_request=user_request)
 
 
 @cli.command("suggest-summaries")
@@ -102,6 +108,7 @@ def cmd_suggest_views(out, user_request):
 def cmd_suggest_summaries(out, user_request):
     """Ask AI to suggest a summaries: config block — text paragraphs for the report."""
     from src.reports.ai_summary_suggester import suggest_summaries
+    from src.utils import lf_client
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("ai"):
         click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
@@ -109,7 +116,8 @@ def cmd_suggest_summaries(out, user_request):
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
         sys.exit(1)
-    suggest_summaries(cfg, out_path=out, user_request=user_request)
+    with lf_client.command_trace("suggest-summaries"):
+        suggest_summaries(cfg, out_path=out, user_request=user_request)
 
 
 def _run_classify(cfg, sample=None, rediscover=False):
@@ -181,6 +189,7 @@ def cmd_download(sample, period):
     """Download submissions, apply filters, export to configured destination."""
     from src.data.extract import get_client
     from src.data.transform import load_data, apply_filters, apply_computed_columns, export_data
+    from src.utils import lf_client
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
@@ -192,19 +201,20 @@ def cmd_download(sample, period):
         registry = cfg["periods"].setdefault("registry", [])
         if not any(e.get("label") == period for e in registry):
             registry.append({"label": period, "slug": slugify(period)})
-    client = get_client(cfg)
-    log.info("Downloading submissions ...")
-    raw = client.get_submissions(sample_size=sample)
-    log.info("Transforming data ...")
-    df, repeat_tables = load_data(raw, cfg)
-    df, repeat_tables = apply_filters(df, cfg, repeat_tables)
-    df = apply_computed_columns(df, cfg, repeat_tables)
-    log.info(f"Exporting {len(df)} rows ...")
-    export_data(df, cfg, repeat_tables)
-    if period:
-        from src.utils.config import write_config
-        write_config(cfg, CONFIG_PATH)
-    _run_classify(cfg, sample=sample)
+    with lf_client.command_trace("download"):
+        client = get_client(cfg)
+        log.info("Downloading submissions ...")
+        raw = client.get_submissions(sample_size=sample)
+        log.info("Transforming data ...")
+        df, repeat_tables = load_data(raw, cfg)
+        df, repeat_tables = apply_filters(df, cfg, repeat_tables)
+        df = apply_computed_columns(df, cfg, repeat_tables)
+        log.info(f"Exporting {len(df)} rows ...")
+        export_data(df, cfg, repeat_tables)
+        if period:
+            from src.utils.config import write_config
+            write_config(cfg, CONFIG_PATH)
+        _run_classify(cfg, sample=sample)
 
 
 @cli.command("list-sessions")
@@ -235,13 +245,15 @@ def cmd_list_sessions():
 @click.option("--compare", default=None, help='Comma-separated period labels to compare (e.g. "Q1 2026,Q2 2026").')
 def cmd_build_report(sample, random_sample, split_by, split_sample, session, period, compare):
     """Build a Word report from previously downloaded data."""
+    from src.utils import lf_client
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("charts"):
         click.echo("No charts in config.yml. Add chart configs first.", err=True)
         sys.exit(1)
     from src.reports.builder import ReportBuilder
     compare_labels = [s.strip() for s in (compare or "").split(",") if s.strip()] or None
-    ReportBuilder(cfg).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample, session=session, period=period, compare=compare_labels)
+    with lf_client.command_trace("build-report"):
+        ReportBuilder(cfg).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample, session=session, period=period, compare=compare_labels)
 
 @cli.command("set-period")
 @click.argument("label")
