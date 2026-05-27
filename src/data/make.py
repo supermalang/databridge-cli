@@ -264,5 +264,21 @@ def cmd_set_period(label, baseline):
     if baseline:
         click.echo(f"Baseline period set to: {label}")
 
+@cli.command("push-prompts")
+@click.option("--force", is_flag=True, default=False,
+              help="Overwrite prompts that already exist in Langfuse.")
+def cmd_push_prompts(force):
+    """Push bundled seed prompts to Langfuse (create-if-missing; --force overwrites)."""
+    from src.utils import lf_client
+    try:
+        results = lf_client.push_seed_prompts(force=force)
+    except RuntimeError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+    for name, action in results:
+        click.echo(f"  {action:8} {name}")
+    click.echo(f"Done — {len(results)} prompt(s) processed.")
+
+
 if __name__ == "__main__":
     cli()
