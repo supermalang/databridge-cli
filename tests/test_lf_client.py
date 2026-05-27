@@ -43,3 +43,53 @@ def test_cache_miss_returns_none(tmp_path, monkeypatch):
     monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
     got, age = lf_client._read_cache("does_not_exist", "production")
     assert got is None and age == float("inf")
+
+
+def test_is_enabled_false_without_keys(monkeypatch):
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    assert lf_client.is_enabled() is False
+
+
+def test_get_prompt_uses_seed_when_disabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    msgs = lf_client.get_prompt("classifier_discover",
+                                {"label": "Q", "responses": "- a", "theme_count": 3})
+    assert msgs[0]["role"] == "system"
+    assert "3" in msgs[1]["content"]
+    assert "{{" not in msgs[1]["content"]
+
+
+def test_get_prompt_uses_seed_when_fetch_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
+    def boom(name, label):
+        raise ConnectionError("offline")
+    monkeypatch.setattr(lf_client, "_fetch_from_langfuse", boom)
+    msgs = lf_client.get_prompt("classifier_classify",
+                                {"label": "Q", "themes_str": '"A"', "responses": "- a"})
+    assert "A" in msgs[1]["content"]
+
+
+def test_get_prompt_uses_cache_when_fresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
+    cached = [{"role": "system", "content": "cached"},
+              {"role": "user", "content": "hi {{x}}"}]
+    lf_client._write_cache("narrator", "production", cached)
+    def fail(name, label):
+        raise AssertionError("should not fetch when cache is fresh")
+    monkeypatch.setattr(lf_client, "_fetch_from_langfuse", fail)
+    msgs = lf_client.get_prompt("narrator", {"x": "1"}, label="production")
+    assert msgs[0]["content"] == "cached"
+    assert msgs[1]["content"] == "hi 1"
+
+
+def test_get_prompt_unknown_name_raises_lookuperror(tmp_path, monkeypatch):
+    monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    with pytest.raises(LookupError):
+        lf_client.get_prompt("not_a_real_prompt", {})

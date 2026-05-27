@@ -69,3 +69,61 @@ def _read_cache(name: str, label: str):
         return messages, age
     except (OSError, ValueError):
         return None, float("inf")
+
+
+from src.utils.seed_prompts import SEED_PROMPTS
+
+_LF = None  # cached Langfuse SDK instance
+
+
+def is_enabled() -> bool:
+    return bool(os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY"))
+
+
+def _get_langfuse():
+    global _LF
+    if _LF is None:
+        from langfuse import Langfuse
+        _LF = Langfuse(
+            public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
+            secret_key=os.environ["LANGFUSE_SECRET_KEY"],
+            host=os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+        )
+    return _LF
+
+
+def _fetch_from_langfuse(name: str, label: str) -> ChatMessages:
+    """Fetch a chat prompt's raw messages from Langfuse. Raises on any failure."""
+    client = _get_langfuse()
+    prompt = client.get_prompt(name, label=label, type="chat")
+    return [{"role": m["role"], "content": m["content"]}
+            for m in prompt.prompt if m.get("type") != "placeholder"]
+
+
+def get_prompt(name: str, variables: Dict, label: str = "production") -> ChatMessages:
+    raw = _resolve_raw(name, label)
+    return compile_messages(raw, variables)
+
+
+def _resolve_raw(name: str, label: str) -> ChatMessages:
+    cached, age = _read_cache(name, label)
+    if cached is not None and age < CACHE_TTL_SECONDS:
+        return cached
+
+    if is_enabled():
+        try:
+            fetched = _fetch_from_langfuse(name, label)
+            _write_cache(name, label, fetched)
+            return fetched
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"Langfuse fetch failed for {name!r} ({type(exc).__name__}); using cache/seed.")
+
+    if cached is not None:
+        log.info(f"Using cached prompt for {name!r} (Langfuse unavailable).")
+        return cached
+
+    if name in SEED_PROMPTS:
+        log.warning(f"Langfuse unreachable and no cache — using bundled seed prompt for {name!r}.")
+        return SEED_PROMPTS[name]
+
+    raise LookupError(f"No prompt named {name!r} in Langfuse, cache, or seeds.")
