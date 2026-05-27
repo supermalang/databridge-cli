@@ -5,9 +5,9 @@
 
 ## Goal
 
-Make Langfuse Cloud the single source of truth for the project's five AI prompts so they can be edited, versioned, and rolled back from one UI — and capture every LLM call as a trace with cost, latency, and token usage for debugging and evaluation.
+Make Langfuse Cloud the single source of truth for the project's seven AI prompts so they can be edited, versioned, and rolled back from one UI — and capture every LLM call as a trace with cost, latency, and token usage for debugging and evaluation.
 
-The five AI features today: `narrator`, `summaries`, `chart_suggester`, `template_generator`, `classifier` (see `src/utils/prompts.py` and the four call sites in `src/reports/` plus `src/data/classifier.py`).
+The seven AI features today: `narrator`, `summaries`, `chart_suggester`, `template_generator`, `classifier`, `summary_suggester`, `view_suggester` (see `src/utils/prompts.py` and the call sites in `src/reports/` plus `src/data/classifier.py`).
 
 ## Non-goals
 
@@ -47,7 +47,7 @@ The five AI features today: `narrator`, `summaries`, `chart_suggester`, `templat
    evals)           prompts/*.json)
 ```
 
-**One client module, three responsibilities:** prompt resolution (with cache + in-code fallback), traced LLM call, and a one-shot bootstrap command. All five AI features migrate to a uniform call shape so the AI call-site files lose their hand-rolled f-string prompt-building.
+**One client module, three responsibilities:** prompt resolution (with cache + in-code fallback), traced LLM call, and a one-shot bootstrap command. All seven AI features migrate to a uniform call shape so the AI call-site files lose their hand-rolled f-string prompt-building.
 
 ## Components
 
@@ -59,7 +59,7 @@ Singleton-style client. Public surface:
 |---|---|
 | `get_prompt(name, variables, label="production")` | Fetch by name+label, compile `{{vars}}` → list of chat messages. On network error: read disk cache. On no cache: in-code seed. Cache TTL is 1h; older entries trigger a refetch on next call. |
 | `chat(messages, model, trace_name, metadata)` | Calls OpenAI/Anthropic SDK wrapped by Langfuse's tracing decorator. Captures latency, token counts, cost (server-side), and the input/output to the trace. Returns the parsed response. |
-| `push_seed_prompts(force=False)` | Iterates `SEED_PROMPTS` dict (5 entries), creates each in Langfuse only if it doesn't exist. `force=True` overwrites. |
+| `push_seed_prompts(force=False)` | Iterates `SEED_PROMPTS` dict (7 entries), creates each in Langfuse only if it doesn't exist. `force=True` overwrites. |
 | `flush()` | Drains the trace queue. Called at end of every CLI command via `atexit`. |
 | `get_client()` | Module-level accessor returning the singleton; first call initialises from env vars. Returns a no-op client if `LANGFUSE_*` env vars are unset. |
 
@@ -76,15 +76,21 @@ python3 src/data/make.py push-prompts --force  # overwrite existing
 
 Also added to `ALLOWED_COMMANDS` in `web/main.py` so the UI can trigger it.
 
-### Migrations in existing AI call sites (5 files)
+### Migrations in existing AI call sites (7 files)
 
-- `src/reports/narrator.py`
-- `src/reports/summaries.py`
-- `src/reports/ai_chart_suggester.py`
-- `src/reports/ai_template_generator.py`
-- `src/data/classifier.py`
+- `src/reports/narrator.py` (key `narrator`)
+- `src/reports/summaries.py` (key `summaries`)
+- `src/reports/ai_chart_suggester.py` (key `chart_suggester`)
+- `src/reports/ai_template_generator.py` (key `template_generator`)
+- `src/reports/ai_summary_suggester.py` (key `summary_suggester`)
+- `src/reports/ai_view_suggester.py` (key `view_suggester`)
+- `src/data/classifier.py` (keys `classifier_discover` + `classifier_classify` — see note below)
 
 Each loses its hand-rolled prompt-building f-strings; instead it builds a `variables` dict and calls `lf.get_prompt(...)` + `lf.chat(...)`. The `from src.utils.prompts import system_prompt, append_extra` imports get deleted.
+
+**Classifier is two prompts, not one.** `classifier.py` has two distinct system+user prompt pairs — theme *discovery* (`discover_themes`) and *classification* (`classify_responses`). The old code shared a single `classifier` override key for both system prompts but had separate in-code user templates. Since both system and user now live in Langfuse and the user templates differ, they become two Langfuse prompts: `classifier_discover` and `classifier_classify`. This makes `SEED_PROMPTS` hold **8** entries even though there are 7 feature files.
+
+**Mustache vs `.format()` escaping.** Langfuse compiles prompts with `{{variable}}` (double-brace mustache). The current Python templates use single-brace `{var}` for `.format()` and escape literal JSON braces as `{{` / `}}` (e.g. classifier's `{{"themes": [...]}}`). When porting a template into a seed prompt: convert real `.format()` slots from `{var}` → `{{var}}`, and convert escaped literal braces `{{`/`}}` back to single `{`/`}`. This is a careful per-template edit, not a blind find/replace.
 
 ### `config.yml`
 
@@ -108,7 +114,7 @@ Adds `langfuse` (Python SDK) — needed for prompt fetching, automatic LLM clien
 
 1. User sets `LANGFUSE_*` env vars in `.env`.
 2. User runs `python3 src/data/make.py push-prompts`.
-3. Client iterates the 5 entries in `SEED_PROMPTS`, calls Langfuse API to create each as a chat prompt with label `production`. Skips ones that already exist.
+3. Client iterates the 7 entries in `SEED_PROMPTS`, calls Langfuse API to create each as a chat prompt with label `production`. Skips ones that already exist.
 4. From here on, prompt edits happen in the Langfuse UI — no code change required.
 
 ### Steady-state (every AI call)
@@ -172,19 +178,19 @@ This gives per-command grouping in the Langfuse UI — useful because one `build
 | `push_seed_prompts()` skips existing prompts, creates missing | Idempotent bootstrap |
 | `push_seed_prompts(force=True)` overwrites | Force flag works |
 
-Network calls mocked with `respx` or `unittest.mock`.
+Network calls mocked with `unittest.mock` (`respx` is not a project dependency; do not add it).
 
 ### Integration test — `tests/integration/test_langfuse_smoke.py` (new, gated)
 
 Runs only if `LANGFUSE_TEST_KEYS` env var is set (CI secret). Bootstraps a test project, pushes seeds, fetches one back, asserts round-trip. Skipped locally and in PRs from forks.
 
-### Existing AI feature tests (5 files)
+### Regression guard — `tests/test_build_report_smoke.py` (existing)
 
-Switch from mocking the OpenAI/Anthropic client directly to mocking `lf_client.chat`. Same coverage, simpler patches.
+There are no dedicated unit tests for the seven AI features today; the only test that exercises them is `test_build_report_smoke.py`, which runs `build-report` with **no** `ai:` section so the narrator no-ops. The migration MUST preserve this no-op path: when `ai_cfg` is empty or the api_key is unresolved, the feature returns its empty/fallback value without contacting Langfuse or any LLM. This test must still pass unchanged after the migration.
 
 ### Manual verification checklist (PR description)
 
-- [ ] `make.py push-prompts` on empty Langfuse project creates 5 prompts
+- [ ] `make.py push-prompts` on empty Langfuse project creates 7 prompts
 - [ ] Re-running is idempotent (no duplicates)
 - [ ] Edit a prompt in Langfuse UI, run `build-report`, output reflects the edit
 - [ ] Unset `LANGFUSE_*` env vars, `build-report` still works (uses seeds)
