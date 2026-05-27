@@ -134,3 +134,45 @@ def test_chat_returns_output_even_if_tracing_raises(monkeypatch):
                          model="gpt-4o", provider="openai", api_key="k",
                          max_tokens=10, trace_name="narrator")
     assert out == "OUT"
+
+
+class _FakeLF:
+    def __init__(self, existing=()):
+        self.existing = set(existing)
+        self.created = []
+        self.flushed = False
+    def get_prompt(self, name, label=None, type=None):
+        if name not in self.existing:
+            raise ValueError("not found")
+        return object()
+    def create_prompt(self, **kwargs):
+        self.created.append(kwargs)
+        self.existing.add(kwargs["name"])
+    def flush(self):
+        self.flushed = True
+
+
+def test_push_seed_prompts_creates_missing(monkeypatch):
+    fake = _FakeLF(existing=["narrator"])
+    monkeypatch.setattr(lf_client, "_get_langfuse", lambda: fake)
+    monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
+    results = lf_client.push_seed_prompts()
+    actions = dict(results)
+    assert actions["narrator"] == "skipped"
+    assert actions["classifier_discover"] == "created"
+    assert len([a for a in actions.values() if a == "created"]) == 7
+
+
+def test_push_seed_prompts_force_overwrites(monkeypatch):
+    fake = _FakeLF(existing=lf_client.SEED_PROMPTS.keys())
+    monkeypatch.setattr(lf_client, "_get_langfuse", lambda: fake)
+    monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
+    results = dict(lf_client.push_seed_prompts(force=True))
+    assert all(a == "updated" for a in results.values())
+    assert len(fake.created) == 8
+
+
+def test_push_seed_prompts_requires_enabled(monkeypatch):
+    monkeypatch.setattr(lf_client, "is_enabled", lambda: False)
+    with pytest.raises(RuntimeError):
+        lf_client.push_seed_prompts()

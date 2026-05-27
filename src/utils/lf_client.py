@@ -196,3 +196,48 @@ def chat(messages: ChatMessages, *, model: str, provider: str, api_key: str,
         log.debug(f"tracing unavailable ({type(exc).__name__}); calling provider untraced.")
         text, _ = _invoke()
         return text
+
+
+def _prompt_exists(client, name: str) -> bool:
+    try:
+        client.get_prompt(name, label="production", type="chat")
+        return True
+    except Exception:
+        return False
+
+
+def push_seed_prompts(force: bool = False):
+    """Create each seed prompt in Langfuse. Returns [(name, action)].
+
+    action: "created" | "skipped" | "updated"
+    """
+    if not is_enabled():
+        raise RuntimeError(
+            "Langfuse is not configured. Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY."
+        )
+    client = _get_langfuse()
+    results = []
+    for name, messages in SEED_PROMPTS.items():
+        exists = _prompt_exists(client, name)
+        if exists and not force:
+            results.append((name, "skipped"))
+            continue
+        client.create_prompt(
+            name=name,
+            type="chat",
+            prompt=messages,
+            labels=["production"],
+        )
+        results.append((name, "updated" if exists else "created"))
+    flush()
+    return results
+
+
+def flush() -> None:
+    """Drain the trace/ingestion queue. Safe to call when disabled."""
+    if not is_enabled():
+        return
+    try:
+        _get_langfuse().flush()
+    except Exception as exc:  # noqa: BLE001
+        log.debug(f"flush failed: {exc}")
