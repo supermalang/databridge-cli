@@ -25,3 +25,21 @@ def test_compile_handles_whitespace_in_braces():
     msgs = [{"role": "user", "content": "{{ name }}"}]
     out = lf_client.compile_messages(msgs, {"name": "X"})
     assert out[0]["content"] == "X"
+
+
+import time
+
+
+def test_cache_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
+    msgs = [{"role": "system", "content": "hi"}]
+    lf_client._write_cache("narrator", "production", msgs)
+    got, age = lf_client._read_cache("narrator", "production")
+    assert got == msgs
+    assert age < 5
+
+
+def test_cache_miss_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
+    got, age = lf_client._read_cache("does_not_exist", "production")
+    assert got is None and age == float("inf")
