@@ -10,7 +10,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from docx import Document
 
@@ -22,69 +22,6 @@ from src.reports.template_generator import (
 log = logging.getLogger(__name__)
 
 
-# ── Prompts (edit these to refine the model's behavior) ──────────────────────
-# Or override at runtime by passing `system_prompt` / `user_prompt_template`
-# to ai_generate_template(), or by setting prompts.template_generator in config.yml.
-
-SYSTEM_PROMPT = (
-    "You are a senior Monitoring & Evaluation (M&E) specialist and report designer. "
-    "Your task is to design structured Word report templates for data analysis and M&E reporting. "
-    "The tone is professional, evidence-based, and analytical — suitable for donors, programme managers, and field coordinators. "
-    "Reports follow standard M&E structure: context, key performance indicators, findings by theme, "
-    "geographic breakdown, trends over time, qualitative observations, and actionable recommendations.\n\n"
-    "Given a project background, available charts/indicators/summaries, and a target page count, "
-    "design a structured report template layout. "
-    "Return ONLY valid JSON — no markdown fences, no explanation.\n"
-    'Exact structure: {"sections": [{"heading": str, "level": 1 or 2, "content": [...]}]}\n\n'
-    "Content item types:\n"
-    '  {"type":"editable","placeholder":"summary_text"|"observations"|"recommendations","hint":"<specific guidance for the writer>"}\n'
-    '  {"type":"chart","name":"<chart_name>"}  — only names from the provided list\n'
-    '  {"type":"indicator","name":"<indicator_name>"}  — only names from the provided list\n'
-    '  {"type":"summary","name":"<summary_name>"}  — only names from the provided list\n'
-    '  {"type":"text","text":"..."}  — static introductory or analytical text; may reference {{ period }}, {{ n_submissions }}, {{ generated_at }}\n'
-    '  {"type":"divider"}\n'
-    '  {"type":"stats_table"}  — descriptive statistics table for numeric variables\n\n'
-    "Layout rules:\n"
-    "  - Use EVERY provided chart exactly once, in a contextually appropriate section\n"
-    "  - Use EVERY provided indicator and summary exactly once\n"
-    "  - Open with an Executive Summary section containing key indicators and the summary_text editable\n"
-    "  - Group charts and summaries thematically (e.g. coverage, demographics, food security, geography)\n"
-    "  - Place a Findings section per major theme, each with an introductory text item, then charts/summaries\n"
-    "  - End with Observations (editable) and Recommendations (editable) sections\n"
-    "  - Write hint text for editable placeholders as concrete, actionable guidance for the report author — "
-    "    e.g. 'Describe coverage rates by region, highlight any groups falling below target thresholds, and note data quality issues.'\n"
-    "  - intro text items should be short orienting sentences in the report language, referencing {{ period }} and {{ n_submissions }} where relevant\n"
-    "  - For a N-page report, create approximately N/2 top-level sections\n"
-    "  - Do NOT invent chart, indicator, or summary names — use only those provided\n"
-    "  - Return JSON only\n\n"
-    "Additional optional placeholders (use sparingly, typically once at the report's end):\n"
-    "  {{ provenance.footer }}               one-line audit footer (recommended)\n"
-    "  {{ provenance.generated_at }}         ISO timestamp the report was generated\n"
-    "  {{ provenance.data_downloaded_at }}   timestamp the underlying data file was downloaded\n"
-    "  {{ provenance.n_submissions }}        int — number of submissions used\n"
-    "  {{ provenance.config_hash }}          12-char hash of the config used\n\n"
-    "Per-period indicator placeholders (available when periods.registry has 2+ entries):\n"
-    "  {{ ind_<name>_p_<slug> }}     value for that indicator in the named period\n"
-    "  {{ ind_<name>_delta }}         current value minus the baseline value\n"
-    "  {{ ind_<name>_pct_change }}    percent change from baseline to current period\n"
-    "  {{ provenance.period_label }}  the active period label (e.g. '2024 Q2')\n\n"
-    "Results framework placeholders (when framework: is configured):\n"
-    "  {% if logframe.has_framework %}…{% endif %}      conditional rendering guard\n"
-    "  {% for row in logframe.rows %}…{% endfor %}      iterate over hierarchy\n"
-    "  Each row has: id, label, level, indent, indicators=[{name, value}, ...]\n"
-    "  {{ ind_<name>_framework_ref }}                    the framework node a given indicator links to"
-)
-
-# Format slots: {description} {pages} {language} {summary_prompt_line}
-#               {charts_block} {indicators_block} {summaries_block} {views_block} {questions_block}
-USER_PROMPT_TEMPLATE = """\
-Project background and context: {description}
-Target report length: {pages} pages
-Report language: {language}
-{summary_prompt_line}
-{charts_block}{indicators_block}{summaries_block}{views_block}{questions_block}Design a report template layout following the JSON spec."""
-
-
 # ── public entry point ────────────────────────────────────────────────────────
 
 def ai_generate_template(
@@ -94,8 +31,6 @@ def ai_generate_template(
     pages: int = 10,
     language: str = "English",
     summary_prompt: str = None,
-    system_prompt: str = SYSTEM_PROMPT,
-    user_prompt_template: str = USER_PROMPT_TEMPLATE,
 ) -> Path:
     """Generate a Word template from an LLM layout spec and save to out_path."""
     ai_cfg = cfg.get("ai")
@@ -106,8 +41,6 @@ def ai_generate_template(
     spec = _get_layout_spec(
         ai_cfg, cfg, description, pages, language,
         summary_prompt=summary_prompt,
-        system_prompt=system_prompt,
-        user_prompt_template=user_prompt_template,
     )
     log.info(f"Layout received: {len(spec.get('sections', []))} sections")
 
@@ -215,38 +148,37 @@ def _render_item(doc, item: Dict, ind_map: Dict, cfg: Dict):
 def _get_layout_spec(
     ai_cfg: Dict, cfg: Dict, description: str, pages: int, language: str,
     summary_prompt: str = None,
-    system_prompt: str = SYSTEM_PROMPT,
-    user_prompt_template: str = USER_PROMPT_TEMPLATE,
 ) -> Dict:
-    from src.utils.prompts import system_prompt as _resolve_system, append_extra
-    prompts_cfg = cfg.get("prompts", {})
-    system_prompt = _resolve_system("template_generator", prompts_cfg, system_prompt)
-    user_prompt = append_extra(
-        _user_prompt(cfg, description, pages, language, summary_prompt=summary_prompt, template=user_prompt_template),
-        "template_generator", prompts_cfg,
-    )
+    from src.utils import lf_client
 
-    provider = ai_cfg.get("provider", "openai").lower()
-    api_key = ai_cfg.get("api_key", "")
-    model = ai_cfg.get("model", "gpt-4o")
+    provider   = ai_cfg.get("provider", "openai").lower()
+    api_key    = ai_cfg.get("api_key", "")
+    model      = ai_cfg.get("model", "gpt-4o")
     max_tokens = max(int(ai_cfg.get("max_tokens", 1500)), 2000)  # layout needs more tokens
 
     if not api_key or str(api_key).startswith("env:"):
         raise ValueError("AI api_key not resolved. Set the environment variable.")
 
-    if provider == "anthropic":
-        raw = _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens)
-    else:
-        raw = _call_openai(api_key, model, system_prompt, user_prompt, max_tokens,
-                           base_url=ai_cfg.get("base_url"))
+    variables = _build_variables(cfg, description, pages, language, summary_prompt=summary_prompt)
+    messages = lf_client.get_prompt("template_generator", variables)
+    raw = lf_client.chat(
+        messages,
+        model=model,
+        provider=provider,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        trace_name="template_generator",
+        base_url=ai_cfg.get("base_url"),
+        json_mode=(provider != "anthropic"),
+    )
 
     return _parse_spec(raw)
 
 
-def _user_prompt(
+def _build_variables(
     cfg: Dict, description: str, pages: int, language: str,
-    summary_prompt: str = None, template: str = USER_PROMPT_TEMPLATE,
-) -> str:
+    summary_prompt: str = None,
+) -> Dict:
     summary_prompt_line = (
         f"Executive summary guidance (use as hint for the summary_text editable): {summary_prompt}"
         if summary_prompt else ""
@@ -322,55 +254,17 @@ def _user_prompt(
         if items:
             questions_block = "Survey questions by category:\n" + "\n".join(items) + "\n\n"
 
-    return template.format(
-        description=description,
-        pages=pages,
-        language=language,
-        summary_prompt_line=summary_prompt_line,
-        charts_block=charts_block,
-        indicators_block=indicators_block,
-        summaries_block=summaries_block,
-        views_block=views_block,
-        questions_block=questions_block,
-    )
-
-
-# ── callers ───────────────────────────────────────────────────────────────────
-
-def _call_openai(api_key, model, system_prompt, user_prompt, max_tokens, base_url=None) -> str:
-    try:
-        from openai import OpenAI
-    except ImportError:
-        raise ImportError("openai package not installed. Run: pip install openai>=1.0.0")
-    kwargs: Dict[str, Any] = {"api_key": api_key}
-    if base_url:
-        kwargs["base_url"] = base_url
-    client = OpenAI(**kwargs)
-    resp = client.chat.completions.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_format={"type": "json_object"},
-    )
-    return resp.choices[0].message.content
-
-
-def _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens) -> str:
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package not installed. Run: pip install anthropic>=0.20.0")
-    client = anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    return msg.content[0].text
+    return {
+        "description": description,
+        "pages": pages,
+        "language": language,
+        "summary_prompt_line": summary_prompt_line,
+        "charts_block": charts_block,
+        "indicators_block": indicators_block,
+        "summaries_block": summaries_block,
+        "views_block": views_block,
+        "questions_block": questions_block,
+    }
 
 
 # ── parser ────────────────────────────────────────────────────────────────────
