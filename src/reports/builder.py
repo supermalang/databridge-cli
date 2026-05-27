@@ -185,7 +185,6 @@ class ReportBuilder:
             summaries     = summaries,
             split_value   = split_value,
             questions_cfg = self.cfg.get("questions"),
-            prompts_cfg   = prompts_cfg,
         )
 
         provenance = build_provenance(
