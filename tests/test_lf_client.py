@@ -1,3 +1,6 @@
+import os
+import time
+
 import pytest
 from src.utils import lf_client
 
@@ -25,9 +28,6 @@ def test_compile_handles_whitespace_in_braces():
     msgs = [{"role": "user", "content": "{{ name }}"}]
     out = lf_client.compile_messages(msgs, {"name": "X"})
     assert out[0]["content"] == "X"
-
-
-import time
 
 
 def test_cache_roundtrip(tmp_path, monkeypatch):
@@ -161,6 +161,7 @@ def test_push_seed_prompts_creates_missing(monkeypatch):
     assert actions["narrator"] == "skipped"
     assert actions["classifier_discover"] == "created"
     assert len([a for a in actions.values() if a == "created"]) == 7
+    assert fake.flushed  # flush() must run so created prompts are ingested
 
 
 def test_push_seed_prompts_force_overwrites(monkeypatch):
@@ -176,3 +177,19 @@ def test_push_seed_prompts_requires_enabled(monkeypatch):
     monkeypatch.setattr(lf_client, "is_enabled", lambda: False)
     with pytest.raises(RuntimeError):
         lf_client.push_seed_prompts()
+
+
+def test_get_prompt_uses_stale_cache_when_fetch_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
+    cached = [{"role": "system", "content": "stalecache"},
+              {"role": "user", "content": "v={{v}}"}]
+    lf_client._write_cache("narrator", "production", cached)
+    # Force the cache to look stale (older than TTL).
+    old = time.time() - (lf_client.CACHE_TTL_SECONDS + 100)
+    os.utime(lf_client._cache_path("narrator", "production"), (old, old))
+    monkeypatch.setattr(lf_client, "_fetch_from_langfuse",
+                        lambda name, label: (_ for _ in ()).throw(ConnectionError("offline")))
+    msgs = lf_client.get_prompt("narrator", {"v": "9"})
+    assert msgs[0]["content"] == "stalecache"   # stale cache used, NOT seed
+    assert msgs[1]["content"] == "v=9"

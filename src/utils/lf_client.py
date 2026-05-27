@@ -17,6 +17,8 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from src.utils.seed_prompts import SEED_PROMPTS
+
 log = logging.getLogger(__name__)
 
 ChatMessages = List[Dict[str, str]]
@@ -70,8 +72,6 @@ def _read_cache(name: str, label: str):
     except (OSError, ValueError):
         return None, float("inf")
 
-
-from src.utils.seed_prompts import SEED_PROMPTS
 
 _LF = None  # cached Langfuse SDK instance
 
@@ -155,7 +155,11 @@ def _call_openai(messages, model, api_key, max_tokens, base_url, json_mode):
 def _call_anthropic(messages, model, api_key, max_tokens, base_url, json_mode):
     import anthropic
     system, user = _split_messages(messages)
-    client = anthropic.Anthropic(api_key=api_key)
+    # json_mode intentionally unused: Anthropic has no response_format; the prompt enforces JSON.
+    kwargs = {"api_key": api_key}
+    if base_url:
+        kwargs["base_url"] = base_url
+    client = anthropic.Anthropic(**kwargs)
     msg = client.messages.create(
         model=model, max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": user}],
@@ -187,8 +191,9 @@ def chat(messages: ChatMessages, *, model: str, provider: str, api_key: str,
             name=trace_name, as_type="generation", model=model, input=messages,
         ) as gen:
             text, usage = _invoke()
+            usage_clean = {k: v for k, v in (usage or {}).items() if v is not None}
             try:
-                gen.update(output=text, usage_details=usage or None)
+                gen.update(output=text, usage_details=usage_clean or None)
             except Exception as exc:  # noqa: BLE001
                 log.debug(f"trace update failed: {exc}")
             return text
@@ -203,6 +208,8 @@ def _prompt_exists(client, name: str) -> bool:
         client.get_prompt(name, label="production", type="chat")
         return True
     except Exception:
+        # Treat any fetch failure as "not found". Auth/network problems will then
+        # resurface on create_prompt, which is acceptable for a bootstrap command.
         return False
 
 
