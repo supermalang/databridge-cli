@@ -153,16 +153,15 @@ def _run_classify(cfg, sample=None, rediscover=False):
         themes = classify_cfg.get("themes") or []
         label = q.get("label") or col
 
-        prompts_cfg = cfg.get("prompts", {})
         if not themes or rediscover:
             log.info(f"Discovering themes for '{col}' ...")
-            themes = discover_themes(df[col], label, theme_count, ai_cfg, prompts_cfg=prompts_cfg)
+            themes = discover_themes(df[col], label, theme_count, ai_cfg)
             q["classify"]["themes"] = themes
             changed = True
 
         cluster_col = f"{col}_cluster"
         log.info(f"Classifying '{col}' → '{cluster_col}' using themes: {themes}")
-        df[cluster_col] = classify_responses(df[col], themes, label, ai_cfg, prompts_cfg=prompts_cfg)
+        df[cluster_col] = classify_responses(df[col], themes, label, ai_cfg)
         n_classified = df[cluster_col].notna().sum()
         log.info(f"  Done — {n_classified}/{len(df)} rows classified.")
 
