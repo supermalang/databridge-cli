@@ -155,6 +155,30 @@ pii:
 
 **Backward compatibility**: configs without a `pii:` block behave exactly as today.
 
+### Prompt management
+
+AI feature prompts (narrator, chart suggester, template generator, etc.) are stored and versioned in [Langfuse](https://cloud.langfuse.com). This lets you edit prompts in the Langfuse UI without touching code, track version history, and monitor cost/latency per call.
+
+**Setup:**
+
+1. Create a free account at [cloud.langfuse.com](https://cloud.langfuse.com).
+2. Go to **Settings → API Keys** and copy your public key and secret key.
+3. Add them to your `.env` file:
+   ```
+   LANGFUSE_PUBLIC_KEY=pk-lf-...
+   LANGFUSE_SECRET_KEY=sk-lf-...
+   LANGFUSE_HOST=https://cloud.langfuse.com   # default; omit for cloud
+   ```
+4. Seed the bundled default prompts into Langfuse:
+   ```bash
+   python3 src/data/make.py push-prompts
+   ```
+   Use `--force` to overwrite already-seeded prompts with the current bundled defaults.
+
+**Offline fallback:** Prompts are cached locally in `~/.cache/databridge/prompts/` (1-hour TTL). If Langfuse is unreachable, the cached version is used; if there is no cache, the bundled defaults in `src/utils/seed_prompts.py` are used. All AI features work without Langfuse keys.
+
+**Tracing:** Every LLM call is recorded in Langfuse with cost, latency, and token counts. Full pipeline runs are grouped under a single trace.
+
 # Installation
 ## Prerequisites
 - [Docker](https://docs.docker.com/get-docker/)

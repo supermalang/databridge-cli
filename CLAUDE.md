@@ -138,7 +138,7 @@ pip install -r requirements.txt
 
 ---
 
-## Seven CLI commands
+## CLI commands
 
 All commands run from project root. Set `PYTHONPATH=.`.
 
@@ -172,6 +172,10 @@ python3 src/data/make.py validate
 
 # 7. Classify open-text responses using AI (writes themes back to config.yml)
 python3 src/data/make.py classify
+
+# 8. Push bundled seed prompts to Langfuse (create-if-missing; --force overwrites)
+python3 src/data/make.py push-prompts
+python3 src/data/make.py push-prompts --force
 ```
 
 The same commands are exposed in the web UI as POST `/api/run/{command}` with
@@ -245,15 +249,6 @@ ai:
   base_url: ""                          # optional — Azure, Groq, Mistral, Ollama
   language: English
   max_tokens: 1500
-
-# Optional prompt overrides — see "Prompt customization" section below
-prompts:
-  narrator:
-    extra: |
-      Disaggregate findings by gender wherever the data allows.
-  chart_suggester:
-    extra: |
-      Never suggest treemap — our template doesn't render them well.
 
 # Optional — multi-period support. When absent, single-period mode applies.
 periods:
@@ -369,29 +364,62 @@ To add a new chart type: add a function with the standard signature, add it to `
 
 ---
 
-## Prompt customization (src/utils/prompts.py)
+## Prompt management (Langfuse)
 
-Five AI features have customizable prompts via the top-level `prompts:` block in `config.yml`:
+Prompts live in [Langfuse Cloud](https://cloud.langfuse.com) (or a self-hosted Langfuse instance). Each AI feature fetches its prompt by name at runtime via `src/utils/lf_client.py`.
 
-| Feature key | Used by | Output contract |
+### Prompt names and consuming files
+
+| Prompt name | Consuming file | Output contract |
 |---|---|---|
 | `narrator` | [src/reports/narrator.py](src/reports/narrator.py) | JSON: `summary_text` / `observations` / `recommendations` |
 | `summaries` | `stat: ai` blocks in [src/reports/summaries.py](src/reports/summaries.py) | Plain text |
 | `chart_suggester` | [src/reports/ai_chart_suggester.py](src/reports/ai_chart_suggester.py) | JSON: `{"charts": [...]}` |
 | `template_generator` | [src/reports/ai_template_generator.py](src/reports/ai_template_generator.py) | JSON: layout spec |
-| `classifier` | [src/data/classifier.py](src/data/classifier.py) | JSON: themes / classifications |
+| `summary_suggester` | [src/reports/ai_summary_suggester.py](src/reports/ai_summary_suggester.py) | JSON: suggested summaries |
+| `view_suggester` | [src/reports/ai_view_suggester.py](src/reports/ai_view_suggester.py) | JSON: suggested views |
+| `classifier_discover` | [src/data/classifier.py](src/data/classifier.py) | JSON: discovered themes |
+| `classifier_classify` | [src/data/classifier.py](src/data/classifier.py) | JSON: per-row classifications |
 
-Two fields per feature, both optional:
-- **`system`** — replaces the in-code system prompt entirely. If the feature has a JSON output contract (narrator, chart_suggester, template_generator), the override MUST keep the JSON-format instruction or the parser silently returns empty output.
-- **`extra`** — appended to the user prompt under an `ADDITIONAL GUIDANCE` header. Safer for most admin customization.
+### Setup
 
-Resolution lives in [src/utils/prompts.py](src/utils/prompts.py): `system_prompt(feature, prompts_cfg, default)` and `append_extra(user_prompt, feature, prompts_cfg)`. Callers pass `cfg.get("prompts", {})`.
+1. Create a free account at [cloud.langfuse.com](https://cloud.langfuse.com) (or use a self-hosted instance).
+2. Copy your public key, secret key, and host URL into `.env`:
+   ```
+   LANGFUSE_PUBLIC_KEY=pk-lf-...
+   LANGFUSE_SECRET_KEY=sk-lf-...
+   LANGFUSE_HOST=https://cloud.langfuse.com   # default; omit for cloud
+   ```
+3. Seed the bundled default prompts into Langfuse:
+   ```bash
+   python3 src/data/make.py push-prompts          # create-if-missing
+   python3 src/data/make.py push-prompts --force  # overwrite existing
+   ```
+4. Edit prompts directly in the Langfuse UI — version history is tracked automatically.
 
-To add a new prompt site:
-1. `from src.utils.prompts import system_prompt as _resolve_system, append_extra`
-2. `system = _resolve_system("<feature>", prompts_cfg, _default_system_string)`
-3. `user = append_extra(user, "<feature>", prompts_cfg)`
-4. Document the new feature key in [sample.config.yml](sample.config.yml) and this table.
+### Offline / fallback behavior
+
+Prompts are resolved in this order:
+1. **Cache-first** — `~/.cache/databridge/prompts/` (1-hour TTL)
+2. **Langfuse** — fetched over HTTPS if the cache is stale or missing
+3. **Bundled seeds** — `src/utils/seed_prompts.py` (always present, no network needed)
+
+AI features keep working with no Langfuse keys (they use the bundled seeds) and with no AI provider keys (the feature no-ops gracefully).
+
+### Tracing
+
+Every LLM call is recorded as a Langfuse generation with cost, latency, and token counts. CLI commands group all their calls under a single trace so you can follow the full pipeline run in the Langfuse UI.
+
+### To add a new prompt site
+
+1. Add an entry to `SEED_PROMPTS` in [src/utils/seed_prompts.py](src/utils/seed_prompts.py) with the prompt name, system message, and any variable placeholders.
+2. In your feature file, build a `variables` dict and call:
+   ```python
+   prompt = lf_client.get_prompt("<name>", variables)
+   response = lf_client.chat(..., trace_name="<name>")
+   ```
+3. Run `python3 src/data/make.py push-prompts` to seed the new prompt in Langfuse.
+4. Document the new prompt name in the table above.
 
 ---
 
