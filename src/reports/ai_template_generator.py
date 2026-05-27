@@ -264,6 +264,12 @@ def _build_variables(
         "summaries_block": summaries_block,
         "views_block": views_block,
         "questions_block": questions_block,
+        # The template_generator system prompt documents these as docxtpl
+        # placeholders the LLM may emit in generated text. They must survive
+        # {{mustache}} compilation verbatim, so map each to its literal form.
+        "period": "{{ period }}",
+        "n_submissions": "{{ n_submissions }}",
+        "generated_at": "{{ generated_at }}",
     }
 
 
