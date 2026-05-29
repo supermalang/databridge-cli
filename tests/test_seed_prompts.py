@@ -58,6 +58,18 @@ def test_view_suggester_schema():
     assert "agg" in item["required"]
     assert set(item["properties"]["agg"]["enum"]) == {None, "sum", "mean", "count", "max", "min"}
 
+def test_template_generator_schema_item_types_match_parser():
+    """The schema's item-type enum must match what _parse_spec understands."""
+    s = SEED_PROMPTS["template_generator"]["config"]["output_schema"]
+    schema_item_types = set(
+        s["properties"]["sections"]["items"]
+         ["properties"]["content"]["items"]
+         ["properties"]["type"]["enum"]
+    )
+    expected = {"editable", "chart", "indicator", "summary",
+                "text", "divider", "stats_table"}
+    assert schema_item_types == expected
+
 def test_chart_suggester_type_enum_matches_dispatch():
     """If a new chart type is added in charts.py, this schema must list it."""
     from src.reports.charts import CHART_DISPATCH

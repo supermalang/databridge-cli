@@ -341,6 +341,47 @@ _CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA = {
     },
 }
 
+_TEMPLATE_GENERATOR_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["sections"],
+    "properties": {
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["heading", "level", "content"],
+                "properties": {
+                    "heading": {"type": "string"},
+                    "level":   {"type": "integer", "enum": [1, 2]},
+                    "content": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["type", "name", "placeholder", "hint", "text"],
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": ["editable", "chart", "indicator",
+                                             "summary", "text", "divider", "stats_table"],
+                                },
+                                "name":        {"type": ["string", "null"]},
+                                "placeholder": {"type": ["string", "null"],
+                                                "enum": [None, "summary_text",
+                                                         "observations", "recommendations"]},
+                                "hint":        {"type": ["string", "null"]},
+                                "text":        {"type": ["string", "null"]},
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+
 _CHART_TYPES = [
     "bar", "horizontal_bar", "stacked_bar", "grouped_bar",
     "pie", "donut",
@@ -511,7 +552,8 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
     "summaries":           {"messages": _SUMMARIES,            "config": {}},
     "chart_suggester":     {"messages": _CHART_SUGGESTER,
                             "config": {"output_schema": _CHART_SUGGESTER_OUTPUT_SCHEMA}},
-    "template_generator":  {"messages": _TEMPLATE_GENERATOR,   "config": {}},
+    "template_generator":  {"messages": _TEMPLATE_GENERATOR,
+                            "config": {"output_schema": _TEMPLATE_GENERATOR_OUTPUT_SCHEMA}},
     "summary_suggester":   {"messages": _SUMMARY_SUGGESTER,
                             "config": {"output_schema": _SUMMARY_SUGGESTER_OUTPUT_SCHEMA}},
     "view_suggester":      {"messages": _VIEW_SUGGESTER,
