@@ -71,7 +71,9 @@ def test_get_prompt_uses_seed_when_disabled(tmp_path, monkeypatch):
     assert msgs[0]["role"] == "system"
     assert "3" in msgs[1]["content"]
     assert "{{" not in msgs[1]["content"]
-    assert cfg == {}
+    # classifier_discover now carries an output_schema — check it is present
+    assert "output_schema" in cfg
+    assert cfg["output_schema"]["type"] == "object"
 
 
 def test_get_prompt_uses_seed_when_fetch_fails(tmp_path, monkeypatch):
@@ -83,7 +85,9 @@ def test_get_prompt_uses_seed_when_fetch_fails(tmp_path, monkeypatch):
     msgs, cfg = lf_client.get_prompt("classifier_classify",
                                      {"label": "Q", "themes_str": '"A"', "responses": "- a"})
     assert "A" in msgs[1]["content"]
-    assert cfg == {}
+    # classifier_classify now carries an output_schema — check it is present
+    assert "output_schema" in cfg
+    assert cfg["output_schema"]["type"] == "object"
 
 
 def test_get_prompt_uses_cache_when_fresh(tmp_path, monkeypatch):

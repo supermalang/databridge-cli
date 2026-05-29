@@ -38,3 +38,16 @@ def test_narrator_has_output_schema():
     assert schema["type"] == "object"
     assert set(schema["required"]) == {"summary_text", "observations", "recommendations"}
     assert schema["additionalProperties"] is False
+
+def test_classifier_discover_schema():
+    s = SEED_PROMPTS["classifier_discover"]["config"]["output_schema"]
+    assert s["properties"]["themes"]["type"] == "array"
+    assert s["properties"]["themes"]["maxItems"] == 20
+
+def test_classifier_classify_schema_list_of_pairs():
+    s = SEED_PROMPTS["classifier_classify"]["config"]["output_schema"]
+    inner = s["properties"]["classifications"]
+    assert inner["type"] == "array"
+    item = inner["items"]
+    assert set(item["required"]) == {"response", "theme"}
+    assert item["additionalProperties"] is False

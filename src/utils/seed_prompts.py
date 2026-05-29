@@ -78,7 +78,7 @@ _CLASSIFIER_CLASSIFY: ChatMessages = [
         'For responses that clearly don\'t fit any theme, use "Other".\n\n'
         "Responses to classify:\n"
         "{{responses}}\n\n"
-        'Return JSON: {"classifications": {"<response text>": "<theme name>", ...}}\n'
+        'Return JSON: {"classifications": [{"response": "<response text>", "theme": "<theme name>"}, ...]}\n'
         "Include every response from the list, even if only one word."
     )},
 ]
@@ -303,6 +303,44 @@ _VIEW_SUGGESTER: ChatMessages = [
     )},
 ]
 
+_CLASSIFIER_DISCOVER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["themes"],
+    "properties": {
+        "themes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {"type": "string"},
+        },
+    },
+}
+
+# OpenAI Strict mode requires additionalProperties: false (not a schema), so we
+# cannot model `{response_text: theme_name}` as an open object. We use a list of
+# pairs instead. The classifier parser (Task 16) is updated to build the lookup
+# dict from this list.
+_CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["classifications"],
+    "properties": {
+        "classifications": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["response", "theme"],
+                "properties": {
+                    "response": {"type": "string"},
+                    "theme":    {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
 _NARRATOR_OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -324,6 +362,8 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
     "template_generator":  {"messages": _TEMPLATE_GENERATOR,   "config": {}},
     "summary_suggester":   {"messages": _SUMMARY_SUGGESTER,    "config": {}},
     "view_suggester":      {"messages": _VIEW_SUGGESTER,        "config": {}},
-    "classifier_discover": {"messages": _CLASSIFIER_DISCOVER,  "config": {}},
-    "classifier_classify": {"messages": _CLASSIFIER_CLASSIFY,  "config": {}},
+    "classifier_discover":  {"messages": _CLASSIFIER_DISCOVER,
+                             "config": {"output_schema": _CLASSIFIER_DISCOVER_OUTPUT_SCHEMA}},
+    "classifier_classify":  {"messages": _CLASSIFIER_CLASSIFY,
+                             "config": {"output_schema": _CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA}},
 }
