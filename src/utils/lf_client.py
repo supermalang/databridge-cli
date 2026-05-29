@@ -183,19 +183,39 @@ def _call_openai(messages, model, api_key, max_tokens, base_url, json_mode,
 def _call_anthropic(messages, model, api_key, max_tokens, base_url, json_mode,
                     output_schema, trace_name=""):
     import anthropic
+    import json as _json
     system, user = _split_messages(messages)
-    # output_schema handling added in the next task.
     kwargs = {"api_key": api_key}
     if base_url:
         kwargs["base_url"] = base_url
     client = anthropic.Anthropic(**kwargs)
-    msg = client.messages.create(
-        model=model, max_tokens=max_tokens, system=system,
-        messages=[{"role": "user", "content": user}],
-    )
+    create_kwargs = {
+        "model": model, "max_tokens": max_tokens, "system": system,
+        "messages": [{"role": "user", "content": user}],
+    }
+    if output_schema is not None:
+        tool_name = trace_name or "output"
+        create_kwargs["tools"] = [{
+            "name": tool_name,
+            "description": "Return the requested structured output.",
+            "input_schema": output_schema,
+        }]
+        create_kwargs["tool_choice"] = {
+            "type": "tool", "name": tool_name, "disable_parallel_tool_use": True,
+        }
+    msg = client.messages.create(**create_kwargs)
     usage = getattr(msg, "usage", None)
     usage_dict = {"input": getattr(usage, "input_tokens", None),
                   "output": getattr(usage, "output_tokens", None)} if usage else {}
+
+    if output_schema is not None:
+        for block in msg.content:
+            if getattr(block, "type", None) == "tool_use" and getattr(block, "name", "") == tool_name:
+                return _json.dumps(block.input), usage_dict
+        raise RuntimeError(
+            f"Anthropic did not produce a tool_use block for {tool_name!r}; "
+            "schema-enforced call failed."
+        )
     return msg.content[0].text, usage_dict
 
 

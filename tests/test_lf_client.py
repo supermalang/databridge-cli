@@ -425,3 +425,88 @@ def test_call_openai_uses_json_object_when_no_schema(monkeypatch):
         trace_name="narrator",
     )
     assert captured["response_format"] == {"type": "json_object"}
+
+
+# ── Task 8: _call_anthropic uses forced tool-use when schema is set ──
+
+def test_call_anthropic_uses_tool_when_schema_given(monkeypatch):
+    schema = {"type": "object",
+              "properties": {"x": {"type": "string"}},
+              "required": ["x"],
+              "additionalProperties": False}
+    captured = {}
+    class _ToolUse:
+        type = "tool_use"; name = "narrator"; input = {"x": "y"}
+    class _FakeMsg:
+        content = [_ToolUse()]
+        usage = type("U", (), {"input_tokens": 1, "output_tokens": 1})()
+    class _FakeClient:
+        def __init__(self, **kw): pass
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                captured.update(kwargs)
+                return _FakeMsg()
+    monkeypatch.setattr("anthropic.Anthropic", _FakeClient)
+    text, usage = lf_client._call_anthropic(
+        messages=[{"role": "system", "content": "s"},
+                  {"role": "user", "content": "u"}],
+        model="claude-x", api_key="sk", max_tokens=50, base_url=None,
+        json_mode=False, output_schema=schema, trace_name="narrator",
+    )
+    assert captured["tools"] == [{"name": "narrator",
+                                  "description": "Return the requested structured output.",
+                                  "input_schema": schema}]
+    assert captured["tool_choice"] == {"type": "tool", "name": "narrator",
+                                       "disable_parallel_tool_use": True}
+    import json
+    assert json.loads(text) == {"x": "y"}
+
+
+def test_call_anthropic_no_schema_unchanged(monkeypatch):
+    """Regression guard: today's behavior when no schema."""
+    captured = {}
+    class _Text:
+        type = "text"; text = "plain"
+    class _FakeMsg:
+        content = [_Text()]
+        usage = None
+    class _FakeClient:
+        def __init__(self, **kw): pass
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                captured.update(kwargs)
+                return _FakeMsg()
+    monkeypatch.setattr("anthropic.Anthropic", _FakeClient)
+    text, _ = lf_client._call_anthropic(
+        messages=[{"role": "system", "content": "s"},
+                  {"role": "user", "content": "u"}],
+        model="claude-x", api_key="sk", max_tokens=50, base_url=None,
+        json_mode=False, output_schema=None, trace_name="narrator",
+    )
+    assert "tools" not in captured and "tool_choice" not in captured
+    assert text == "plain"
+
+
+def test_call_anthropic_raises_when_tool_use_missing(monkeypatch):
+    schema = {"type": "object", "properties": {}, "required": [],
+              "additionalProperties": False}
+    class _Text:
+        type = "text"; text = "I refuse to call the tool."
+    class _FakeMsg:
+        content = [_Text()]
+        usage = None
+    class _FakeClient:
+        def __init__(self, **kw): pass
+        class messages:
+            @staticmethod
+            def create(**kwargs): return _FakeMsg()
+    monkeypatch.setattr("anthropic.Anthropic", _FakeClient)
+    with pytest.raises(RuntimeError) as exc:
+        lf_client._call_anthropic(
+            messages=[{"role": "user", "content": "u"}],
+            model="claude-x", api_key="sk", max_tokens=50, base_url=None,
+            json_mode=False, output_schema=schema, trace_name="narrator",
+        )
+    assert "tool_use" in str(exc.value) or "tool" in str(exc.value).lower()
