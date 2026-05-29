@@ -114,7 +114,8 @@ def test_chat_calls_openai_and_returns_content(monkeypatch):
     monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
     monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
     captured = {}
-    def fake_openai(messages, model, api_key, max_tokens, base_url, json_mode):
+    def fake_openai(messages, model, api_key, max_tokens, base_url, json_mode,
+                    output_schema, **_):
         captured["messages"] = messages
         return "OPENAI_OUT", {"input": 10, "output": 3}
     monkeypatch.setattr(lf_client, "_call_openai", fake_openai)
@@ -292,3 +293,68 @@ def test_get_langfuse_defaults_to_cloud_langfuse(monkeypatch):
     monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
     lf_client._get_langfuse()
     assert captured["host"] == "https://cloud.langfuse.com"
+
+
+# ── Task 6: chat() accepts output_schema + malformed-schema guard ──
+
+def test_chat_accepts_output_schema_kwarg(monkeypatch):
+    """output_schema is plumbed through to the provider caller."""
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    captured = {}
+    def fake_openai(messages, model, api_key, max_tokens, base_url, json_mode,
+                    output_schema, **_):
+        captured["output_schema"] = output_schema
+        return "OK", {}
+    monkeypatch.setattr(lf_client, "_call_openai", fake_openai)
+    schema = {"type": "object", "properties": {"x": {"type": "string"}},
+              "required": ["x"], "additionalProperties": False}
+    lf_client.chat(
+        [{"role": "user", "content": "hi"}],
+        model="gpt-4o", provider="openai", api_key="sk-x",
+        max_tokens=100, trace_name="narrator", json_mode=True,
+        output_schema=schema,
+    )
+    assert captured["output_schema"] == schema
+
+
+def test_chat_malformed_schema_logs_and_falls_back(monkeypatch, caplog):
+    """Non-dict / no 'type' key -> WARNING + no schema sent."""
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    captured = {}
+    def fake_openai(messages, model, api_key, max_tokens, base_url, json_mode,
+                    output_schema, **_):
+        captured["output_schema"] = output_schema
+        return "OK", {}
+    monkeypatch.setattr(lf_client, "_call_openai", fake_openai)
+    import logging
+    caplog.set_level(logging.WARNING, logger="src.utils.lf_client")
+    lf_client.chat(
+        [{"role": "user", "content": "hi"}],
+        model="gpt-4o", provider="openai", api_key="sk-x",
+        max_tokens=100, trace_name="narrator", json_mode=True,
+        output_schema="not a dict",
+    )
+    assert captured["output_schema"] is None
+    assert any("malformed" in rec.message.lower() and "narrator" in rec.message
+               for rec in caplog.records)
+
+
+def test_chat_no_schema_unchanged(monkeypatch):
+    """Regression guard: output_schema=None reproduces today's behavior."""
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    captured = {}
+    def fake_openai(messages, model, api_key, max_tokens, base_url, json_mode,
+                    output_schema, **_):
+        captured["json_mode"] = json_mode
+        captured["output_schema"] = output_schema
+        return "OK", {}
+    monkeypatch.setattr(lf_client, "_call_openai", fake_openai)
+    lf_client.chat(
+        [{"role": "user", "content": "hi"}],
+        model="gpt-4o", provider="openai", api_key="sk-x",
+        max_tokens=100, trace_name="narrator", json_mode=True,
+    )
+    assert captured == {"json_mode": True, "output_schema": None}

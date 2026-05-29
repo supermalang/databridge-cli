@@ -5,7 +5,7 @@ Public API (stable):
     get_prompt(name, variables, label="production") -> tuple[list[dict], dict]
     compile_messages(messages, variables) -> list[dict]
     chat(messages, *, model, provider, api_key, max_tokens, trace_name,
-         base_url=None, json_mode=False) -> str
+         base_url=None, json_mode=False, output_schema=None) -> str
     push_seed_prompts(force=False) -> list[tuple[str, str]]
     flush() -> None
 """
@@ -149,13 +149,20 @@ def _split_messages(messages: ChatMessages):
     return system, user
 
 
-def _call_openai(messages, model, api_key, max_tokens, base_url, json_mode):
+def _schema_looks_valid(schema) -> bool:
+    """Cheap structural guard. The full validation happens at the provider."""
+    return isinstance(schema, dict) and isinstance(schema.get("type"), str)
+
+
+def _call_openai(messages, model, api_key, max_tokens, base_url, json_mode,
+                 output_schema, trace_name=""):
     from openai import OpenAI
     kwargs = {"api_key": api_key}
     if base_url:
         kwargs["base_url"] = base_url
     client = OpenAI(**kwargs)
     params = {"model": model, "max_tokens": max_tokens, "messages": messages}
+    # output_schema handling added in the next task; for now, retain json_mode behavior.
     if json_mode:
         params["response_format"] = {"type": "json_object"}
     resp = client.chat.completions.create(**params)
@@ -165,10 +172,11 @@ def _call_openai(messages, model, api_key, max_tokens, base_url, json_mode):
     return resp.choices[0].message.content, usage_dict
 
 
-def _call_anthropic(messages, model, api_key, max_tokens, base_url, json_mode):
+def _call_anthropic(messages, model, api_key, max_tokens, base_url, json_mode,
+                    output_schema, trace_name=""):
     import anthropic
     system, user = _split_messages(messages)
-    # json_mode intentionally unused: Anthropic has no response_format; the prompt enforces JSON.
+    # output_schema handling added in the next task.
     kwargs = {"api_key": api_key}
     if base_url:
         kwargs["base_url"] = base_url
@@ -185,19 +193,29 @@ def _call_anthropic(messages, model, api_key, max_tokens, base_url, json_mode):
 
 def chat(messages: ChatMessages, *, model: str, provider: str, api_key: str,
          max_tokens: int, trace_name: str, base_url: Optional[str] = None,
-         json_mode: bool = False) -> str:
+         json_mode: bool = False, output_schema: Optional[Dict] = None) -> str:
     provider = (provider or "openai").lower()
+
+    if output_schema is not None and not _schema_looks_valid(output_schema):
+        log.warning(
+            f"output_schema for {trace_name!r} is malformed (not a dict with a 'type' key); "
+            "falling back to no-schema mode."
+        )
+        output_schema = None
 
     def _invoke():
         if provider == "anthropic":
-            return _call_anthropic(messages, model, api_key, max_tokens, base_url, json_mode)
-        return _call_openai(messages, model, api_key, max_tokens, base_url, json_mode)
+            return _call_anthropic(messages, model, api_key, max_tokens,
+                                   base_url, json_mode, output_schema,
+                                   trace_name=trace_name)
+        return _call_openai(messages, model, api_key, max_tokens,
+                            base_url, json_mode, output_schema,
+                            trace_name=trace_name)
 
     if not is_enabled():
         text, _ = _invoke()
         return text
 
-    # Traced path — tracing failures must never break the call. (langfuse v4 API)
     try:
         lf = _get_langfuse()
         with lf.start_as_current_observation(
