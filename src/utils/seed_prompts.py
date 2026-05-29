@@ -7,7 +7,7 @@ Langfuse {{mustache}} placeholders. These are pushed to Langfuse by the
 Names map 1:1 to Langfuse prompt names. See the design spec for the porting rule
 (`.format()` {var} -> {{var}}; escaped {{ }} -> single { }).
 """
-from typing import Dict, List
+from typing import Any, Dict, List
 
 ChatMessages = List[Dict[str, str]]
 
@@ -303,13 +303,15 @@ _VIEW_SUGGESTER: ChatMessages = [
     )},
 ]
 
-SEED_PROMPTS: Dict[str, ChatMessages] = {
-    "narrator": _NARRATOR,
-    "summaries": _SUMMARIES,
-    "chart_suggester": _CHART_SUGGESTER,
-    "template_generator": _TEMPLATE_GENERATOR,
-    "summary_suggester": _SUMMARY_SUGGESTER,
-    "view_suggester": _VIEW_SUGGESTER,
-    "classifier_discover": _CLASSIFIER_DISCOVER,
-    "classifier_classify": _CLASSIFIER_CLASSIFY,
+SeedPrompt = Dict[str, Any]   # {"messages": ChatMessages, "config": Dict[str, Any]}
+
+SEED_PROMPTS: Dict[str, SeedPrompt] = {
+    "narrator":            {"messages": _NARRATOR,             "config": {}},
+    "summaries":           {"messages": _SUMMARIES,            "config": {}},
+    "chart_suggester":     {"messages": _CHART_SUGGESTER,      "config": {}},
+    "template_generator":  {"messages": _TEMPLATE_GENERATOR,   "config": {}},
+    "summary_suggester":   {"messages": _SUMMARY_SUGGESTER,    "config": {}},
+    "view_suggester":      {"messages": _VIEW_SUGGESTER,        "config": {}},
+    "classifier_discover": {"messages": _CLASSIFIER_DISCOVER,  "config": {}},
+    "classifier_classify": {"messages": _CLASSIFIER_CLASSIFY,  "config": {}},
 }
