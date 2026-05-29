@@ -61,7 +61,7 @@ def generate_narrative(
         summaries=summaries, split_value=split_value, questions_cfg=questions_cfg,
     )
     try:
-        messages = lf_client.get_prompt("narrator", variables)
+        messages, _config = lf_client.get_prompt("narrator", variables)
         raw = lf_client.chat(
             messages, model=model, provider=provider, api_key=api_key,
             base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,

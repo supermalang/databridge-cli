@@ -303,7 +303,7 @@ def _ai_text(
     }
 
     from src.utils import lf_client
-    messages = lf_client.get_prompt("summaries", variables)
+    messages, _config = lf_client.get_prompt("summaries", variables)
     raw = lf_client.chat(
         messages, model=model, provider=provider, api_key=api_key,
         base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,

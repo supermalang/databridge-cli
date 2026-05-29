@@ -73,7 +73,7 @@ def discover_themes(
         "responses": "\n".join(f"- {r}" for r in sample),
         "theme_count": theme_count,
     }
-    messages = lf_client.get_prompt("classifier_discover", variables)
+    messages, _config = lf_client.get_prompt("classifier_discover", variables)
     raw = lf_client.chat(
         messages, model=model, provider=provider, api_key=api_key,
         base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
@@ -134,7 +134,7 @@ def classify_responses(
             "themes_str": themes_str,
             "responses": "\n".join(f"- {r}" for r in batch),
         }
-        messages = lf_client.get_prompt("classifier_classify", variables)
+        messages, _config = lf_client.get_prompt("classifier_classify", variables)
         raw = lf_client.chat(
             messages, model=model, provider=provider, api_key=api_key,
             base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,

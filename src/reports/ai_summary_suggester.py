@@ -56,7 +56,7 @@ def _get_suggestions(ai_cfg: Dict, cfg: Dict, user_request: str = "") -> List[Di
     max_tokens = max(int(ai_cfg.get("max_tokens", 1500)), 2500)
 
     variables = _build_variables(cfg, user_request)
-    messages = lf_client.get_prompt("summary_suggester", variables)
+    messages, _config = lf_client.get_prompt("summary_suggester", variables)
     raw = lf_client.chat(
         messages,
         model=model,
