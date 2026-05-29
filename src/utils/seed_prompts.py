@@ -441,7 +441,8 @@ _CHART_SUGGESTER_OUTPUT_SCHEMA = {
                 "type": "object",
                 "additionalProperties": False,
                 "required": ["name", "title", "type", "questions",
-                             "options", "source", "join_parent", "filter", "sample"],
+                             "options", "source", "join_parent", "filter", "sample",
+                             "aggregate"],
                 "properties": {
                     "name":      {"type": "string"},
                     "title":     {"type": "string"},
@@ -458,6 +459,7 @@ _CHART_SUGGESTER_OUTPUT_SCHEMA = {
                                     "items": {"type": "string"}},
                     "filter":      {"type": ["string", "null"]},
                     "sample":      {"type": ["integer", "null"]},
+                    "aggregate":   {"type": ["string", "null"]},
                 },
             },
         },
