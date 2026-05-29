@@ -162,8 +162,16 @@ def _call_openai(messages, model, api_key, max_tokens, base_url, json_mode,
         kwargs["base_url"] = base_url
     client = OpenAI(**kwargs)
     params = {"model": model, "max_tokens": max_tokens, "messages": messages}
-    # output_schema handling added in the next task; for now, retain json_mode behavior.
-    if json_mode:
+    if output_schema is not None:
+        params["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": trace_name or "output",
+                "strict": True,
+                "schema": output_schema,
+            },
+        }
+    elif json_mode:
         params["response_format"] = {"type": "json_object"}
     resp = client.chat.completions.create(**params)
     usage = getattr(resp, "usage", None)

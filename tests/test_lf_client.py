@@ -358,3 +358,70 @@ def test_chat_no_schema_unchanged(monkeypatch):
         max_tokens=100, trace_name="narrator", json_mode=True,
     )
     assert captured == {"json_mode": True, "output_schema": None}
+
+
+# ── Task 7: _call_openai uses Structured Outputs when schema is set ──
+
+def test_call_openai_uses_json_schema_when_schema_given(monkeypatch):
+    """Schema present -> response_format json_schema, NOT json_object."""
+    schema = {"type": "object",
+              "properties": {"x": {"type": "string"}},
+              "required": ["x"],
+              "additionalProperties": False}
+    captured = {}
+    class _FakeResp:
+        class _C:
+            class _M: content = '{"x":"y"}'
+            message = _M()
+        choices = [_C()]
+        usage = type("U", (), {"prompt_tokens": 1, "completion_tokens": 1})()
+    class _FakeClient:
+        def __init__(self, **kw): pass
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured.update(kwargs)
+                    return _FakeResp()
+    monkeypatch.setattr("openai.OpenAI", _FakeClient)
+    text, usage = lf_client._call_openai(
+        messages=[{"role": "user", "content": "hi"}],
+        model="gpt-4o", api_key="sk", max_tokens=50, base_url=None,
+        json_mode=True,         # schema MUST win over json_mode
+        output_schema=schema,
+        trace_name="narrator",
+    )
+    rf = captured["response_format"]
+    assert rf["type"] == "json_schema"
+    assert rf["json_schema"]["name"]   # non-empty
+    assert rf["json_schema"]["strict"] is True
+    assert rf["json_schema"]["schema"] == schema
+    assert text == '{"x":"y"}'
+
+
+def test_call_openai_uses_json_object_when_no_schema(monkeypatch):
+    """No schema -> today's behavior (json_object when json_mode=True)."""
+    captured = {}
+    class _FakeResp:
+        class _C:
+            class _M: content = "ok"
+            message = _M()
+        choices = [_C()]
+        usage = None
+    class _FakeClient:
+        def __init__(self, **kw): pass
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured.update(kwargs)
+                    return _FakeResp()
+    monkeypatch.setattr("openai.OpenAI", _FakeClient)
+    lf_client._call_openai(
+        messages=[{"role": "user", "content": "hi"}],
+        model="gpt-4o", api_key="sk", max_tokens=50, base_url=None,
+        json_mode=True,
+        output_schema=None,
+        trace_name="narrator",
+    )
+    assert captured["response_format"] == {"type": "json_object"}
