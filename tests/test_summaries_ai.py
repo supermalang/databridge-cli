@@ -20,6 +20,7 @@ def test_ai_summary_uses_lf_client(monkeypatch):
 
     assert out["summary_age_note"] == "Average age is 20."
     assert ch.call_args.kwargs["trace_name"] == "summaries"
+    assert ch.call_args.kwargs["output_schema"] is None    # summaries is plain text
 
     # Verify real compile ran: no pure-word {{tokens}} remain unresolved.
     sent = ch.call_args.args[0]

@@ -25,6 +25,8 @@ def test_suggest_charts_uses_lf_client(monkeypatch):
     assert ch.call_args.kwargs["trace_name"] == "chart_suggester"
     assert ch.call_args.kwargs["json_mode"] is True
     assert ch.call_args.kwargs["max_tokens"] >= 3000
+    assert ch.call_args.kwargs["output_schema"] is not None
+    assert ch.call_args.kwargs["output_schema"]["properties"]["charts"]["items"]["properties"]["type"]["enum"]
 
     # Verify real compile ran: no pure-word {{tokens}} remain unresolved.
     sent = ch.call_args.args[0]

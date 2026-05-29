@@ -21,6 +21,7 @@ def test_summary_suggester_uses_lf_client(monkeypatch):
 
     assert out and out[0]["name"] == "s1"
     assert ch.call_args.kwargs["trace_name"] == "summary_suggester"
+    assert "summaries" in ch.call_args.kwargs["output_schema"]["properties"]
 
     # Verify real compile ran: no pure-word {{tokens}} remain unresolved.
     # Note: {{ summary_<name> }} in the system prompt is intentional docxtpl documentation
