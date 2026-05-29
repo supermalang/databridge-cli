@@ -237,7 +237,7 @@ def push_seed_prompts(force: bool = False):
         )
     client = _get_langfuse()
     results = []
-    for name, messages in SEED_PROMPTS.items():
+    for name, entry in SEED_PROMPTS.items():
         exists = _prompt_exists(client, name)
         if exists and not force:
             results.append((name, "skipped"))
@@ -245,7 +245,8 @@ def push_seed_prompts(force: bool = False):
         client.create_prompt(
             name=name,
             type="chat",
-            prompt=messages,
+            prompt=entry["messages"],
+            config=entry.get("config", {}),
             labels=["production"],
         )
         results.append((name, "updated" if exists else "created"))

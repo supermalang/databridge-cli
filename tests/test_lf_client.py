@@ -194,6 +194,21 @@ def test_push_seed_prompts_requires_enabled(monkeypatch):
         lf_client.push_seed_prompts()
 
 
+def test_push_seed_prompts_sends_config_per_seed(monkeypatch):
+    fake = _FakeLF()
+    monkeypatch.setattr(lf_client, "_get_langfuse", lambda: fake)
+    monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
+    sentinel = {"output_schema": {"type": "object"}}
+    monkeypatch.setitem(
+        lf_client.SEED_PROMPTS, "narrator",
+        {"messages": lf_client.SEED_PROMPTS["narrator"]["messages"], "config": sentinel},
+    )
+    lf_client.push_seed_prompts()
+    by_name = {c["name"]: c for c in fake.created}
+    assert by_name["narrator"]["config"] == sentinel
+    assert by_name["summaries"]["config"] == {}
+
+
 def test_command_trace_noop_when_disabled(monkeypatch):
     monkeypatch.setattr(lf_client, "is_enabled", lambda: False)
     with lf_client.command_trace("build-report"):
