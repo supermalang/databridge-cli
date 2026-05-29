@@ -341,6 +341,88 @@ _CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA = {
     },
 }
 
+_CHART_TYPES = [
+    "bar", "horizontal_bar", "stacked_bar", "grouped_bar",
+    "pie", "donut",
+    "line", "area",
+    "histogram", "scatter",
+    "box_plot", "heatmap", "treemap",
+    "waterfall", "funnel", "table",
+    "bullet_chart", "likert", "scorecard",
+    "pyramid", "dot_map",
+    "period_bar", "period_line",
+]
+
+# OpenAI Strict mode does not allow additionalProperties as a schema, so we
+# enumerate every known chart option explicitly (each nullable). The set covers
+# all option keys consumed by src/reports/charts.py's CHART_DISPATCH functions.
+_CHART_OPTIONS_PROPERTIES = {
+    "top_n":         {"type": ["integer", "null"]},
+    "sort":          {"type": ["string", "null"],
+                      "enum": [None, "value", "label", "none"]},
+    "normalize":     {"type": ["boolean", "null"]},
+    "freq":          {"type": ["string", "null"],
+                      "enum": [None, "day", "week", "month", "year"]},
+    "bins":          {"type": ["integer", "null"]},
+    "target":        {"type": ["number", "null"]},
+    "scale":         {"type": ["array", "null"], "items": {"type": "string"}},
+    "neutral":       {"type": ["string", "null"]},
+    "stat":          {"type": ["string", "null"],
+                      "enum": [None, "count", "mean", "sum"]},
+    "columns":       {"type": ["integer", "null"]},
+    "male_value":    {"type": ["string", "null"]},
+    "female_value":  {"type": ["string", "null"]},
+    "basemap":       {"type": ["boolean", "null"]},
+    "color_by":      {"type": ["string", "null"]},
+    "size":          {"type": ["integer", "null"]},
+    "color":         {"type": ["string", "null"]},
+    "width_inches":  {"type": ["number", "null"]},
+    "height_inches": {"type": ["number", "null"]},
+    "xlabel":        {"type": ["string", "null"]},
+    "ylabel":        {"type": ["string", "null"]},
+    "distinct_by":   {"type": ["string", "null"]},
+    "expand_multi":  {"type": ["boolean", "null"]},
+    "data_type":     {"type": ["string", "null"]},
+    "value_col":     {"type": ["string", "null"]},
+    "agg":           {"type": ["string", "null"],
+                      "enum": [None, "sum", "mean", "count", "max", "min"]},
+    "metric":        {"type": ["string", "null"]},
+}
+
+_CHART_SUGGESTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["charts"],
+    "properties": {
+        "charts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "title", "type", "questions",
+                             "options", "source", "join_parent", "filter", "sample"],
+                "properties": {
+                    "name":      {"type": "string"},
+                    "title":     {"type": "string"},
+                    "type":      {"type": "string", "enum": _CHART_TYPES},
+                    "questions": {"type": "array", "items": {"type": "string"}},
+                    "options": {
+                        "type": ["object", "null"],
+                        "additionalProperties": False,
+                        "required": list(_CHART_OPTIONS_PROPERTIES.keys()),
+                        "properties": _CHART_OPTIONS_PROPERTIES,
+                    },
+                    "source":      {"type": ["string", "null"]},
+                    "join_parent": {"type": ["array", "null"],
+                                    "items": {"type": "string"}},
+                    "filter":      {"type": ["string", "null"]},
+                    "sample":      {"type": ["integer", "null"]},
+                },
+            },
+        },
+    },
+}
+
 _SUMMARY_SUGGESTER_OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -427,7 +509,8 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
     "narrator":            {"messages": _NARRATOR,
                             "config": {"output_schema": _NARRATOR_OUTPUT_SCHEMA}},
     "summaries":           {"messages": _SUMMARIES,            "config": {}},
-    "chart_suggester":     {"messages": _CHART_SUGGESTER,      "config": {}},
+    "chart_suggester":     {"messages": _CHART_SUGGESTER,
+                            "config": {"output_schema": _CHART_SUGGESTER_OUTPUT_SCHEMA}},
     "template_generator":  {"messages": _TEMPLATE_GENERATOR,   "config": {}},
     "summary_suggester":   {"messages": _SUMMARY_SUGGESTER,
                             "config": {"output_schema": _SUMMARY_SUGGESTER_OUTPUT_SCHEMA}},

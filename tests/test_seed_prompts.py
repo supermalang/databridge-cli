@@ -58,6 +58,13 @@ def test_view_suggester_schema():
     assert "agg" in item["required"]
     assert set(item["properties"]["agg"]["enum"]) == {None, "sum", "mean", "count", "max", "min"}
 
+def test_chart_suggester_type_enum_matches_dispatch():
+    """If a new chart type is added in charts.py, this schema must list it."""
+    from src.reports.charts import CHART_DISPATCH
+    s = SEED_PROMPTS["chart_suggester"]["config"]["output_schema"]
+    schema_types = set(s["properties"]["charts"]["items"]["properties"]["type"]["enum"])
+    assert schema_types == set(CHART_DISPATCH)
+
 def test_summary_suggester_schema_stat_enum_matches_dispatch():
     """If a new stat is added to summaries.py, this schema must list it."""
     s = SEED_PROMPTS["summary_suggester"]["config"]["output_schema"]
