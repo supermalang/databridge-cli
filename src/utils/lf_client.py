@@ -2,7 +2,7 @@
 
 Public API (stable):
     is_enabled() -> bool
-    get_prompt(name, variables, label="production") -> list[dict]
+    get_prompt(name, variables, label="production") -> tuple[list[dict], dict]
     compile_messages(messages, variables) -> list[dict]
     chat(messages, *, model, provider, api_key, max_tokens, trace_name,
          base_url=None, json_mode=False) -> str
