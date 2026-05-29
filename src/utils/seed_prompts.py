@@ -341,6 +341,36 @@ _CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA = {
     },
 }
 
+_VIEW_SUGGESTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["views"],
+    "properties": {
+        "views": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "source", "join_parent", "filter",
+                             "group_by", "question", "agg"],
+                "properties": {
+                    "name":   {"type": "string"},
+                    "source": {"type": "string"},
+                    "join_parent": {
+                        "type": ["array", "null"],
+                        "items": {"type": "string"},
+                    },
+                    "filter":     {"type": ["string", "null"]},
+                    "group_by":   {"type": ["string", "null"]},
+                    "question":   {"type": ["string", "null"]},
+                    "agg": {"type": ["string", "null"],
+                            "enum": [None, "sum", "mean", "count", "max", "min"]},
+                },
+            },
+        },
+    },
+}
+
 _NARRATOR_OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -361,7 +391,8 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
     "chart_suggester":     {"messages": _CHART_SUGGESTER,      "config": {}},
     "template_generator":  {"messages": _TEMPLATE_GENERATOR,   "config": {}},
     "summary_suggester":   {"messages": _SUMMARY_SUGGESTER,    "config": {}},
-    "view_suggester":      {"messages": _VIEW_SUGGESTER,        "config": {}},
+    "view_suggester":      {"messages": _VIEW_SUGGESTER,
+                            "config": {"output_schema": _VIEW_SUGGESTER_OUTPUT_SCHEMA}},
     "classifier_discover":  {"messages": _CLASSIFIER_DISCOVER,
                              "config": {"output_schema": _CLASSIFIER_DISCOVER_OUTPUT_SCHEMA}},
     "classifier_classify":  {"messages": _CLASSIFIER_CLASSIFY,

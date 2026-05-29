@@ -51,3 +51,9 @@ def test_classifier_classify_schema_list_of_pairs():
     item = inner["items"]
     assert set(item["required"]) == {"response", "theme"}
     assert item["additionalProperties"] is False
+
+def test_view_suggester_schema():
+    s = SEED_PROMPTS["view_suggester"]["config"]["output_schema"]
+    item = s["properties"]["views"]["items"]
+    assert "agg" in item["required"]
+    assert set(item["properties"]["agg"]["enum"]) == {None, "sum", "mean", "count", "max", "min"}
