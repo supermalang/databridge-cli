@@ -389,6 +389,7 @@ Prompts live in [Langfuse Cloud](https://cloud.langfuse.com) (or a self-hosted L
    LANGFUSE_PUBLIC_KEY=pk-lf-...
    LANGFUSE_SECRET_KEY=sk-lf-...
    LANGFUSE_HOST=https://cloud.langfuse.com   # default; omit for cloud
+   # LANGFUSE_BASE_URL is accepted as an alias if LANGFUSE_HOST is unset
    ```
 3. Seed the bundled default prompts into Langfuse:
    ```bash

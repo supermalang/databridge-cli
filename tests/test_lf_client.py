@@ -217,3 +217,48 @@ def test_get_prompt_uses_stale_cache_when_fetch_fails(tmp_path, monkeypatch):
     msgs = lf_client.get_prompt("narrator", {"v": "9"})
     assert msgs[0]["content"] == "stalecache"   # stale cache used, NOT seed
     assert msgs[1]["content"] == "v=9"
+
+
+# ── _get_langfuse host resolution: LANGFUSE_HOST > LANGFUSE_BASE_URL > default ──
+
+def _patch_langfuse_constructor(monkeypatch):
+    """Replace langfuse.Langfuse with a recorder; return the dict it writes to."""
+    import langfuse
+    captured = {}
+    class _Fake:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+    monkeypatch.setattr(langfuse, "Langfuse", _Fake)
+    # ensure singleton starts empty AND is restored on teardown
+    monkeypatch.setattr(lf_client, "_LF", None)
+    return captured
+
+
+def test_get_langfuse_uses_LANGFUSE_HOST_when_set(monkeypatch):
+    captured = _patch_langfuse_constructor(monkeypatch)
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
+    monkeypatch.setenv("LANGFUSE_HOST", "https://primary.example")
+    monkeypatch.setenv("LANGFUSE_BASE_URL", "https://should-be-ignored.example")
+    lf_client._get_langfuse()
+    assert captured["host"] == "https://primary.example"
+
+
+def test_get_langfuse_falls_back_to_LANGFUSE_BASE_URL(monkeypatch):
+    captured = _patch_langfuse_constructor(monkeypatch)
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
+    monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+    monkeypatch.setenv("LANGFUSE_BASE_URL", "https://alias.example")
+    lf_client._get_langfuse()
+    assert captured["host"] == "https://alias.example"
+
+
+def test_get_langfuse_defaults_to_cloud_langfuse(monkeypatch):
+    captured = _patch_langfuse_constructor(monkeypatch)
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
+    monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+    monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
+    lf_client._get_langfuse()
+    assert captured["host"] == "https://cloud.langfuse.com"

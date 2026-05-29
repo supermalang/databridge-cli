@@ -85,10 +85,15 @@ def _get_langfuse():
     global _LF
     if _LF is None:
         from langfuse import Langfuse
+        # Host can be configured via LANGFUSE_HOST (canonical) or LANGFUSE_BASE_URL
+        # (alias — matches the SDK's `base_url` kwarg). LANGFUSE_HOST wins if both set.
+        host = (os.environ.get("LANGFUSE_HOST")
+                or os.environ.get("LANGFUSE_BASE_URL")
+                or "https://cloud.langfuse.com")
         _LF = Langfuse(
             public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
             secret_key=os.environ["LANGFUSE_SECRET_KEY"],
-            host=os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+            host=host,
         )
     return _LF
 
