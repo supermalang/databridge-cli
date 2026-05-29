@@ -52,26 +52,29 @@ CACHE_TTL_SECONDS = 3600
 
 
 def _cache_path(name: str, label: str) -> Path:
-    return CACHE_DIR / f"{name}-{label}.json"
+    return CACHE_DIR / f"{name}-{label}.v2.json"
 
 
-def _write_cache(name: str, label: str, messages: ChatMessages) -> None:
+def _write_cache(name: str, label: str, messages: ChatMessages, config: Dict) -> None:
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        _cache_path(name, label).write_text(json.dumps(messages), encoding="utf-8")
+        payload = {"messages": messages, "config": config}
+        _cache_path(name, label).write_text(json.dumps(payload), encoding="utf-8")
     except OSError as exc:
         log.debug(f"prompt cache write failed for {name}: {exc}")
 
 
 def _read_cache(name: str, label: str):
-    """Return (messages, age_seconds) or (None, inf) on miss/error."""
+    """Return (messages, config, age_seconds) or (None, None, inf) on miss/error/v1-shape."""
     path = _cache_path(name, label)
     try:
-        messages = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or "messages" not in payload:
+            return None, None, float("inf")
         age = time.time() - path.stat().st_mtime
-        return messages, age
+        return payload["messages"], payload.get("config", {}), age
     except (OSError, ValueError):
-        return None, float("inf")
+        return None, None, float("inf")
 
 
 _LF = None  # cached Langfuse SDK instance
@@ -98,39 +101,43 @@ def _get_langfuse():
     return _LF
 
 
-def _fetch_from_langfuse(name: str, label: str) -> ChatMessages:
-    """Fetch a chat prompt's raw messages from Langfuse. Raises on any failure."""
+def _fetch_from_langfuse(name: str, label: str):
+    """Fetch a chat prompt from Langfuse. Returns (messages, config)."""
     client = _get_langfuse()
     prompt = client.get_prompt(name, label=label, type="chat")
-    return [{"role": m["role"], "content": m["content"]}
-            for m in prompt.prompt if m.get("type") != "placeholder"]
+    messages = [{"role": m["role"], "content": m["content"]}
+                for m in prompt.prompt if m.get("type") != "placeholder"]
+    config = getattr(prompt, "config", None) or {}
+    return messages, config
 
 
-def get_prompt(name: str, variables: Dict, label: str = "production") -> ChatMessages:
-    raw = _resolve_raw(name, label)
-    return compile_messages(raw, variables)
+def get_prompt(name: str, variables: Dict, label: str = "production"):
+    raw_msgs, config = _resolve_raw(name, label)
+    return compile_messages(raw_msgs, variables), config
 
 
-def _resolve_raw(name: str, label: str) -> ChatMessages:
-    cached, age = _read_cache(name, label)
-    if cached is not None and age < CACHE_TTL_SECONDS:
-        return cached
+def _resolve_raw(name: str, label: str):
+    """Return (messages, config). Order: fresh cache -> Langfuse -> stale cache -> seed -> LookupError."""
+    cached_msgs, cached_cfg, age = _read_cache(name, label)
+    if cached_msgs is not None and age < CACHE_TTL_SECONDS:
+        return cached_msgs, cached_cfg
 
     if is_enabled():
         try:
-            fetched = _fetch_from_langfuse(name, label)
-            _write_cache(name, label, fetched)
-            return fetched
+            fetched_msgs, fetched_cfg = _fetch_from_langfuse(name, label)
+            _write_cache(name, label, fetched_msgs, fetched_cfg)
+            return fetched_msgs, fetched_cfg
         except Exception as exc:  # noqa: BLE001
             log.warning(f"Langfuse fetch failed for {name!r} ({type(exc).__name__}); using cache/seed.")
 
-    if cached is not None:
+    if cached_msgs is not None:
         log.info(f"Using cached prompt for {name!r} (Langfuse unavailable).")
-        return cached
+        return cached_msgs, cached_cfg
 
     if name in SEED_PROMPTS:
         log.warning(f"Langfuse unreachable and no cache — using bundled seed prompt for {name!r}.")
-        return SEED_PROMPTS[name]
+        entry = SEED_PROMPTS[name]
+        return entry["messages"], entry.get("config", {})
 
     raise LookupError(f"No prompt named {name!r} in Langfuse, cache, or seeds.")
 

@@ -33,16 +33,27 @@ def test_compile_handles_whitespace_in_braces():
 def test_cache_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
     msgs = [{"role": "system", "content": "hi"}]
-    lf_client._write_cache("narrator", "production", msgs)
-    got, age = lf_client._read_cache("narrator", "production")
-    assert got == msgs
+    cfg = {"output_schema": {"type": "object"}}
+    lf_client._write_cache("narrator", "production", msgs, cfg)
+    got_msgs, got_cfg, age = lf_client._read_cache("narrator", "production")
+    assert got_msgs == msgs
+    assert got_cfg == cfg
     assert age < 5
 
 
 def test_cache_miss_returns_none(tmp_path, monkeypatch):
     monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
-    got, age = lf_client._read_cache("does_not_exist", "production")
-    assert got is None and age == float("inf")
+    got_msgs, got_cfg, age = lf_client._read_cache("does_not_exist", "production")
+    assert got_msgs is None and got_cfg is None and age == float("inf")
+
+
+def test_cache_ignores_v1_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
+    (tmp_path / "narrator-production.json").write_text(
+        '[{"role":"system","content":"old"}]', encoding="utf-8"
+    )
+    got_msgs, got_cfg, age = lf_client._read_cache("narrator", "production")
+    assert got_msgs is None and got_cfg is None
 
 
 def test_is_enabled_false_without_keys(monkeypatch):
@@ -55,11 +66,12 @@ def test_get_prompt_uses_seed_when_disabled(tmp_path, monkeypatch):
     monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
     monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
     monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
-    msgs = lf_client.get_prompt("classifier_discover",
-                                {"label": "Q", "responses": "- a", "theme_count": 3})
+    msgs, cfg = lf_client.get_prompt("classifier_discover",
+                                     {"label": "Q", "responses": "- a", "theme_count": 3})
     assert msgs[0]["role"] == "system"
     assert "3" in msgs[1]["content"]
     assert "{{" not in msgs[1]["content"]
+    assert cfg == {}
 
 
 def test_get_prompt_uses_seed_when_fetch_fails(tmp_path, monkeypatch):
@@ -68,23 +80,26 @@ def test_get_prompt_uses_seed_when_fetch_fails(tmp_path, monkeypatch):
     def boom(name, label):
         raise ConnectionError("offline")
     monkeypatch.setattr(lf_client, "_fetch_from_langfuse", boom)
-    msgs = lf_client.get_prompt("classifier_classify",
-                                {"label": "Q", "themes_str": '"A"', "responses": "- a"})
+    msgs, cfg = lf_client.get_prompt("classifier_classify",
+                                     {"label": "Q", "themes_str": '"A"', "responses": "- a"})
     assert "A" in msgs[1]["content"]
+    assert cfg == {}
 
 
 def test_get_prompt_uses_cache_when_fresh(tmp_path, monkeypatch):
     monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
-    cached = [{"role": "system", "content": "cached"},
-              {"role": "user", "content": "hi {{x}}"}]
-    lf_client._write_cache("narrator", "production", cached)
+    cached_msgs = [{"role": "system", "content": "cached"},
+                   {"role": "user", "content": "hi {{x}}"}]
+    cached_cfg = {"output_schema": {"type": "object"}}
+    lf_client._write_cache("narrator", "production", cached_msgs, cached_cfg)
     def fail(name, label):
         raise AssertionError("should not fetch when cache is fresh")
     monkeypatch.setattr(lf_client, "_fetch_from_langfuse", fail)
-    msgs = lf_client.get_prompt("narrator", {"x": "1"}, label="production")
+    msgs, cfg = lf_client.get_prompt("narrator", {"x": "1"}, label="production")
     assert msgs[0]["content"] == "cached"
     assert msgs[1]["content"] == "hi 1"
+    assert cfg == cached_cfg
 
 
 def test_get_prompt_unknown_name_raises_lookuperror(tmp_path, monkeypatch):
@@ -206,16 +221,16 @@ def test_command_trace_uses_span_when_enabled(monkeypatch):
 def test_get_prompt_uses_stale_cache_when_fetch_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
-    cached = [{"role": "system", "content": "stalecache"},
-              {"role": "user", "content": "v={{v}}"}]
-    lf_client._write_cache("narrator", "production", cached)
-    # Force the cache to look stale (older than TTL).
+    cached_msgs = [{"role": "system", "content": "stalecache"},
+                   {"role": "user", "content": "v={{v}}"}]
+    lf_client._write_cache("narrator", "production", cached_msgs, {})
+    import os, time
     old = time.time() - (lf_client.CACHE_TTL_SECONDS + 100)
     os.utime(lf_client._cache_path("narrator", "production"), (old, old))
     monkeypatch.setattr(lf_client, "_fetch_from_langfuse",
                         lambda name, label: (_ for _ in ()).throw(ConnectionError("offline")))
-    msgs = lf_client.get_prompt("narrator", {"v": "9"})
-    assert msgs[0]["content"] == "stalecache"   # stale cache used, NOT seed
+    msgs, cfg = lf_client.get_prompt("narrator", {"v": "9"})
+    assert msgs[0]["content"] == "stalecache"
     assert msgs[1]["content"] == "v=9"
 
 
