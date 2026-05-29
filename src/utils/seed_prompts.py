@@ -474,11 +474,12 @@ _SUMMARY_SUGGESTER_OUTPUT_SCHEMA = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["name", "stat", "questions", "top_n",
+                "required": ["name", "label", "stat", "questions", "top_n",
                              "source", "filter", "group_by", "agg",
                              "freq", "method", "language", "prompt", "example"],
                 "properties": {
                     "name":      {"type": "string"},
+                    "label":     {"type": ["string", "null"]},
                     "stat": {"type": "string",
                              "enum": ["distribution", "stats", "crosstab", "trend",
                                       "data_quality", "keyword_frequency", "correlation",
