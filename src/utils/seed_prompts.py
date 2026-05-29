@@ -303,10 +303,22 @@ _VIEW_SUGGESTER: ChatMessages = [
     )},
 ]
 
+_NARRATOR_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["summary_text", "observations", "recommendations"],
+    "properties": {
+        "summary_text":    {"type": "string"},
+        "observations":    {"type": "string"},
+        "recommendations": {"type": "string"},
+    },
+}
+
 SeedPrompt = Dict[str, Any]   # {"messages": ChatMessages, "config": Dict[str, Any]}
 
 SEED_PROMPTS: Dict[str, SeedPrompt] = {
-    "narrator":            {"messages": _NARRATOR,             "config": {}},
+    "narrator":            {"messages": _NARRATOR,
+                            "config": {"output_schema": _NARRATOR_OUTPUT_SCHEMA}},
     "summaries":           {"messages": _SUMMARIES,            "config": {}},
     "chart_suggester":     {"messages": _CHART_SUGGESTER,      "config": {}},
     "template_generator":  {"messages": _TEMPLATE_GENERATOR,   "config": {}},

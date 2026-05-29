@@ -32,3 +32,9 @@ def test_narrator_user_has_expected_variables():
                 "indicators_block", "stats_block", "categorical_block",
                 "summaries_block", "charts_block"):
         assert "{{" + var + "}}" in user
+
+def test_narrator_has_output_schema():
+    schema = SEED_PROMPTS["narrator"]["config"]["output_schema"]
+    assert schema["type"] == "object"
+    assert set(schema["required"]) == {"summary_text", "observations", "recommendations"}
+    assert schema["additionalProperties"] is False
