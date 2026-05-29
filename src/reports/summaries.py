@@ -31,35 +31,6 @@ import pandas as pd
 log = logging.getLogger(__name__)
 
 
-# ── Prompts (edit these to refine the `stat: ai` summary behavior) ──────────
-# Or override at runtime by passing `system_prompt` / `user_prompt_template`
-# to compute_summaries(), or by setting prompts.summaries in config.yml.
-
-AI_SUMMARY_SYSTEM_PROMPT = (
-    "You are a humanitarian data analyst. Write clear, professional text "
-    "for a monitoring report. Be concise and data-driven."
-)
-
-# Appended to AI_SUMMARY_SYSTEM_PROMPT when the summary item specifies `example:`
-AI_SUMMARY_EXAMPLE_ADDENDUM = (
-    " When an example format is provided, it overrides all default style choices — match it exactly."
-)
-
-# Format slots: {language} {focus_line} {data_block} {example_block}
-# focus_line and example_block are "" when absent.
-AI_SUMMARY_USER_TEMPLATE = """\
-Write a summary in {language} of the following data.
-{focus_line}
-DATA:
-{data_block}{example_block}
-
-Return only the output text — no headers, no JSON, no markdown."""
-
-# Appended to AI_SUMMARY_USER_TEMPLATE's {example_block} when the summary item specifies `example:`
-AI_SUMMARY_EXAMPLE_USER_BLOCK = (
-    "\n\nIMPORTANT: Your output must strictly follow this example — same format, "
-    "same length, same structure. Only replace the values with those from the data above:\n{example}"
-)
 
 
 def compute_summaries(
@@ -67,14 +38,8 @@ def compute_summaries(
     df: pd.DataFrame,
     ai_cfg: Optional[Dict] = None,
     repeat_tables: Optional[Dict[str, pd.DataFrame]] = None,
-    prompts_cfg: Optional[Dict] = None,
-    system_prompt: str = AI_SUMMARY_SYSTEM_PROMPT,
-    user_prompt_template: str = AI_SUMMARY_USER_TEMPLATE,
 ) -> Dict[str, str]:
-    """Return {"summary_<name>": "text", ...} for all configured summaries.
-
-    `system_prompt` and `user_prompt_template` apply only to `stat: ai` summaries.
-    """
+    """Return {"summary_<name>": "text", ...} for all configured summaries."""
     if repeat_tables is None:
         repeat_tables = {}
     context = {}
@@ -84,11 +49,7 @@ def compute_summaries(
             continue
         try:
             scoped_df = _resolve_source(s, df, repeat_tables)
-            context[f"summary_{name}"] = _compute_summary(
-                s, scoped_df, ai_cfg, prompts_cfg,
-                system_prompt=system_prompt,
-                user_prompt_template=user_prompt_template,
-            )
+            context[f"summary_{name}"] = _compute_summary(s, scoped_df, ai_cfg)
         except Exception as e:
             log.warning(f"Summary '{name}' failed: {e}")
             context[f"summary_{name}"] = "N/A"
@@ -148,9 +109,6 @@ def _resolve_source(s: Dict, main_df: pd.DataFrame, repeat_tables: Dict) -> pd.D
 
 def _compute_summary(
     s: Dict, df: pd.DataFrame, ai_cfg: Optional[Dict],
-    prompts_cfg: Optional[Dict] = None,
-    system_prompt: str = AI_SUMMARY_SYSTEM_PROMPT,
-    user_prompt_template: str = AI_SUMMARY_USER_TEMPLATE,
 ) -> str:
     stat = s.get("stat", "distribution")
     questions = s.get("questions", [])
@@ -209,9 +167,7 @@ def _compute_summary(
     if stat == "ai":
         return _ai_text(
             df, questions, s.get("prompt", ""), ai_cfg,
-            s.get("language"), s.get("example"), prompts_cfg,
-            system_prompt=system_prompt,
-            user_prompt_template=user_prompt_template,
+            s.get("language"), s.get("example"),
         )
 
     raise ValueError(f"unknown stat '{stat}'")
@@ -297,9 +253,6 @@ def _ai_text(
     ai_cfg: Optional[Dict],
     language: Optional[str],
     example: Optional[str] = None,
-    prompts_cfg: Optional[Dict] = None,
-    system_prompt: str = AI_SUMMARY_SYSTEM_PROMPT,
-    user_prompt_template: str = AI_SUMMARY_USER_TEMPLATE,
 ) -> str:
     if not ai_cfg:
         raise ValueError("stat 'ai' requires an ai: section in config.yml")
@@ -334,31 +287,28 @@ def _ai_text(
             parts = [f"{v} ({c/total*100:.0f}%)" for v, c in vc.items()]
             data_lines.append(f"{q}: {', '.join(parts)}")
 
-    focus_line    = f"Focus: {prompt}" if prompt else ""
-    data_block    = "\n".join(data_lines)
-    example_block = AI_SUMMARY_EXAMPLE_USER_BLOCK.format(example=example) if example else ""
-    user_prompt = user_prompt_template.format(
-        language=lang,
-        focus_line=focus_line,
-        data_block=data_block,
-        example_block=example_block,
+    focus_line = f"Focus: {prompt}" if prompt else ""
+    data_block = "\n".join(data_lines)
+    example_block = (
+        "\n\nIMPORTANT: Your output must strictly follow this example — same format, "
+        "same length, same structure. Only replace the values with those from the data above:\n"
+        f"{example}"
+    ) if example else ""
+
+    variables = {
+        "language": lang,
+        "focus_line": focus_line,
+        "data_block": data_block,
+        "example_block": example_block,
+    }
+
+    from src.utils import lf_client
+    messages = lf_client.get_prompt("summaries", variables)
+    raw = lf_client.chat(
+        messages, model=model, provider=provider, api_key=api_key,
+        base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
+        trace_name="summaries", json_mode=False,
     )
-
-    if example:
-        system_prompt = system_prompt + AI_SUMMARY_EXAMPLE_ADDENDUM
-    from src.utils.prompts import system_prompt as _resolve_system, append_extra
-    system_prompt = _resolve_system("summaries", prompts_cfg, system_prompt)
-    user_prompt   = append_extra(user_prompt, "summaries", prompts_cfg)
-
-    from src.reports.narrator import _call_openai, _call_anthropic
-
-    if provider == "anthropic":
-        raw = _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens)
-    else:
-        raw = _call_openai(
-            api_key, model, system_prompt, user_prompt, max_tokens,
-            base_url=ai_cfg.get("base_url"),
-        )
     return raw.strip()
 
 

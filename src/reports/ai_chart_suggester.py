@@ -11,118 +11,25 @@ Called by the suggest-charts CLI command.
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional  # noqa: F401
 
 import yaml
 
 log = logging.getLogger(__name__)
-
-# Full catalog passed verbatim to the LLM so it knows exactly what's available.
-_CHART_CATALOG = """
-CHART TYPE CATALOG
-==================
-Each entry: type | requires | key options | notes
-
-bar              | 1 categorical              | top_n, sort(value|label|none)
-horizontal_bar   | 1 categorical              | top_n, sort  — best for long labels
-stacked_bar      | 2 categorical [x, stack]   | top_n, normalize(true=100%)
-grouped_bar      | 2 categorical [cat, group] | top_n, sort
-pie              | 1 categorical              | top_n
-donut            | 1 categorical              | top_n
-line             | 1 date [+ 1 numeric]       | freq(day|week|month|year)
-area             | 1 date [+ 1 numeric]       | freq
-histogram        | 1 quantitative             | bins
-scatter          | 2 quantitative             | xlabel, ylabel
-box_plot         | 1 quantitative + 1 cat     | top_n  — distribution per group
-heatmap          | 2 categorical              | top_n  — frequency matrix
-treemap          | 1 categorical              | top_n
-waterfall        | 1 categorical              | top_n, sort
-funnel           | 1 categorical              | top_n  — ordered pipeline stages
-table            | 1 categorical              | top_n  — renders as PNG table
-bullet_chart     | 1 quantitative             | target(REQUIRED int)
-likert           | 1 categorical (scale)      | scale([list of ordered labels]), neutral
-scorecard        | 1+ any                     | stat(count|mean|sum), columns(int)
-pyramid          | age_group + gender cols    | male_value, female_value
-dot_map          | lat + lon cols             | basemap(true/false), color_by, size
-
-Common OPTIONS (all types — go inside `options:`): width_inches, height_inches, color(hex), xlabel, ylabel
-Dedup / multi (inside `options:`): distinct_by(col), expand_multi(true)
-Scoping (TOP-LEVEL keys — NOT inside `options:`): filter("pandas query"), sample(int), source("repeat/path"|"view_name"), join_parent([cols])
-Grouped aggregation OPTIONS (bar/horizontal_bar — inside `options:`): value_col(col), agg(sum|mean|count|max|min)
-  — use value_col when the x-axis is a category and bars should show a numeric aggregate
-    rather than row counts. Pair with a named view as source for pre-joined data.
-"""
-
-
-# ── Prompts (edit these to refine the model's behavior) ──────────────────────
-# Or override at runtime by passing `system_prompt` / `user_prompt_template`
-# to suggest_charts(), or by setting prompts.chart_suggester in config.yml.
-
-SYSTEM_PROMPT = (
-    "You are an expert data analyst and M&E specialist. "
-    "Given a list of survey questions (with their categories and labels), "
-    "you propose a complete, ready-to-use charts configuration for a monitoring report. "
-    "You have access to the full chart type catalog below.\n\n"
-    + _CHART_CATALOG
-    + "\n\n"
-    "Chart YAML shape — TOP-LEVEL keys vs OPTIONS:\n"
-    "  Top-level keys (siblings of `name`, `type`, `questions`):\n"
-    "    source, join_parent, filter, sample, aggregate\n"
-    "  Inside `options:` (chart rendering parameters):\n"
-    "    top_n, sort, normalize, freq, bins, target, scale, neutral, stat, columns,\n"
-    "    male_value, female_value, basemap, color_by, size, color, width_inches,\n"
-    "    height_inches, xlabel, ylabel, distinct_by, expand_multi, data_type,\n"
-    "    value_col, agg\n"
-    "  NEVER put source / join_parent / filter / sample / aggregate inside options.\n\n"
-    "Rules:\n"
-    "  - Use only column names that exist in the provided questions list (export_label values)\n"
-    "  - Choose chart types that match the column categories (categorical, quantitative, date, etc.)\n"
-    "  - Aim for 6–12 charts covering the most analytically meaningful questions\n"
-    "  - Prioritise disaggregation (stacked_bar, grouped_bar, box_plot) over simple counts\n"
-    "  - For each chart include: name, title, type, questions, and relevant options\n"
-    "  - name must be snake_case, no spaces\n"
-    "  - PREFER named views over raw repeat groups: if a NAMED VIEW exists that already\n"
-    "    pre-joins or aggregates the data you need, set `source: <view_name>` and skip\n"
-    "    join_parent / value_col / agg — the view has done that work. Only fall back to\n"
-    "    raw repeat groups when no suitable view exists.\n"
-    "  - Single-source rule: ALL questions in one chart must come from the SAME table —\n"
-    "    either main, or a single repeat group (set source: to that repeat path), or a\n"
-    "    single named view. NEVER mix columns from different repeat groups in one chart.\n"
-    "    If a chart's columns naturally span sources, either split it into per-source\n"
-    "    charts, or first define a view that joins/aggregates them and use source: <view>.\n"
-    "  - When a chart uses a repeat-group source, parent-table categoricals used as the\n"
-    "    x-axis or grouping dimension must be listed in join_parent: [...] (top-level).\n"
-    "  - Return ONLY valid JSON: {\"charts\": [ ... ]} — no markdown, no explanation\n"
-    "  - When periods.registry contains 2+ entries, prefer chart type `period_line` for\n"
-    "    indicators that have a clear trend (rates, proportions, totals over time), and\n"
-    "    `period_bar` for discrete counts. Pass the indicator's name via options.metric."
-)
-
-# Format slots: {header_line} {form_alias} {user_request_line}
-#               {columns_block} {repeat_groups_block} {views_block} {pii_block} {existing_block}
-# Each *_block / *_line is either "" or its filled-in content terminating with "\n\n".
-USER_PROMPT_TEMPLATE = """\
-{header_line}Form: {form_alias}
-
-{user_request_line}{columns_block}{repeat_groups_block}{views_block}{pii_block}{existing_block}Suggest a charts: configuration block. Return JSON only."""
 
 
 def suggest_charts(
     cfg: Dict,
     out_path: Optional[str] = None,
     user_request: str = "",
-    system_prompt: str = SYSTEM_PROMPT,
-    user_prompt_template: str = USER_PROMPT_TEMPLATE,
 ) -> List[Dict]:
     """Ask the LLM to propose a charts: config block from the questions in cfg.
 
     Args:
-        cfg:                  full config dict (needs questions + ai sections)
-        out_path:             if set, write the YAML block to this file path
-        user_request:         optional free-text instruction from the end user
-                              (e.g. "focus on geographic distribution")
-        system_prompt:        defaults to module-level SYSTEM_PROMPT
-        user_prompt_template: defaults to module-level USER_PROMPT_TEMPLATE
+        cfg:          full config dict (needs questions + ai sections)
+        out_path:     if set, write the YAML block to this file path
+        user_request: optional free-text instruction from the end user
+                      (e.g. "focus on geographic distribution")
 
     Returns:
         List of chart config dicts ready to be merged into cfg["charts"].
@@ -140,7 +47,7 @@ def suggest_charts(
         raise ValueError("No questions in config.yml. Run fetch-questions first.")
 
     log.info("Requesting chart suggestions from LLM…")
-    charts = _get_suggestions(ai_cfg, cfg, system_prompt, user_prompt_template, user_request)
+    charts = _get_suggestions(ai_cfg, cfg, user_request)
     log.info(f"Received {len(charts)} chart suggestion(s).")
 
     if out_path:
@@ -154,27 +61,31 @@ def suggest_charts(
 
 # ── LLM interaction ───────────────────────────────────────────────────────────
 
-def _get_suggestions(ai_cfg: Dict, cfg: Dict, system_prompt: str, user_prompt_template: str, user_request: str = "") -> List[Dict]:
-    from src.utils.prompts import system_prompt as _resolve_system, append_extra
-    prompts_cfg = cfg.get("prompts", {})
-    system = _resolve_system("chart_suggester", prompts_cfg, system_prompt)
-    user   = append_extra(_user_prompt(cfg, user_prompt_template, user_request), "chart_suggester", prompts_cfg)
+def _get_suggestions(ai_cfg: Dict, cfg: Dict, user_request: str = "") -> List[Dict]:
+    from src.utils import lf_client
 
     provider   = ai_cfg.get("provider", "openai").lower()
     api_key    = ai_cfg.get("api_key", "")
     model      = ai_cfg.get("model", "gpt-4o")
     max_tokens = max(int(ai_cfg.get("max_tokens", 1500)), 3000)
 
-    if provider == "anthropic":
-        raw = _call_anthropic(api_key, model, system, user, max_tokens)
-    else:
-        raw = _call_openai(api_key, model, system, user, max_tokens,
-                           base_url=ai_cfg.get("base_url"))
+    variables = _build_variables(cfg, user_request)
+    messages = lf_client.get_prompt("chart_suggester", variables)
+    raw = lf_client.chat(
+        messages,
+        model=model,
+        provider=provider,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        trace_name="chart_suggester",
+        base_url=ai_cfg.get("base_url"),
+        json_mode=(provider != "anthropic"),
+    )
 
     return _parse(raw)
 
 
-def _user_prompt(cfg: Dict, template: str = USER_PROMPT_TEMPLATE, user_request: str = "") -> str:
+def _build_variables(cfg: Dict, user_request: str = "") -> Dict:
     questions = cfg.get("questions", [])
     form_alias = cfg.get("form", {}).get("alias", "survey")
     report_title = cfg.get("report", {}).get("title", "")
@@ -263,16 +174,16 @@ def _user_prompt(cfg: Dict, template: str = USER_PROMPT_TEMPLATE, user_request: 
     if pii_lines:
         pii_block = "PII REDACTION (avoid these columns in chart suggestions — they will be masked or dropped at render time):\n" + "\n".join(pii_lines) + "\n\n"
 
-    return template.format(
-        header_line=header_line,
-        form_alias=form_alias,
-        user_request_line=user_request_line,
-        columns_block=columns_block,
-        repeat_groups_block=repeat_groups_block,
-        views_block=views_block,
-        pii_block=pii_block,
-        existing_block=existing_block,
-    )
+    return {
+        "header_line": header_line,
+        "form_alias": form_alias,
+        "user_request_line": user_request_line,
+        "columns_block": columns_block,
+        "repeat_groups_block": repeat_groups_block,
+        "views_block": views_block,
+        "pii_block": pii_block,
+        "existing_block": existing_block,
+    }
 
 
 # ── output ────────────────────────────────────────────────────────────────────
@@ -286,44 +197,6 @@ def _write_yaml(charts: List[Dict], path: str) -> None:
 def _print_yaml(charts: List[Dict]) -> None:
     print("\n# ── AI-suggested charts — paste into config.yml ──────────────────\n")
     print(yaml.dump({"charts": charts}, allow_unicode=True, default_flow_style=False, sort_keys=False))
-
-
-# ── callers ───────────────────────────────────────────────────────────────────
-
-def _call_openai(api_key, model, system_prompt, user_prompt, max_tokens, base_url=None) -> str:
-    try:
-        from openai import OpenAI
-    except ImportError:
-        raise ImportError("openai package not installed. Run: pip install openai>=1.0.0")
-    kwargs: Dict[str, Any] = {"api_key": api_key}
-    if base_url:
-        kwargs["base_url"] = base_url
-    client = OpenAI(**kwargs)
-    resp = client.chat.completions.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_prompt},
-        ],
-        response_format={"type": "json_object"},
-    )
-    return resp.choices[0].message.content
-
-
-def _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens) -> str:
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package not installed. Run: pip install anthropic>=0.20.0")
-    client = anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    return msg.content[0].text
 
 
 # ── parser ────────────────────────────────────────────────────────────────────

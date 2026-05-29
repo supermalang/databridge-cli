@@ -22,10 +22,12 @@ aiofiles>=23.2.1
 # Uncomment for dot_map with OpenStreetMap basemap (basemap: true):
 # contextily>=1.6.0
 # pyproj>=3.6.0
-# Uncomment for AI narrative generation (OpenAI-compatible: OpenAI, Azure, Groq, Mistral, Ollama):
-# openai>=1.0.0
-# Uncomment for AI narrative generation (Anthropic Claude):
+# AI narrative generation (OpenAI-compatible: OpenAI, Azure, Groq, Mistral, Ollama):
+openai>=1.0.0
+# AI narrative generation (Anthropic Claude):
 anthropic>=0.20.0
+# Prompt management + LLM tracing (code targets the v4 SDK API):
+langfuse>=4.0.0
 # Test dependencies
 pytest>=8.0
 httpx>=0.27

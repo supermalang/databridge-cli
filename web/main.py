@@ -65,6 +65,7 @@ ALLOWED_COMMANDS = {
     "fetch-questions":      [],
     "generate-template":    ["--context", "--summary-prompt"],
     "ai-generate-template": ["--description", "--pages", "--language", "--context", "--summary-prompt"],
+    "push-prompts":         [],
     "suggest-charts":       ["--user-request"],
     "suggest-views":        ["--user-request"],
     "suggest-summaries":    ["--user-request"],

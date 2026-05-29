@@ -11,61 +11,17 @@ Called by the suggest-views CLI command.
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import yaml
 
 log = logging.getLogger(__name__)
 
 
-# ── Prompts ──────────────────────────────────────────────────────────────────
-
-SYSTEM_PROMPT = (
-    "You are a data engineer designing virtual tables (views) for a survey reporting pipeline. "
-    "Views let charts and summaries reference a single named source instead of doing joins/aggregations inline. "
-    "Given the survey's main columns, repeat groups, existing views, and existing charts, propose 3-6 named views "
-    "that unlock common analyses.\n\n"
-    "View YAML shape (top-level keys, NOT inside an options block):\n"
-    "  name:        snake_case identifier — referenced by charts as `source: <name>`\n"
-    "  source:      'main' OR an exact repeat-group key (printed below)\n"
-    "  join_parent: [parent_col_name, ...]  (optional; only valid when source != 'main')\n"
-    "                bring main-table columns into a repeat-group view for slicing\n"
-    "  filter:      pandas .query() expression  (optional)\n"
-    "  group_by:    column name to group on  (optional — turns the view into an aggregated table)\n"
-    "  question:    numeric column to aggregate (required if group_by is set)\n"
-    "  agg:         sum | mean | count | max | min  (default sum)\n\n"
-    "What makes a good view (aim for a mix):\n"
-    "  - Repeat + parent slicer: a repeat group with key parent categoricals joined in\n"
-    "    (e.g. source=demographic_repeat, join_parent=[Wilaya, Moughataa, Village])\n"
-    "  - Per-group aggregate: same as above but with group_by + question + agg\n"
-    "    (e.g. group_by=Wilaya, question=Nombre d'habitants, agg=sum → one row per Wilaya)\n"
-    "  - Filtered subset: rows of one source matching a meaningful condition\n"
-    "    (e.g. filter=\"Nombre de ménages > 0\")\n"
-    "  - Cross-source bridge: when multiple repeat groups need to be analyzed together,\n"
-    "    propose per-source aggregated views that share a common key (e.g. Wilaya),\n"
-    "    so downstream charts can use either independently\n\n"
-    "Rules:\n"
-    "  - source: must be EXACTLY one of the keys printed in the REPEAT GROUPS block, or 'main'\n"
-    "  - join_parent, group_by, question must be exact column names from the lists below\n"
-    "  - Avoid duplicating any existing view (listed below)\n"
-    "  - Each view's name must be snake_case and unique\n"
-    "  - Return ONLY valid JSON: {\"views\": [ ... ]} — no markdown, no explanation"
-)
-
-# Format slots: {header_line} {form_alias} {user_request_line}
-#               {main_cols_block} {repeat_groups_block} {existing_views_block} {existing_charts_block}
-USER_PROMPT_TEMPLATE = """\
-{header_line}Form: {form_alias}
-
-{user_request_line}{main_cols_block}{repeat_groups_block}{existing_views_block}{existing_charts_block}Suggest a views: configuration block. Return JSON only."""
-
-
 def suggest_views(
     cfg: Dict,
     out_path: Optional[str] = None,
     user_request: str = "",
-    system_prompt: str = SYSTEM_PROMPT,
-    user_prompt_template: str = USER_PROMPT_TEMPLATE,
 ) -> List[Dict]:
     """Ask the LLM to propose a views: config block from the questions in cfg."""
     ai_cfg = cfg.get("ai")
@@ -78,7 +34,7 @@ def suggest_views(
         raise ValueError("No questions in config.yml. Run fetch-questions first.")
 
     log.info("Requesting view suggestions from LLM…")
-    views = _get_suggestions(ai_cfg, cfg, system_prompt, user_prompt_template, user_request)
+    views = _get_suggestions(ai_cfg, cfg, user_request)
     log.info(f"Received {len(views)} view suggestion(s).")
 
     if out_path:
@@ -91,25 +47,30 @@ def suggest_views(
 
 # ── LLM interaction ───────────────────────────────────────────────────────────
 
-def _get_suggestions(ai_cfg: Dict, cfg: Dict, system_prompt: str, user_prompt_template: str, user_request: str = "") -> List[Dict]:
-    from src.utils.prompts import system_prompt as _resolve_system, append_extra
-    prompts_cfg = cfg.get("prompts", {})
-    system = _resolve_system("view_suggester", prompts_cfg, system_prompt)
-    user   = append_extra(_user_prompt(cfg, user_prompt_template, user_request), "view_suggester", prompts_cfg)
+def _get_suggestions(ai_cfg: Dict, cfg: Dict, user_request: str = "") -> List[Dict]:
+    from src.utils import lf_client
 
     provider   = ai_cfg.get("provider", "openai").lower()
     api_key    = ai_cfg.get("api_key", "")
     model      = ai_cfg.get("model", "gpt-4o")
     max_tokens = max(int(ai_cfg.get("max_tokens", 1500)), 2500)
 
-    if provider == "anthropic":
-        raw = _call_anthropic(api_key, model, system, user, max_tokens)
-    else:
-        raw = _call_openai(api_key, model, system, user, max_tokens, base_url=ai_cfg.get("base_url"))
+    variables = _build_variables(cfg, user_request)
+    messages = lf_client.get_prompt("view_suggester", variables)
+    raw = lf_client.chat(
+        messages,
+        model=model,
+        provider=provider,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        trace_name="view_suggester",
+        base_url=ai_cfg.get("base_url"),
+        json_mode=(provider != "anthropic"),
+    )
     return _parse(raw)
 
 
-def _user_prompt(cfg: Dict, template: str = USER_PROMPT_TEMPLATE, user_request: str = "") -> str:
+def _build_variables(cfg: Dict, user_request: str = "") -> Dict:
     from src.data.transform import _repeat_path
     questions = cfg.get("questions", [])
     form_alias = cfg.get("form", {}).get("alias", "survey")
@@ -190,15 +151,15 @@ def _user_prompt(cfg: Dict, template: str = USER_PROMPT_TEMPLATE, user_request: 
             ec_lines.append(f"  {c.get('name','?')} ({c.get('type','?')}): source={src}, questions=[{qs}]")
         existing_charts_block = "EXISTING CHARTS (for context — propose views that would simplify or unlock these):\n" + "\n".join(ec_lines) + "\n\n"
 
-    return template.format(
-        header_line=header_line,
-        form_alias=form_alias,
-        user_request_line=user_request_line,
-        main_cols_block=main_cols_block,
-        repeat_groups_block=repeat_groups_block,
-        existing_views_block=existing_views_block,
-        existing_charts_block=existing_charts_block,
-    )
+    return {
+        "header_line": header_line,
+        "form_alias": form_alias,
+        "user_request_line": user_request_line,
+        "main_cols_block": main_cols_block,
+        "repeat_groups_block": repeat_groups_block,
+        "existing_views_block": existing_views_block,
+        "existing_charts_block": existing_charts_block,
+    }
 
 
 # ── output ────────────────────────────────────────────────────────────────────
@@ -212,44 +173,6 @@ def _write_yaml(views: List[Dict], path: str) -> None:
 def _print_yaml(views: List[Dict]) -> None:
     print("\n# ── AI-suggested views — paste into config.yml ───────────────────\n")
     print(yaml.dump({"views": views}, allow_unicode=True, default_flow_style=False, sort_keys=False))
-
-
-# ── callers ───────────────────────────────────────────────────────────────────
-
-def _call_openai(api_key, model, system_prompt, user_prompt, max_tokens, base_url=None) -> str:
-    try:
-        from openai import OpenAI
-    except ImportError:
-        raise ImportError("openai package not installed. Run: pip install openai>=1.0.0")
-    kwargs: Dict[str, Any] = {"api_key": api_key}
-    if base_url:
-        kwargs["base_url"] = base_url
-    client = OpenAI(**kwargs)
-    resp = client.chat.completions.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_prompt},
-        ],
-        response_format={"type": "json_object"},
-    )
-    return resp.choices[0].message.content
-
-
-def _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens) -> str:
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package not installed. Run: pip install anthropic>=0.20.0")
-    client = anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    return msg.content[0].text
 
 
 # ── parser ────────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 narrator.py — LLM-powered narrative generation for report placeholders.
 
 Fills {{ summary_text }}, {{ observations }}, {{ recommendations }} in the Word
-template by calling an OpenAI-compatible or Anthropic API.
+template by calling an OpenAI-compatible or Anthropic API via lf_client.
 
 Returns a dict with the three keys; falls back to empty strings on any failure
 or if no ai config is present.
@@ -19,36 +19,6 @@ log = logging.getLogger(__name__)
 _EMPTY = {"summary_text": "", "observations": "", "recommendations": ""}
 
 
-# ── Prompts (edit these to refine the model's behavior) ──────────────────────
-# Or override at runtime by passing `system_prompt` / `user_prompt_template`
-# to generate_narrative(), or by setting prompts.narrator in config.yml.
-
-SYSTEM_PROMPT = (
-    "You are an expert humanitarian data analyst and report writer. "
-    "You will receive structured survey data and must produce clear, professional "
-    "narrative text for a Word report. "
-    "Always respond with valid JSON only — no markdown fences, no extra commentary. "
-    'Return exactly: {"summary_text": "...", "observations": "...", "recommendations": "..."}'
-)
-
-# Format slots: {language} {title} {period} {n_submissions}
-#               {scope_line} {indicators_block} {stats_block}
-#               {categorical_block} {summaries_block} {charts_block}
-# Each *_block is either "" or "HEADER:\n  - item\n  ...\n\n".
-USER_PROMPT_TEMPLATE = """\
-Write narrative sections for a monitoring report in {language}.
-Report title: {title}
-Period: {period}
-Total submissions: {n_submissions}
-{scope_line}
-{indicators_block}{stats_block}{categorical_block}{summaries_block}{charts_block}Based on the data above, write three sections:
-  1. summary_text: A 2–3 sentence executive summary.
-  2. observations: 3–5 bullet observations (use \\n• as bullet separator).
-  3. recommendations: 2–4 actionable recommendations (use \\n• as bullet separator).
-
-Return ONLY a JSON object with keys "summary_text", "observations", "recommendations"."""
-
-
 def generate_narrative(
     ai_cfg: Dict,
     report_cfg: Dict,
@@ -59,9 +29,6 @@ def generate_narrative(
     summaries: Optional[Dict[str, str]] = None,
     split_value: Optional[str] = None,
     questions_cfg: Optional[List[Dict]] = None,
-    prompts_cfg: Optional[Dict] = None,
-    system_prompt: str = SYSTEM_PROMPT,
-    user_prompt_template: str = USER_PROMPT_TEMPLATE,
 ) -> Dict[str, str]:
     """
     Return {"summary_text": str, "observations": str, "recommendations": str}.
@@ -74,10 +41,6 @@ def generate_narrative(
                                (e.g. "Kédougou") so the LLM knows it's site-specific
         questions_cfg:         questions list from config — used to label categorical columns
                                with their human-readable question labels instead of raw keys
-        prompts_cfg:           cfg.get("prompts", {}) — admin YAML overrides; if present,
-                               override `system_prompt` and append `extra` to the user prompt
-        system_prompt:         system prompt string. Defaults to module-level SYSTEM_PROMPT
-        user_prompt_template:  user prompt format string. Defaults to USER_PROMPT_TEMPLATE
     """
     if not ai_cfg:
         return _EMPTY
@@ -92,36 +55,30 @@ def generate_narrative(
         log.warning("AI narrative: api_key not resolved — skipping narrative generation.")
         return _EMPTY
 
-    from src.utils.prompts import system_prompt as _resolve_system, append_extra
-    system_prompt = _resolve_system("narrator", prompts_cfg, system_prompt)
-    user_prompt   = _build_user_prompt(
+    from src.utils import lf_client
+    variables = _build_variables(
         ai_cfg, report_cfg, df, stats_table, indicators, charts_cfg,
         summaries=summaries, split_value=split_value, questions_cfg=questions_cfg,
-        template=user_prompt_template,
     )
-    user_prompt   = append_extra(user_prompt, "narrator", prompts_cfg)
-
     try:
-        if provider == "anthropic":
-            raw = _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens)
-        else:
-            raw = _call_openai(
-                api_key, model, system_prompt, user_prompt, max_tokens,
-                base_url=ai_cfg.get("base_url"),
-            )
+        messages = lf_client.get_prompt("narrator", variables)
+        raw = lf_client.chat(
+            messages, model=model, provider=provider, api_key=api_key,
+            base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
+            trace_name="narrator", json_mode=(provider != "anthropic"),
+        )
         return _parse_response(raw)
     except Exception as exc:
         log.warning(f"AI narrative generation failed ({type(exc).__name__}: {exc}) — using empty strings.")
         return _EMPTY
 
 
-# ── user-prompt builder ──────────────────────────────────────────────────────
+# ── variables builder ─────────────────────────────────────────────────────────
 
-def _build_user_prompt(
+def _build_variables(
     ai_cfg, report_cfg, df, stats_table, indicators, charts_cfg,
     summaries=None, split_value=None, questions_cfg=None,
-    template: str = USER_PROMPT_TEMPLATE,
-) -> str:
+) -> Dict:
     language = ai_cfg.get("language", "English")
 
     scope_line = (
@@ -204,59 +161,18 @@ def _build_user_prompt(
             items.append(f"  - {title} ({ctype}){f': {qs}' if qs else ''}")
         charts_block = "CHARTS INCLUDED IN THIS REPORT:\n" + "\n".join(items) + "\n\n"
 
-    return template.format(
-        language=language,
-        title=report_cfg.get("title", "Report"),
-        period=report_cfg.get("period", ""),
-        n_submissions=f"{len(df):,}",
-        scope_line=scope_line,
-        indicators_block=indicators_block,
-        stats_block=stats_block,
-        categorical_block=categorical_block,
-        summaries_block=summaries_block,
-        charts_block=charts_block,
-    )
-
-
-# ── callers ───────────────────────────────────────────────────────────────────
-
-def _call_openai(api_key, model, system_prompt, user_prompt, max_tokens, base_url=None) -> str:
-    try:
-        from openai import OpenAI
-    except ImportError:
-        raise ImportError("openai package not installed. Run: pip install openai>=1.0.0")
-
-    kwargs: Dict[str, Any] = {"api_key": api_key}
-    if base_url:
-        kwargs["base_url"] = base_url
-
-    client = OpenAI(**kwargs)
-    resp = client.chat.completions.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_prompt},
-        ],
-        response_format={"type": "json_object"},
-    )
-    return resp.choices[0].message.content
-
-
-def _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens) -> str:
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package not installed. Run: pip install anthropic>=0.20.0")
-
-    client = anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    return msg.content[0].text
+    return {
+        "language": language,
+        "title": report_cfg.get("title", "Report"),
+        "period": report_cfg.get("period", ""),
+        "n_submissions": f"{len(df):,}",
+        "scope_line": scope_line,
+        "indicators_block": indicators_block,
+        "stats_block": stats_block,
+        "categorical_block": categorical_block,
+        "summaries_block": summaries_block,
+        "charts_block": charts_block,
+    }
 
 
 # ── parser ────────────────────────────────────────────────────────────────────

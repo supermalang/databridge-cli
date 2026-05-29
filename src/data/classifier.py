@@ -36,54 +36,11 @@ BATCH_SIZE = 50   # unique responses per LLM call
 SAMPLE_SIZE = 100  # max unique responses sent for theme discovery
 
 
-# ── Prompts (edit these to refine the model's behavior) ──────────────────────
-# Or override at runtime by passing `system_prompt` / `user_prompt_template` to
-# discover_themes / classify_responses, or by setting prompts.classifier in config.yml.
-
-DISCOVER_SYSTEM_PROMPT = (
-    "You are a survey data analyst. When given free-text survey responses, "
-    "you identify concise, mutually-exclusive themes that cover most answers. "
-    "Always return valid JSON only — no markdown fences, no commentary."
-)
-
-# Format slots: {label} {responses} {theme_count}
-DISCOVER_USER_TEMPLATE = """\
-Free-text responses to the survey question: "{label}"
-
-Responses:
-{responses}
-
-Propose exactly {theme_count} concise theme names (2–5 words each) that cover the majority of these responses. \
-Add an "Other" theme only if a significant share of responses clearly don't fit the others.
-Return JSON: {{"themes": ["Theme A", "Theme B", ...]}}"""
-
-
-CLASSIFY_SYSTEM_PROMPT = (
-    "You are a survey data analyst. Classify free-text survey responses into "
-    "predefined themes. Always return valid JSON only — no markdown, no commentary."
-)
-
-# Format slots: {label} {themes_str} {responses}
-CLASSIFY_USER_TEMPLATE = """\
-Classify each response to the question "{label}" into exactly one of these themes: [{themes_str}]
-
-For responses that clearly don't fit any theme, use "Other".
-
-Responses to classify:
-{responses}
-
-Return JSON: {{"classifications": {{"<response text>": "<theme name>", ...}}}}
-Include every response from the list, even if only one word."""
-
-
 def discover_themes(
     series: pd.Series,
     label: str,
     theme_count: int,
     ai_cfg: Dict,
-    prompts_cfg: Optional[Dict] = None,
-    system_prompt: str = DISCOVER_SYSTEM_PROMPT,
-    user_prompt_template: str = DISCOVER_USER_TEMPLATE,
 ) -> List[str]:
     """Sample unique responses and ask the LLM to propose theme names.
 
@@ -103,16 +60,25 @@ def discover_themes(
 
     sample = unique.sample(min(SAMPLE_SIZE, len(unique)), random_state=42).tolist()
 
-    from src.utils.prompts import system_prompt as _resolve_system, append_extra
-    system = _resolve_system("classifier", prompts_cfg, system_prompt)
-    user = user_prompt_template.format(
-        label=label,
-        responses="\n".join(f"- {r}" for r in sample),
-        theme_count=theme_count,
-    )
-    user = append_extra(user, "classifier", prompts_cfg)
+    from src.utils import lf_client
+    provider   = ai_cfg.get("provider", "openai").lower()
+    api_key    = ai_cfg.get("api_key", "")
+    if not api_key or str(api_key).startswith("env:"):
+        raise ValueError("AI api_key is not resolved — check your ai: section in config.yml.")
+    model      = ai_cfg.get("model", "gpt-4o")
+    max_tokens = int(ai_cfg.get("max_tokens", 1500))
 
-    raw = _call_llm(system, user, ai_cfg)
+    variables = {
+        "label": label,
+        "responses": "\n".join(f"- {r}" for r in sample),
+        "theme_count": theme_count,
+    }
+    messages = lf_client.get_prompt("classifier_discover", variables)
+    raw = lf_client.chat(
+        messages, model=model, provider=provider, api_key=api_key,
+        base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
+        trace_name="classifier_discover", json_mode=(provider != "anthropic"),
+    )
     data = _parse_json(raw)
     themes = data.get("themes", [])
     if not themes:
@@ -127,9 +93,6 @@ def classify_responses(
     themes: List[str],
     label: str,
     ai_cfg: Dict,
-    prompts_cfg: Optional[Dict] = None,
-    system_prompt: str = CLASSIFY_SYSTEM_PROMPT,
-    user_prompt_template: str = CLASSIFY_USER_TEMPLATE,
 ) -> pd.Series:
     """Classify every response in series into one of the given themes.
 
@@ -153,20 +116,30 @@ def classify_responses(
         return pd.Series([None] * len(series), index=series.index)
 
     themes_str = ", ".join(f'"{t}"' for t in themes)
-    from src.utils.prompts import system_prompt as _resolve_system, append_extra
-    system = _resolve_system("classifier", prompts_cfg, system_prompt)
+
+    from src.utils import lf_client
+    provider   = ai_cfg.get("provider", "openai").lower()
+    api_key    = ai_cfg.get("api_key", "")
+    if not api_key or str(api_key).startswith("env:"):
+        raise ValueError("AI api_key is not resolved — check your ai: section in config.yml.")
+    model      = ai_cfg.get("model", "gpt-4o")
+    max_tokens = int(ai_cfg.get("max_tokens", 1500))
 
     lookup: Dict[str, str] = {}
     n_batches = (len(unique_vals) - 1) // BATCH_SIZE + 1
     for i in range(0, len(unique_vals), BATCH_SIZE):
         batch = unique_vals[i: i + BATCH_SIZE]
-        user = user_prompt_template.format(
-            label=label,
-            themes_str=themes_str,
-            responses="\n".join(f"- {r}" for r in batch),
+        variables = {
+            "label": label,
+            "themes_str": themes_str,
+            "responses": "\n".join(f"- {r}" for r in batch),
+        }
+        messages = lf_client.get_prompt("classifier_classify", variables)
+        raw = lf_client.chat(
+            messages, model=model, provider=provider, api_key=api_key,
+            base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
+            trace_name="classifier_classify", json_mode=(provider != "anthropic"),
         )
-        user = append_extra(user, "classifier", prompts_cfg)
-        raw = _call_llm(system, user, ai_cfg)
         data = _parse_json(raw)
         batch_result = data.get("classifications", {})
         lookup.update(batch_result)
@@ -179,26 +152,6 @@ def classify_responses(
         return lookup.get(key, "Other")
 
     return series.apply(_map)
-
-
-def _call_llm(system_prompt: str, user_prompt: str, ai_cfg: Dict) -> str:
-    """Route LLM call to the correct provider based on ai_cfg."""
-    from src.reports.narrator import _call_openai, _call_anthropic
-
-    provider = ai_cfg.get("provider", "openai").lower()
-    api_key = ai_cfg.get("api_key", "")
-    model = ai_cfg.get("model", "gpt-4o")
-    max_tokens = int(ai_cfg.get("max_tokens", 1500))
-
-    if not api_key or str(api_key).startswith("env:"):
-        raise ValueError("AI api_key is not resolved — check your ai: section in config.yml.")
-
-    if provider == "anthropic":
-        return _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens)
-    return _call_openai(
-        api_key, model, system_prompt, user_prompt, max_tokens,
-        base_url=ai_cfg.get("base_url"),
-    )
 
 
 def _parse_json(raw: str) -> Dict:

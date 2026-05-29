@@ -169,10 +169,9 @@ class ReportBuilder:
             self.cfg.get("indicators", []), df, repeat_tables, per_period=per_period
         )
         logframe = build_logframe(self.cfg, indicators)
-        prompts_cfg = self.cfg.get("prompts", {})
         summaries   = compute_summaries(
             self.cfg.get("summaries", []), df, self.cfg.get("ai"),
-            repeat_tables, prompts_cfg=prompts_cfg,
+            repeat_tables,
         )
 
         narrative = generate_narrative(
@@ -185,7 +184,6 @@ class ReportBuilder:
             summaries     = summaries,
             split_value   = split_value,
             questions_cfg = self.cfg.get("questions"),
-            prompts_cfg   = prompts_cfg,
         )
 
         provenance = build_provenance(
