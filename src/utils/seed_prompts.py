@@ -341,6 +341,45 @@ _CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA = {
     },
 }
 
+_SUMMARY_SUGGESTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["summaries"],
+    "properties": {
+        "summaries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "stat", "questions", "top_n",
+                             "source", "filter", "group_by", "agg",
+                             "freq", "method", "language", "prompt", "example"],
+                "properties": {
+                    "name":      {"type": "string"},
+                    "stat": {"type": "string",
+                             "enum": ["distribution", "stats", "crosstab", "trend",
+                                      "data_quality", "keyword_frequency", "correlation",
+                                      "grouped_agg", "ai"]},
+                    "questions": {"type": "array", "items": {"type": "string"}},
+                    "top_n":     {"type": ["integer", "null"]},
+                    "source":    {"type": ["string", "null"]},
+                    "filter":    {"type": ["string", "null"]},
+                    "group_by":  {"type": ["string", "null"]},
+                    "agg":       {"type": ["string", "null"],
+                                  "enum": [None, "sum", "mean", "count", "max", "min"]},
+                    "freq":      {"type": ["string", "null"],
+                                  "enum": [None, "day", "week", "month", "year"]},
+                    "method":    {"type": ["string", "null"],
+                                  "enum": [None, "pearson", "spearman"]},
+                    "language":  {"type": ["string", "null"]},
+                    "prompt":    {"type": ["string", "null"]},
+                    "example":   {"type": ["string", "null"]},
+                },
+            },
+        },
+    },
+}
+
 _VIEW_SUGGESTER_OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -390,7 +429,8 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
     "summaries":           {"messages": _SUMMARIES,            "config": {}},
     "chart_suggester":     {"messages": _CHART_SUGGESTER,      "config": {}},
     "template_generator":  {"messages": _TEMPLATE_GENERATOR,   "config": {}},
-    "summary_suggester":   {"messages": _SUMMARY_SUGGESTER,    "config": {}},
+    "summary_suggester":   {"messages": _SUMMARY_SUGGESTER,
+                            "config": {"output_schema": _SUMMARY_SUGGESTER_OUTPUT_SCHEMA}},
     "view_suggester":      {"messages": _VIEW_SUGGESTER,
                             "config": {"output_schema": _VIEW_SUGGESTER_OUTPUT_SCHEMA}},
     "classifier_discover":  {"messages": _CLASSIFIER_DISCOVER,

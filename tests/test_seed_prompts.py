@@ -57,3 +57,12 @@ def test_view_suggester_schema():
     item = s["properties"]["views"]["items"]
     assert "agg" in item["required"]
     assert set(item["properties"]["agg"]["enum"]) == {None, "sum", "mean", "count", "max", "min"}
+
+def test_summary_suggester_schema_stat_enum_matches_dispatch():
+    """If a new stat is added to summaries.py, this schema must list it."""
+    s = SEED_PROMPTS["summary_suggester"]["config"]["output_schema"]
+    schema_stats = set(s["properties"]["summaries"]["items"]["properties"]["stat"]["enum"])
+    expected_stats = {"distribution", "stats", "crosstab", "trend",
+                      "data_quality", "keyword_frequency", "correlation",
+                      "grouped_agg", "ai"}
+    assert schema_stats == expected_stats
