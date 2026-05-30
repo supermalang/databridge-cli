@@ -8,6 +8,8 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from src.utils.config import load_config
+from src.data.transform import load_processed_data
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -1397,6 +1399,47 @@ async def validate():
     df, repeat_tables = apply_pii(df, repeat_tables, cfg)
     report = validate_dataset(cfg, df, repeat_tables)
     return report
+
+
+@app.get("/api/base-tables")
+async def base_tables():
+    """Catalog of the flattened base tables for the latest download session.
+
+    Returns row counts, data columns, linkage columns, and the parent table for
+    each repeat level so the UI can show the table hierarchy. Read-only.
+
+    NOTE: parent inference is naming-convention based (longest underscored-prefix
+    match). Unrelated tables that happen to share a name prefix could be
+    mis-parented; this is acceptable until explicit parent metadata is surfaced.
+    """
+    cfg = load_config(CONFIG_PATH)
+    try:
+        df, repeats = load_processed_data(cfg)
+    except FileNotFoundError:
+        return {"tables": [], "message": "No downloaded data. Run download first."}
+
+    def _entry(name, frame, parent):
+        cols = list(frame.columns)
+        return {
+            "name": name,
+            "rows": int(len(frame)),
+            "parent": parent,
+            "columns": [c for c in cols if not c.startswith("_")],
+            "linkage": [c for c in cols if c.startswith("_")],
+        }
+
+    # Reloaded repeat tables are keyed by the underscored ("safe") name; derive
+    # the parent table by longest underscored-prefix match, falling back to main.
+    names = list(repeats.keys())
+
+    def _parent_of(name):
+        prefixes = [p for p in names if p != name and name.startswith(p + "_")]
+        return max(prefixes, key=lambda p: p.count("_")) if prefixes else "main"
+
+    tables = [_entry("main", df, None)]
+    for name, frame in repeats.items():
+        tables.append(_entry(name, frame, _parent_of(name)))
+    return {"tables": tables}
 
 
 class FrameworkPayload(BaseModel):
