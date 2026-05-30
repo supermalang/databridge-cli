@@ -44,7 +44,7 @@ def compute_missingness(df: pd.DataFrame) -> List[Dict]:
         count = ns["missing"]
         if count == 0:
             continue
-        pct = ns["missing_pct"]
+        pct = count / n            # raw — matches original severity behavior
         sev = _severity_for_pct(pct)
         if sev is None:
             continue
