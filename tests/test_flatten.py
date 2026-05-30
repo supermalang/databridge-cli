@@ -98,3 +98,52 @@ def test_build_repeat_tables_single_level_linkage_matches_root_id():
     assert list(members["_parent_row_id"]) == [12, 12]
     assert list(members["_row_id"]) == ["12.0", "12.1"]
     assert list(members["_row_index"]) == [0, 1]
+
+
+def _nested_fixture():
+    submissions = [
+        {"_id": 12,
+         "household/members": [
+             {"household/members/name": "A",
+              "household/members/illnesses": [
+                  {"household/members/illnesses/type": "flu"},
+                  {"household/members/illnesses/type": "cold"},
+              ]},
+             {"household/members/name": "B",
+              "household/members/illnesses": [
+                  {"household/members/illnesses/type": "fever"},
+              ]},
+         ]},
+    ]
+    repeat_groups = {
+        "household/members": [
+            {"kobo_key": "household/members/name", "export_label": "Name", "category": "qualitative"},
+        ],
+        "household/members/illnesses": [
+            {"kobo_key": "household/members/illnesses/type", "export_label": "Illness", "category": "qualitative"},
+        ],
+    }
+    return submissions, repeat_groups
+
+
+def test_nested_subrepeat_is_populated_not_empty():
+    submissions, repeat_groups = _nested_fixture()
+    tables = build_repeat_tables(submissions, repeat_groups)
+    illnesses = tables["household/members/illnesses"]
+    assert len(illnesses) == 3
+    assert list(illnesses["Illness"]) == ["flu", "cold", "fever"]
+
+
+def test_nested_subrepeat_links_to_immediate_parent_and_root():
+    submissions, repeat_groups = _nested_fixture()
+    tables = build_repeat_tables(submissions, repeat_groups)
+    members = tables["household/members"]
+    illnesses = tables["household/members/illnesses"]
+    assert list(members["_row_id"]) == ["12.0", "12.1"]
+    assert list(illnesses["_parent_row_id"]) == ["12.0", "12.0", "12.1"]
+    assert list(illnesses["_row_id"]) == ["12.0.0", "12.0.1", "12.1.0"]
+    assert list(illnesses["_root_id"]) == [12, 12, 12]
+    joined = illnesses.merge(members[["_row_id", "Name"]],
+                             left_on="_parent_row_id", right_on="_row_id",
+                             suffixes=("", "_member"))
+    assert list(joined["Name"]) == ["A", "A", "B"]
