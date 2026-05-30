@@ -105,6 +105,27 @@ def profile_table(df: pd.DataFrame, role_map: Dict[str, str]) -> Dict:
             "correlations": corrs, "duplicates": duplicates}
 
 
+def profile_dataset(cfg: Dict, main_df: pd.DataFrame,
+                    repeat_tables: Optional[Dict[str, pd.DataFrame]]) -> Dict[str, Dict]:
+    """Profile main + every base table. role_map is built once from cfg questions
+    (export_label -> category) and applied to every table's columns."""
+    role_map: Dict[str, str] = {}
+    for q in cfg.get("questions", []) or []:
+        label = q.get("export_label") or q.get("label") or q.get("kobo_key")
+        if label:
+            role_map[label] = q.get("category", "undefined")
+
+    out: Dict[str, Dict] = {}
+    main_prof = profile_table(main_df, role_map)
+    main_prof["name"] = "main"
+    out["main"] = main_prof
+    for name, rdf in (repeat_tables or {}).items():
+        tp = profile_table(rdf, role_map)
+        tp["name"] = name
+        out[name] = tp
+    return out
+
+
 def profile_column(series: pd.Series, role: str) -> Dict:
     """Structured profile for one column. Fail-soft: role-specific stats that
     raise are skipped, leaving the always-computed fields intact."""

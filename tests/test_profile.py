@@ -124,3 +124,31 @@ def test_profile_table_no_duplicates_returns_none():
     df = pd.DataFrame({"_id": [1, 2], "X": [3, 4]})
     tp = profile_table(df, {"X": "quantitative"})
     assert tp["duplicates"] is None
+
+
+from src.data.profile import profile_dataset
+
+
+def test_profile_dataset_covers_main_and_repeat_tables():
+    cfg = {"questions": [
+        {"export_label": "Region", "category": "categorical"},
+        {"export_label": "Age", "category": "quantitative"},
+        {"export_label": "Illness", "category": "qualitative"},
+    ]}
+    main_df = pd.DataFrame({"_id": [1, 2], "Region": ["N", "S"], "Age": [10, 20]})
+    repeats = {"household/members": pd.DataFrame({
+        "_parent_index": [1, 1], "_row_id": ["1.0", "1.1"], "Illness": ["flu", "cold"],
+    })}
+    profiles = profile_dataset(cfg, main_df, repeats)
+    assert set(profiles.keys()) == {"main", "household/members"}
+    assert profiles["main"]["name"] == "main" and profiles["main"]["rows"] == 2
+    members = profiles["household/members"]
+    illness_col = next(c for c in members["columns"] if c["name"] == "Illness")
+    assert illness_col["role"] == "qualitative"
+    assert next(c for c in members["columns"] if c["name"] == "_row_id")["role"] == "linkage"
+
+
+def test_profile_dataset_empty_repeats():
+    cfg = {"questions": []}
+    profiles = profile_dataset(cfg, pd.DataFrame({"_id": [1]}), {})
+    assert set(profiles.keys()) == {"main"}
