@@ -443,6 +443,9 @@ def _correlation_text(df: pd.DataFrame, questions: List[str], method: str = "pea
     if len(numeric_cols) < 2:
         return "Not enough numeric columns for correlation."
 
+    # Kept intentionally: preserves the distinct "No numeric data available." message
+    # for the no-numeric-data case (correlations() would otherwise fall through to
+    # "No meaningful correlations found."). Behavior-preserving — do not remove.
     nums = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
     if nums.dropna(how="all").empty:
         return "No numeric data available."
