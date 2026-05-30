@@ -507,6 +507,23 @@ export_data() → _export_file()     # csv, json, xlsx
 ```
 Database drivers are optional imports — only install what you need.
 
+### Base-table linkage columns (src/data/flatten.py)
+`load_data` flattens submissions into a main table plus one base table per repeat
+level (including nested sub-repeats) via `build_repeat_tables`. Every repeat row
+carries linkage columns:
+
+- `_root_id` — id of the root submission the row descends from
+- `_parent_index` — alias of `_root_id` (kept for backward-compat with filters,
+  computed columns, `join_repeat_to_main`, and split reports)
+- `_parent_row_id` — `_row_id` of the immediate parent repeat row
+  (equals `_root_id` for top-level repeats)
+- `_row_id` — stable composite id, e.g. `"12.0.1"` (root 12 → member 0 → illness 1)
+- `_row_index` — position within the immediate parent
+
+Join any level to its parent on `_parent_row_id == parent._row_id`, or to the
+root on `_root_id == main._id`. The catalog is exposed read-only at
+`GET /api/base-tables`.
+
 ### Chart output path
 Charts are saved to `data/processed/charts/<chart_name>.png` at `build-report` time.
 
