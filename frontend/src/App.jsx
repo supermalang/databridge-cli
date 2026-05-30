@@ -7,6 +7,7 @@ import Composition from './pages/Composition.jsx';
 import Reports from './pages/Reports.jsx';
 import Templates from './pages/Templates.jsx';
 import Validate from './pages/Validate.jsx';
+import Profile from './pages/Profile.jsx';
 
 const TABS = [
   { id: 'dashboard',   label: 'Dashboard',                         component: Dashboard },
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'validate',    label: 'Validate',    step: '3',            component: Validate },
   { id: 'composition', label: 'Composition', step: '4',            component: Composition },
   { id: 'reports',     label: 'Reports',     step: '5',            component: Reports },
+  { id: 'profile',     label: 'Profile',                           component: Profile, secondary: true },
   { id: 'templates',   label: 'Templates',                         component: Templates, secondary: true },
 ];
 
