@@ -9,11 +9,25 @@ root submission. Repeat groups are identified by their full slash-path
 from typing import Dict, List, Optional
 import pandas as pd
 
+# Linkage columns present on every base-table row.
+#   _parent_index : DELIBERATE alias of _root_id (the root submission id). Kept for
+#                   backward-compat — apply_filters, apply_computed_columns,
+#                   join_repeat_to_main, and split-report filtering all key off it.
+#                   For the IMMEDIATE parent of a sub-repeat row, use _parent_row_id.
+#   _root_id      : id of the root submission this row descends from
+#   _parent_row_id: _row_id of the immediate parent repeat row (== _root_id at top level)
+#   _row_id       : stable composite id, e.g. "12.0.1"
+#   _row_index    : position within the immediate parent
 LINKAGE_COLS = ["_parent_index", "_root_id", "_parent_row_id", "_row_id", "_row_index"]
 
 
 def _dedup_labels(labels: List[str]) -> List[str]:
-    """Return labels with duplicates suffixed _1, _2, … preserving order."""
+    """Return labels with duplicates suffixed _1, _2, … preserving order.
+
+    Reserved for Layer 1b (column slugify/dedup). build_repeat_tables intentionally
+    does NOT call this yet — repeat columns keep raw export_labels (last-wins on
+    duplicates) to preserve current behavior. See the Layer 1 plan's Scope note.
+    """
     seen: Dict[str, int] = {}
     out: List[str] = []
     for label in labels:
