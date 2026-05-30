@@ -24,3 +24,11 @@ def _dedup_labels(labels: List[str]) -> List[str]:
             seen[label] = 0
             out.append(label)
     return out
+
+
+def _parent_repeat(path: str, repeat_paths) -> Optional[str]:
+    """Return the nearest ancestor repeat path, or None if the parent is the root."""
+    prefixes = [p for p in repeat_paths if p != path and path.startswith(p + "/")]
+    if not prefixes:
+        return None
+    return max(prefixes, key=lambda p: p.count("/"))
