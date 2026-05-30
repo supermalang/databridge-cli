@@ -16,7 +16,7 @@ function ColumnRow({ c }) {
     <tr>
       <td style={{ fontWeight: 500 }}>{c.name}</td>
       <td style={{ color: 'var(--ink-3)' }}>{c.role}</td>
-      <td>{(c.missing_pct * 100).toFixed(1)}%</td>
+      <td>{c.missing_pct != null ? (c.missing_pct * 100).toFixed(1) : '0.0'}%</td>
       <td>{c.distinct}</td>
       <td style={{ color: 'var(--ink-3)', fontSize: 12.5 }}>{detail}</td>
     </tr>
@@ -62,6 +62,7 @@ export default function Profile() {
         <div style={{ padding: 24, color: 'var(--danger, #b91c1c)' }}>
           <div style={{ fontWeight: 600 }}>Profiling failed</div>
           <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13, marginTop: 6 }}>{error}</div>
+          <div style={{ marginTop: 8, color: 'var(--ink-3)', fontSize: 12 }}>If no data is downloaded yet, run <strong>Download</strong> in the Dashboard first.</div>
         </div>
       )}
       {profiles && profiles.length === 0 && (
@@ -72,7 +73,7 @@ export default function Profile() {
       {profiles && profiles.map(t => (
         <details key={t.name} open style={{ margin: '0 8px 16px', border: '1px solid var(--line, #e5e7eb)', borderRadius: 8 }}>
           <summary style={{ cursor: 'pointer', padding: '10px 14px', fontWeight: 600 }}>
-            {t.name} <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>· {t.rows.toLocaleString()} rows · {t.columns.length} columns</span>
+            {t.name} <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>· {(t.rows ?? 0).toLocaleString()} rows · {(t.columns?.length ?? 0)} columns</span>
           </summary>
           <div style={{ padding: '0 14px 14px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -86,12 +87,12 @@ export default function Profile() {
                 </tr>
               </thead>
               <tbody>
-                {t.columns.filter(c => c.role !== 'linkage').map(c => <ColumnRow key={c.name} c={c} />)}
+                {(t.columns || []).filter(c => c.role !== 'linkage').map(c => <ColumnRow key={c.name} c={c} />)}
               </tbody>
             </table>
             {t.correlations?.length > 0 && (
               <div style={{ marginTop: 10, color: 'var(--ink-3)', fontSize: 12.5 }}>
-                Correlations: {t.correlations.map(p => `${p.a}↔${p.b} (r=${p.r.toFixed(2)})`).join('; ')}
+                Correlations: {t.correlations.map(p => `${p.a}↔${p.b} (r=${p.r != null ? p.r.toFixed(2) : 'N/A'})`).join('; ')}
               </div>
             )}
             {t.duplicates && (
