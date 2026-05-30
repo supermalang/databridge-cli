@@ -45,3 +45,30 @@ def numeric_outliers(series: pd.Series, k: float = 3.0) -> Dict:
     s = pd.to_numeric(series, errors="coerce").dropna()
     out = s[(s < lo) | (s > hi)]
     return {"count": int(len(out)), "bounds": [float(lo), float(hi)], "examples": out.head(5).tolist()}
+
+
+def correlations(df: pd.DataFrame, columns: List[str],
+                 method: str = "pearson", threshold: float = 0.1) -> List[Dict]:
+    """Pairwise correlations among numeric columns with |r| >= threshold.
+
+    Iterates columns in order, upper triangle only (i < j), skipping NaN and
+    sub-threshold pairs. Returns [{"a","b","method","r"}].
+    """
+    cols = [c for c in columns if c in df.columns]
+    if len(cols) < 2:
+        return []
+    nums = df[cols].apply(pd.to_numeric, errors="coerce")
+    if nums.dropna(how="all").empty:
+        return []
+    corr = nums.corr(method=method)
+    out: List[Dict] = []
+    for i, a in enumerate(cols):
+        for b in cols[i + 1:]:
+            try:
+                r = corr.loc[a, b]
+            except KeyError:
+                continue
+            if pd.isna(r) or abs(r) < threshold:
+                continue
+            out.append({"a": a, "b": b, "method": method, "r": round(float(r), 4)})
+    return out

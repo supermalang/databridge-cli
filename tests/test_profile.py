@@ -32,3 +32,21 @@ def test_numeric_outliers_flags_extreme_value():
 
 def test_numeric_outliers_empty_when_no_bounds():
     assert numeric_outliers(pd.Series([1, 2, 3])) == {"count": 0, "bounds": None, "examples": []}
+
+
+from src.data.profile import correlations
+
+
+def test_correlations_returns_strong_pair():
+    df = pd.DataFrame({"a": [1, 2, 3, 4, 5], "b": [2, 4, 6, 8, 10], "c": [5, 3, 6, 2, 9]})
+    result = correlations(df, ["a", "b", "c"])
+    pair = next(p for p in result if {p["a"], p["b"]} == {"a", "b"})
+    assert pair["method"] == "pearson"
+    assert round(pair["r"], 2) == 1.0
+
+
+def test_correlations_skips_below_threshold_and_needs_two_columns():
+    df = pd.DataFrame({"a": [1, 2, 3, 4]})
+    assert correlations(df, ["a"]) == []
+    df2 = pd.DataFrame({"a": [1, 2, 3, 4], "b": [1, 1, 1, 2]})
+    assert all(abs(p["r"]) >= 0.1 for p in correlations(df2, ["a", "b"]))
