@@ -524,6 +524,20 @@ Join any level to its parent on `_parent_row_id == parent._row_id`, or to the
 root on `_root_id == main._id`. The catalog is exposed read-only at
 `GET /api/base-tables`.
 
+### Data profiling (src/data/profile.py)
+`profile_dataset(cfg, main_df, repeat_tables)` computes a deterministic, structured
+EDA profile for every base table — per-column `role`, completeness, cardinality,
+numeric stats + 3×IQR outliers, date ranges, low-cardinality top values, plus
+per-table numeric correlations and duplicate-id info. It is the single source of
+truth for these signals: `validate.py` (findings) and `summaries.py` (narrative)
+derive their numbers from `profile.py`'s primitives (`null_stats`, `iqr_bounds`,
+`numeric_outliers`, `correlations`). No LLM, no I/O.
+
+`top_values` are computed only for low-cardinality columns (≤ `LOW_CARDINALITY_MAX`,
+default 20) so the profile never surfaces individual free-text/PII values.
+
+Exposed read-only at `GET /api/profile`; rendered in the **Profile** tab.
+
 ### Chart output path
 Charts are saved to `data/processed/charts/<chart_name>.png` at `build-report` time.
 

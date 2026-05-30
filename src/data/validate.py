@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 import pandas as pd
+from src.data.profile import null_stats, numeric_outliers
 
 
 # Severity thresholds, in fraction-of-rows-affected. Below INFO is omitted.
@@ -39,12 +40,11 @@ def compute_missingness(df: pd.DataFrame) -> List[Dict]:
     n = len(df)
     findings: List[Dict] = []
     for col in df.columns:
-        s = df[col]
-        missing_mask = s.isna() | (s.astype(str).str.strip() == "")
-        count = int(missing_mask.sum())
+        ns = null_stats(df[col])
+        count = ns["missing"]
         if count == 0:
             continue
-        pct = count / n
+        pct = count / n            # raw — matches original severity behavior
         sev = _severity_for_pct(pct)
         if sev is None:
             continue
@@ -75,21 +75,13 @@ def find_numeric_outliers(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]
     for col in df.columns:
         if col not in quant_cols:
             continue
-        s = pd.to_numeric(df[col], errors="coerce").dropna()
-        if len(s) < 4:  # IQR needs enough data to be meaningful
+        o = numeric_outliers(df[col])  # 3×IQR, returns count/bounds/examples
+        if o["bounds"] is None or o["count"] == 0:
             continue
-        q1, q3 = s.quantile([0.25, 0.75])
-        iqr = q3 - q1
-        if iqr == 0:
-            continue  # constant column — nothing to flag
-        lo, hi = q1 - 3 * iqr, q3 + 3 * iqr
-        outliers = s[(s < lo) | (s > hi)]
-        count = int(len(outliers))
-        if count == 0:
-            continue
+        lo, hi = o["bounds"]
+        count = o["count"]
         pct = count / n
-        sev = _severity_for_pct(pct) or "info"  # outliers always show, even at 1 row
-        examples = outliers.head(5).tolist()
+        sev = _severity_for_pct(pct) or "info"
         findings.append({
             "severity": sev,
             "column":   str(col),
@@ -97,7 +89,7 @@ def find_numeric_outliers(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]
             "message":  f"{count} value(s) outside [{lo:.1f}, {hi:.1f}] (3×IQR bounds)",
             "count":    count,
             "pct":      round(pct, 4),
-            "examples": examples,
+            "examples": o["examples"],
         })
     return findings
 

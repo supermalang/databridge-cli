@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from src.utils.config import load_config
 from src.data.transform import load_processed_data
+from src.data.profile import profile_dataset
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -1440,6 +1441,19 @@ async def base_tables():
     for name, frame in repeats.items():
         tables.append(_entry(name, frame, _parent_of(name)))
     return {"tables": tables}
+
+
+@app.get("/api/profile")
+async def data_profile():
+    """Structured EDA profile of every base table for the latest download
+    session (row counts, per-column stats, correlations, duplicates). Read-only."""
+    cfg = load_config(CONFIG_PATH)
+    try:
+        df, repeats = load_processed_data(cfg)
+    except FileNotFoundError:
+        return {"profiles": [], "message": "No downloaded data. Run download first."}
+    profiles = profile_dataset(cfg, df, repeats)
+    return {"profiles": list(profiles.values())}
 
 
 class FrameworkPayload(BaseModel):
