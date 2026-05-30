@@ -152,3 +152,18 @@ def test_profile_dataset_empty_repeats():
     cfg = {"questions": []}
     profiles = profile_dataset(cfg, pd.DataFrame({"_id": [1]}), {})
     assert set(profiles.keys()) == {"main"}
+
+
+from src.data import validate as V
+from src.data.profile import numeric_outliers as _num_out
+
+
+def test_validate_outliers_match_profile_primitive():
+    df = pd.DataFrame({"Age": [10, 12, 14, 16, 18, 999]})
+    questions = [{"export_label": "Age", "category": "quantitative"}]
+    findings = V.find_numeric_outliers(df, questions)
+    assert len(findings) == 1
+    prof = _num_out(df["Age"])
+    assert findings[0]["count"] == prof["count"]
+    lo, hi = prof["bounds"]
+    assert findings[0]["message"] == f"{prof['count']} value(s) outside [{lo:.1f}, {hi:.1f}] (3×IQR bounds)"
