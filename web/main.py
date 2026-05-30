@@ -1402,11 +1402,15 @@ async def validate():
 
 
 @app.get("/api/base-tables")
-def base_tables():
+async def base_tables():
     """Catalog of the flattened base tables for the latest download session.
 
     Returns row counts, data columns, linkage columns, and the parent table for
     each repeat level so the UI can show the table hierarchy. Read-only.
+
+    NOTE: parent inference is naming-convention based (longest underscored-prefix
+    match). Unrelated tables that happen to share a name prefix could be
+    mis-parented; this is acceptable until explicit parent metadata is surfaced.
     """
     cfg = load_config(CONFIG_PATH)
     try:

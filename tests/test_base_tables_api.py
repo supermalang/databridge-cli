@@ -33,3 +33,17 @@ def test_base_tables_catalog(monkeypatch):
     assert tables["household_members_illnesses"]["parent"] == "household_members"
     assert "Illness" in tables["household_members_illnesses"]["columns"]
     assert "_row_id" in tables["household_members_illnesses"]["linkage"]
+
+
+def test_base_tables_no_data_returns_empty(monkeypatch):
+    def _raise(*_a, **_k):
+        raise FileNotFoundError("no data")
+    monkeypatch.setattr(wm, "load_config", lambda *_a, **_k: {})
+    monkeypatch.setattr(wm, "load_processed_data", _raise)
+
+    client = TestClient(wm.app)
+    resp = client.get("/api/base-tables")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["tables"] == []
+    assert "message" in body
