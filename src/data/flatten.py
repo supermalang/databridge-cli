@@ -32,3 +32,38 @@ def _parent_repeat(path: str, repeat_paths) -> Optional[str]:
     if not prefixes:
         return None
     return max(prefixes, key=lambda p: p.count("/"))
+
+
+def _resolve_array(container: dict, full_path: str, rel_path: str):
+    """Find a repeat array inside *container*, trying several key forms.
+
+    Kobo/Ona JSON is inconsistent about whether a nested repeat array is keyed
+    by its full path, a root-relative path, or just the leaf segment.
+    """
+    if not isinstance(container, dict):
+        return None
+    field = full_path.split("/")[-1]
+    root_relative = "/".join(full_path.split("/")[1:]) if "/" in full_path else field
+    for key in (full_path, rel_path, root_relative, field):
+        val = container.get(key)
+        if isinstance(val, list):
+            return val
+    # Fall back to walking nested dicts along rel_path (plain-group nesting).
+    obj = container
+    for part in rel_path.split("/"):
+        if isinstance(obj, dict) and part in obj:
+            obj = obj[part]
+        else:
+            return None
+    return obj if isinstance(obj, list) else None
+
+
+def _read_field(entry: dict, q: dict):
+    """Read one question's value from a repeat entry, trying key forms."""
+    key = q["kobo_key"]
+    field = key.split("/")[-1]
+    relative = "/".join(key.split("/")[1:]) if "/" in key else field
+    for k in (key, relative, field):
+        if k in entry:
+            return entry[k]
+    return None
