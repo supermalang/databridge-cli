@@ -58,3 +58,43 @@ def test_read_field_tries_full_then_relative_then_leaf():
     assert _read_field({"members/name": "B"}, q) == "B"
     assert _read_field({"name": "C"}, q) == "C"
     assert _read_field({"other": "Z"}, q) is None
+
+
+from src.data.flatten import build_repeat_tables
+
+
+def _single_level_fixture():
+    submissions = [
+        {"_id": 12, "region": "North",
+         "household/members": [
+             {"household/members/name": "A", "household/members/age": 30},
+             {"household/members/name": "B", "household/members/age": 5},
+         ]},
+        {"_id": 13, "region": "South", "household/members": []},
+    ]
+    repeat_groups = {
+        "household/members": [
+            {"kobo_key": "household/members/name", "export_label": "Name", "category": "qualitative"},
+            {"kobo_key": "household/members/age", "export_label": "Age", "category": "quantitative"},
+        ]
+    }
+    return submissions, repeat_groups
+
+
+def test_build_repeat_tables_single_level_rows_and_values():
+    submissions, repeat_groups = _single_level_fixture()
+    tables = build_repeat_tables(submissions, repeat_groups)
+    members = tables["household/members"]
+    assert len(members) == 2
+    assert list(members["Name"]) == ["A", "B"]
+    assert list(members["Age"]) == [30, 5]
+
+
+def test_build_repeat_tables_single_level_linkage_matches_root_id():
+    submissions, repeat_groups = _single_level_fixture()
+    members = build_repeat_tables(submissions, repeat_groups)["household/members"]
+    assert list(members["_parent_index"]) == [12, 12]
+    assert list(members["_root_id"]) == [12, 12]
+    assert list(members["_parent_row_id"]) == [12, 12]
+    assert list(members["_row_id"]) == ["12.0", "12.1"]
+    assert list(members["_row_index"]) == [0, 1]

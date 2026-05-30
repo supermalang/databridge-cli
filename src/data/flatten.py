@@ -67,3 +67,68 @@ def _read_field(entry: dict, q: dict):
         if k in entry:
             return entry[k]
     return None
+
+
+def build_repeat_tables(
+    submissions: List[dict],
+    repeat_groups: Dict[str, List[dict]],
+) -> Dict[str, pd.DataFrame]:
+    """Flatten every repeat level into a base table keyed by full repeat-path.
+
+    repeat_groups: {full_path: [question dicts]} (as built by load_data).
+    Returns {full_path: DataFrame} with LINKAGE_COLS + one column per question
+    (export_label). Empty groups yield an empty DataFrame.
+    """
+    # Process parents before children so a child can descend into parent entries.
+    order = sorted(repeat_groups.keys(), key=lambda p: p.count("/"))
+    # entries_by_table[path] = list of (row_id, entry_dict, root_id) to descend into.
+    entries_by_table: Dict[str, List] = {}
+    tables: Dict[str, pd.DataFrame] = {}
+
+    def _root_seed():
+        seed = []
+        for i, sub in enumerate(submissions):
+            rid = sub.get("_id", sub.get("_index", i))
+            seed.append((rid, sub, rid))
+        return seed
+
+    for path in order:
+        parent = _parent_repeat(path, repeat_groups.keys())
+        if parent is None:
+            parent_entries = _root_seed()
+            rel = path
+        else:
+            parent_entries = entries_by_table.get(parent, [])
+            rel = path[len(parent) + 1:]
+
+        questions = repeat_groups[path]
+        labels = [q.get("export_label") or q.get("label") or q["kobo_key"] for q in questions]
+
+        rows = []
+        child_entries = []
+        for parent_row_id, parent_entry, root_id in parent_entries:
+            arr = _resolve_array(parent_entry, path, rel)
+            if not isinstance(arr, list):
+                continue
+            for idx, entry in enumerate(arr):
+                if not isinstance(entry, dict):
+                    continue
+                row_id = f"{parent_row_id}.{idx}"
+                row = {
+                    "_parent_index": root_id,
+                    "_root_id": root_id,
+                    "_parent_row_id": parent_row_id,
+                    "_row_id": row_id,
+                    "_row_index": idx,
+                }
+                for q, label in zip(questions, labels):
+                    row[label] = _read_field(entry, q)
+                rows.append(row)
+                child_entries.append((row_id, entry, root_id))
+        entries_by_table[path] = child_entries
+        tables[path] = (
+            pd.DataFrame(rows) if rows
+            else pd.DataFrame(columns=LINKAGE_COLS + labels)
+        )
+
+    return tables
