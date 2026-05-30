@@ -72,3 +72,56 @@ def correlations(df: pd.DataFrame, columns: List[str],
                 continue
             out.append({"a": a, "b": b, "method": method, "r": round(float(r), 4)})
     return out
+
+
+def profile_column(series: pd.Series, role: str) -> Dict:
+    """Structured profile for one column. Fail-soft: role-specific stats that
+    raise are skipped, leaving the always-computed fields intact."""
+    ns = null_stats(series)
+    prof = {
+        "name": series.name,
+        "role": role,
+        "count": ns["present"],
+        "missing": ns["missing"],
+        "missing_pct": ns["missing_pct"],
+        "distinct": int(series.dropna().nunique()),
+        "type_issue_count": 0,
+    }
+    if role == "linkage":
+        return prof
+    try:
+        if role == "quantitative":
+            coerced = pd.to_numeric(series, errors="coerce")
+            nonblank = series.notna() & (series.astype(str).str.strip() != "")
+            prof["type_issue_count"] = int((nonblank & coerced.isna()).sum())
+            valid = coerced.dropna()
+            if len(valid):
+                prof.update({
+                    "min": float(valid.min()), "max": float(valid.max()),
+                    "mean": float(valid.mean()), "median": float(valid.median()),
+                    "std": float(valid.std()) if len(valid) > 1 else 0.0,
+                    "q1": float(valid.quantile(0.25)), "q3": float(valid.quantile(0.75)),
+                })
+                o = numeric_outliers(series)
+                prof["outlier_count"] = o["count"]
+                prof["outlier_bounds"] = o["bounds"]
+        elif role == "date":
+            d = pd.to_datetime(series, errors="coerce").dropna()
+            if len(d):
+                prof["min_date"] = d.min().isoformat()
+                prof["max_date"] = d.max().isoformat()
+                prof["span_days"] = int((d.max() - d.min()).days)
+        else:  # categorical, qualitative, geographical, undefined
+            distinct = prof["distinct"]
+            prof["high_cardinality"] = distinct > LOW_CARDINALITY_MAX
+            if not prof["high_cardinality"]:
+                vc = series.dropna().value_counts()
+                total = int(vc.sum())
+                prof["top_values"] = [
+                    {"value": str(v), "count": int(c),
+                     "pct": round(c / total, 4) if total else 0.0}
+                    for v, c in vc.head(LOW_CARDINALITY_MAX).items()
+                ]
+    except Exception:
+        pass  # fail-soft: keep the always-computed fields
+    return prof

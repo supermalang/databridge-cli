@@ -50,3 +50,50 @@ def test_correlations_skips_below_threshold_and_needs_two_columns():
     assert correlations(df, ["a"]) == []
     df2 = pd.DataFrame({"a": [1, 2, 3, 4], "b": [1, 1, 1, 2]})
     assert all(abs(p["r"]) >= 0.1 for p in correlations(df2, ["a", "b"]))
+
+
+from src.data.profile import profile_column
+
+
+def test_profile_column_quantitative():
+    s = pd.Series([10, 12, 14, 16, 18, 999], name="Age")
+    p = profile_column(s, "quantitative")
+    assert p["name"] == "Age" and p["role"] == "quantitative"
+    assert p["count"] == 6 and p["missing"] == 0 and p["distinct"] == 6
+    assert p["min"] == 10.0 and p["max"] == 999.0
+    assert p["outlier_count"] == 1 and p["outlier_bounds"] is not None
+
+
+def test_profile_column_quantitative_type_issue():
+    s = pd.Series(["10", "n/a", "12", ""], name="Count")
+    p = profile_column(s, "quantitative")
+    assert p["type_issue_count"] == 1
+
+
+def test_profile_column_categorical_low_cardinality_has_top_values():
+    s = pd.Series(["A", "A", "B", None], name="Region")
+    p = profile_column(s, "categorical")
+    assert p["high_cardinality"] is False
+    top = {d["value"]: d["count"] for d in p["top_values"]}
+    assert top == {"A": 2, "B": 1}
+
+
+def test_profile_column_high_cardinality_suppresses_values():
+    s = pd.Series([f"v{i}" for i in range(25)], name="FreeText")
+    p = profile_column(s, "qualitative")
+    assert p["high_cardinality"] is True
+    assert "top_values" not in p
+
+
+def test_profile_column_date_range():
+    s = pd.Series(["2026-01-01", "2026-01-31", None], name="When")
+    p = profile_column(s, "date")
+    assert p["min_date"].startswith("2026-01-01")
+    assert p["span_days"] == 30
+
+
+def test_profile_column_linkage_is_minimal():
+    s = pd.Series([1, 2, 3], name="_root_id")
+    p = profile_column(s, "linkage")
+    assert p["role"] == "linkage"
+    assert "min" not in p and "top_values" not in p
