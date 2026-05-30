@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
+from src.data.flatten import build_repeat_tables
 
 log = logging.getLogger(__name__)
 
@@ -166,37 +167,21 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
     df = apply_choice_labels(df, main_questions)
     log.info(f"Loaded {len(df)} submissions, {len(df.columns)} columns (main table)")
 
-    # --- Repeat tables ---
+    # --- Repeat tables (recursive, multi-level, root-linked) ---
     repeat_tables: Dict[str, pd.DataFrame] = {}
-    for group_name, group_questions in repeat_groups.items():
-        rows = []
-        for i, submission in enumerate(submissions):
-            parent_id = submission.get("_id", submission.get("_index", i))
-            repeat_data = _resolve_nested(submission, group_name)
-            if not isinstance(repeat_data, list):
-                continue
-            for row_idx, entry in enumerate(repeat_data):
-                row = {"_parent_index": parent_id, "_row_index": row_idx}
-                for q in group_questions:
-                    # Try: full path within repeat, path relative to group, then just field name
-                    field_name = q["kobo_key"].split("/")[-1]
-                    full_key = q["kobo_key"]
-                    relative_key = "/".join(q["kobo_key"].split("/")[1:]) if "/" in q["kobo_key"] else field_name
-                    value = entry.get(full_key, entry.get(relative_key, entry.get(field_name)))
-                    label = q.get("export_label") or q.get("label") or q["kobo_key"]
-                    row[label] = value
-                rows.append(row)
-        if rows:
-            rdf = pd.DataFrame(rows)
-            for q in group_questions:
-                label = q.get("export_label") or q.get("label") or q["kobo_key"]
-                if label in rdf.columns:
-                    rdf[label] = _cast(rdf[label], q.get("category", "undefined"))
-            rdf = apply_choice_labels(rdf, group_questions)
-            repeat_tables[group_name] = rdf
-            log.info(f"Loaded {len(rdf)} rows for repeat group '{group_name}'")
-        else:
+    built = build_repeat_tables(submissions, repeat_groups)
+    for group_name, rdf in built.items():
+        if rdf.empty:
             log.info(f"No data for repeat group '{group_name}'")
+            continue
+        group_questions = repeat_groups[group_name]
+        for q in group_questions:
+            label = q.get("export_label") or q.get("label") or q["kobo_key"]
+            if label in rdf.columns:
+                rdf[label] = _cast(rdf[label], q.get("category", "undefined"))
+        rdf = apply_choice_labels(rdf, group_questions)
+        repeat_tables[group_name] = rdf
+        log.info(f"Loaded {len(rdf)} rows for repeat group '{group_name}'")
 
     return df, repeat_tables
 
