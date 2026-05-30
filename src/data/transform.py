@@ -186,21 +186,6 @@ def load_data(submissions: List[Dict], cfg: Dict) -> Tuple[pd.DataFrame, Dict[st
     return df, repeat_tables
 
 
-def _resolve_nested(data: Dict, key: str) -> any:
-    """Look up a key that may be top-level or nested (e.g., 'household/members').
-    Tries the flat key first, then walks nested dicts."""
-    if key in data:
-        return data[key]
-    parts = key.split("/")
-    obj = data
-    for part in parts:
-        if isinstance(obj, dict) and part in obj:
-            obj = obj[part]
-        else:
-            return []
-    return obj
-
-
 def _cast(series: pd.Series, category: str) -> pd.Series:
     if category == "quantitative":
         return pd.to_numeric(series, errors="coerce")
