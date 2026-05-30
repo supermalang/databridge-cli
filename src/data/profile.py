@@ -74,6 +74,37 @@ def correlations(df: pd.DataFrame, columns: List[str],
     return out
 
 
+def profile_table(df: pd.DataFrame, role_map: Dict[str, str]) -> Dict:
+    """Profile one base table: per-column profiles + numeric correlations +
+    duplicate-id info. role_map maps column name -> role; `_`-prefixed columns
+    are treated as linkage; unknown columns default to "undefined".
+    """
+    cols = list(df.columns)
+    columns = []
+    for c in cols:
+        role = "linkage" if str(c).startswith("_") else role_map.get(c, "undefined")
+        columns.append(profile_column(df[c], role))
+
+    numeric_cols = [c for c in cols
+                    if not str(c).startswith("_") and role_map.get(c) == "quantitative"]
+    corrs = correlations(df, numeric_cols)
+
+    id_col = next((c for c in ("_uuid", "_id", "_index") if c in df.columns), None)
+    duplicates = None
+    if id_col is not None:
+        counts = df[id_col].value_counts()
+        dgroups = counts[counts > 1]
+        if not dgroups.empty:
+            duplicates = {
+                "id_col": id_col,
+                "duplicate_rows": int(dgroups.sum()),
+                "groups": int(len(dgroups)),
+            }
+
+    return {"name": None, "rows": int(len(df)), "columns": columns,
+            "correlations": corrs, "duplicates": duplicates}
+
+
 def profile_column(series: pd.Series, role: str) -> Dict:
     """Structured profile for one column. Fail-soft: role-specific stats that
     raise are skipped, leaving the always-computed fields intact."""

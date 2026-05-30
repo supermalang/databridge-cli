@@ -97,3 +97,30 @@ def test_profile_column_linkage_is_minimal():
     p = profile_column(s, "linkage")
     assert p["role"] == "linkage"
     assert "min" not in p and "top_values" not in p
+
+
+from src.data.profile import profile_table
+
+
+def test_profile_table_columns_correlations_duplicates():
+    df = pd.DataFrame({
+        "_id": [1, 1, 3],
+        "Region": ["N", "S", "N"],
+        "Age": [10, 20, 30],
+        "Income": [100, 200, 300],
+    })
+    role_map = {"Region": "categorical", "Age": "quantitative", "Income": "quantitative"}
+    tp = profile_table(df, role_map)
+    assert tp["rows"] == 3
+    names = {c["name"]: c for c in tp["columns"]}
+    assert names["_id"]["role"] == "linkage"
+    assert names["Region"]["role"] == "categorical"
+    assert any({p["a"], p["b"]} == {"Age", "Income"} for p in tp["correlations"])
+    assert tp["duplicates"]["id_col"] == "_id"
+    assert tp["duplicates"]["duplicate_rows"] == 2 and tp["duplicates"]["groups"] == 1
+
+
+def test_profile_table_no_duplicates_returns_none():
+    df = pd.DataFrame({"_id": [1, 2], "X": [3, 4]})
+    tp = profile_table(df, {"X": "quantitative"})
+    assert tp["duplicates"] is None
