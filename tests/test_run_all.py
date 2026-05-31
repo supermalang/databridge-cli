@@ -1,6 +1,7 @@
 import yaml
 from click.testing import CliRunner
 from src.data import make
+from src.data import run_state as _run_state
 
 
 _API = {"platform": "kobo", "url": "https://x.example.com/api/v2", "token": "t"}
@@ -65,3 +66,38 @@ def test_run_all_stops_on_download_failure(tmp_path, monkeypatch):
     res = CliRunner().invoke(make.cli, ["--config", str(p), "run-all"])
     assert res.exit_code == 1
     assert "build-report" not in calls
+
+
+def test_run_all_skips_build_when_current(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(make, "_invoke", lambda ctx, command, **kw: calls.append(command.name))
+    monkeypatch.setattr(_run_state, "report_is_current", lambda cfg: True)
+    p = _write_cfg(tmp_path, template_exists=True)
+    res = CliRunner().invoke(make.cli, ["--config", str(p), "run-all"])
+    assert res.exit_code == 0
+    assert "download" in calls and "build-report" not in calls     # skipped
+    assert "up-to-date" in res.output.lower()
+
+
+def test_run_all_force_rebuilds_even_when_current(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(make, "_invoke", lambda ctx, command, **kw: calls.append(command.name))
+    monkeypatch.setattr(_run_state, "report_is_current", lambda cfg: True)
+    monkeypatch.setattr(_run_state, "save_state", lambda *a, **k: None)
+    p = _write_cfg(tmp_path, template_exists=True)
+    res = CliRunner().invoke(make.cli, ["--config", str(p), "run-all", "--force"])
+    assert res.exit_code == 0 and "build-report" in calls
+
+
+def test_run_all_builds_and_records_when_stale(tmp_path, monkeypatch):
+    calls = []
+    saved = {}
+    monkeypatch.setattr(make, "_invoke", lambda ctx, command, **kw: calls.append(command.name))
+    monkeypatch.setattr(_run_state, "report_is_current", lambda cfg: False)
+    monkeypatch.setattr(_run_state, "data_fingerprint", lambda cfg: "d")
+    monkeypatch.setattr(_run_state, "config_fingerprint", lambda cfg: "c")
+    monkeypatch.setattr(_run_state, "save_state", lambda cfg, d, c, built_at: saved.update({"d": d, "c": c}))
+    p = _write_cfg(tmp_path, template_exists=True)
+    res = CliRunner().invoke(make.cli, ["--config", str(p), "run-all"])
+    assert res.exit_code == 0 and "build-report" in calls
+    assert saved == {"d": "d", "c": "c"}     # state recorded after building

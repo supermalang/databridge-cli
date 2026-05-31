@@ -6,6 +6,7 @@ kobo-reporter CLI — four commands:
   build-report       Generate Word report from downloaded data
 """
 import sys, logging
+from datetime import datetime
 from pathlib import Path
 import click
 from dotenv import load_dotenv
@@ -308,8 +309,9 @@ def _invoke(ctx, command, **params):
 @cli.command("run-all")
 @click.option("--sample", default=None, type=int, help="Limit the download to first N submissions.")
 @click.option("--period", default=None, help="Period label for this run (passed to download + build-report).")
+@click.option("--force", is_flag=True, default=False, help="Rebuild the report even if data + config are unchanged.")
 @click.pass_context
-def cmd_run_all(ctx, sample, period):
+def cmd_run_all(ctx, sample, period, force):
     """Run the core pipeline in order: download -> (generate-template if missing) -> build-report."""
     from src.utils import lf_client
     config_path = ctx.obj["config_path"]
@@ -343,17 +345,25 @@ def cmd_run_all(ctx, sample, period):
                 click.echo(f"✗ generate-template failed: {e}", err=True)
                 sys.exit(1)
 
-        log.info("▶ build-report")
-        try:
-            # sample=None on purpose: build-report reads the already-downloaded session
-            # (the --sample on run-all limited the download, not the report).
-            _invoke(ctx, cmd_build_report, sample=None, random_sample=False, split_by=None,
-                    split_sample=None, session=None, period=period, compare=None)
-        except SystemExit:
-            raise
-        except Exception as e:  # noqa: BLE001
-            click.echo(f"✗ build-report failed: {e}", err=True)
-            sys.exit(1)
+        from src.data import run_state
+        if not force and run_state.report_is_current(cfg):
+            click.echo("✓ report up-to-date — skipping build-report (use --force to rebuild).")
+        else:
+            log.info("▶ build-report")
+            try:
+                # sample=None on purpose: build-report reads the already-downloaded session
+                # (the --sample on run-all limited the download, not the report).
+                _invoke(ctx, cmd_build_report, sample=None, random_sample=False, split_by=None,
+                        split_sample=None, session=None, period=period, compare=None)
+            except SystemExit:
+                raise
+            except Exception as e:  # noqa: BLE001
+                click.echo(f"✗ build-report failed: {e}", err=True)
+                sys.exit(1)
+            run_state.save_state(cfg, run_state.data_fingerprint(cfg),
+                                 run_state.config_fingerprint(cfg),
+                                 built_at=datetime.now().isoformat(timespec="seconds"))
+            log.info("✓ build-report")
         log.info("✓ Pipeline complete.")
 
 
