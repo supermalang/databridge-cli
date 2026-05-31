@@ -50,3 +50,14 @@ def test_export_fail_closed_on_missing_column(tmp_path):
     cfg = _cfg(tmp_path, consent_column="Consent")
     with pytest.raises(PIIConfigError):
         export_data(df, cfg)
+
+
+def test_reexport_already_gated_data_with_redact_false_is_safe(tmp_path):
+    # Simulates _run_classify re-exporting data whose 'Name' column was already
+    # dropped at the primary gated export. A strict re-gate would raise; redact=False must not.
+    cfg = _cfg(tmp_path, consent_column="Consent",
+               redact=[{"column": "Name", "strategy": "drop"}])
+    already_gated = pd.DataFrame({"_id": [1], "Consent": ["yes"], "Region": ["N"]})  # Name already gone
+    export_data(already_gated, cfg, redact=False)   # must NOT raise PIIConfigError
+    reloaded, _ = load_processed_data(cfg)
+    assert "Region" in reloaded.columns
