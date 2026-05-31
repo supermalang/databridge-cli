@@ -26,6 +26,43 @@ log = logging.getLogger(__name__)
 _DEFAULT_CONSENT_VALUE = "yes"
 
 
+class PIIConfigError(ValueError):
+    """Raised by the strict PII gate when a configured consent/redact column is
+    missing from the data, or a redaction strategy is unknown."""
+
+
+_KNOWN_STRATEGIES = {"drop", "hash", "mask", "generalize_geo", "generalize_date"}
+
+
+def validate_pii_config(df: pd.DataFrame, repeat_tables: Dict[str, pd.DataFrame], cfg: Dict) -> None:
+    """Strict, fail-closed validation of the pii block against actual columns.
+
+    Raises PIIConfigError when:
+      - a configured consent_column is absent from the main table, or
+      - a redact-target column is absent from BOTH the main table and every
+        repeat table, or
+      - a redact rule uses an unknown strategy.
+    No-op when cfg has no pii block.
+    """
+    pii_cfg = cfg.get("pii") or {}
+    if not pii_cfg:
+        return None
+    consent_col = pii_cfg.get("consent_column")
+    if consent_col and consent_col not in df.columns:
+        raise PIIConfigError(f"pii.consent_column '{consent_col}' not found in data")
+    available = set(df.columns)
+    for rdf in (repeat_tables or {}).values():
+        available.update(rdf.columns)
+    for rule in pii_cfg.get("redact") or []:
+        col = rule.get("column")
+        strategy = rule.get("strategy")
+        if not col or col not in available:
+            raise PIIConfigError(f"pii.redact column '{col}' not found in data")
+        if strategy not in _KNOWN_STRATEGIES:
+            raise PIIConfigError(f"pii.redact unknown strategy '{strategy}' for column '{col}'")
+    return None
+
+
 def apply_consent(df: pd.DataFrame, cfg: Dict) -> pd.DataFrame:
     """Filter rows by the consent column. No-op when no consent column configured."""
     pii_cfg = cfg.get("pii") or {}
