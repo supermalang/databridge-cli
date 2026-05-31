@@ -303,26 +303,33 @@ _VIEW_SUGGESTER: ChatMessages = [
     )},
 ]
 
-_ASK_CHARTS: ChatMessages = [
+_ASK_PROPOSE: ChatMessages = [
     {"role": "system", "content": (
         "You are a data analyst. Given a catalog of available tables and columns "
-        "(with their roles and data shape) and a user's question, propose 1 to 3 chart "
-        "specifications that best answer the question. "
-        "Use ONLY table and column names that appear in the catalog. "
-        "Choose chart types ONLY from the provided list and respect each type's column "
-        "requirements. Always respond with valid JSON only — no markdown fences, no commentary."
+        "(with roles and data shape) and a user's question, propose 1 to 3 ANSWERS that "
+        "best fit. Each answer is either a CHART or a single-number INDICATOR. "
+        "Use an indicator (a number) for 'how many / total / average / percentage' "
+        "questions; use a chart for distributions, comparisons, breakdowns, and trends. "
+        "Use ONLY table and column names that appear in the catalog. For charts, choose a "
+        "type from the chart list and respect its column requirements. For indicators, "
+        "choose a stat from the indicator list. Respond with valid JSON only — no fences, "
+        "no commentary."
     )},
     {"role": "user", "content": (
         "User question: {{question}}\n\n"
         "Available data (catalog):\n{{catalog}}\n\n"
-        "Chart types you may use (with column requirements):\n{{chart_types}}\n\n"
-        "Propose 1 to 3 charts. For each chart provide: a short snake_case \"name\", a human "
-        "\"title\", a \"type\" from the list, and a \"questions\" list of column names in the "
-        "order the chart type expects. Optionally add \"source\" (a table name from the catalog; "
-        "omit for the main table), \"group_by\" (a column), and \"filter\" (a pandas query "
-        "string over column names).\n"
-        'Return ONLY JSON: {"charts": [{"name": "...", "title": "...", "type": "...", '
-        '"questions": ["..."], "source": "...", "group_by": "...", "filter": "..."}]}'
+        "Chart types (with column requirements):\n{{chart_types}}\n\n"
+        "Indicator stats:\n{{indicator_stats}}\n\n"
+        "Propose 1 to 3 items. Every item has: \"kind\" (\"chart\" or \"indicator\"), a "
+        "snake_case \"name\", a human \"title\", and optionally \"source\" (a table name "
+        "from the catalog; omit for the main table).\n"
+        "- chart items also: \"type\" (from the chart list) and \"questions\" (column names "
+        "in the order the type expects); optionally \"group_by\" and \"filter\" (a pandas "
+        "query string).\n"
+        "- indicator items also: \"stat\" (from the indicator list) and \"question\" (a "
+        "column; omit only for \"count\"); optionally \"filter\", and \"filter_value\" "
+        "(required when stat is \"percent\").\n"
+        'Return ONLY JSON: {"items": [{"kind": "...", "name": "...", "title": "...", "...": "..."}]}'
     )},
 ]
 
@@ -349,6 +356,6 @@ SEED_PROMPTS: Dict[str, ChatMessages] = {
     "view_suggester": _VIEW_SUGGESTER,
     "classifier_discover": _CLASSIFIER_DISCOVER,
     "classifier_classify": _CLASSIFIER_CLASSIFY,
-    "ask_charts": _ASK_CHARTS,
+    "ask_propose": _ASK_PROPOSE,
     "ask_caption": _ASK_CAPTION,
 }

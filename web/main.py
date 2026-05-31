@@ -1463,6 +1463,7 @@ class AskPayload(BaseModel):
 
 class AskSavePayload(BaseModel):
     recipe: dict
+    kind: str = "chart"
 
 
 @app.post("/api/ask")
@@ -1486,7 +1487,7 @@ async def api_ask_save(payload: AskSavePayload):
     if not isinstance(recipe, dict):
         return {"ok": False, "error": "missing recipe"}
     cfg = load_config(CONFIG_PATH)
-    name = ask_engine.save_recipe(recipe, cfg)
+    name = ask_engine.save_recipe(recipe, cfg, payload.kind)
     write_config(cfg, CONFIG_PATH)
     return {"ok": True, "name": name}
 

@@ -380,7 +380,7 @@ Prompts live in [Langfuse Cloud](https://cloud.langfuse.com) (or a self-hosted L
 | `view_suggester` | [src/reports/ai_view_suggester.py](src/reports/ai_view_suggester.py) | JSON: suggested views |
 | `classifier_discover` | [src/data/classifier.py](src/data/classifier.py) | JSON: discovered themes |
 | `classifier_classify` | [src/data/classifier.py](src/data/classifier.py) | JSON: per-row classifications |
-| `ask_charts` | `src/reports/ask_engine.py` | JSON: `{"charts": [...]}` |
+| `ask_propose` | `src/reports/ask_engine.py` | JSON: `{"items": [{"kind": ...}]}` |
 | `ask_caption` | `src/reports/ask_engine.py` | JSON: `{"captions": {...}}` |
 
 ### Setup
@@ -559,18 +559,23 @@ the lenient render net. The post-download classification re-export passes `redac
 
 ### Ask question-engine (src/reports/ask_engine.py)
 `ask(question, cfg, df, repeat_tables)` answers a natural-language question with 1–3
-locally-rendered charts:
+locally-computed answers — each either a **chart** or a scalar **indicator** (the LLM
+picks per item):
 1. `build_catalog` condenses the Layer 2 profile into a data-aware catalog (roles,
    cardinality, low-cardinality top-values, numeric ranges; linkage columns excluded).
-2. `propose_charts` asks the LLM (`ask_charts` prompt) for chart recipes (chart-config dicts).
-3. `validate_recipe` checks columns + chart-type role requirements (`CHART_REQS`); bad
-   recipes are dropped with a reason.
-4. `render_recipe` renders each valid recipe locally via the existing chart engine.
-5. `ground_captions` (`ask_caption` prompt) writes one-line captions from the charts'
-   ACTUAL computed values (falls back to the title if AI is off).
-Duplicate recipe names within a batch are disambiguated. `save_recipe` appends a chosen
-recipe to `config.charts`. Exposed at `POST /api/ask` and `POST /api/ask/save`; surfaced
-in the **Ask** tab. Needs an AI provider configured and downloaded data.
+2. `propose_items` asks the LLM (`ask_propose` prompt) for `kind`-tagged recipes
+   (`{"items": [{"kind": "chart"|"indicator", ...}]}`).
+3. `validate_recipe` dispatches by kind: charts → `CHART_REQS` role checks; indicators →
+   `INDICATOR_STATS` + stat/column/role checks. Invalid recipes are dropped with a reason.
+4. Execute locally: charts → `render_recipe` (chart engine); indicators →
+   `compute_indicator` (the `compute_indicators` engine).
+5. `ground_captions` (`ask_caption` prompt) writes one-line captions from each answer's
+   ACTUAL computed values (chart stats block / indicator value+stat); falls back to the
+   title if AI is off.
+Duplicate names within a batch are disambiguated. `save_recipe(recipe, cfg, kind)` appends
+a chosen recipe to `config.charts` (chart) or `config.indicators` (indicator). Exposed at
+`POST /api/ask` and `POST /api/ask/save` (`{recipe, kind}`); surfaced in the **Ask** tab
+(charts as images, indicators as big-number cards). Needs an AI provider and downloaded data.
 
 ### Chart output path
 Charts are saved to `data/processed/charts/<chart_name>.png` at `build-report` time.

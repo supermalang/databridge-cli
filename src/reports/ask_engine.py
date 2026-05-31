@@ -62,7 +62,13 @@ CHART_REQS = {
 
 
 def validate_recipe(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
-    """Validate a proposed chart recipe against the profile. Returns (ok, reason)."""
+    """Validate a proposed recipe (chart or indicator) against the profile. (ok, reason)."""
+    if recipe.get("kind", "chart") == "indicator":
+        return _validate_indicator(recipe, profile)
+    return _validate_chart(recipe, profile)
+
+
+def _validate_chart(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
     ctype = recipe.get("type")
     if ctype not in CHART_REQS:
         return False, f"unsupported chart type '{ctype}'"
@@ -89,11 +95,45 @@ def validate_recipe(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
     return True, ""
 
 
+def _validate_indicator(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
+    stat = recipe.get("stat")
+    if stat not in INDICATOR_STATS:
+        return False, f"unsupported indicator stat '{stat}'"
+    source = recipe.get("source") or "main"
+    tp = profile.get(source)
+    if tp is None:
+        return False, f"unknown source table '{source}'"
+    roles = {c["name"]: c.get("role") for c in tp.get("columns", [])}
+    if stat == "count":
+        return True, ""
+    q = recipe.get("question")
+    if not q:
+        return False, f"indicator stat '{stat}' needs a question column"
+    if q not in roles:
+        return False, f"column '{q}' not found in '{source}'"
+    if stat in _NUMERIC_STATS and roles[q] != "quantitative":
+        return False, f"'{stat}' needs a quantitative column"
+    if stat == "percent" and not recipe.get("filter_value"):
+        return False, "'percent' needs a filter_value"
+    return True, ""
+
+
 _CHART_TYPES_BLOCK = "\n".join(f"- {t}: {req}" for t, (_chk, req) in CHART_REQS.items())
 
+INDICATOR_STATS = {"count", "count_distinct", "sum", "mean", "median",
+                   "min", "max", "percent", "most_common"}
+_NUMERIC_STATS = {"sum", "mean", "median", "min", "max"}
+_INDICATOR_STATS_BLOCK = (
+    "- count: number of rows (no column)\n"
+    "- count_distinct: unique values of a column\n"
+    "- most_common: most frequent value of a column\n"
+    "- sum / mean / median / min / max: a quantitative column\n"
+    "- percent: share of rows where a column equals filter_value (needs filter_value)"
+)
 
-def _parse_charts(raw: str) -> List[Dict]:
-    """Parse {"charts": [...]} from an LLM response, tolerating fences/prose."""
+
+def _parse_items(raw: str) -> List[Dict]:
+    """Parse {"items": [...]} from an LLM response, tolerating fences/prose."""
     import re
     try:
         data = json.loads(raw)
@@ -105,34 +145,39 @@ def _parse_charts(raw: str) -> List[Dict]:
             data = json.loads(m.group(0))
         except (ValueError, TypeError):
             return []
-    charts = data.get("charts") if isinstance(data, dict) else None
-    return charts if isinstance(charts, list) else []
+    items = data.get("items") if isinstance(data, dict) else None
+    return items if isinstance(items, list) else []
 
 
-def propose_charts(question: str, catalog: Dict, ai_cfg: Dict) -> List[Dict]:
-    """Ask the LLM for 1–3 chart recipes for the question. Returns [] on any failure."""
+def propose_items(question: str, catalog: Dict, ai_cfg: Dict) -> List[Dict]:
+    """Ask the LLM for 1–3 answer items (charts or indicators), each tagged with a
+    "kind" (defaulting to "chart"). Returns [] on any failure."""
     provider = (ai_cfg.get("provider") or "openai").lower()
     variables = {
         "question": question,
         "catalog": json.dumps(catalog, ensure_ascii=False),
         "chart_types": _CHART_TYPES_BLOCK,
+        "indicator_stats": _INDICATOR_STATS_BLOCK,
     }
     try:
-        messages = lf_client.get_prompt("ask_charts", variables)
+        messages = lf_client.get_prompt("ask_propose", variables)
         raw = lf_client.chat(
             messages,
             model=ai_cfg.get("model", "gpt-4o"),
             provider=provider,
             api_key=ai_cfg.get("api_key", ""),
             max_tokens=max(int(ai_cfg.get("max_tokens", 1500)), 2000),
-            trace_name="ask_charts",
+            trace_name="ask_propose",
             base_url=ai_cfg.get("base_url"),
             json_mode=(provider != "anthropic"),
         )
     except Exception as e:  # noqa: BLE001
-        log.warning(f"ask: propose_charts failed: {e}")
+        log.warning(f"ask: propose_items failed: {e}")
         return []
-    return _parse_charts(raw)[:3]
+    items = _parse_items(raw)[:3]
+    for it in items:
+        it.setdefault("kind", "chart")
+    return items
 
 
 def _result_summary(recipe: Dict, chart_df: pd.DataFrame) -> str:
@@ -227,7 +272,8 @@ def _b64_png(path: Path) -> str:
 
 def ask(question: str, cfg: Dict, df: pd.DataFrame,
         repeat_tables: Dict[str, pd.DataFrame]) -> Dict:
-    """Full ask loop. Returns {"proposals": [...], "skipped": [...], "message": str|None}."""
+    """Full ask loop (charts + indicators). Returns
+    {"proposals": [...], "skipped": [...], "message": str|None}."""
     ai_cfg = cfg.get("ai") or {}
     if not _ai_ready(ai_cfg):
         return {"proposals": [], "skipped": [],
@@ -237,30 +283,40 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
     profile = profile_dataset(cfg, df, repeat_tables or {})
     catalog = build_catalog(profile)
 
-    recipes = propose_charts(question, catalog, ai_cfg)
-    if not recipes:
+    items = propose_items(question, catalog, ai_cfg)
+    if not items:
         return {"proposals": [], "skipped": [],
-                "message": "Couldn't turn that into a chart — try rephrasing."}
+                "message": "Couldn't turn that into an answer — try rephrasing."}
 
     valid, skipped = [], []
-    for r in recipes:
-        title = r.get("title") or r.get("name") or r.get("type", "chart")
+    for r in items:
+        kind = r.get("kind", "chart")
+        title = r.get("title") or r.get("name") or (r.get("type") if kind == "chart" else r.get("stat")) or kind
         ok, reason = validate_recipe(r, profile)
         if not ok:
             skipped.append({"title": title, "reason": reason})
             continue
-        rendered = render_recipe(r, df, repeat_tables or {})
-        if rendered is None:
-            skipped.append({"title": title, "reason": "could not render this chart"})
-            continue
-        png, summary = rendered
-        valid.append({"recipe": r, "png": png, "summary": summary, "title": title})
+        if kind == "indicator":
+            value = compute_indicator(r, df, repeat_tables or {})
+            if value is None:
+                skipped.append({"title": title, "reason": "could not compute this indicator"})
+                continue
+            stat = r.get("stat", "")
+            qcol = r.get("question")
+            summary = f"{value} ({stat}{' of ' + qcol if qcol else ''})"
+            valid.append({"kind": "indicator", "recipe": r, "value": value, "summary": summary, "title": title})
+        else:
+            rendered = render_recipe(r, df, repeat_tables or {})
+            if rendered is None:
+                skipped.append({"title": title, "reason": "could not render this chart"})
+                continue
+            png, summary = rendered
+            valid.append({"kind": "chart", "recipe": r, "png": png, "summary": summary, "title": title})
 
-    # Disambiguate duplicate recipe names within this batch so captions map 1:1
-    # and UI keys stay unique (the LLM can occasionally repeat a name).
+    # Disambiguate duplicate names within this batch (captions map 1:1; UI keys unique).
     seen_names = set()
     for v in valid:
-        base = v["recipe"].get("name") or v["title"] or "chart"
+        base = v["recipe"].get("name") or v["title"] or v["kind"]
         name = base
         i = 2
         while name in seen_names:
@@ -270,28 +326,59 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
         v["recipe"] = {**v["recipe"], "name": name}
 
     captions = ground_captions(
-        [{"name": v["recipe"].get("name", v["title"]), "title": v["title"], "summary": v["summary"]} for v in valid],
+        [{"name": v["recipe"]["name"], "title": v["title"], "summary": v["summary"]} for v in valid],
         ai_cfg,
     )
-    proposals = [{
-        "recipe": v["recipe"],
-        "image": _b64_png(v["png"]),
-        "caption": captions.get(v["recipe"].get("name", v["title"]), v["title"]),
-    } for v in valid]
+    proposals = []
+    for v in valid:
+        name = v["recipe"]["name"]
+        base = {"kind": v["kind"], "recipe": v["recipe"], "caption": captions.get(name, v["title"])}
+        if v["kind"] == "indicator":
+            base["value"] = v["value"]
+        else:
+            try:
+                base["image"] = _b64_png(v["png"])
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"ask: could not read chart image for '{name}': {e}")
+                skipped.append({"title": v["title"], "reason": "chart image unavailable"})
+                continue
+        proposals.append(base)
     return {"proposals": proposals, "skipped": skipped, "message": None}
 
 
-def save_recipe(recipe: Dict, cfg: Dict) -> str:
-    """Append a chart recipe to cfg['charts'], de-duplicating the name. Mutates cfg;
-    the caller persists via write_config. Returns the final saved name."""
-    charts = cfg.setdefault("charts", [])
-    existing = {c.get("name") for c in charts}
-    name = recipe.get("name") or "chart"
+def compute_indicator(recipe: Dict, df: pd.DataFrame,
+                      repeat_tables: Dict[str, pd.DataFrame]) -> Optional[str]:
+    """Compute a single indicator's formatted value via the indicator engine.
+    Returns the value string, or None on failure / N/A."""
+    from src.reports.indicators import compute_indicators
+    name = recipe.get("name") or "indicator"
+    ind = {k: v for k, v in recipe.items() if k != "kind"}
+    ind["name"] = name
+    try:
+        result = compute_indicators([ind], df, repeat_tables or {})
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"ask: compute_indicator failed for '{name}': {e}")
+        return None
+    val = result.get(f"ind_{name}")
+    if val is None or val == "N/A":
+        return None
+    return val
+
+
+def save_recipe(recipe: Dict, cfg: Dict, kind: str = "chart") -> str:
+    """Append a recipe to cfg['charts'] (kind='chart') or cfg['indicators']
+    (kind='indicator'), de-duplicating the name and stripping the 'kind' field.
+    Mutates cfg; the caller persists via write_config. Returns the final name."""
+    section = "indicators" if kind == "indicator" else "charts"
+    items = cfg.setdefault(section, [])
+    existing = {c.get("name") for c in items}
+    name = recipe.get("name") or kind
     if name in existing:
         i = 2
         while f"{name}_{i}" in existing:
             i += 1
         name = f"{name}_{i}"
-    saved = {**recipe, "name": name}
-    charts.append(saved)
+    saved = {k: v for k, v in recipe.items() if k != "kind"}
+    saved["name"] = name
+    items.append(saved)
     return name
