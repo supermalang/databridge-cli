@@ -1333,6 +1333,7 @@ function IndicatorModal({ initial, onClose, onSave }) {
   const [disagg, setDisagg] = useState(csv(
     Array.isArray(initial?.disaggregate_by) ? initial.disaggregate_by
       : (initial?.disaggregate_by ? [initial.disaggregate_by] : [])));
+  const [primary, setPrimary] = useState(!!initial?.primary);
   const submit = () => {
     if (!name.trim()) return alert('Name is required.');
     const item = { name: name.trim(), stat };
@@ -1342,6 +1343,7 @@ function IndicatorModal({ initial, onClose, onSave }) {
     if (compareTo) item.compare_to = compareTo;
     if (frameworkRef) item.framework_ref = frameworkRef;
     const dis = fromCsv(disagg); if (dis.length) item.disaggregate_by = dis;
+    if (primary) item.primary = true;
     onSave(item);
   };
   return (
@@ -1362,6 +1364,12 @@ function IndicatorModal({ initial, onClose, onSave }) {
       </ModalField>
       <ModalField label="Disaggregate by" hint="Optional. Comma-separated columns — computes the stat per group; adds {{ ind_<name>_breakdown }} + {{ ind_<name>_table }}.">
         <input className="src-input" value={disagg} onChange={e => setDisagg(e.target.value)} placeholder="Region, Sex" />
+      </ModalField>
+      <ModalField label="Primary" hint="Optional. Marks this as the framework node's headline indicator — drives the node's achievement % in the logframe.">
+        <label className="run-opt" style={{ paddingTop: 6 }}>
+          <input type="checkbox" checked={primary} onChange={e => setPrimary(e.target.checked)} />
+          Primary indicator for its framework node
+        </label>
       </ModalField>
     </Modal>
   );

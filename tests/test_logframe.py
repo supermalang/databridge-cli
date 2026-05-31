@@ -66,6 +66,54 @@ def test_build_logframe_surfaces_target_and_achievement():
     }
 
 
+def test_node_achievement_from_primary_indicator():
+    cfg = {
+        "framework": {
+            "goal":     {"id": "GOAL", "label": "G"},
+            "outcomes": [{"id": "OC1", "label": "Outcome 1", "parent": "GOAL"}],
+            "outputs":  [],
+        },
+        "indicators": [
+            {"name": "a", "framework_ref": "OC1"},                    # non-primary
+            {"name": "b", "framework_ref": "OC1", "primary": True},   # primary
+        ],
+    }
+    ctx = {"ind_a": "10", "ind_b": "100", "ind_b_target": "200", "ind_b_pct_achievement": "50.0%"}
+    by_id = {r["id"]: r for r in build_logframe(cfg, ctx)["rows"]}
+    oc1 = by_id["OC1"]
+    assert oc1["primary_indicator"] == "b"
+    assert oc1["node_value"] == "100"
+    assert oc1["node_target"] == "200"
+    assert oc1["node_pct_achievement"] == "50.0%"
+    # both indicators still listed under the node
+    assert {i["name"] for i in oc1["indicators"]} == {"a", "b"}
+
+
+def test_node_achievement_empty_when_no_primary():
+    cfg = {
+        "framework": {"goal": {"id": "GOAL", "label": "G"},
+                      "outcomes": [{"id": "OC1", "label": "O", "parent": "GOAL"}], "outputs": []},
+        "indicators": [{"name": "a", "framework_ref": "OC1"}],
+    }
+    by_id = {r["id"]: r for r in build_logframe(cfg, {"ind_a": "10"})["rows"]}
+    assert by_id["OC1"]["primary_indicator"] == ""
+    assert by_id["OC1"]["node_pct_achievement"] == ""
+    assert by_id["GOAL"]["primary_indicator"] == ""   # node with no indicators at all
+
+
+def test_node_achievement_first_primary_wins():
+    cfg = {
+        "framework": {"goal": {"id": "GOAL", "label": "G"},
+                      "outcomes": [{"id": "OC1", "label": "O", "parent": "GOAL"}], "outputs": []},
+        "indicators": [
+            {"name": "a", "framework_ref": "OC1", "primary": True},
+            {"name": "b", "framework_ref": "OC1", "primary": True},
+        ],
+    }
+    by_id = {r["id"]: r for r in build_logframe(cfg, {"ind_a": "1", "ind_b": "2"})["rows"]}
+    assert by_id["OC1"]["primary_indicator"] == "a"   # first wins
+
+
 def test_build_logframe_handles_indicators_with_no_ref():
     cfg = _sample_cfg_with_indicators()
     lf = build_logframe(cfg, {"ind_no_ref": "999"})
