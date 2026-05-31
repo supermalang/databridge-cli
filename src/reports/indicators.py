@@ -13,6 +13,7 @@ Supported stats:
   min / max      : min/max of numeric column
   percent        : % of rows where column == filter_value
   most_common    : most frequent value in column
+  completeness   : % of present (non-blank, non-null) values in the question column
   grouped_agg    : two-step aggregation across a parent column — first aggregates
                    repeat rows per group (agg: sum|mean|count|max|min), then applies
                    outer_stat (sum|mean|count|max|min) to the resulting group values.
@@ -182,6 +183,9 @@ def _compute(ind: Dict, df: pd.DataFrame):
             raise ValueError(f"dedup_by column '{dedup_col}' not found in data")
         df = df.drop_duplicates(subset=[dedup_col], keep="first")
 
+    if stat == "completeness" and not (question or questions):
+        raise ValueError("completeness requires a question/column")
+
     if not questions and not question:
         # no question — just count rows
         return len(df)
@@ -238,6 +242,12 @@ def _compute(ind: Dict, df: pd.DataFrame):
         if outer_stat not in outer_ops:
             raise ValueError(f"unknown outer_stat '{outer_stat}' — use sum|mean|count|max|min")
         return outer_ops[outer_stat]()
+
+    if stat == "completeness":
+        from src.data.profile import null_stats
+        ns = null_stats(series)
+        total = ns["present"] + ns["missing"]
+        return (ns["present"] / total * 100) if total else 0.0
 
     # numeric stats
     numeric = pd.to_numeric(series, errors="coerce").dropna()
