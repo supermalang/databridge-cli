@@ -82,6 +82,25 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
     )
     run_lf.font.size = Pt(10)
 
+    # Data Quality section — only renders when downloaded data is present.
+    p_dq_h = doc.add_paragraph()
+    p_dq_h.style = doc.styles["Normal"]
+    run_dq_h = p_dq_h.add_run("{% if data_quality.has_data %}Data Quality{% endif %}")
+    run_dq_h.bold = True
+    run_dq_h.font.size = Pt(14)
+
+    p_dq = doc.add_paragraph()
+    p_dq.style = doc.styles["Normal"]
+    run_dq = p_dq.add_run(
+        "{% if data_quality.has_data %}"
+        "{% for row in data_quality.rows %}"
+        "{{ row.column }}: complete {{ row.completeness }}, "
+        "outliers {{ row.outlier_rate }}, duplicates {{ row.duplicate_rate }}\n"
+        "{% endfor %}"
+        "{% endif %}"
+    )
+    run_dq.font.size = Pt(10)
+
     # Provenance footer — single Jinja line; ReportBuilder fills it in.
     # Must live BEFORE the deletable "Placeholder Reference" section so that
     # deleting that section does not remove the footer.

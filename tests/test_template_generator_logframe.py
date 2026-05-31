@@ -39,3 +39,12 @@ def test_template_emits_breakdown_placeholder_for_disaggregated_indicator(tmp_pa
     assert "{{ ind_doses }}" in text                 # scalar still present
     assert "{{ ind_by_sex_table }}" in text          # breakdown table for the disaggregated one
     assert "By sex — breakdown" in text
+
+
+def test_template_renders_data_quality_section(tmp_path):
+    out = tmp_path / "tpl.docx"
+    generate_template(_cfg(), out)
+    text = _doc_text(out)
+    assert "data_quality.has_data" in text
+    assert "data_quality.rows" in text
+    assert "row.completeness" in text and "row.outlier_rate" in text and "row.duplicate_rate" in text
