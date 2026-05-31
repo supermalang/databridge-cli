@@ -97,6 +97,13 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
         "{{ row.column }}: complete {{ row.completeness }}, "
         "outliers {{ row.outlier_rate }}, duplicates {{ row.duplicate_rate }}\n"
         "{% endfor %}"
+        "{% for t in data_quality.tables %}"
+        "\n{{ t.name }}\n"
+        "{% for row in t.rows %}"
+        "{{ row.column }}: complete {{ row.completeness }}, "
+        "outliers {{ row.outlier_rate }}, duplicates {{ row.duplicate_rate }}\n"
+        "{% endfor %}"
+        "{% endfor %}"
         "{% endif %}"
     )
     run_dq.font.size = Pt(10)

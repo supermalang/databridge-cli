@@ -48,3 +48,4 @@ def test_template_renders_data_quality_section(tmp_path):
     assert "data_quality.has_data" in text
     assert "data_quality.rows" in text
     assert "row.completeness" in text and "row.outlier_rate" in text and "row.duplicate_rate" in text
+    assert "data_quality.tables" in text and "t.rows" in text
