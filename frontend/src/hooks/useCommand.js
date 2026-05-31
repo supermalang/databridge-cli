@@ -26,6 +26,8 @@ export function useCommand({ onLog, onStatus } = {}) {
     if (opts.session) body.session = opts.session;
     if (opts.random_sample) body.random_sample = opts.random_sample;
     if (opts.user_request) body.user_request = opts.user_request;
+    if (opts.period) body.period = opts.period;
+    if (opts.auto_charts) body.auto_charts = opts.auto_charts;
 
     let finalStatus = null;
     try {

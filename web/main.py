@@ -76,7 +76,7 @@ ALLOWED_COMMANDS = {
     "suggest-summaries":    ["--user-request"],
     "download":             ["--sample"],
     "build-report":         ["--sample", "--split-by", "--session", "--period", "--compare"],
-    "run-all":              ["--sample", "--period"],
+    "run-all":              ["--sample", "--period", "--auto-charts"],
 }
 
 class RunPayload(BaseModel):
@@ -92,6 +92,7 @@ class RunPayload(BaseModel):
     user_request: Optional[str] = None
     period:  Optional[str] = None
     compare: Optional[str] = None
+    auto_charts: Optional[bool] = None
 
 class QuestionsPayload(BaseModel):
     questions: list
@@ -945,6 +946,8 @@ async def run_command(command: str, payload: RunPayload):
         cmd += ["--period", payload.period]
     if payload.compare and "--compare" in ALLOWED_COMMANDS[command]:
         cmd += ["--compare", payload.compare]
+    if payload.auto_charts and "--auto-charts" in ALLOWED_COMMANDS[command]:
+        cmd += ["--auto-charts"]
     # Single-flight guard: reject concurrent runs (this tool is single-user/local).
     # Check-and-set is synchronous with no await between them — that's intentional;
     # inserting an await would break atomicity and re-introduce the race.

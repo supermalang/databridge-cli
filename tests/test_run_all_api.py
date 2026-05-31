@@ -75,3 +75,20 @@ def test_run_all_endpoint_builds_argv(monkeypatch):
 def test_unknown_command_still_400():
     client = TestClient(wm.app)
     assert client.post("/api/run/bogus", json={}).status_code == 400
+
+
+def test_run_all_allows_auto_charts_flag():
+    assert "--auto-charts" in wm.ALLOWED_COMMANDS["run-all"]
+
+
+def test_run_all_endpoint_forwards_auto_charts(monkeypatch):
+    captured = {}
+    async def _fake_stream(command, cmd):
+        captured["cmd"] = cmd
+        if False:
+            yield ""
+    monkeypatch.setattr(wm, "_stream", _fake_stream)
+    client = TestClient(wm.app)
+    resp = client.post("/api/run/run-all", json={"auto_charts": True})
+    assert resp.status_code == 200
+    assert "--auto-charts" in captured["cmd"]
