@@ -27,6 +27,7 @@ ASSETS_DIR    = STATIC_DIR / "assets"
 app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None)
 _last_status: Dict = {"command": None, "status": "idle", "finished_at": None}
 _proc: Optional[asyncio.subprocess.Process] = None
+_running_command: Optional[str] = None  # single-flight: name of the in-flight run, else None
 
 if ASSETS_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
@@ -916,6 +917,7 @@ async def preview_view(payload: ViewPreviewPayload):
 
 @app.post("/api/run/{command}")
 async def run_command(command: str, payload: RunPayload):
+    global _running_command
     if command not in ALLOWED_COMMANDS:
         raise HTTPException(status_code=400, detail=f"Unknown command '{command}'")
     cmd = [sys.executable, "src/data/make.py", command]
@@ -943,6 +945,13 @@ async def run_command(command: str, payload: RunPayload):
         cmd += ["--period", payload.period]
     if payload.compare and "--compare" in ALLOWED_COMMANDS[command]:
         cmd += ["--compare", payload.compare]
+    # Single-flight guard: reject concurrent runs (this tool is single-user/local).
+    # Check-and-set is synchronous with no await between them — that's intentional;
+    # inserting an await would break atomicity and re-introduce the race.
+    if _running_command is not None:
+        raise HTTPException(status_code=409,
+            detail=f"A command is already running ('{_running_command}'). Stop it or wait for it to finish.")
+    _running_command = command  # reserve synchronously (atomic: no await before return)
     return StreamingResponse(
         _stream(command, cmd),
         media_type="text/event-stream",
@@ -950,7 +959,7 @@ async def run_command(command: str, payload: RunPayload):
     )
 
 async def _stream(command: str, cmd: list) -> AsyncGenerator[str, None]:
-    global _last_status, _proc
+    global _last_status, _proc, _running_command
     _last_status = {"command": command, "status": "running", "finished_at": None}
     yield _sse("status", {"status": "running", "command": command})
     yield _sse("log", {"line": f"$ {' '.join(cmd)}", "level": "cmd"})
@@ -970,6 +979,7 @@ async def _stream(command: str, cmd: list) -> AsyncGenerator[str, None]:
         status = "error"
     finally:
         _proc = None
+        _running_command = None
     _last_status = {"command": command, "status": status, "finished_at": datetime.now().isoformat()}
     yield _sse("status", {**_last_status})
     yield _sse("done", {})
@@ -987,7 +997,7 @@ def _classify(line: str) -> str:
 
 @app.get("/api/status")
 async def get_status():
-    return _last_status
+    return {**_last_status, "running": _running_command is not None}
 
 @app.post("/api/stop")
 async def stop_command():

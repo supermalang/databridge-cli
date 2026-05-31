@@ -521,10 +521,15 @@ New questions from the schema are appended with fresh defaults.
 ### SSE log streaming (web/main.py)
 CLI commands run as subprocesses via `asyncio.create_subprocess_exec`. stdout/stderr
 merged and streamed line-by-line via SSE-style frames (event: log/status/done + data: JSON).
-Only 4 whitelisted commands can be triggered — no arbitrary shell execution.
+Only whitelisted commands (`ALLOWED_COMMANDS`) can be triggered — no arbitrary shell execution.
+
+Runs are **single-flight**: while one command is active, a second `POST /api/run/{command}`
+is rejected with **HTTP 409** (the in-flight command is tracked in `_running_command`, reserved
+synchronously in `run_command` and released in `_stream`'s `finally`); `GET /api/status` reports
+`running`. This prevents two pipeline runs from clobbering the shared `_proc` and `config.yml`/`data/`.
 
 The React side reads it with `fetch().body.getReader()` in `hooks/useCommand.js` (EventSource
-is GET-only).
+is GET-only); a non-OK response (e.g. the 409) is surfaced as an error log line.
 
 ### Frontend ↔ backend wiring in dev
 Vite (`:51730`) proxies `/api/*` → uvicorn (`:8000`). All `fetch('/api/…')` calls in the
