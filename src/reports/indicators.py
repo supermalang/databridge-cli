@@ -146,7 +146,7 @@ def compute_indicators(
                     context[f"ind_{name}_pct_achievement"] = (
                         f"{pct:,.1f}%" if pct is not None else "N/A"
                     )
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, ZeroDivisionError):
                     context[f"ind_{name}_pct_achievement"] = "N/A"
         except Exception as e:
             log.warning(f"Indicator '{name}' failed: {e}")

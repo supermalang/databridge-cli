@@ -46,3 +46,11 @@ def test_decrease_zero_value_is_na():
 def test_unknown_direction_falls_back_to_increase():
     ctx = compute_indicators([_ind(direction="sideways")], _df(80))
     assert ctx["ind_a_pct_achievement"] == "80.0%"
+
+
+def test_string_zero_target_is_na_not_crash():
+    # Quoted "0" target slips past the numeric guard; must degrade to "N/A",
+    # not blank the whole indicator.
+    ctx = compute_indicators([_ind(target="0")], _df(80))
+    assert ctx["ind_a_pct_achievement"] == "N/A"
+    assert ctx["ind_a"] == "80"  # indicator value itself still computed
