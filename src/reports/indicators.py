@@ -36,6 +36,14 @@ Baseline / target (optional):
   baseline     : previous measurement value (numeric)
   target       : goal value (numeric)
   Exposes extra placeholders: ind_<name>_baseline, ind_<name>_target, ind_<name>_pct_achievement
+
+Disaggregation (optional):
+  disaggregate_by : column name (str) or list of column names to group by.
+  When present, in addition to the flat scalar ind_<name>, the engine also computes:
+    ind_<name>_breakdown : list of {group, value, formatted} dicts (sorted by group key)
+    ind_<name>_table     : plain-text fallback string ("Group: value\\n...")
+  If a disaggregate_by column is not found, breakdown is set to [] and table to "N/A"
+  (fail-soft); the overall scalar is still computed normally.
 """
 import logging
 from typing import Dict, List, Optional
@@ -73,6 +81,15 @@ def compute_indicators(
             value = _compute(ind, ind_df)
             fmt = ind.get("format", "number")
             context[f"ind_{name}"] = _format(value, fmt, ind)
+            if ind.get("disaggregate_by"):
+                try:
+                    rows = _compute_breakdown(ind, ind_df, fmt)
+                    context[f"ind_{name}_breakdown"] = rows
+                    context[f"ind_{name}_table"] = _render_breakdown_table(rows)
+                except Exception as e:
+                    log.warning(f"Indicator '{name}' disaggregation failed: {e}")
+                    context[f"ind_{name}_breakdown"] = []
+                    context[f"ind_{name}_table"] = "N/A"
             if ind.get("framework_ref"):
                 context[f"ind_{name}_framework_ref"] = ind["framework_ref"]
 
@@ -240,6 +257,30 @@ def _compute(ind: Dict, df: pd.DataFrame):
         return numeric.max()
 
     raise ValueError(f"unknown stat '{stat}'")
+
+
+def _compute_breakdown(ind: Dict, ind_df: pd.DataFrame, fmt: str) -> List[Dict]:
+    """Compute the indicator's stat per group of its disaggregate_by column(s).
+    Returns a list of {group, value, formatted} rows (sorted by group key)."""
+    dis = ind.get("disaggregate_by")
+    cols = [dis] if isinstance(dis, str) else list(dis)
+    missing = [c for c in cols if c not in ind_df.columns]
+    if missing:
+        raise ValueError(f"disaggregate_by column(s) not found in data: {missing}")
+    rows: List[Dict] = []
+    for key, group_df in ind_df.groupby(cols, dropna=False, sort=True):
+        if isinstance(key, tuple):
+            label = " / ".join("(blank)" if pd.isna(k) else str(k) for k in key)
+        else:
+            label = "(blank)" if pd.isna(key) else str(key)
+        val = _compute(ind, group_df)
+        rows.append({"group": label, "value": val, "formatted": _format(val, fmt, ind)})
+    return rows
+
+
+def _render_breakdown_table(rows: List[Dict]) -> str:
+    """Plain-text fallback: one 'group: formatted' line per breakdown row."""
+    return "\n".join(f"{r['group']}: {r['formatted']}" for r in rows)
 
 
 def _format(value, fmt: str, ind: Dict) -> str:

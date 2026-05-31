@@ -663,16 +663,24 @@ async def preview_indicator(payload: IndicatorPreviewPayload):
     if payload.sample_n and payload.sample_n > 0:
         df = df.head(payload.sample_n)
     ind = payload.indicator
+    name = ind.get("name", "preview")
     question = ind.get("question")
-    if question:
-        df = _pick_preview_df(df, [question], _questions)
+    dis = ind.get("disaggregate_by")
+    dis_cols = [dis] if isinstance(dis, str) else list(dis or [])
+    preview_cols = ([question] if question else []) + dis_cols
+    if preview_cols:
+        df = _pick_preview_df(df, preview_cols, _questions)
     if question and question not in df.columns:
         available = sorted(df.columns.tolist())
         raise HTTPException(status_code=400, detail=f"Column '{question}' not found in data. Available: {available}")
     try:
         result = compute_indicators([ind], df)
-        key = f"ind_{ind.get('name', 'preview')}"
-        value = result.get(key, "N/A")
+        value = result.get(f"ind_{name}", "N/A")
+        raw_breakdown = result.get(f"ind_{name}_breakdown", [])
+        breakdown = [
+            {**item, "value": float(item["value"]) if hasattr(item.get("value"), "__float__") else item["value"]}
+            for item in raw_breakdown
+        ]
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Indicator error: {e}")
     import logging as _logging
@@ -710,7 +718,7 @@ async def preview_indicator(payload: IndicatorPreviewPayload):
                     continue
     except Exception as e:
         _log.warning(f"Trend computation failed entirely: {e}")
-    return {"value": value, "n_rows": len(df), "trend": trend}
+    return {"value": value, "n_rows": len(df), "trend": trend, "breakdown": breakdown}
 
 class SummaryPreviewPayload(BaseModel):
     summary: dict
