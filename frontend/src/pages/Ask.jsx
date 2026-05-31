@@ -57,6 +57,11 @@ export default function Ask() {
           return { ...prev, proposals };
         });
         setRefineInputs(s => ({ ...s, [i]: '' }));
+        setSaved(s => {            // the refined version isn't saved yet
+          const next = { ...s };
+          delete next[data.proposal.recipe?.name];
+          return next;
+        });
       } else {
         const note = data.skipped ? data.skipped.reason : (data.message || 'No change');
         setResult(prev => {
