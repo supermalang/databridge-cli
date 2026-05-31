@@ -38,3 +38,15 @@ def test_ask_save_appends(monkeypatch):
     resp = client.post("/api/ask/save", json={"recipe": {"name": "by_region", "type": "bar", "questions": ["Region"]}})
     assert resp.status_code == 200 and resp.json()["name"] == "by_region"
     assert saved["charts"][0]["name"] == "by_region"
+
+
+def test_ask_save_indicator_appends_to_indicators(monkeypatch):
+    saved = {}
+    cfg = {}
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update(c))
+    client = TestClient(wm.app)
+    resp = client.post("/api/ask/save",
+                       json={"recipe": {"name": "n_rows", "stat": "count"}, "kind": "indicator"})
+    assert resp.status_code == 200 and resp.json()["name"] == "n_rows"
+    assert saved["indicators"][0]["name"] == "n_rows"
