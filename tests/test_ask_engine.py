@@ -47,3 +47,31 @@ def test_ask_caption_prompt_resolves_offline():
     msgs = lf_client.get_prompt("ask_caption", {"charts_block": "chart_a — Region: N=5"})
     blob = " ".join(m["content"] for m in msgs)
     assert "chart_a" in blob
+
+
+from src.reports.ask_engine import validate_recipe
+
+
+def test_validate_recipe_accepts_valid_bar():
+    ok, reason = validate_recipe({"type": "bar", "questions": ["Region"]}, _profile_fixture())
+    assert ok and reason == ""
+
+
+def test_validate_recipe_rejects_missing_column():
+    ok, reason = validate_recipe({"type": "bar", "questions": ["Nope"]}, _profile_fixture())
+    assert not ok and "Nope" in reason
+
+
+def test_validate_recipe_rejects_scatter_without_two_quant():
+    ok, reason = validate_recipe({"type": "scatter", "questions": ["Age", "Region"]}, _profile_fixture())
+    assert not ok and "quantitative" in reason
+
+
+def test_validate_recipe_rejects_unknown_type():
+    ok, reason = validate_recipe({"type": "radar", "questions": ["Region"]}, _profile_fixture())
+    assert not ok and "type" in reason
+
+
+def test_validate_recipe_unknown_source():
+    ok, reason = validate_recipe({"type": "bar", "questions": ["X"], "source": "ghost"}, _profile_fixture())
+    assert not ok and "source" in reason

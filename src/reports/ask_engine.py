@@ -40,3 +40,48 @@ def build_catalog(profile: Dict[str, Dict]) -> Dict:
             cols.append(entry)
         tables.append({"name": tname, "rows": tp.get("rows", 0), "columns": cols})
     return {"tables": tables}
+
+
+# type -> (check(n_cat, n_quant, n_date) -> bool, human requirement)
+CHART_REQS = {
+    "bar":            (lambda c, q, d: c >= 1, "≥1 categorical column"),
+    "horizontal_bar": (lambda c, q, d: c >= 1, "≥1 categorical column"),
+    "pie":            (lambda c, q, d: c >= 1, "≥1 categorical column"),
+    "donut":          (lambda c, q, d: c >= 1, "≥1 categorical column"),
+    "line":           (lambda c, q, d: d >= 1, "≥1 date column"),
+    "area":           (lambda c, q, d: d >= 1, "≥1 date column"),
+    "histogram":      (lambda c, q, d: q >= 1, "≥1 quantitative column"),
+    "scatter":        (lambda c, q, d: q >= 2, "≥2 quantitative columns"),
+    "box_plot":       (lambda c, q, d: c >= 1 and q >= 1, "1 categorical + 1 quantitative"),
+    "grouped_bar":    (lambda c, q, d: c >= 2, "≥2 categorical columns"),
+    "stacked_bar":    (lambda c, q, d: c >= 2, "≥2 categorical columns"),
+    "heatmap":        (lambda c, q, d: c >= 2, "≥2 categorical columns"),
+}
+
+
+def validate_recipe(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
+    """Validate a proposed chart recipe against the profile. Returns (ok, reason)."""
+    ctype = recipe.get("type")
+    if ctype not in CHART_REQS:
+        return False, f"unsupported chart type '{ctype}'"
+    source = recipe.get("source") or "main"
+    tp = profile.get(source)
+    if tp is None:
+        return False, f"unknown source table '{source}'"
+    roles = {c["name"]: c.get("role") for c in tp.get("columns", [])}
+    cols = list(recipe.get("questions") or [])
+    if recipe.get("group_by"):
+        cols.append(recipe["group_by"])
+    if not cols:
+        return False, "no columns specified"
+    for c in cols:
+        if c not in roles:
+            return False, f"column '{c}' not found in '{source}'"
+    col_roles = [roles[c] for c in cols]
+    n_cat = col_roles.count("categorical")
+    n_quant = col_roles.count("quantitative")
+    n_date = col_roles.count("date")
+    check, requirement = CHART_REQS[ctype]
+    if not check(n_cat, n_quant, n_date):
+        return False, f"'{ctype}' needs {requirement}"
+    return True, ""
