@@ -14,6 +14,8 @@ Supported stats:
   percent        : % of rows where column == filter_value
   most_common    : most frequent value in column
   completeness   : % of present (non-blank, non-null) values in the question column
+  outlier_rate   : % of a numeric column's values outside the 3×IQR fence (0 for non-numeric)
+  duplicate_rate : % of rows that are redundant duplicates of the column's value
   grouped_agg    : two-step aggregation across a parent column — first aggregates
                    repeat rows per group (agg: sum|mean|count|max|min), then applies
                    outer_stat (sum|mean|count|max|min) to the resulting group values.
@@ -51,6 +53,8 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 log = logging.getLogger(__name__)
+
+_DQ_NEEDS_QUESTION = {"completeness", "outlier_rate", "duplicate_rate"}
 
 
 def compute_indicators(
@@ -183,8 +187,8 @@ def _compute(ind: Dict, df: pd.DataFrame):
             raise ValueError(f"dedup_by column '{dedup_col}' not found in data")
         df = df.drop_duplicates(subset=[dedup_col], keep="first")
 
-    if stat == "completeness" and not (question or questions):
-        raise ValueError("completeness requires a question/column")
+    if stat in _DQ_NEEDS_QUESTION and not (question or questions):
+        raise ValueError(f"{stat} requires a question/column")
 
     if not questions and not question:
         # no question — just count rows
@@ -248,6 +252,16 @@ def _compute(ind: Dict, df: pd.DataFrame):
         ns = null_stats(series)
         total = ns["present"] + ns["missing"]
         return (ns["present"] / total * 100) if total else 0.0
+
+    if stat == "outlier_rate":
+        from src.data.profile import numeric_outliers
+        nums = pd.to_numeric(series, errors="coerce").dropna()
+        n = len(nums)
+        return (numeric_outliers(series)["count"] / n * 100) if n else 0.0
+
+    if stat == "duplicate_rate":
+        n = len(series)
+        return (series.duplicated(keep="first").sum() / n * 100) if n else 0.0
 
     # numeric stats
     numeric = pd.to_numeric(series, errors="coerce").dropna()
