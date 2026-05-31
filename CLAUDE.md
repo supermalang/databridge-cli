@@ -380,6 +380,8 @@ Prompts live in [Langfuse Cloud](https://cloud.langfuse.com) (or a self-hosted L
 | `view_suggester` | [src/reports/ai_view_suggester.py](src/reports/ai_view_suggester.py) | JSON: suggested views |
 | `classifier_discover` | [src/data/classifier.py](src/data/classifier.py) | JSON: discovered themes |
 | `classifier_classify` | [src/data/classifier.py](src/data/classifier.py) | JSON: per-row classifications |
+| `ask_propose` | `src/reports/ask_engine.py` | JSON: `{"items": [{"kind": ...}]}` |
+| `ask_caption` | `src/reports/ask_engine.py` | JSON: `{"captions": {...}}` |
 
 ### Setup
 
@@ -530,6 +532,74 @@ export_data() → _export_file()     # csv, json, xlsx
              → _export_supabase()  # supabase (requires supabase-py)
 ```
 Database drivers are optional imports — only install what you need.
+
+### Base-table linkage columns (src/data/flatten.py)
+`load_data` flattens submissions into a main table plus one base table per repeat
+level (including nested sub-repeats) via `build_repeat_tables`. Every repeat row
+carries linkage columns:
+
+- `_root_id` — id of the root submission the row descends from
+- `_parent_index` — alias of `_root_id` (kept for backward-compat with filters,
+  computed columns, `join_repeat_to_main`, and split reports)
+- `_parent_row_id` — `_row_id` of the immediate parent repeat row
+  (equals `_root_id` for top-level repeats)
+- `_row_id` — stable composite id, e.g. `"12.0.1"` (root 12 → member 0 → illness 1)
+- `_row_index` — position within the immediate parent
+
+Join any level to its parent on `_parent_row_id == parent._row_id`, or to the
+root on `_root_id == main._id`. The catalog is exposed read-only at
+`GET /api/base-tables`.
+
+### Data profiling (src/data/profile.py)
+`profile_dataset(cfg, main_df, repeat_tables)` computes a deterministic, structured
+EDA profile for every base table — per-column `role`, completeness, cardinality,
+numeric stats + 3×IQR outliers, date ranges, low-cardinality top values, plus
+per-table numeric correlations and duplicate-id info. It is the single source of
+truth for these signals: `validate.py` (findings) and `summaries.py` (narrative)
+derive their numbers from `profile.py`'s primitives (`null_stats`, `iqr_bounds`,
+`numeric_outliers`, `correlations`). No LLM, no I/O.
+
+`top_values` are computed only for low-cardinality columns (≤ `LOW_CARDINALITY_MAX`,
+default 20) so the profile never surfaces individual free-text/PII values.
+
+Exposed read-only at `GET /api/profile`; rendered in the **Profile** tab.
+
+### PII gate (src/utils/pii.py)
+PII has two tiers:
+- **Strict export gate** — `enforce_pii` runs inside `export_data` (default `redact=True`).
+  It calls `validate_pii_config` (fail-closed: a configured `consent_column` or `redact`
+  column missing from the data, or an unknown strategy, raises `PIIConfigError` and
+  aborts the download), consent-gates the main table, prunes orphaned repeat rows
+  (parents filtered out by consent, via `_parent_index`), then applies redaction.
+  So `data/processed` + DB/Supabase are always redacted + consent-gated.
+- **Lenient render net** — the existing `apply_pii` still runs at report/preview time
+  as defense-in-depth (log-and-skip on missing columns); it operates on already-gated data.
+
+`download --no-redact` is an explicit, off-by-default escape hatch that writes RAW data
+(internal/secure use only) and logs a warning; it is CLI-only (not in the web UI's
+ALLOWED_COMMANDS flag whitelist). Reports built from a raw session are still redacted by
+the lenient render net. The post-download classification re-export passes `redact=False`
+(its data was already gated by the primary export).
+
+### Ask question-engine (src/reports/ask_engine.py)
+`ask(question, cfg, df, repeat_tables)` answers a natural-language question with 1–3
+locally-computed answers — each either a **chart** or a scalar **indicator** (the LLM
+picks per item):
+1. `build_catalog` condenses the Layer 2 profile into a data-aware catalog (roles,
+   cardinality, low-cardinality top-values, numeric ranges; linkage columns excluded).
+2. `propose_items` asks the LLM (`ask_propose` prompt) for `kind`-tagged recipes
+   (`{"items": [{"kind": "chart"|"indicator", ...}]}`).
+3. `validate_recipe` dispatches by kind: charts → `CHART_REQS` role checks; indicators →
+   `INDICATOR_STATS` + stat/column/role checks. Invalid recipes are dropped with a reason.
+4. Execute locally: charts → `render_recipe` (chart engine); indicators →
+   `compute_indicator` (the `compute_indicators` engine).
+5. `ground_captions` (`ask_caption` prompt) writes one-line captions from each answer's
+   ACTUAL computed values (chart stats block / indicator value+stat); falls back to the
+   title if AI is off.
+Duplicate names within a batch are disambiguated. `save_recipe(recipe, cfg, kind)` appends
+a chosen recipe to `config.charts` (chart) or `config.indicators` (indicator). Exposed at
+`POST /api/ask` and `POST /api/ask/save` (`{recipe, kind}`); surfaced in the **Ask** tab
+(charts as images, indicators as big-number cards). Needs an AI provider and downloaded data.
 
 ### Chart output path
 Charts are saved to `data/processed/charts/<chart_name>.png` at `build-report` time.

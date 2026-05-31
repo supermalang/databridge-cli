@@ -303,6 +303,50 @@ _VIEW_SUGGESTER: ChatMessages = [
     )},
 ]
 
+_ASK_PROPOSE: ChatMessages = [
+    {"role": "system", "content": (
+        "You are a data analyst. Given a catalog of available tables and columns "
+        "(with roles and data shape) and a user's question, propose 1 to 3 ANSWERS that "
+        "best fit. Each answer is either a CHART or a single-number INDICATOR. "
+        "Use an indicator (a number) for 'how many / total / average / percentage' "
+        "questions; use a chart for distributions, comparisons, breakdowns, and trends. "
+        "Use ONLY table and column names that appear in the catalog. For charts, choose a "
+        "type from the chart list and respect its column requirements. For indicators, "
+        "choose a stat from the indicator list. Respond with valid JSON only — no fences, "
+        "no commentary."
+    )},
+    {"role": "user", "content": (
+        "User question: {{question}}\n\n"
+        "Available data (catalog):\n{{catalog}}\n\n"
+        "Chart types (with column requirements):\n{{chart_types}}\n\n"
+        "Indicator stats:\n{{indicator_stats}}\n\n"
+        "Propose 1 to 3 items. Every item has: \"kind\" (\"chart\" or \"indicator\"), a "
+        "snake_case \"name\", a human \"title\", and optionally \"source\" (a table name "
+        "from the catalog; omit for the main table).\n"
+        "- chart items also: \"type\" (from the chart list) and \"questions\" (column names "
+        "in the order the type expects); optionally \"group_by\" and \"filter\" (a pandas "
+        "query string).\n"
+        "- indicator items also: \"stat\" (from the indicator list) and \"question\" (a "
+        "column; omit only for \"count\"); optionally \"filter\", and \"filter_value\" "
+        "(required when stat is \"percent\").\n"
+        'Return ONLY JSON: {"items": [{"kind": "...", "name": "...", "title": "...", "...": "..."}]}'
+    )},
+]
+
+_ASK_CAPTION: ChatMessages = [
+    {"role": "system", "content": (
+        "You write one-line factual chart captions for a data report. For each chart you are "
+        "given its title and the ACTUAL computed values it shows. Write a single factual "
+        "sentence per chart describing what the data shows, using ONLY the numbers provided. "
+        "Do not invent figures. Respond with valid JSON only."
+    )},
+    {"role": "user", "content": (
+        "Charts and their computed values:\n{{charts_block}}\n\n"
+        'Return ONLY JSON mapping each chart name to a one-sentence caption: '
+        '{"captions": {"<name>": "..."}}'
+    )},
+]
+
 _CLASSIFIER_DISCOVER_OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -565,4 +609,6 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
                              "config": {"output_schema": _CLASSIFIER_DISCOVER_OUTPUT_SCHEMA}},
     "classifier_classify":  {"messages": _CLASSIFIER_CLASSIFY,
                              "config": {"output_schema": _CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA}},
+    "ask_propose": {"messages": _ASK_PROPOSE, "config": {}},
+    "ask_caption": {"messages": _ASK_CAPTION, "config": {}},
 }

@@ -26,6 +26,80 @@ log = logging.getLogger(__name__)
 _DEFAULT_CONSENT_VALUE = "yes"
 
 
+class PIIConfigError(ValueError):
+    """Raised by the strict PII gate when a configured consent/redact column is
+    missing from the data, or a redaction strategy is unknown."""
+
+
+_KNOWN_STRATEGIES = {"drop", "hash", "mask", "generalize_geo", "generalize_date"}
+
+
+def validate_pii_config(df: pd.DataFrame, repeat_tables: Dict[str, pd.DataFrame], cfg: Dict) -> None:
+    """Strict, fail-closed validation of the pii block against actual columns.
+
+    Raises PIIConfigError when:
+      - a configured consent_column is absent from the main table, or
+      - a redact-target column is absent from BOTH the main table and every
+        repeat table, or
+      - a redact rule uses an unknown strategy.
+    No-op when cfg has no pii block.
+    """
+    pii_cfg = cfg.get("pii") or {}
+    if not pii_cfg:
+        return None
+    consent_col = pii_cfg.get("consent_column")
+    if consent_col and consent_col not in df.columns:
+        raise PIIConfigError(f"pii.consent_column '{consent_col}' not found in data")
+    available = set(df.columns)
+    for rdf in (repeat_tables or {}).values():
+        available.update(rdf.columns)
+    for rule in pii_cfg.get("redact") or []:
+        col = rule.get("column")
+        strategy = rule.get("strategy")
+        if not col or col not in available:
+            raise PIIConfigError(f"pii.redact column '{col}' not found in data")
+        if strategy not in _KNOWN_STRATEGIES:
+            raise PIIConfigError(f"pii.redact unknown strategy '{strategy}' for column '{col}'")
+    return None
+
+
+def enforce_pii(df: pd.DataFrame, repeat_tables: Dict[str, pd.DataFrame], cfg: Dict) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+    """Strict, fail-closed PII gate for the EXPORT boundary.
+
+    Order: validate config (raises PIIConfigError on misconfig) -> consent-gate
+    the main table -> prune orphaned repeat rows whose parent was filtered out ->
+    apply redaction (via the lenient per-table apply_redaction). No-op when cfg
+    has no pii block.
+    """
+    repeat_tables = repeat_tables or {}
+    if not (cfg.get("pii") or {}):
+        return df, repeat_tables
+    validate_pii_config(df, repeat_tables, cfg)
+
+    pii_cfg = cfg["pii"]
+    consent_col = pii_cfg.get("consent_column")
+    gated = df
+    if consent_col:
+        expected = pii_cfg.get("consent_value", _DEFAULT_CONSENT_VALUE)
+        mask = df[consent_col].astype(str).str.strip() == str(expected)
+        gated = df[mask].reset_index(drop=True)
+
+    id_col = next((c for c in ("_id", "_index", "_uuid") if c in gated.columns), None)
+    if id_col is None and repeat_tables:
+        log.warning("PII: no _id/_index/_uuid in main table — cannot prune orphaned "
+                    "repeat rows of consent-rejected parents; they pass through.")
+    surviving = set(gated[id_col]) if id_col is not None else None
+    pruned: Dict[str, pd.DataFrame] = {}
+    for name, rdf in repeat_tables.items():
+        if surviving is not None and "_parent_index" in rdf.columns:
+            rdf = rdf[rdf["_parent_index"].isin(surviving)]
+        pruned[name] = rdf
+
+    out_df = apply_redaction(gated, cfg)
+    out_repeats = {name: apply_redaction(rdf, cfg) for name, rdf in pruned.items()}
+    return out_df, out_repeats
+
+
 def apply_consent(df: pd.DataFrame, cfg: Dict) -> pd.DataFrame:
     """Filter rows by the consent column. No-op when no consent column configured."""
     pii_cfg = cfg.get("pii") or {}

@@ -8,6 +8,10 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from src.utils.config import load_config, write_config
+from src.data.transform import load_processed_data
+from src.data.profile import profile_dataset
+from src.reports import ask_engine
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -1397,6 +1401,95 @@ async def validate():
     df, repeat_tables = apply_pii(df, repeat_tables, cfg)
     report = validate_dataset(cfg, df, repeat_tables)
     return report
+
+
+@app.get("/api/base-tables")
+async def base_tables():
+    """Catalog of the flattened base tables for the latest download session.
+
+    Returns row counts, data columns, linkage columns, and the parent table for
+    each repeat level so the UI can show the table hierarchy. Read-only.
+
+    NOTE: parent inference is naming-convention based (longest underscored-prefix
+    match). Unrelated tables that happen to share a name prefix could be
+    mis-parented; this is acceptable until explicit parent metadata is surfaced.
+    """
+    cfg = load_config(CONFIG_PATH)
+    try:
+        df, repeats = load_processed_data(cfg)
+    except FileNotFoundError:
+        return {"tables": [], "message": "No downloaded data. Run download first."}
+
+    def _entry(name, frame, parent):
+        cols = list(frame.columns)
+        return {
+            "name": name,
+            "rows": int(len(frame)),
+            "parent": parent,
+            "columns": [c for c in cols if not c.startswith("_")],
+            "linkage": [c for c in cols if c.startswith("_")],
+        }
+
+    # Reloaded repeat tables are keyed by the underscored ("safe") name; derive
+    # the parent table by longest underscored-prefix match, falling back to main.
+    names = list(repeats.keys())
+
+    def _parent_of(name):
+        prefixes = [p for p in names if p != name and name.startswith(p + "_")]
+        return max(prefixes, key=lambda p: p.count("_")) if prefixes else "main"
+
+    tables = [_entry("main", df, None)]
+    for name, frame in repeats.items():
+        tables.append(_entry(name, frame, _parent_of(name)))
+    return {"tables": tables}
+
+
+@app.get("/api/profile")
+async def data_profile():
+    """Structured EDA profile of every base table for the latest download
+    session (row counts, per-column stats, correlations, duplicates). Read-only."""
+    cfg = load_config(CONFIG_PATH)
+    try:
+        df, repeats = load_processed_data(cfg)
+    except FileNotFoundError:
+        return {"profiles": [], "message": "No downloaded data. Run download first."}
+    profiles = profile_dataset(cfg, df, repeats)
+    return {"profiles": list(profiles.values())}
+
+
+class AskPayload(BaseModel):
+    question: str = ""
+
+
+class AskSavePayload(BaseModel):
+    recipe: dict
+    kind: str = "chart"
+
+
+@app.post("/api/ask")
+async def api_ask(payload: AskPayload):
+    """Answer a natural-language question with 1-3 locally-rendered, grounded charts."""
+    question = (payload.question or "").strip()
+    if not question:
+        return {"proposals": [], "skipped": [], "message": "Type a question to ask."}
+    cfg = load_config(CONFIG_PATH)
+    try:
+        df, repeats = load_processed_data(cfg)
+    except FileNotFoundError:
+        return {"proposals": [], "skipped": [], "message": "No data yet — run Download first."}
+    return ask_engine.ask(question, cfg, df, repeats)
+
+
+@app.post("/api/ask/save")
+async def api_ask_save(payload: AskSavePayload):
+    """Append a proposed chart recipe to config.charts."""
+    recipe = payload.recipe
+    if not isinstance(recipe, dict):
+        return {"ok": False, "error": "missing recipe"}
+    cfg = load_config(CONFIG_PATH)
+    name = ask_engine.save_recipe(recipe, cfg, payload.kind)
+    write_config(cfg, CONFIG_PATH)
+    return {"ok": True, "name": name}
 
 
 class FrameworkPayload(BaseModel):

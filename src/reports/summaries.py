@@ -27,6 +27,7 @@ import logging
 import re
 from typing import Dict, List, Optional
 import pandas as pd
+from src.data.profile import numeric_outliers, correlations
 
 log = logging.getLogger(__name__)
 
@@ -200,7 +201,7 @@ def _stats_text(series: pd.Series) -> str:
     mx = numeric.max()
     return (
         f"n={n:,}, mean={mean:,.1f}, median={median:,.1f}, "
-        f"range {mn:,.1f}\u2013{mx:,.1f}."
+        f"range {mn:,.1f}–{mx:,.1f}."
     )
 
 
@@ -279,7 +280,7 @@ def _ai_text(
             data_lines.append(
                 f"{q}: n={len(numeric):,}, mean={numeric.mean():,.1f}, "
                 f"median={numeric.median():,.1f}, "
-                f"range {numeric.min():,.1f}\u2013{numeric.max():,.1f}"
+                f"range {numeric.min():,.1f}–{numeric.max():,.1f}"
             )
         else:
             vc = col.astype(str).value_counts().head(5)
@@ -383,16 +384,9 @@ def _data_quality_text(df: pd.DataFrame, questions: List[str]) -> str:
     for col in questions:
         if col not in df.columns:
             continue
-        numeric = pd.to_numeric(df[col], errors="coerce").dropna()
-        if len(numeric) < 4:
-            continue
-        q1, q3 = numeric.quantile(0.25), numeric.quantile(0.75)
-        iqr = q3 - q1
-        if iqr == 0:
-            continue
-        n_outliers = int(((numeric < q1 - 1.5 * iqr) | (numeric > q3 + 1.5 * iqr)).sum())
-        if n_outliers > 0:
-            outlier_parts.append(f"{col}: {n_outliers} flagged")
+        o = numeric_outliers(df[col])  # 3×IQR via the shared primitive
+        if o["count"] > 0:
+            outlier_parts.append(f"{col}: {o['count']} flagged")
     if outlier_parts:
         parts.append(f"Outliers (IQR): {', '.join(outlier_parts)}.")
 
@@ -430,7 +424,7 @@ def _keyword_frequency_text(series: pd.Series, top_n: int, language: str = "en")
         pass  # fall back to built-in list
 
     text = " ".join(series.dropna().astype(str).tolist()).lower()
-    tokens = re.findall(r"[a-zA-ZÀ-ÿ\u0600-\u06FF]{3,}", text)
+    tokens = re.findall(r"[a-zA-ZÀ-ÿ؀-ۿ]{3,}", text)
     freq: Dict[str, int] = {}
     for token in tokens:
         if token not in stop_words:
@@ -450,38 +444,25 @@ def _correlation_text(df: pd.DataFrame, questions: List[str], method: str = "pea
     if len(numeric_cols) < 2:
         return "Not enough numeric columns for correlation."
 
+    # Kept intentionally: preserves the distinct "No numeric data available." message
+    # for the no-numeric-data case (correlations() would otherwise fall through to
+    # "No meaningful correlations found."). Behavior-preserving — do not remove.
     nums = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
     if nums.dropna(how="all").empty:
         return "No numeric data available."
 
-    corr = nums.corr(method=method)
     sentences = []
-    seen = set()
-    for i, col_a in enumerate(numeric_cols):
-        for col_b in numeric_cols[i + 1:]:
-            pair = (col_a, col_b)
-            if pair in seen:
-                continue
-            seen.add(pair)
-            try:
-                r = corr.loc[col_a, col_b]
-            except KeyError:
-                continue
-            if pd.isna(r):
-                continue
-            abs_r = abs(r)
-            if abs_r < 0.1:
-                continue  # negligible — skip
-            strength = (
-                "very strong" if abs_r >= 0.8 else
-                "strong" if abs_r >= 0.6 else
-                "moderate" if abs_r >= 0.4 else
-                "weak"
-            )
-            direction = "positive" if r > 0 else "negative"
-            sentences.append(
-                f"{col_a} \u2194 {col_b}: r={r:.2f} ({direction} {strength})"
-            )
+    for pair in correlations(df, numeric_cols, method=method, threshold=0.1):
+        r = pair["r"]
+        abs_r = abs(r)
+        strength = (
+            "very strong" if abs_r >= 0.8 else
+            "strong" if abs_r >= 0.6 else
+            "moderate" if abs_r >= 0.4 else
+            "weak"
+        )
+        direction = "positive" if r > 0 else "negative"
+        sentences.append(f"{pair['a']} ↔ {pair['b']}: r={r:.2f} ({direction} {strength})")
 
     if not sentences:
         return "No meaningful correlations found."
