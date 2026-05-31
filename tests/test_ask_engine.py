@@ -157,6 +157,24 @@ def test_ask_no_ai_returns_message():
     assert out["proposals"] == [] and "AI" in out["message"]
 
 
+def test_ask_disambiguates_duplicate_recipe_names(monkeypatch):
+    monkeypatch.setattr(ask_engine, "propose_charts", lambda q, cat, ai: [
+        {"name": "dup", "title": "A", "type": "bar", "questions": ["Region"]},
+        {"name": "dup", "title": "B", "type": "bar", "questions": ["Region"]},
+    ])
+    # captions keyed by the (now unique) names the engine assigns
+    monkeypatch.setattr(ask_engine, "ground_captions",
+                        lambda items, ai: {it["name"]: f"cap-{it['name']}" for it in items})
+    cfg = {"ai": {"provider": "openai", "api_key": "sk-x"},
+           "questions": [{"export_label": "Region", "category": "categorical"}]}
+    df = pd.DataFrame({"_id": [1, 2, 3], "Region": ["N", "E", "E"]})
+    out = ask_engine.ask("q", cfg, df, {})
+    names = [p["recipe"]["name"] for p in out["proposals"]]
+    assert names == ["dup", "dup_2"]                     # disambiguated
+    caps = [p["caption"] for p in out["proposals"]]
+    assert caps == ["cap-dup", "cap-dup_2"]              # captions map 1:1, no collision
+
+
 def test_save_recipe_appends_to_config():
     cfg = {"charts": [{"name": "existing"}]}
     name = ask_engine.save_recipe({"name": "by_region", "type": "bar", "questions": ["Region"]}, cfg)

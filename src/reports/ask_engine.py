@@ -256,6 +256,19 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
         png, summary = rendered
         valid.append({"recipe": r, "png": png, "summary": summary, "title": title})
 
+    # Disambiguate duplicate recipe names within this batch so captions map 1:1
+    # and UI keys stay unique (the LLM can occasionally repeat a name).
+    seen_names = set()
+    for v in valid:
+        base = v["recipe"].get("name") or v["title"] or "chart"
+        name = base
+        i = 2
+        while name in seen_names:
+            name = f"{base}_{i}"
+            i += 1
+        seen_names.add(name)
+        v["recipe"] = {**v["recipe"], "name": name}
+
     captions = ground_captions(
         [{"name": v["recipe"].get("name", v["title"]), "title": v["title"], "summary": v["summary"]} for v in valid],
         ai_cfg,
