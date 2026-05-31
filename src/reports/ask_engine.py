@@ -185,3 +185,31 @@ def render_recipe(recipe: Dict, df: pd.DataFrame,
     if png is None or not Path(png).exists():
         return None
     return Path(png), summary
+
+
+def ground_captions(items: List[Dict], ai_cfg: Dict) -> Dict[str, str]:
+    """One batched LLM call to caption each rendered chart from its computed values.
+    items: [{"name", "title", "summary"}]. Falls back to the title per chart on failure."""
+    fallback = {it["name"]: it.get("title") or it["name"] for it in items}
+    if not items:
+        return {}
+    provider = (ai_cfg.get("provider") or "openai").lower()
+    charts_block = "\n".join(f'{it["name"]} — {it.get("title", "")}: {it.get("summary", "")}' for it in items)
+    try:
+        messages = lf_client.get_prompt("ask_caption", {"charts_block": charts_block})
+        raw = lf_client.chat(
+            messages,
+            model=ai_cfg.get("model", "gpt-4o"),
+            provider=provider,
+            api_key=ai_cfg.get("api_key", ""),
+            max_tokens=600,
+            trace_name="ask_caption",
+            base_url=ai_cfg.get("base_url"),
+            json_mode=(provider != "anthropic"),
+        )
+        data = json.loads(raw)
+        caps = data.get("captions", {}) if isinstance(data, dict) else {}
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"ask: ground_captions failed: {e}")
+        caps = {}
+    return {it["name"]: (caps.get(it["name"]) or fallback[it["name"]]) for it in items}

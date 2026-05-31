@@ -114,3 +114,22 @@ def test_render_recipe_returns_none_on_bad_column():
     df = pd.DataFrame({"Region": ["N", "S"]})
     result = render_recipe({"name": "x", "type": "bar", "questions": ["Ghost"]}, df, {})
     assert result is None
+
+
+def test_ground_captions_uses_llm(monkeypatch):
+    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [{"role": "user", "content": "x"}])
+    monkeypatch.setattr(ask_engine.lf_client, "chat",
+                        lambda *a, **k: '{"captions": {"by_region": "Region E leads with 3."}}')
+    items = [{"name": "by_region", "title": "By region", "summary": "Region: E=3, N=2, S=1"}]
+    caps = ask_engine.ground_captions(items, {"provider": "openai", "api_key": "sk-x"})
+    assert caps["by_region"] == "Region E leads with 3."
+
+
+def test_ground_captions_falls_back_to_title_on_failure(monkeypatch):
+    def _boom(*a, **k):
+        raise RuntimeError("no ai")
+    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [])
+    monkeypatch.setattr(ask_engine.lf_client, "chat", _boom)
+    items = [{"name": "c1", "title": "Fallback Title", "summary": "x"}]
+    caps = ask_engine.ground_captions(items, {"provider": "openai", "api_key": "sk-x"})
+    assert caps["c1"] == "Fallback Title"
