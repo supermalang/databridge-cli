@@ -173,6 +173,7 @@ python3 src/data/make.py push-prompts
 # 7. Run the whole pipeline in order: download -> generate-template (if missing) -> build-report
 python3 src/data/make.py run-all
 python3 src/data/make.py run-all --sample 50 --period "Q3 2026"
+python3 src/data/make.py run-all --force   # rebuild even if data + config are unchanged
 ```
 
 > **Validation and classification are not standalone CLI commands.**
@@ -186,7 +187,7 @@ python3 src/data/make.py push-prompts --force
 The same commands are exposed in the web UI as POST `/api/run/{command}` with
 SSE-style streamed logs.
 
-`run-all` chains the existing commands via Click's `ctx.invoke` with precondition checks (questions + charts must be configured) and stop-on-failure; it is exposed at `POST /api/run/run-all` and the Dashboard "Run pipeline" button. Staleness/change-detection is a future slice.
+`run-all` chains the existing commands via Click's `ctx.invoke` with precondition checks (questions + charts must be configured) and stop-on-failure; it is exposed at `POST /api/run/run-all` and the Dashboard "Run pipeline" button. It adds **build-report staleness**: the build-report stage is skipped when the downloaded data content + report-relevant config are unchanged since the last build (content fingerprints recorded in `reports/.run_all_state.json` by `src/data/run_state.py`); pass `--force` to rebuild regardless. Skipping the *download* itself when the remote is unchanged is a later slice.
 
 ---
 
