@@ -251,6 +251,8 @@ indicators:
     framework_ref: OP1.1     # optional — links indicator to a results-framework node
     disaggregate_by: [Region, Sex]   # optional — also compute this stat per group;
                                      # adds ind_<name>_breakdown (list) + ind_<name>_table (text)
+    primary: true                    # optional — headline indicator for its framework node;
+                                     # drives the node's achievement in the logframe rows
 
 # AI narrative (fills {{ summary_text }}, {{ observations }}, {{ recommendations }})
 ai:
@@ -482,7 +484,8 @@ Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
 {{ chart_<n> }}         ← one per chart in config.yml
 {{ split_value }}       ← when --split-by is set, the current group's value
 {{ logframe }}          ← results framework hierarchy (has_framework / rows); present only when framework: is configured.
-                          Each row's indicators carry {name, value, baseline, target, pct_achievement} (latter three "" when not set)
+                          Each row's indicators carry {name, value, baseline, target, pct_achievement} (latter three "" when not set);
+                          rows also carry primary_indicator + node_value/node_target/node_pct_achievement from the indicator flagged primary: true
 {{ provenance.footer }}  ← one-line audit footer; includes "pii: consent=<col>, <N> columns redacted" when pii: rules are configured
 ```
 
