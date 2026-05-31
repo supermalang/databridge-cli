@@ -345,6 +345,8 @@ def cmd_run_all(ctx, sample, period):
 
         log.info("▶ build-report")
         try:
+            # sample=None on purpose: build-report reads the already-downloaded session
+            # (the --sample on run-all limited the download, not the report).
             _invoke(ctx, cmd_build_report, sample=None, random_sample=False, split_by=None,
                     split_sample=None, session=None, period=period, compare=None)
         except SystemExit:
