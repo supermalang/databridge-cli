@@ -9,7 +9,9 @@ The returned dict has shape:
                 "label":     str,
                 "level":     "goal" | "outcome" | "output",
                 "indent":    int,                    # 0 for goal, 1 outcome, 2 output
-                "indicators": [{"name": str, "value": str}, ...],
+                "indicators": [
+                    {"name": str, "value": str, "baseline": str,
+                     "target": str, "pct_achievement": str}, ...],
             },
             ...
         ],
@@ -39,8 +41,13 @@ def build_logframe(cfg: Dict, indicators_context: Dict[str, str]) -> Dict:
         if not ref:
             continue
         name = ind.get("name", "")
-        value = indicators_context.get(f"ind_{name}", "")
-        indicators_by_ref.setdefault(ref, []).append({"name": name, "value": value})
+        indicators_by_ref.setdefault(ref, []).append({
+            "name":            name,
+            "value":           indicators_context.get(f"ind_{name}", ""),
+            "baseline":        indicators_context.get(f"ind_{name}_baseline", ""),
+            "target":          indicators_context.get(f"ind_{name}_target", ""),
+            "pct_achievement": indicators_context.get(f"ind_{name}_pct_achievement", ""),
+        })
 
     rows: List[Dict] = []
 
