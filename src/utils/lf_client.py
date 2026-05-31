@@ -161,9 +161,20 @@ def _call_openai(messages, model, api_key, max_tokens, base_url, json_mode,
     if base_url:
         kwargs["base_url"] = base_url
     client = OpenAI(**kwargs)
-    params = {"model": model, "max_tokens": max_tokens, "messages": messages}
+    base_params = {"model": model, "max_tokens": max_tokens, "messages": messages}
+
+    def _do_request(response_format):
+        params = dict(base_params)
+        if response_format is not None:
+            params["response_format"] = response_format
+        resp = client.chat.completions.create(**params)
+        usage = getattr(resp, "usage", None)
+        usage_dict = {"input": getattr(usage, "prompt_tokens", None),
+                      "output": getattr(usage, "completion_tokens", None)} if usage else {}
+        return resp.choices[0].message.content, usage_dict
+
     if output_schema is not None:
-        params["response_format"] = {
+        schema_rf = {
             "type": "json_schema",
             "json_schema": {
                 "name": trace_name or "output",
@@ -171,13 +182,17 @@ def _call_openai(messages, model, api_key, max_tokens, base_url, json_mode,
                 "schema": output_schema,
             },
         }
-    elif json_mode:
-        params["response_format"] = {"type": "json_object"}
-    resp = client.chat.completions.create(**params)
-    usage = getattr(resp, "usage", None)
-    usage_dict = {"input": getattr(usage, "prompt_tokens", None),
-                  "output": getattr(usage, "completion_tokens", None)} if usage else {}
-    return resp.choices[0].message.content, usage_dict
+        try:
+            return _do_request(schema_rf)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                f"OpenAI json_schema response_format rejected ({type(exc).__name__}: {exc}); "
+                "retrying without schema."
+            )
+            # Fall through to no-schema path below.
+
+    fallback_rf = {"type": "json_object"} if json_mode else None
+    return _do_request(fallback_rf)
 
 
 def _call_anthropic(messages, model, api_key, max_tokens, base_url, json_mode,

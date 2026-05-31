@@ -514,3 +514,50 @@ def test_call_anthropic_raises_when_tool_use_missing(monkeypatch):
             json_mode=False, output_schema=schema, trace_name="narrator",
         )
     assert "tool_use" in str(exc.value) or "tool" in str(exc.value).lower()
+
+
+# ── Fail-soft fallback: json_schema rejected → retry without schema ──
+
+def test_openai_schema_falls_back_when_unsupported(monkeypatch, caplog):
+    """If json_schema response_format is rejected, retries once without schema."""
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+
+    FALLBACK_TEXT = '{"result": "ok"}'
+
+    class _FakeResp:
+        class _C:
+            class _M: content = FALLBACK_TEXT
+            message = _M()
+        choices = [_C()]
+        usage = None
+
+    class _FakeClientSchemaRejecting:
+        def __init__(self, **kw): pass
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    rf = kwargs.get("response_format", {})
+                    if isinstance(rf, dict) and rf.get("type") == "json_schema":
+                        raise Exception("response_format json_schema not supported")
+                    return _FakeResp()
+
+    monkeypatch.setattr("openai.OpenAI", _FakeClientSchemaRejecting)
+
+    import logging
+    caplog.set_level(logging.WARNING, logger="src.utils.lf_client")
+
+    schema = {"type": "object", "properties": {"result": {"type": "string"}},
+              "required": ["result"], "additionalProperties": False}
+
+    out = lf_client.chat(
+        [{"role": "user", "content": "hi"}],
+        model="gpt-4o", provider="openai", api_key="sk-x",
+        max_tokens=100, trace_name="t", json_mode=True,
+        output_schema=schema,
+    )
+
+    assert out == FALLBACK_TEXT
+    assert any("json_schema" in rec.message.lower() for rec in caplog.records), \
+        "Expected a warning about json_schema rejection"
