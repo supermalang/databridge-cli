@@ -1,5 +1,5 @@
 import pandas as pd
-from src.reports.data_quality import build_data_quality
+from src.reports.data_quality import build_data_quality, compute_data_quality
 
 
 def _df():
@@ -56,3 +56,49 @@ def test_complete_unique_column():
     name = dq["rows"][0]
     assert name["completeness"] == "100.0%"
     assert name["duplicate_rate"] == "0.0%"
+
+
+def test_compute_returns_numeric_values():
+    cfg = {"questions": [
+        {"export_label": "Phone", "category": "qualitative"},
+        {"export_label": "Site", "category": "categorical"},
+    ]}
+    dq = compute_data_quality(cfg, _df())
+    assert dq["has_data"] is True
+    by = {r["column"]: r for r in dq["rows"]}
+    assert by["Phone"]["completeness"] == 80.0          # float, not "80.0%"
+    assert by["Phone"]["outlier_rate"] is None          # non-numeric -> None
+    assert by["Site"]["duplicate_rate"] == 80.0
+
+
+def test_compute_outlier_rate_numeric():
+    dq = compute_data_quality(
+        {"questions": [{"export_label": "Age", "category": "quantitative"}]}, _df())
+    assert dq["rows"][0]["outlier_rate"] == 10.0
+
+
+def test_compute_complete_unique_column():
+    dq = compute_data_quality({"questions": [{"export_label": "Name"}]}, _df())
+    name = dq["rows"][0]
+    assert name["completeness"] == 100.0
+    assert name["duplicate_rate"] == 0.0
+
+
+def test_compute_empty_df_has_no_data():
+    assert compute_data_quality({}, pd.DataFrame()) == {"has_data": False, "rows": []}
+    assert compute_data_quality({}, None) == {"has_data": False, "rows": []}
+
+
+def test_compute_bad_column_yields_all_none(monkeypatch):
+    import src.reports.data_quality as dq_mod
+
+    def _boom(col, s):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(dq_mod, "_column_row", _boom)
+    dq = compute_data_quality({"questions": [{"export_label": "Name"}]}, _df())
+    row = dq["rows"][0]
+    assert row["column"] == "Name"
+    assert row["completeness"] is None
+    assert row["outlier_rate"] is None
+    assert row["duplicate_rate"] is None
