@@ -244,6 +244,8 @@ charts:
       width_inches: 5.5
 
 # Each indicator → {{ ind_<name> }} placeholder; framework_ref links it to a framework node
+# stat: count | count_distinct | sum | mean | median | min | max | percent | most_common |
+#       grouped_agg | completeness (% present, non-blank — data quality; pair with format: percent)
 indicators:
   - name: vaccinations_administered
     stat: sum
