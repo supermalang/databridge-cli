@@ -8,9 +8,11 @@ import Reports from './pages/Reports.jsx';
 import Templates from './pages/Templates.jsx';
 import Validate from './pages/Validate.jsx';
 import Profile from './pages/Profile.jsx';
+import Ask from './pages/Ask.jsx';
 
 const TABS = [
   { id: 'dashboard',   label: 'Dashboard',                         component: Dashboard },
+  { id: 'ask',         label: 'Ask',                               component: Ask },
   { id: 'sources',     label: 'Sources',     step: '1',            component: Sources },
   { id: 'questions',   label: 'Questions',   step: '2',            component: Questions },
   { id: 'validate',    label: 'Validate',    step: '3',            component: Validate },
