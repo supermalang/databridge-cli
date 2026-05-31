@@ -8,9 +8,10 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from src.utils.config import load_config
+from src.utils.config import load_config, write_config
 from src.data.transform import load_processed_data
 from src.data.profile import profile_dataset
+from src.reports import ask_engine
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -1454,6 +1455,40 @@ async def data_profile():
         return {"profiles": [], "message": "No downloaded data. Run download first."}
     profiles = profile_dataset(cfg, df, repeats)
     return {"profiles": list(profiles.values())}
+
+
+class AskPayload(BaseModel):
+    question: str = ""
+
+
+class AskSavePayload(BaseModel):
+    recipe: dict
+
+
+@app.post("/api/ask")
+async def api_ask(payload: AskPayload):
+    """Answer a natural-language question with 1-3 locally-rendered, grounded charts."""
+    question = (payload.question or "").strip()
+    if not question:
+        return {"proposals": [], "skipped": [], "message": "Type a question to ask."}
+    cfg = load_config(CONFIG_PATH)
+    try:
+        df, repeats = load_processed_data(cfg)
+    except FileNotFoundError:
+        return {"proposals": [], "skipped": [], "message": "No data yet — run Download first."}
+    return ask_engine.ask(question, cfg, df, repeats)
+
+
+@app.post("/api/ask/save")
+async def api_ask_save(payload: AskSavePayload):
+    """Append a proposed chart recipe to config.charts."""
+    recipe = payload.recipe
+    if not isinstance(recipe, dict):
+        return {"ok": False, "error": "missing recipe"}
+    cfg = load_config(CONFIG_PATH)
+    name = ask_engine.save_recipe(recipe, cfg)
+    write_config(cfg, CONFIG_PATH)
+    return {"ok": True, "name": name}
 
 
 class FrameworkPayload(BaseModel):
