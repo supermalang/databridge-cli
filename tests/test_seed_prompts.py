@@ -4,10 +4,10 @@ from src.utils.seed_prompts import SEED_PROMPTS
 EXPECTED_NAMES = {
     "narrator", "summaries", "chart_suggester", "template_generator",
     "summary_suggester", "view_suggester", "classifier_discover", "classifier_classify",
-    "ask_propose", "ask_caption",
+    "ask_propose", "ask_caption", "ask_refine",
 }
 
-def test_all_ten_prompts_present():
+def test_all_eleven_prompts_present():
     assert set(SEED_PROMPTS) == EXPECTED_NAMES
 
 def test_each_entry_is_messages_plus_config():

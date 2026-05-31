@@ -300,3 +300,17 @@ def test_ask_indicator_summary_includes_stat(monkeypatch):
     out = ask_engine.ask("q", cfg, df, {})
     summary = captured["items"][0]["summary"]
     assert "sum" in summary and "Age" in summary and "60" in summary
+
+
+def test_ask_refine_prompt_resolves_offline():
+    msgs, _cfg = lf_client.get_prompt("ask_refine", {
+        "current_kind": "chart",
+        "current_recipe": "{}",
+        "instruction": "make it a line chart",
+        "catalog": "{}",
+        "chart_types": "line: >=1 date",
+        "indicator_stats": "count: rows",
+    })
+    assert isinstance(msgs, list) and msgs
+    blob = " ".join(m["content"] for m in msgs)
+    assert "make it a line chart" in blob

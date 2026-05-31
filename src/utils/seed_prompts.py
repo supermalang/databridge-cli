@@ -333,6 +333,28 @@ _ASK_PROPOSE: ChatMessages = [
     )},
 ]
 
+_ASK_REFINE: ChatMessages = [
+    {"role": "system", "content": (
+        "You revise a SINGLE data-answer recipe (a chart or a one-number indicator) based "
+        "on a user's refinement instruction. You are given the current recipe, the data "
+        "catalog, and the instruction. Return the REVISED recipe. You MAY change the kind "
+        "(chart↔indicator), the chart type, the columns, group_by, filter, the stat, etc. "
+        "Use ONLY table and column names that appear in the catalog. Keep the recipe's "
+        "\"name\" unless the instruction clearly asks for a different metric. Respect chart "
+        "column requirements / indicator stat rules. Respond with valid JSON only — no "
+        "fences, no commentary."
+    )},
+    {"role": "user", "content": (
+        "Current recipe (kind={{current_kind}}):\n{{current_recipe}}\n\n"
+        "User instruction: {{instruction}}\n\n"
+        "Available data (catalog):\n{{catalog}}\n\n"
+        "Chart types (with column requirements):\n{{chart_types}}\n\n"
+        "Indicator stats:\n{{indicator_stats}}\n\n"
+        "Return ONLY JSON with the single revised item: "
+        '{"item": {"kind": "chart"|"indicator", "name": "...", "title": "...", "...": "..."}}'
+    )},
+]
+
 _ASK_CAPTION: ChatMessages = [
     {"role": "system", "content": (
         "You write one-line factual chart captions for a data report. For each chart you are "
@@ -611,4 +633,5 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
                              "config": {"output_schema": _CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA}},
     "ask_propose": {"messages": _ASK_PROPOSE, "config": {}},
     "ask_caption": {"messages": _ASK_CAPTION, "config": {}},
+    "ask_refine":  {"messages": _ASK_REFINE,  "config": {}},
 }
