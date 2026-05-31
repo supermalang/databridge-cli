@@ -42,9 +42,28 @@ def test_build_logframe_attaches_indicator_values_to_nodes():
     indicators_context = {"ind_a": "100", "ind_b": "50", "ind_c": "75"}
     lf = build_logframe(cfg, indicators_context)
     by_id = {r["id"]: r for r in lf["rows"]}
-    assert by_id["OP1.1"]["indicators"] == [{"name": "a", "value": "100"}]
-    assert by_id["OP1.2"]["indicators"] == [{"name": "b", "value": "50"}]
-    assert by_id["OC1"]["indicators"]   == [{"name": "c", "value": "75"}]
+    # value attached; baseline/target/pct_achievement present but empty when not computed
+    assert by_id["OP1.1"]["indicators"] == [
+        {"name": "a", "value": "100", "baseline": "", "target": "", "pct_achievement": ""}]
+    assert by_id["OP1.2"]["indicators"][0]["value"] == "50"
+    assert by_id["OC1"]["indicators"][0]["value"] == "75"
+
+
+def test_build_logframe_surfaces_target_and_achievement():
+    cfg = _sample_cfg_with_indicators()
+    indicators_context = {
+        "ind_a": "100",
+        "ind_a_baseline": "20",
+        "ind_a_target": "200",
+        "ind_a_pct_achievement": "50.0%",
+    }
+    lf = build_logframe(cfg, indicators_context)
+    by_id = {r["id"]: r for r in lf["rows"]}
+    entry = by_id["OP1.1"]["indicators"][0]
+    assert entry == {
+        "name": "a", "value": "100", "baseline": "20",
+        "target": "200", "pct_achievement": "50.0%",
+    }
 
 
 def test_build_logframe_handles_indicators_with_no_ref():

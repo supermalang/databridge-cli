@@ -481,7 +481,8 @@ Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
 {{ summary_<name> }}    ← one per summary in config.yml summaries section
 {{ chart_<n> }}         ← one per chart in config.yml
 {{ split_value }}       ← when --split-by is set, the current group's value
-{{ logframe }}          ← results framework hierarchy (has_framework / rows); present only when framework: is configured
+{{ logframe }}          ← results framework hierarchy (has_framework / rows); present only when framework: is configured.
+                          Each row's indicators carry {name, value, baseline, target, pct_achievement} (latter three "" when not set)
 {{ provenance.footer }}  ← one-line audit footer; includes "pii: consent=<col>, <N> columns redacted" when pii: rules are configured
 ```
 
