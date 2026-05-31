@@ -178,17 +178,20 @@ def _run_classify(cfg, sample=None, rediscover=False):
         log.info("Themes saved to config.yml.")
 
     log.info("Saving classified data ...")
-    export_data(df, cfg)
+    export_data(df, cfg, redact=False)   # data was already PII-gated at the primary export
     log.info("Classification complete.")
 
 
 @cli.command("download")
 @click.option("--sample", default=None, type=int, help="Limit to first N submissions.")
 @click.option("--period", default=None, help="Period label to tag this download (overrides periods.current).")
-def cmd_download(sample, period):
+@click.option("--no-redact", is_flag=True, default=False,
+              help="RAW export: skip PII redaction & consent gating (internal/secure use only).")
+def cmd_download(sample, period, no_redact):
     """Download submissions, apply filters, export to configured destination."""
     from src.data.extract import get_client
     from src.data.transform import load_data, apply_filters, apply_computed_columns, export_data
+    from src.utils.pii import PIIConfigError
     from src.utils import lf_client
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("questions"):
@@ -210,7 +213,13 @@ def cmd_download(sample, period):
         df, repeat_tables = apply_filters(df, cfg, repeat_tables)
         df = apply_computed_columns(df, cfg, repeat_tables)
         log.info(f"Exporting {len(df)} rows ...")
-        export_data(df, cfg, repeat_tables)
+        if no_redact:
+            log.warning("⚠ RAW export: PII redaction & consent gating SKIPPED (--no-redact).")
+        try:
+            export_data(df, cfg, repeat_tables, redact=not no_redact)
+        except PIIConfigError as e:
+            click.echo(f"PII config error — export aborted: {e}", err=True)
+            sys.exit(1)
         if period:
             from src.utils.config import write_config
             write_config(cfg, CONFIG_PATH)

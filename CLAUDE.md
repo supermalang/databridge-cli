@@ -538,6 +538,23 @@ default 20) so the profile never surfaces individual free-text/PII values.
 
 Exposed read-only at `GET /api/profile`; rendered in the **Profile** tab.
 
+### PII gate (src/utils/pii.py)
+PII has two tiers:
+- **Strict export gate** — `enforce_pii` runs inside `export_data` (default `redact=True`).
+  It calls `validate_pii_config` (fail-closed: a configured `consent_column` or `redact`
+  column missing from the data, or an unknown strategy, raises `PIIConfigError` and
+  aborts the download), consent-gates the main table, prunes orphaned repeat rows
+  (parents filtered out by consent, via `_parent_index`), then applies redaction.
+  So `data/processed` + DB/Supabase are always redacted + consent-gated.
+- **Lenient render net** — the existing `apply_pii` still runs at report/preview time
+  as defense-in-depth (log-and-skip on missing columns); it operates on already-gated data.
+
+`download --no-redact` is an explicit, off-by-default escape hatch that writes RAW data
+(internal/secure use only) and logs a warning; it is CLI-only (not in the web UI's
+ALLOWED_COMMANDS flag whitelist). Reports built from a raw session are still redacted by
+the lenient render net. The post-download classification re-export passes `redact=False`
+(its data was already gated by the primary export).
+
 ### Chart output path
 Charts are saved to `data/processed/charts/<chart_name>.png` at `build-report` time.
 
