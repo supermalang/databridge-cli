@@ -38,6 +38,8 @@ Per-item scoping (optional):
 Baseline / target (optional):
   baseline     : previous measurement value (numeric)
   target       : goal value (numeric)
+  direction    : "increase" (default, higher-is-better: value/target) or
+                 "decrease" (lower-is-better: target/value). Affects pct_achievement only.
   Exposes extra placeholders: ind_<name>_baseline, ind_<name>_target, ind_<name>_pct_achievement
 
 Disaggregation (optional):
@@ -133,10 +135,18 @@ def compute_indicators(
             if target is not None:
                 context[f"ind_{name}_target"] = _format(target, fmt, ind)
             if target is not None and target != 0:
+                direction = str(ind.get("direction", "increase")).lower()
                 try:
-                    pct = float(value) / float(target) * 100
-                    context[f"ind_{name}_pct_achievement"] = f"{pct:,.1f}%"
-                except (TypeError, ValueError):
+                    v = float(value)
+                    t = float(target)
+                    if direction == "decrease":
+                        pct = (t / v * 100) if v != 0 else None  # lower-is-better
+                    else:
+                        pct = v / t * 100                        # higher-is-better (default)
+                    context[f"ind_{name}_pct_achievement"] = (
+                        f"{pct:,.1f}%" if pct is not None else "N/A"
+                    )
+                except (TypeError, ValueError, ZeroDivisionError):
                     context[f"ind_{name}_pct_achievement"] = "N/A"
         except Exception as e:
             log.warning(f"Indicator '{name}' failed: {e}")

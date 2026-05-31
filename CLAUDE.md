@@ -248,6 +248,9 @@ charts:
 # stat: count | count_distinct | sum | mean | median | min | max | percent | most_common | grouped_agg |
 #       completeness (% present, non-blank) | outlier_rate (% beyond 3xIQR) | duplicate_rate (% redundant)
 #       — the latter three are data-quality stats; pair with format: percent
+# direction: increase (default, higher-is-better → pct_achievement = value/target)
+#            | decrease (lower-is-better → target/value). Set on "reduce X" indicators
+#            so achievement is correct when the goal is to bring a number down.
 indicators:
   - name: vaccinations_administered
     stat: sum
