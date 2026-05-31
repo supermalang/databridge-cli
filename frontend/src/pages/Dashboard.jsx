@@ -126,9 +126,12 @@ export default function Dashboard() {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
             Preview report
           </button>
-          <button className="btn btn-primary" onClick={() => setWizardOpen(true)} disabled={running}>
+          <button className="btn" onClick={() => setWizardOpen(true)} disabled={running}>
+            Step by step
+          </button>
+          <button className="btn btn-primary" onClick={() => run('run-all')} disabled={running}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><polygon points="4 3 13 8 4 13"/></svg>
-            Run pipeline
+            {running && activeCmd === 'run-all' ? 'Running…' : 'Run pipeline'}
           </button>
         </div>
       </div>
