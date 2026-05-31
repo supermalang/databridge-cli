@@ -7,6 +7,8 @@ export default function Ask() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState({});
+  const [refineInputs, setRefineInputs] = useState({});   // index -> instruction text
+  const [refining, setRefining] = useState({});           // index -> bool
 
   async function submit(e) {
     e.preventDefault();
@@ -36,6 +38,36 @@ export default function Ask() {
       const data = await r.json().catch(() => ({}));
       if (data.ok) setSaved(s => ({ ...s, [recipe.name]: true }));
     } catch { /* noop */ }
+  }
+
+  async function refine(i, recipe, kind) {
+    const instruction = (refineInputs[i] || '').trim();
+    if (!instruction) return;
+    setRefining(r => ({ ...r, [i]: true }));
+    try {
+      const resp = await fetch('/api/ask/refine', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipe, kind, instruction }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (data.proposal) {
+        setResult(prev => {
+          const proposals = prev.proposals.slice();
+          proposals[i] = data.proposal;
+          return { ...prev, proposals };
+        });
+        setRefineInputs(s => ({ ...s, [i]: '' }));
+      } else {
+        const note = data.skipped ? data.skipped.reason : (data.message || 'No change');
+        setResult(prev => {
+          const proposals = prev.proposals.slice();
+          proposals[i] = { ...proposals[i], refineNote: note };
+          return { ...prev, proposals };
+        });
+      }
+    } catch { /* noop */ } finally {
+      setRefining(r => ({ ...r, [i]: false }));
+    }
   }
 
   return (
@@ -82,6 +114,21 @@ export default function Ask() {
                     style={{ padding: '6px 12px', borderRadius: 6 }}>
               {saved[p.recipe?.name] ? 'Saved ✓' : 'Save to report'}
             </button>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <input
+                value={refineInputs[i] || ''}
+                onChange={e => setRefineInputs(s => ({ ...s, [i]: e.target.value }))}
+                placeholder="Refine — e.g. make it a line chart, split by sex"
+                style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--line, #e5e7eb)', fontSize: 12.5 }}
+              />
+              <button onClick={() => refine(i, p.recipe, p.kind)} disabled={refining[i]}
+                      style={{ padding: '6px 10px', borderRadius: 6, fontSize: 12.5 }}>
+                {refining[i] ? '…' : 'Refine'}
+              </button>
+            </div>
+            {p.refineNote && (
+              <div style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 4 }}>{p.refineNote}</div>
+            )}
           </div>
         ))}
       </div>
