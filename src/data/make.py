@@ -299,6 +299,62 @@ def cmd_build_report(ctx, sample, random_sample, split_by, split_sample, session
     with lf_client.command_trace("build-report"):
         ReportBuilder(cfg, strict=strict).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample, session=session, period=period, compare=compare_labels)
 
+def _invoke(ctx, command, **params):
+    """Indirection over Click's ctx.invoke so run-all's sequencing is unit-testable
+    (tests monkeypatch this to record stage order / simulate a stage failure)."""
+    return ctx.invoke(command, **params)
+
+
+@cli.command("run-all")
+@click.option("--sample", default=None, type=int, help="Limit the download to first N submissions.")
+@click.option("--period", default=None, help="Period label for this run (passed to download + build-report).")
+@click.pass_context
+def cmd_run_all(ctx, sample, period):
+    """Run the core pipeline in order: download -> (generate-template if missing) -> build-report."""
+    from src.utils import lf_client
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
+    if not cfg.get("questions"):
+        click.echo("No questions configured — run fetch-questions first.", err=True)
+        sys.exit(1)
+    if not cfg.get("charts"):
+        click.echo("No charts configured — add charts (or use the Ask tab) before building a report.", err=True)
+        sys.exit(1)
+
+    with lf_client.command_trace("run-all"):
+        log.info("▶ download")
+        try:
+            _invoke(ctx, cmd_download, sample=sample, period=period, no_redact=False)
+        except SystemExit:
+            raise
+        except Exception as e:  # noqa: BLE001
+            click.echo(f"✗ download failed: {e}", err=True)
+            sys.exit(1)
+        log.info("✓ download")
+
+        template = Path(cfg.get("report", {}).get("template", "templates/report_template.docx"))
+        if not template.exists():
+            log.info("▶ generate-template (none found)")
+            try:
+                _invoke(ctx, cmd_generate_template, out=None, context=None, summary_prompt=None)
+            except SystemExit:
+                raise
+            except Exception as e:  # noqa: BLE001
+                click.echo(f"✗ generate-template failed: {e}", err=True)
+                sys.exit(1)
+
+        log.info("▶ build-report")
+        try:
+            _invoke(ctx, cmd_build_report, sample=None, random_sample=False, split_by=None,
+                    split_sample=None, session=None, period=period, compare=None)
+        except SystemExit:
+            raise
+        except Exception as e:  # noqa: BLE001
+            click.echo(f"✗ build-report failed: {e}", err=True)
+            sys.exit(1)
+        log.info("✓ Pipeline complete.")
+
+
 @cli.command("set-period")
 @click.argument("label")
 @click.option("--baseline", is_flag=True, default=False, help="Also set this period as the baseline.")
