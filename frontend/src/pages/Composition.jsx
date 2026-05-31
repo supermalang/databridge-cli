@@ -14,7 +14,7 @@ const CHART_TYPES = [
   'pyramid', 'dot_map', 'period_bar', 'period_line',
 ];
 
-const INDICATOR_STATS = ['count', 'sum', 'mean', 'median', 'min', 'max', 'mode', 'top', 'pct', 'completeness'];
+const INDICATOR_STATS = ['count', 'sum', 'mean', 'median', 'min', 'max', 'mode', 'top', 'pct', 'completeness', 'outlier_rate', 'duplicate_rate'];
 const SUMMARY_STATS   = ['distribution', 'numeric', 'crosstab', 'trend', 'ai'];
 
 // ── tiny atoms ──────────────────────────────────────────────────────────────
