@@ -379,6 +379,83 @@ def compute_indicator(recipe: Dict, df: pd.DataFrame,
     return val
 
 
+def _propose_refinement(recipe: Dict, kind: str, instruction: str,
+                        catalog: Dict, ai_cfg: Dict) -> Optional[Dict]:
+    """Ask the LLM for a revised single recipe. Returns the item dict or None on failure."""
+    provider = (ai_cfg.get("provider") or "openai").lower()
+    variables = {
+        "current_kind": kind,
+        "current_recipe": json.dumps({k: v for k, v in recipe.items() if k != "kind"}, ensure_ascii=False),
+        "instruction": instruction,
+        "catalog": json.dumps(catalog, ensure_ascii=False),
+        "chart_types": _CHART_TYPES_BLOCK,
+        "indicator_stats": _INDICATOR_STATS_BLOCK,
+    }
+    try:
+        messages, _config = lf_client.get_prompt("ask_refine", variables)
+        raw = lf_client.chat(
+            messages,
+            model=ai_cfg.get("model", "gpt-4o"),
+            provider=provider,
+            api_key=ai_cfg.get("api_key", ""),
+            max_tokens=max(int(ai_cfg.get("max_tokens", 1500)), 2000),
+            trace_name="ask_refine",
+            base_url=ai_cfg.get("base_url"),
+            json_mode=(provider != "anthropic"),
+            output_schema=_config.get("output_schema"),
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"ask: _propose_refinement failed: {e}")
+        return None
+    import re
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        m = re.search(r"\{.*\}", raw or "", re.DOTALL)
+        if not m:
+            return None
+        try:
+            data = json.loads(m.group(0))
+        except (ValueError, TypeError):
+            return None
+    if isinstance(data, dict) and isinstance(data.get("item"), dict):
+        return data["item"]
+    return None
+
+
+def refine_item(recipe: Dict, kind: str, instruction: str, cfg: Dict,
+                df: pd.DataFrame, repeat_tables: Dict[str, pd.DataFrame]) -> Dict:
+    """Refine one existing answer with a NL instruction. Returns
+    {"proposal": {...}|None, "skipped": {title,reason}|None, "message": str|None}."""
+    ai_cfg = cfg.get("ai") or {}
+    if not _ai_ready(ai_cfg):
+        return {"proposal": None, "skipped": None,
+                "message": "Configure an AI provider in Sources to ask questions."}
+    from src.data.profile import profile_dataset
+    profile = profile_dataset(cfg, df, repeat_tables or {})
+    catalog = build_catalog(profile)
+    revised = _propose_refinement(recipe, kind, instruction, catalog, ai_cfg)
+    if not revised:
+        return {"proposal": None, "skipped": None,
+                "message": "Couldn't apply that refinement — try rephrasing."}
+    revised.setdefault("kind", kind)
+    out = _execute_item(revised, profile, df, repeat_tables or {})
+    if "skip" in out:
+        return {"proposal": None, "skipped": {"title": out["title"], "reason": out["skip"]}, "message": None}
+    name = out["recipe"].get("name") or out["title"]
+    caps = ground_captions([{"name": name, "title": out["title"], "summary": out["summary"]}], ai_cfg)
+    proposal = {"kind": out["kind"], "recipe": out["recipe"], "caption": caps.get(name, out["title"])}
+    if out["kind"] == "indicator":
+        proposal["value"] = out["value"]
+    else:
+        try:
+            proposal["image"] = _b64_png(out["png"])
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"ask: refine image read failed: {e}")
+            return {"proposal": None, "skipped": {"title": out["title"], "reason": "chart image unavailable"}, "message": None}
+    return {"proposal": proposal, "skipped": None, "message": None}
+
+
 def save_recipe(recipe: Dict, cfg: Dict, kind: str = "chart") -> str:
     """Append a recipe to cfg['charts'] (kind='chart') or cfg['indicators']
     (kind='indicator'), de-duplicating the name and stripping the 'kind' field.

@@ -337,3 +337,44 @@ def test_execute_item_invalid_returns_skip():
     profile = _profile_fixture()
     out = _execute_item({"kind": "chart", "name": "c", "type": "bar", "questions": ["Ghost"]}, profile, pd.DataFrame({"Region": ["N"]}), {})
     assert "skip" in out and "Ghost" in out["skip"]
+
+
+def test_refine_item_chart_to_line(monkeypatch):
+    monkeypatch.setattr(ask_engine, "_propose_refinement",
+                        lambda recipe, kind, instr, cat, ai: {"kind": "chart", "name": "trend", "title": "Trend", "type": "line", "questions": ["When"]})
+    monkeypatch.setattr(ask_engine, "ground_captions", lambda items, ai: {it["name"]: "cap" for it in items})
+    cfg = {"ai": {"provider": "openai", "api_key": "sk-x"},
+           "questions": [{"export_label": "When", "category": "date"}]}
+    df = pd.DataFrame({"_id": [1, 2], "When": ["2026-01-01", "2026-02-01"]})
+    out = ask_engine.refine_item({"kind": "chart", "name": "trend", "type": "bar", "questions": ["When"]},
+                                 "chart", "make it a line chart", cfg, df, {})
+    assert out["proposal"]["kind"] == "chart"
+    assert out["proposal"]["recipe"]["type"] == "line"
+    assert out["proposal"]["image"].startswith("data:image/png;base64,")
+    assert out["skipped"] is None
+
+
+def test_refine_item_kind_switch_to_indicator(monkeypatch):
+    monkeypatch.setattr(ask_engine, "_propose_refinement",
+                        lambda recipe, kind, instr, cat, ai: {"kind": "indicator", "name": "n", "title": "N", "stat": "count"})
+    monkeypatch.setattr(ask_engine, "ground_captions", lambda items, ai: {it["name"]: "cap" for it in items})
+    cfg = {"ai": {"provider": "openai", "api_key": "sk-x"}, "questions": []}
+    df = pd.DataFrame({"_id": [1, 2, 3]})
+    out = ask_engine.refine_item({"kind": "chart", "name": "x", "type": "bar", "questions": ["Region"]},
+                                 "chart", "just give me the number", cfg, df, {})
+    assert out["proposal"]["kind"] == "indicator" and out["proposal"]["value"] == "3"
+
+
+def test_refine_item_invalid_returns_skipped(monkeypatch):
+    monkeypatch.setattr(ask_engine, "_propose_refinement",
+                        lambda recipe, kind, instr, cat, ai: {"kind": "chart", "name": "x", "type": "bar", "questions": ["Ghost"]})
+    cfg = {"ai": {"provider": "openai", "api_key": "sk-x"}, "questions": []}
+    out = ask_engine.refine_item({"kind": "chart", "name": "x", "type": "bar", "questions": ["Region"]},
+                                 "chart", "bad", cfg, pd.DataFrame({"Region": ["N"]}), {})
+    assert out["proposal"] is None and out["skipped"]["reason"]
+
+
+def test_refine_item_no_ai_message():
+    cfg = {"ai": {"provider": "openai", "api_key": "env:OPENAI_API_KEY"}}
+    out = ask_engine.refine_item({"kind": "chart"}, "chart", "x", cfg, pd.DataFrame({"_id": [1]}), {})
+    assert out["proposal"] is None and "AI" in out["message"]
