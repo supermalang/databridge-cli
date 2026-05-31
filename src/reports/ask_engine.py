@@ -272,7 +272,8 @@ def _b64_png(path: Path) -> str:
 
 def ask(question: str, cfg: Dict, df: pd.DataFrame,
         repeat_tables: Dict[str, pd.DataFrame]) -> Dict:
-    """Full ask loop. Returns {"proposals": [...], "skipped": [...], "message": str|None}."""
+    """Full ask loop (charts + indicators). Returns
+    {"proposals": [...], "skipped": [...], "message": str|None}."""
     ai_cfg = cfg.get("ai") or {}
     if not _ai_ready(ai_cfg):
         return {"proposals": [], "skipped": [],
@@ -282,30 +283,37 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
     profile = profile_dataset(cfg, df, repeat_tables or {})
     catalog = build_catalog(profile)
 
-    recipes = propose_items(question, catalog, ai_cfg)
-    if not recipes:
+    items = propose_items(question, catalog, ai_cfg)
+    if not items:
         return {"proposals": [], "skipped": [],
-                "message": "Couldn't turn that into a chart — try rephrasing."}
+                "message": "Couldn't turn that into an answer — try rephrasing."}
 
     valid, skipped = [], []
-    for r in recipes:
-        title = r.get("title") or r.get("name") or r.get("type", "chart")
+    for r in items:
+        kind = r.get("kind", "chart")
+        title = r.get("title") or r.get("name") or (r.get("type") if kind == "chart" else r.get("stat")) or kind
         ok, reason = validate_recipe(r, profile)
         if not ok:
             skipped.append({"title": title, "reason": reason})
             continue
-        rendered = render_recipe(r, df, repeat_tables or {})
-        if rendered is None:
-            skipped.append({"title": title, "reason": "could not render this chart"})
-            continue
-        png, summary = rendered
-        valid.append({"recipe": r, "png": png, "summary": summary, "title": title})
+        if kind == "indicator":
+            value = compute_indicator(r, df, repeat_tables or {})
+            if value is None:
+                skipped.append({"title": title, "reason": "could not compute this indicator"})
+                continue
+            valid.append({"kind": "indicator", "recipe": r, "value": value, "summary": value, "title": title})
+        else:
+            rendered = render_recipe(r, df, repeat_tables or {})
+            if rendered is None:
+                skipped.append({"title": title, "reason": "could not render this chart"})
+                continue
+            png, summary = rendered
+            valid.append({"kind": "chart", "recipe": r, "png": png, "summary": summary, "title": title})
 
-    # Disambiguate duplicate recipe names within this batch so captions map 1:1
-    # and UI keys stay unique (the LLM can occasionally repeat a name).
+    # Disambiguate duplicate names within this batch (captions map 1:1; UI keys unique).
     seen_names = set()
     for v in valid:
-        base = v["recipe"].get("name") or v["title"] or "chart"
+        base = v["recipe"].get("name") or v["title"] or v["kind"]
         name = base
         i = 2
         while name in seen_names:
@@ -315,14 +323,18 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
         v["recipe"] = {**v["recipe"], "name": name}
 
     captions = ground_captions(
-        [{"name": v["recipe"].get("name", v["title"]), "title": v["title"], "summary": v["summary"]} for v in valid],
+        [{"name": v["recipe"]["name"], "title": v["title"], "summary": v["summary"]} for v in valid],
         ai_cfg,
     )
-    proposals = [{
-        "recipe": v["recipe"],
-        "image": _b64_png(v["png"]),
-        "caption": captions.get(v["recipe"].get("name", v["title"]), v["title"]),
-    } for v in valid]
+    proposals = []
+    for v in valid:
+        name = v["recipe"]["name"]
+        base = {"kind": v["kind"], "recipe": v["recipe"], "caption": captions.get(name, v["title"])}
+        if v["kind"] == "indicator":
+            base["value"] = v["value"]
+        else:
+            base["image"] = _b64_png(v["png"])
+        proposals.append(base)
     return {"proposals": proposals, "skipped": skipped, "message": None}
 
 
@@ -345,17 +357,20 @@ def compute_indicator(recipe: Dict, df: pd.DataFrame,
     return val
 
 
-def save_recipe(recipe: Dict, cfg: Dict) -> str:
-    """Append a chart recipe to cfg['charts'], de-duplicating the name. Mutates cfg;
-    the caller persists via write_config. Returns the final saved name."""
-    charts = cfg.setdefault("charts", [])
-    existing = {c.get("name") for c in charts}
-    name = recipe.get("name") or "chart"
+def save_recipe(recipe: Dict, cfg: Dict, kind: str = "chart") -> str:
+    """Append a recipe to cfg['charts'] (kind='chart') or cfg['indicators']
+    (kind='indicator'), de-duplicating the name and stripping the 'kind' field.
+    Mutates cfg; the caller persists via write_config. Returns the final name."""
+    section = "indicators" if kind == "indicator" else "charts"
+    items = cfg.setdefault(section, [])
+    existing = {c.get("name") for c in items}
+    name = recipe.get("name") or kind
     if name in existing:
         i = 2
         while f"{name}_{i}" in existing:
             i += 1
         name = f"{name}_{i}"
-    saved = {**recipe, "name": name}
-    charts.append(saved)
+    saved = {k: v for k, v in recipe.items() if k != "kind"}
+    saved["name"] = name
+    items.append(saved)
     return name

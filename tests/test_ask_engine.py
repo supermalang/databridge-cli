@@ -142,20 +142,23 @@ def test_ground_captions_falls_back_to_title_on_failure(monkeypatch):
     assert caps["c1"] == "Fallback Title"
 
 
-def test_ask_end_to_end(monkeypatch):
-    monkeypatch.setattr(ask_engine, "propose_items",
-                        lambda q, cat, ai: [{"name": "by_region", "title": "By region", "type": "bar", "questions": ["Region"]}])
-    monkeypatch.setattr(ask_engine, "ground_captions",
-                        lambda items, ai: {it["name"]: "Region E leads." for it in items})
-    cfg = {"ai": {"provider": "openai", "api_key": "sk-x"}, "questions": [
-        {"export_label": "Region", "category": "categorical"}]}
-    df = pd.DataFrame({"_id": [1, 2, 3, 4], "Region": ["N", "E", "E", "E"]})
-    out = ask_engine.ask("by region?", cfg, df, {})
-    assert len(out["proposals"]) == 1
-    p = out["proposals"][0]
-    assert p["image"].startswith("data:image/png;base64,")
-    assert p["caption"] == "Region E leads."
-    assert out["skipped"] == []
+def test_ask_mixed_chart_and_indicator(monkeypatch):
+    monkeypatch.setattr(ask_engine, "propose_items", lambda q, cat, ai: [
+        {"kind": "chart", "name": "by_region", "title": "By region", "type": "bar", "questions": ["Region"]},
+        {"kind": "indicator", "name": "n_rows", "title": "Total", "stat": "count"},
+    ])
+    monkeypatch.setattr(ask_engine, "ground_captions", lambda items, ai: {it["name"]: f"cap-{it['name']}" for it in items})
+    cfg = {"ai": {"provider": "openai", "api_key": "sk-x"},
+           "questions": [{"export_label": "Region", "category": "categorical"}]}
+    df = pd.DataFrame({"_id": [1, 2, 3], "Region": ["N", "E", "E"]})
+    out = ask_engine.ask("q", cfg, df, {})
+    kinds = sorted(p["kind"] for p in out["proposals"])
+    assert kinds == ["chart", "indicator"]
+    chart = next(p for p in out["proposals"] if p["kind"] == "chart")
+    ind = next(p for p in out["proposals"] if p["kind"] == "indicator")
+    assert chart["image"].startswith("data:image/png;base64,")
+    assert ind["value"] == "3"
+    assert ind["caption"] == "cap-n_rows"
 
 
 def test_ask_no_ai_returns_message():
@@ -182,18 +185,24 @@ def test_ask_disambiguates_duplicate_recipe_names(monkeypatch):
     assert caps == ["cap-dup", "cap-dup_2"]              # captions map 1:1, no collision
 
 
-def test_save_recipe_appends_to_config():
-    cfg = {"charts": [{"name": "existing"}]}
-    name = ask_engine.save_recipe({"name": "by_region", "type": "bar", "questions": ["Region"]}, cfg)
-    assert name == "by_region"
-    assert [c["name"] for c in cfg["charts"]] == ["existing", "by_region"]
+def test_save_recipe_chart_to_charts():
+    cfg = {}
+    name = ask_engine.save_recipe({"name": "by_region", "type": "bar", "questions": ["Region"]}, cfg, "chart")
+    assert name == "by_region" and [c["name"] for c in cfg["charts"]] == ["by_region"]
+
+
+def test_save_recipe_indicator_to_indicators():
+    cfg = {}
+    name = ask_engine.save_recipe({"name": "n_rows", "stat": "count", "kind": "indicator"}, cfg, "indicator")
+    assert name == "n_rows"
+    assert [i["name"] for i in cfg["indicators"]] == ["n_rows"]
+    assert "kind" not in cfg["indicators"][0]
 
 
 def test_save_recipe_dedupes_name():
     cfg = {"charts": [{"name": "by_region"}]}
-    name = ask_engine.save_recipe({"name": "by_region", "type": "bar", "questions": ["Region"]}, cfg)
+    name = ask_engine.save_recipe({"name": "by_region", "type": "bar"}, cfg, "chart")
     assert name == "by_region_2"
-    assert [c["name"] for c in cfg["charts"]] == ["by_region", "by_region_2"]
 
 
 def test_validate_indicator_count_ok():
