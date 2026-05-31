@@ -47,8 +47,8 @@ def test_outlier_rate_for_numeric_column():
 
 
 def test_empty_df_has_no_data():
-    assert build_data_quality({}, pd.DataFrame()) == {"has_data": False, "rows": []}
-    assert build_data_quality({}, None) == {"has_data": False, "rows": []}
+    assert build_data_quality({}, pd.DataFrame()) == {"has_data": False, "rows": [], "tables": []}
+    assert build_data_quality({}, None) == {"has_data": False, "rows": [], "tables": []}
 
 
 def test_complete_unique_column():
@@ -85,8 +85,8 @@ def test_compute_complete_unique_column():
 
 
 def test_compute_empty_df_has_no_data():
-    assert compute_data_quality({}, pd.DataFrame()) == {"has_data": False, "rows": []}
-    assert compute_data_quality({}, None) == {"has_data": False, "rows": []}
+    assert compute_data_quality({}, pd.DataFrame()) == {"has_data": False, "rows": [], "tables": []}
+    assert compute_data_quality({}, None) == {"has_data": False, "rows": [], "tables": []}
 
 
 def test_compute_bad_column_yields_all_none(monkeypatch):
@@ -102,3 +102,48 @@ def test_compute_bad_column_yields_all_none(monkeypatch):
     assert row["completeness"] is None
     assert row["outlier_rate"] is None
     assert row["duplicate_rate"] is None
+
+
+def _repeats():
+    # household_members: Name 100% complete & unique; Age has 1 outlier (9999)
+    return {"household_members": pd.DataFrame({
+        "_root_id": [1, 1, 2, 2, 3, 3, 4, 4, 5, 5],
+        "Name": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+        "Age":  [20, 21, 22, 23, 24, 25, 26, 27, 28, 9999],
+    })}
+
+
+def test_compute_includes_repeat_tables():
+    dq = compute_data_quality({}, _df(), _repeats())
+    assert [t["name"] for t in dq["tables"]] == ["household_members"]
+    rows = {r["column"]: r for r in dq["tables"][0]["rows"]}
+    assert "_root_id" not in rows                 # linkage col excluded by fallback
+    assert rows["Name"]["completeness"] == 100.0
+    assert rows["Age"]["outlier_rate"] == 10.0
+
+
+def test_compute_omits_empty_repeat_table():
+    dq = compute_data_quality({}, _df(), {"empty_rt": pd.DataFrame()})
+    assert dq["tables"] == []
+
+
+def test_compute_no_repeats_gives_empty_tables():
+    dq = compute_data_quality({}, _df())
+    assert dq["tables"] == []
+
+
+def test_build_formats_repeat_tables():
+    dq = build_data_quality({}, _df(), _repeats())
+    t = dq["tables"][0]
+    assert t["name"] == "household_members"
+    by = {r["column"]: r for r in t["rows"]}
+    assert by["Name"]["completeness"] == "100.0%"
+    assert by["Age"]["outlier_rate"] == "10.0%"
+    assert all(isinstance(r["completeness"], str) for r in dq["rows"])
+
+
+def test_compute_omits_linkage_only_repeat_table():
+    # Non-empty table but only linkage columns -> no displayable rows -> omitted.
+    linkage_only = {"links": pd.DataFrame({"_root_id": [1, 2], "_row_id": ["1.0", "2.0"]})}
+    dq = compute_data_quality({}, _df(), linkage_only)
+    assert dq["tables"] == []

@@ -1,16 +1,14 @@
 """Data-quality overview for the report: per-column completeness / outlier /
-duplicate rate, reusing src.data.profile primitives. Mirrors logframe.
+duplicate rate per base table, reusing src.data.profile primitives. Mirrors logframe.
 
-Two public functions:
+Two public functions (both: main table in `rows`, repeat tables in `tables`):
 - compute_data_quality: numeric core — floats (0-100) or None per column.
   Shape: {"has_data": bool,
-          "rows": [{"column": str, "completeness": float|None,
-                    "outlier_rate": float|None, "duplicate_rate": float|None}, ...]}
+          "rows":   [{"column": str, "completeness": float|None,
+                      "outlier_rate": float|None, "duplicate_rate": float|None}, ...],
+          "tables": [{"name": str, "rows": [ {...}, ... ]}, ...]}
 - build_data_quality: string formatter for the report's {{ data_quality }} section.
-  Shape: {"has_data": bool,
-          "rows": [{"column": str, "completeness": str,
-                    "outlier_rate": str, "duplicate_rate": str}, ...]}
-  Percentages are "95.0%"; None maps to "—".
+  Same shape with each metric formatted ("95.0%"; None maps to "—").
 """
 from __future__ import annotations
 import logging
@@ -53,29 +51,53 @@ def _column_row(col: str, s: pd.Series) -> Dict:
             "outlier_rate": outlier_rate, "duplicate_rate": duplicate_rate}
 
 
-def compute_data_quality(cfg: Dict, main_df: Optional[pd.DataFrame],
-                         repeat_tables: Optional[Dict] = None) -> Dict:
-    """Numeric per-column completeness / outlier / duplicate rate for the main table.
-
-    Shape: {"has_data": bool,
-            "rows": [{"column": str, "completeness": float|None,
-                      "outlier_rate": float|None, "duplicate_rate": float|None}, ...]}
-    """
-    if main_df is None or len(main_df) == 0:
-        return {"has_data": False, "rows": []}
+def _rows_for(cfg: Dict, df: pd.DataFrame) -> List[Dict]:
+    """Numeric rows for one table's columns: configured question labels that match,
+    else all non-underscore columns (so repeat-group fields are covered). Log-and-continue."""
     rows: List[Dict] = []
-    for col in _columns(cfg, main_df):
+    for col in _columns(cfg, df):
         try:
-            rows.append(_column_row(col, main_df[col]))
+            rows.append(_column_row(col, df[col]))
         except Exception as e:  # noqa: BLE001 — one bad column must not sink the section
             log.warning(f"data_quality: column '{col}' failed: {e}")
             rows.append({"column": str(col), "completeness": None,
                          "outlier_rate": None, "duplicate_rate": None})
-    return {"has_data": bool(rows), "rows": rows}
+    return rows
+
+
+def compute_data_quality(cfg: Dict, main_df: Optional[pd.DataFrame],
+                         repeat_tables: Optional[Dict] = None) -> Dict:
+    """Numeric per-column completeness / outlier / duplicate rate per base table.
+
+    Shape: {"has_data": bool,
+            "rows":   [ {column, completeness, outlier_rate, duplicate_rate}, ... ],  # main
+            "tables": [ {"name": str, "rows": [ {...}, ... ]}, ... ]}                  # repeats
+    Values are floats (0-100) or None. A repeat table with 0 rows is omitted.
+    """
+    if main_df is None or len(main_df) == 0:
+        return {"has_data": False, "rows": [], "tables": []}
+    rows = _rows_for(cfg, main_df)
+    tables: List[Dict] = []
+    for name, tdf in (repeat_tables or {}).items():
+        if tdf is None or len(tdf) == 0:
+            continue
+        t_rows = _rows_for(cfg, tdf)
+        if not t_rows:
+            continue
+        tables.append({"name": str(name), "rows": t_rows})
+    return {"has_data": bool(rows), "rows": rows, "tables": tables}
 
 
 def _fmt(x: Optional[float]) -> str:
     return _pct(x) if x is not None else _DASH
+
+
+def _fmt_rows(rows: List[Dict]) -> List[Dict]:
+    return [{"column": r["column"],
+             "completeness":   _fmt(r["completeness"]),
+             "outlier_rate":   _fmt(r["outlier_rate"]),
+             "duplicate_rate": _fmt(r["duplicate_rate"])}
+            for r in rows]
 
 
 def build_data_quality(cfg: Dict, main_df: Optional[pd.DataFrame],
@@ -86,10 +108,8 @@ def build_data_quality(cfg: Dict, main_df: Optional[pd.DataFrame],
     """
     numeric = compute_data_quality(cfg, main_df, repeat_tables)
     if not numeric["has_data"]:
-        return {"has_data": False, "rows": []}
-    rows = [{"column": r["column"],
-             "completeness":   _fmt(r["completeness"]),
-             "outlier_rate":   _fmt(r["outlier_rate"]),
-             "duplicate_rate": _fmt(r["duplicate_rate"])}
-            for r in numeric["rows"]]
-    return {"has_data": True, "rows": rows}
+        return {"has_data": False, "rows": [], "tables": []}
+    return {"has_data": True,
+            "rows": _fmt_rows(numeric["rows"]),
+            "tables": [{"name": t["name"], "rows": _fmt_rows(t["rows"])}
+                       for t in numeric["tables"]]}

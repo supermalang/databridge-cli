@@ -1481,9 +1481,9 @@ async def data_profile():
 
 @app.get("/api/data-quality")
 async def data_quality_overview():
-    """Per-column completeness / outlier-rate / duplicate-rate for the main table
-    of the latest download session, post-PII-redaction. Read-only. Mirrors the
-    report's {{ data_quality }} section as numeric values for the web panel."""
+    """Per-column completeness / outlier-rate / duplicate-rate per base table (main
+    table in `rows`, each non-empty repeat table in `tables`) for the latest download
+    session, post-PII-redaction. Read-only. Mirrors the report's {{ data_quality }} section."""
     from src.reports.data_quality import compute_data_quality
     from src.utils.pii import apply_pii
     cfg = load_config(CONFIG_PATH)

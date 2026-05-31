@@ -35,3 +35,17 @@ def test_data_quality_endpoint_no_data(monkeypatch):
     assert body["has_data"] is False
     assert body["rows"] == []
     assert "message" in body
+
+
+def test_data_quality_endpoint_includes_repeat_tables(monkeypatch):
+    cfg = {"questions": [{"export_label": "Age", "category": "quantitative"}]}
+    main_df = pd.DataFrame({"_id": [1, 2, 3], "Age": [10, 20, 30]})
+    repeats = {"members": pd.DataFrame({"_root_id": [1, 2, 3], "Name": ["a", "b", "c"]})}
+    monkeypatch.setattr(wm, "load_config", lambda *_a, **_k: cfg)
+    monkeypatch.setattr(wm, "load_processed_data", lambda *_a, **_k: (main_df, repeats))
+
+    body = TestClient(wm.app).get("/api/data-quality").json()
+    assert body["has_data"] is True
+    assert [t["name"] for t in body["tables"]] == ["members"]
+    cols = {r["column"] for r in body["tables"][0]["rows"]}
+    assert "Name" in cols and "_root_id" not in cols
