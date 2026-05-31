@@ -301,7 +301,10 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
             if value is None:
                 skipped.append({"title": title, "reason": "could not compute this indicator"})
                 continue
-            valid.append({"kind": "indicator", "recipe": r, "value": value, "summary": value, "title": title})
+            stat = r.get("stat", "")
+            qcol = r.get("question")
+            summary = f"{value} ({stat}{' of ' + qcol if qcol else ''})"
+            valid.append({"kind": "indicator", "recipe": r, "value": value, "summary": summary, "title": title})
         else:
             rendered = render_recipe(r, df, repeat_tables or {})
             if rendered is None:
@@ -333,7 +336,12 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
         if v["kind"] == "indicator":
             base["value"] = v["value"]
         else:
-            base["image"] = _b64_png(v["png"])
+            try:
+                base["image"] = _b64_png(v["png"])
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"ask: could not read chart image for '{name}': {e}")
+                skipped.append({"title": v["title"], "reason": "chart image unavailable"})
+                continue
         proposals.append(base)
     return {"proposals": proposals, "skipped": skipped, "message": None}
 

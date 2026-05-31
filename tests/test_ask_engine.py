@@ -258,3 +258,36 @@ def test_compute_indicator_sum():
 def test_compute_indicator_bad_returns_none():
     df = pd.DataFrame({"Region": ["N"]})
     assert compute_indicator({"name": "x", "stat": "sum", "question": "Ghost"}, df, {}) is None
+
+
+def test_ask_skips_chart_when_image_unreadable(monkeypatch):
+    monkeypatch.setattr(ask_engine, "propose_items", lambda q, cat, ai: [
+        {"kind": "chart", "name": "by_region", "title": "By region", "type": "bar", "questions": ["Region"]},
+    ])
+    monkeypatch.setattr(ask_engine, "ground_captions", lambda items, ai: {it["name"]: "cap" for it in items})
+    def _boom(path):
+        raise FileNotFoundError("evicted")
+    monkeypatch.setattr(ask_engine, "_b64_png", _boom)
+    cfg = {"ai": {"provider": "openai", "api_key": "sk-x"},
+           "questions": [{"export_label": "Region", "category": "categorical"}]}
+    df = pd.DataFrame({"_id": [1, 2, 3], "Region": ["N", "E", "E"]})
+    out = ask_engine.ask("q", cfg, df, {})
+    assert out["proposals"] == []
+    assert any(s["reason"] == "chart image unavailable" for s in out["skipped"])
+
+
+def test_ask_indicator_summary_includes_stat(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(ask_engine, "propose_items", lambda q, cat, ai: [
+        {"kind": "indicator", "name": "total_age", "title": "Total age", "stat": "sum", "question": "Age"},
+    ])
+    def _capture(items, ai):
+        captured["items"] = items
+        return {it["name"]: "cap" for it in items}
+    monkeypatch.setattr(ask_engine, "ground_captions", _capture)
+    cfg = {"ai": {"provider": "openai", "api_key": "sk-x"},
+           "questions": [{"export_label": "Age", "category": "quantitative"}]}
+    df = pd.DataFrame({"_id": [1, 2, 3], "Age": [10, 20, 30]})
+    out = ask_engine.ask("q", cfg, df, {})
+    summary = captured["items"][0]["summary"]
+    assert "sum" in summary and "Age" in summary and "60" in summary
