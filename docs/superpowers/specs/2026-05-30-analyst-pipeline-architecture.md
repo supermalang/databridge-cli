@@ -135,18 +135,20 @@ Every layer is delivered **web-first**: the FastAPI endpoint + React UI is the l
 
 Each item below becomes its own spec → plan → implementation cycle. Order is dependency-driven: the question engine is only as good as the foundation under it.
 
-1. **Base tables (Layer 1)** — recursive multi-level flattening with immediate-parent + root linkage; slugified/de-duplicated names. *Prerequisite for everything.*
-2. **Profile module (Layer 2)** — reusable EDA/profiling; deterministic. *Prerequisite for trustworthy suggestions.*
-3. **PII gate (Layer 3)** — fail-closed consent/redaction applied in every export path; detection + human confirm. *Highest safety-per-effort; small; flagged by all audits.*
-4. **Question engine (Layer 4) + saved recipes (Layer 5)** — NL question → validated recipe → local compute → grounded caption; persist recipes. Includes an **indicator suggester** (auto-seed baselines from prior period).
-5. **Report-from-saved-questions (Layer 6)** — assemble answered questions; remove the no-charts hard-fail.
-6. **Orchestrator** — end-to-end run, precondition checks, staleness detection, concurrency fix; unify LLM integrations.
+> **Status (2026-05-31):** items 1–6 are done; see [`../plans/STATUS.md`](../plans/STATUS.md) for the authoritative what's-done / what's-left. Layer 2 "clean" and the M&E/DQ extensions in §7 are the remaining work.
+
+1. ✅ **Base tables (Layer 1)** — recursive multi-level flattening with immediate-parent + root linkage; slugified/de-duplicated names. *Prerequisite for everything.*
+2. ✅ **Profile module (Layer 2 — profile half)** — reusable EDA/profiling; deterministic. *(The "clean" half — type coercion/normalization — is still open; see STATUS.)*
+3. ✅ **PII gate (Layer 3)** — fail-closed consent/redaction applied in every export path; detection + human confirm.
+4. ✅ **Question engine (Layer 4) + saved recipes (Layer 5)** — NL question → validated recipe → local compute → grounded caption; persist recipes.
+5. ✅ **Report-from-saved-questions (Layer 6)** — `run-all --auto-charts` removes the no-charts hard-fail (#13).
+6. ✅ **Orchestrator** — `run-all` sequencer + build-report staleness (#11) + single-flight concurrency fix (#12). *(Download staleness + scheduling deliberately deferred — see STATUS.)*
 
 ---
 
 ## 7. Relationship to in-flight work (sequencing the existing specs)
 
-- **M&E methodology core** (disaggregation, direction-aware achievement, indicator metadata/PIRS, period roles/milestones) — previously designed in this session. It **layers on top of** the indicator engine and the question engine (disaggregation is a recipe dimension; indicator metadata is saved-recipe metadata). **Re-sequenced to follow the foundation** (after items 1–2, ideally alongside item 4) so it builds on profiled base tables rather than the current single-level structure.
+- **M&E methodology core** — **largely shipped (2026-05-31):** disaggregation (#14/#15), per-indicator + node-level achievement (#16–#18), and data-quality stats + report section (#19–#21). **Still open:** indicator metadata/PIRS, period roles/milestones, direction-aware achievement (greater-is-better vs lower-is-better). See [`../plans/STATUS.md`](../plans/STATUS.md).
 - **PII spec** — promoted into **item 3** above (it's the same work, now placed correctly in the layer model and justified by a third independent audit).
 - **Deferred** (later specs, unchanged): AI-narrator disaggregation awareness + AI-draft safeguards, cross-period beneficiary dedup, sampling provenance, DQA-in-reports, and all web-UI editing controls.
 
