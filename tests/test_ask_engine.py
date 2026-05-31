@@ -1,3 +1,4 @@
+import pandas as pd
 from src.utils import lf_client
 from src.reports.ask_engine import build_catalog
 
@@ -94,3 +95,22 @@ def test_propose_charts_malformed_returns_empty(monkeypatch):
     monkeypatch.setattr(ask_engine.lf_client, "chat", lambda *a, **k: "not json at all")
     out = ask_engine.propose_charts("q", {"tables": []}, {"provider": "openai", "api_key": "sk-x"})
     assert out == []
+
+
+from src.reports.ask_engine import render_recipe
+
+
+def test_render_recipe_produces_png_and_summary():
+    df = pd.DataFrame({"Region": ["N", "N", "S", "E", "E", "E"]})
+    recipe = {"name": "by_region", "title": "By region", "type": "bar", "questions": ["Region"]}
+    result = render_recipe(recipe, df, {})
+    assert result is not None
+    png, summary = result
+    assert png.exists() and png.suffix == ".png"
+    assert "Region" in summary and "E" in summary
+
+
+def test_render_recipe_returns_none_on_bad_column():
+    df = pd.DataFrame({"Region": ["N", "S"]})
+    result = render_recipe({"name": "x", "type": "bar", "questions": ["Ghost"]}, df, {})
+    assert result is None

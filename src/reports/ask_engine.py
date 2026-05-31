@@ -133,3 +133,55 @@ def propose_charts(question: str, catalog: Dict, ai_cfg: Dict) -> List[Dict]:
         log.warning(f"ask: propose_charts failed: {e}")
         return []
     return _parse_charts(raw)[:3]
+
+
+def _result_summary(recipe: Dict, chart_df: pd.DataFrame) -> str:
+    """Compact text of the values a chart actually shows, for caption grounding."""
+    cols = list(recipe.get("questions") or [])
+    if recipe.get("group_by") and recipe["group_by"] not in cols:
+        cols.append(recipe["group_by"])
+    parts = []
+    for c in cols[:2]:
+        if c not in chart_df.columns:
+            continue
+        s = chart_df[c]
+        num = pd.to_numeric(s, errors="coerce")
+        if num.notna().sum() >= max(1, len(s) // 2):
+            v = num.dropna()
+            if len(v):
+                parts.append(f"{c}: min={v.min():.1f}, mean={v.mean():.1f}, max={v.max():.1f}")
+        else:
+            vc = s.dropna().value_counts().head(5)
+            parts.append(f"{c}: " + ", ".join(f"{k}={int(n)}" for k, n in vc.items()))
+    return "; ".join(parts) or "(no values)"
+
+
+def render_recipe(recipe: Dict, df: pd.DataFrame,
+                  repeat_tables: Dict[str, pd.DataFrame]) -> Optional[Tuple[Path, str]]:
+    """Resolve the chart DataFrame and render a PNG. Returns (png_path, result_summary)
+    or None if the columns are missing or rendering fails."""
+    from src.reports.builder import _pick_df
+    from src.data.transform import apply_local_scope
+    from src.reports.charts import generate_chart
+
+    questions = list(recipe.get("questions") or [])
+    gb = recipe.get("group_by")
+    resolved_questions = questions + ([gb] if gb and gb not in questions else [])
+    source = recipe.get("source")
+    try:
+        chart_df = _pick_df(resolved_questions, df, repeat_tables or {}, source=source)
+        missing = [q for q in resolved_questions if q not in chart_df.columns]
+        if missing:
+            return None
+        filter_expr = recipe.get("filter")
+        if filter_expr:
+            chart_df = apply_local_scope(chart_df, {}, filter_expr=filter_expr)
+        summary = _result_summary(recipe, chart_df)
+        resolved = {**recipe, "questions": resolved_questions}
+        png = generate_chart(resolved, chart_df)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"ask: render_recipe failed for '{recipe.get('name')}': {e}")
+        return None
+    if png is None or not Path(png).exists():
+        return None
+    return Path(png), summary
