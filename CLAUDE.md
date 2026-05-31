@@ -486,6 +486,7 @@ Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
 {{ summary_<name> }}    ← one per summary in config.yml summaries section
 {{ chart_<n> }}         ← one per chart in config.yml
 {{ split_value }}       ← when --split-by is set, the current group's value
+{{ data_quality }}      ← auto DQ overview (has_data / rows of {column, completeness, outlier_rate, duplicate_rate}); main table, per configured questions
 {{ logframe }}          ← results framework hierarchy (has_framework / rows); present only when framework: is configured.
                           Each row's indicators carry {name, value, baseline, target, pct_achievement} (latter three "" when not set);
                           rows also carry primary_indicator + node_value/node_target/node_pct_achievement from the indicator flagged primary: true
