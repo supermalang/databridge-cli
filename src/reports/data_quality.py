@@ -1,9 +1,16 @@
 """Data-quality overview for the report: per-column completeness / outlier /
 duplicate rate, reusing src.data.profile primitives. Mirrors logframe.
 
-Shape: {"has_data": bool,
-        "rows": [{"column": str, "completeness": str, "outlier_rate": str, "duplicate_rate": str}, ...]}
-Percentages are formatted strings ("95.0%"); outlier_rate is "—" for non-numeric columns.
+Two public functions:
+- compute_data_quality: numeric core — floats (0-100) or None per column.
+  Shape: {"has_data": bool,
+          "rows": [{"column": str, "completeness": float|None,
+                    "outlier_rate": float|None, "duplicate_rate": float|None}, ...]}
+- build_data_quality: string formatter for the report's {{ data_quality }} section.
+  Shape: {"has_data": bool,
+          "rows": [{"column": str, "completeness": str,
+                    "outlier_rate": str, "duplicate_rate": str}, ...]}
+  Percentages are "95.0%"; None maps to "—".
 """
 from __future__ import annotations
 import logging
