@@ -1466,6 +1466,12 @@ class AskSavePayload(BaseModel):
     kind: str = "chart"
 
 
+class AskRefinePayload(BaseModel):
+    recipe: dict
+    kind: str = "chart"
+    instruction: str
+
+
 @app.post("/api/ask")
 async def api_ask(payload: AskPayload):
     """Answer a natural-language question with 1-3 locally-rendered, grounded charts."""
@@ -1490,6 +1496,20 @@ async def api_ask_save(payload: AskSavePayload):
     name = ask_engine.save_recipe(recipe, cfg, payload.kind)
     write_config(cfg, CONFIG_PATH)
     return {"ok": True, "name": name}
+
+
+@app.post("/api/ask/refine")
+async def api_ask_refine(payload: AskRefinePayload):
+    """Refine an existing Ask answer with a natural-language instruction."""
+    instruction = (payload.instruction or "").strip()
+    if not instruction:
+        return {"proposal": None, "skipped": None, "message": "Type a refinement instruction."}
+    cfg = load_config(CONFIG_PATH)
+    try:
+        df, repeats = load_processed_data(cfg)
+    except FileNotFoundError:
+        return {"proposal": None, "skipped": None, "message": "No data yet — run Download first."}
+    return ask_engine.refine_item(payload.recipe, payload.kind, instruction, cfg, df, repeats)
 
 
 class FrameworkPayload(BaseModel):

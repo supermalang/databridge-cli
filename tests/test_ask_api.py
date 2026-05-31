@@ -50,3 +50,26 @@ def test_ask_save_indicator_appends_to_indicators(monkeypatch):
                        json={"recipe": {"name": "n_rows", "stat": "count"}, "kind": "indicator"})
     assert resp.status_code == 200 and resp.json()["name"] == "n_rows"
     assert saved["indicators"][0]["name"] == "n_rows"
+
+
+def test_ask_refine_endpoint(monkeypatch):
+    cfg = {"ai": {"provider": "openai", "api_key": "sk-x"}, "questions": []}
+    df = pd.DataFrame({"_id": [1, 2, 3]})
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "load_processed_data", lambda *a, **k: (df, {}))
+    monkeypatch.setattr(wm.ask_engine, "refine_item",
+                        lambda recipe, kind, instr, c, d, r: {"proposal": {"kind": "chart", "recipe": {"name": "x"}, "image": "data:image/png;base64,AAA", "caption": "cap"}, "skipped": None, "message": None})
+    client = TestClient(wm.app)
+    resp = client.post("/api/ask/refine", json={"recipe": {"name": "x", "type": "bar"}, "kind": "chart", "instruction": "make it a line chart"})
+    assert resp.status_code == 200
+    assert resp.json()["proposal"]["caption"] == "cap"
+
+
+def test_ask_refine_endpoint_no_data(monkeypatch):
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: {})
+    def _raise(*a, **k):
+        raise FileNotFoundError("no data")
+    monkeypatch.setattr(wm, "load_processed_data", _raise)
+    client = TestClient(wm.app)
+    body = client.post("/api/ask/refine", json={"recipe": {}, "kind": "chart", "instruction": "x"}).json()
+    assert body["proposal"] is None and "Download" in body["message"]
