@@ -140,3 +140,10 @@ def test_build_formats_repeat_tables():
     assert by["Name"]["completeness"] == "100.0%"
     assert by["Age"]["outlier_rate"] == "10.0%"
     assert all(isinstance(r["completeness"], str) for r in dq["rows"])
+
+
+def test_compute_omits_linkage_only_repeat_table():
+    # Non-empty table but only linkage columns -> no displayable rows -> omitted.
+    linkage_only = {"links": pd.DataFrame({"_root_id": [1, 2], "_row_id": ["1.0", "2.0"]})}
+    dq = compute_data_quality({}, _df(), linkage_only)
+    assert dq["tables"] == []

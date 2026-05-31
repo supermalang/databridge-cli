@@ -52,7 +52,8 @@ def _column_row(col: str, s: pd.Series) -> Dict:
 
 
 def _rows_for(cfg: Dict, df: pd.DataFrame) -> List[Dict]:
-    """Numeric rows for one table's curated/fallback columns (log-and-continue)."""
+    """Numeric rows for one table's columns: configured question labels that match,
+    else all non-underscore columns (so repeat-group fields are covered). Log-and-continue."""
     rows: List[Dict] = []
     for col in _columns(cfg, df):
         try:
@@ -80,7 +81,10 @@ def compute_data_quality(cfg: Dict, main_df: Optional[pd.DataFrame],
     for name, tdf in (repeat_tables or {}).items():
         if tdf is None or len(tdf) == 0:
             continue
-        tables.append({"name": str(name), "rows": _rows_for(cfg, tdf)})
+        t_rows = _rows_for(cfg, tdf)
+        if not t_rows:
+            continue
+        tables.append({"name": str(name), "rows": t_rows})
     return {"has_data": bool(rows), "rows": rows, "tables": tables}
 
 
