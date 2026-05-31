@@ -657,7 +657,7 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .dq-panel--muted { color: var(--ink-3); font-size: 13px; padding: 16px 0; }
 .dq-panel__title { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 10px; }
 .dq-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.dq-table th, .dq-table td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line, #e5e7eb); }
+.dq-table th, .dq-table td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--border); }
 .dq-th--metric { cursor: pointer; user-select: none; color: var(--ink-3); font-weight: 600; }
 .dq-td--col { font-family: var(--font-mono, monospace); font-weight: 600; }
 .dq-cell { font-variant-numeric: tabular-nums; }

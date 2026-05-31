@@ -19,7 +19,7 @@ export default function DataQualityPanel() {
   const [data, setData] = useState(null);   // null | { has_data, rows, message? }
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState({ key: 'completeness', dir: 'asc' }); // worst-first default
+  const [sort, setSort] = useState({ key: 'completeness', dir: 'asc' }); // ascending = worst-completeness first
 
   useEffect(() => {
     let cancelled = false;
