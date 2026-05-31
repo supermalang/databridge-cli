@@ -169,6 +169,10 @@ python3 src/data/make.py set-period "Q3 2026"
 
 # 6. Push bundled seed prompts to Langfuse (create-if-missing; --force overwrites)
 python3 src/data/make.py push-prompts
+
+# 7. Run the whole pipeline in order: download -> generate-template (if missing) -> build-report
+python3 src/data/make.py run-all
+python3 src/data/make.py run-all --sample 50 --period "Q3 2026"
 ```
 
 > **Validation and classification are not standalone CLI commands.**
@@ -181,6 +185,8 @@ python3 src/data/make.py push-prompts --force
 
 The same commands are exposed in the web UI as POST `/api/run/{command}` with
 SSE-style streamed logs.
+
+`run-all` chains the existing commands via Click's `ctx.invoke` with precondition checks (questions + charts must be configured) and stop-on-failure; it is exposed at `POST /api/run/run-all` and the Dashboard "Run pipeline" button. Staleness/change-detection is a future slice.
 
 ---
 
