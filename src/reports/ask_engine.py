@@ -160,7 +160,7 @@ def propose_items(question: str, catalog: Dict, ai_cfg: Dict) -> List[Dict]:
         "indicator_stats": _INDICATOR_STATS_BLOCK,
     }
     try:
-        messages = lf_client.get_prompt("ask_propose", variables)
+        messages, _config = lf_client.get_prompt("ask_propose", variables)
         raw = lf_client.chat(
             messages,
             model=ai_cfg.get("model", "gpt-4o"),
@@ -170,6 +170,7 @@ def propose_items(question: str, catalog: Dict, ai_cfg: Dict) -> List[Dict]:
             trace_name="ask_propose",
             base_url=ai_cfg.get("base_url"),
             json_mode=(provider != "anthropic"),
+            output_schema=_config.get("output_schema"),
         )
     except Exception as e:  # noqa: BLE001
         log.warning(f"ask: propose_items failed: {e}")
@@ -241,7 +242,7 @@ def ground_captions(items: List[Dict], ai_cfg: Dict) -> Dict[str, str]:
     provider = (ai_cfg.get("provider") or "openai").lower()
     charts_block = "\n".join(f'{it["name"]} — {it.get("title", "")}: {it.get("summary", "")}' for it in items)
     try:
-        messages = lf_client.get_prompt("ask_caption", {"charts_block": charts_block})
+        messages, _config = lf_client.get_prompt("ask_caption", {"charts_block": charts_block})
         raw = lf_client.chat(
             messages,
             model=ai_cfg.get("model", "gpt-4o"),
@@ -251,6 +252,7 @@ def ground_captions(items: List[Dict], ai_cfg: Dict) -> Dict[str, str]:
             trace_name="ask_caption",
             base_url=ai_cfg.get("base_url"),
             json_mode=(provider != "anthropic"),
+            output_schema=_config.get("output_schema"),
         )
         data = json.loads(raw)
         caps = data.get("captions", {}) if isinstance(data, dict) else {}

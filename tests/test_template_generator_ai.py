@@ -31,6 +31,7 @@ def test_template_generator_uses_lf_client(tmp_path, monkeypatch):
 
     # Verify the trace name is correct
     assert ch.call_args.kwargs["trace_name"] == "template_generator"
+    assert ch.call_args.kwargs["output_schema"]["properties"]["sections"]["type"] == "array"
 
     sent = ch.call_args.args[0]
 

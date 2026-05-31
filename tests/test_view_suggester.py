@@ -21,6 +21,7 @@ def test_view_suggester_uses_lf_client(monkeypatch):
 
     assert out and out[0]["name"] == "v1"
     assert ch.call_args.kwargs["trace_name"] == "view_suggester"
+    assert "views" in ch.call_args.kwargs["output_schema"]["properties"]
 
     # Verify real compile ran: no pure-word {{tokens}} remain unresolved.
     sent = ch.call_args.args[0]

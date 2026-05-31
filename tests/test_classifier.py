@@ -19,6 +19,7 @@ def test_discover_themes_uses_classifier_discover_prompt(monkeypatch):
 
     assert themes == ["Water", "Food"]
     assert ch.call_args.kwargs["trace_name"] == "classifier_discover"
+    assert "themes" in ch.call_args.kwargs["output_schema"]["properties"]
 
     # Verify real compile ran: no pure-word {{tokens}} remain unresolved.
     sent = ch.call_args.args[0]
@@ -36,11 +37,12 @@ def test_classify_responses_uses_classifier_classify_prompt(monkeypatch):
 
     s = pd.Series(["water bad", "hungry"])
     with mock.patch("src.utils.lf_client.chat",
-                    return_value='{"classifications":{"water bad":"Water","hungry":"Food"}}') as ch:
+                    return_value='{"classifications":[{"response":"water bad","theme":"Water"},{"response":"hungry","theme":"Food"}]}') as ch:
         out = classifier.classify_responses(s, ["Water", "Food"], "Issues", AI)
 
     assert list(out) == ["Water", "Food"]
     assert ch.call_args.kwargs["trace_name"] == "classifier_classify"
+    assert "classifications" in ch.call_args.kwargs["output_schema"]["properties"]
 
     # Verify real compile ran: no pure-word {{tokens}} remain unresolved.
     sent = ch.call_args.args[0]

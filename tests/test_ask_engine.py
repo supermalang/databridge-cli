@@ -34,7 +34,7 @@ def test_build_catalog_condenses_and_excludes_linkage():
 
 
 def test_ask_propose_prompt_resolves_offline():
-    msgs = lf_client.get_prompt("ask_propose", {
+    msgs, _cfg = lf_client.get_prompt("ask_propose", {
         "question": "How many people by region?",
         "catalog": "{}",
         "chart_types": "bar: >=1 categorical",
@@ -46,7 +46,7 @@ def test_ask_propose_prompt_resolves_offline():
 
 
 def test_ask_caption_prompt_resolves_offline():
-    msgs = lf_client.get_prompt("ask_caption", {"charts_block": "chart_a — Region: N=5"})
+    msgs, _cfg = lf_client.get_prompt("ask_caption", {"charts_block": "chart_a — Region: N=5"})
     blob = " ".join(m["content"] for m in msgs)
     assert "chart_a" in blob
 
@@ -83,7 +83,7 @@ from src.reports import ask_engine
 
 
 def test_propose_items_parses_mixed(monkeypatch):
-    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [{"role": "user", "content": "x"}])
+    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: ([{"role": "user", "content": "x"}], {}))
     monkeypatch.setattr(ask_engine.lf_client, "chat",
                         lambda *a, **k: '{"items": [{"kind": "chart", "name": "by_region", "type": "bar", "questions": ["Region"]}, {"kind": "indicator", "name": "n", "stat": "count"}]}')
     out = ask_engine.propose_items("q", {"tables": []}, {"provider": "openai", "api_key": "sk-x"})
@@ -91,7 +91,7 @@ def test_propose_items_parses_mixed(monkeypatch):
 
 
 def test_propose_items_defaults_kind_chart(monkeypatch):
-    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [])
+    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: ([], {}))
     monkeypatch.setattr(ask_engine.lf_client, "chat",
                         lambda *a, **k: '{"items": [{"name": "x", "type": "bar", "questions": ["Region"]}]}')
     out = ask_engine.propose_items("q", {"tables": []}, {"provider": "openai", "api_key": "sk-x"})
@@ -99,7 +99,7 @@ def test_propose_items_defaults_kind_chart(monkeypatch):
 
 
 def test_propose_items_malformed_returns_empty(monkeypatch):
-    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [])
+    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: ([], {}))
     monkeypatch.setattr(ask_engine.lf_client, "chat", lambda *a, **k: "not json at all")
     assert ask_engine.propose_items("q", {"tables": []}, {"provider": "openai", "api_key": "sk-x"}) == []
 
@@ -124,7 +124,7 @@ def test_render_recipe_returns_none_on_bad_column():
 
 
 def test_ground_captions_uses_llm(monkeypatch):
-    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [{"role": "user", "content": "x"}])
+    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: ([{"role": "user", "content": "x"}], {}))
     monkeypatch.setattr(ask_engine.lf_client, "chat",
                         lambda *a, **k: '{"captions": {"by_region": "Region E leads with 3."}}')
     items = [{"name": "by_region", "title": "By region", "summary": "Region: E=3, N=2, S=1"}]
@@ -135,7 +135,7 @@ def test_ground_captions_uses_llm(monkeypatch):
 def test_ground_captions_falls_back_to_title_on_failure(monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("no ai")
-    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [])
+    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: ([], {}))
     monkeypatch.setattr(ask_engine.lf_client, "chat", _boom)
     items = [{"name": "c1", "title": "Fallback Title", "summary": "x"}]
     caps = ask_engine.ground_captions(items, {"provider": "openai", "api_key": "sk-x"})

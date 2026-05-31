@@ -160,7 +160,7 @@ def _get_layout_spec(
         raise ValueError("AI api_key not resolved. Set the environment variable.")
 
     variables = _build_variables(cfg, description, pages, language, summary_prompt=summary_prompt)
-    messages = lf_client.get_prompt("template_generator", variables)
+    messages, config = lf_client.get_prompt("template_generator", variables)
     raw = lf_client.chat(
         messages,
         model=model,
@@ -170,6 +170,7 @@ def _get_layout_spec(
         trace_name="template_generator",
         base_url=ai_cfg.get("base_url"),
         json_mode=(provider != "anthropic"),
+        output_schema=config.get("output_schema"),
     )
 
     return _parse_spec(raw)

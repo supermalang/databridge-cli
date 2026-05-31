@@ -424,6 +424,30 @@ Every LLM call is recorded as a Langfuse generation with cost, latency, and toke
 3. Run `python3 src/data/make.py push-prompts` to seed the new prompt in Langfuse.
 4. Document the new prompt name in the table above.
 
+### Output schemas (structured outputs)
+
+Seven of the eight prompts produce JSON and have an `output_schema` in their seed's `config`.
+The schema travels with the prompt (stored in Langfuse's per-prompt `config` field) and
+is enforced at the LLM call:
+
+- **OpenAI** — sent via `response_format={"type":"json_schema", ...}` (Structured Outputs).
+  The model is guaranteed to return JSON matching the schema.
+- **Anthropic** — sent via a forced tool-use call (`tools=[{input_schema=...}]` + `tool_choice`).
+  The model's response is the tool's `input` dict.
+
+Editing a schema in the Langfuse UI updates both providers' enforcement on the next fetch.
+If you write an invalid schema (not a dict, or missing `"type"`), the next call logs a WARNING
+and falls back to no-schema mode for that one prompt — the feature still runs.
+
+To add a schema to a new prompt:
+1. Add `_<NAME>_OUTPUT_SCHEMA` literal in `src/utils/seed_prompts.py` (Strict-mode rules:
+   `additionalProperties: false`, every property listed in `required`, no `oneOf`).
+2. Reference it in the entry's `config={"output_schema": ...}`.
+3. `python3 src/data/make.py push-prompts --force` to update Langfuse.
+
+The seed-validation test (`tests/test_seed_prompts.py`) enforces meta-schema validity
+and the Strict-mode contract; intentional open maps are listed in `_ALLOWED_OPEN_MAPS`.
+
 ---
 
 ## Word template placeholders

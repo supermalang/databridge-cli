@@ -7,7 +7,7 @@ Langfuse {{mustache}} placeholders. These are pushed to Langfuse by the
 Names map 1:1 to Langfuse prompt names. See the design spec for the porting rule
 (`.format()` {var} -> {{var}}; escaped {{ }} -> single { }).
 """
-from typing import Dict, List
+from typing import Any, Dict, List
 
 ChatMessages = List[Dict[str, str]]
 
@@ -78,7 +78,7 @@ _CLASSIFIER_CLASSIFY: ChatMessages = [
         'For responses that clearly don\'t fit any theme, use "Other".\n\n'
         "Responses to classify:\n"
         "{{responses}}\n\n"
-        'Return JSON: {"classifications": {"<response text>": "<theme name>", ...}}\n'
+        'Return JSON: {"classifications": [{"response": "<response text>", "theme": "<theme name>"}, ...]}\n'
         "Include every response from the list, even if only one word."
     )},
 ]
@@ -347,15 +347,268 @@ _ASK_CAPTION: ChatMessages = [
     )},
 ]
 
-SEED_PROMPTS: Dict[str, ChatMessages] = {
-    "narrator": _NARRATOR,
-    "summaries": _SUMMARIES,
-    "chart_suggester": _CHART_SUGGESTER,
-    "template_generator": _TEMPLATE_GENERATOR,
-    "summary_suggester": _SUMMARY_SUGGESTER,
-    "view_suggester": _VIEW_SUGGESTER,
-    "classifier_discover": _CLASSIFIER_DISCOVER,
-    "classifier_classify": _CLASSIFIER_CLASSIFY,
-    "ask_propose": _ASK_PROPOSE,
-    "ask_caption": _ASK_CAPTION,
+_CLASSIFIER_DISCOVER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["themes"],
+    "properties": {
+        "themes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {"type": "string"},
+        },
+    },
+}
+
+# OpenAI Strict mode requires additionalProperties: false (not a schema), so we
+# cannot model `{response_text: theme_name}` as an open object. We use a list of
+# pairs instead. The classifier parser (Task 16) is updated to build the lookup
+# dict from this list.
+_CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["classifications"],
+    "properties": {
+        "classifications": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["response", "theme"],
+                "properties": {
+                    "response": {"type": "string"},
+                    "theme":    {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
+_TEMPLATE_GENERATOR_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["sections"],
+    "properties": {
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["heading", "level", "content"],
+                "properties": {
+                    "heading": {"type": "string"},
+                    "level":   {"type": "integer", "enum": [1, 2]},
+                    "content": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["type", "name", "placeholder", "hint", "text"],
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": ["editable", "chart", "indicator",
+                                             "summary", "text", "divider", "stats_table"],
+                                },
+                                "name":        {"type": ["string", "null"]},
+                                "placeholder": {"type": ["string", "null"],
+                                                "enum": [None, "summary_text",
+                                                         "observations", "recommendations"]},
+                                "hint":        {"type": ["string", "null"]},
+                                "text":        {"type": ["string", "null"]},
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+
+_CHART_TYPES = [
+    "bar", "horizontal_bar", "stacked_bar", "grouped_bar",
+    "pie", "donut",
+    "line", "area",
+    "histogram", "scatter",
+    "box_plot", "heatmap", "treemap",
+    "waterfall", "funnel", "table",
+    "bullet_chart", "likert", "scorecard",
+    "pyramid", "dot_map",
+    "period_bar", "period_line",
+]
+
+# OpenAI Strict mode does not allow additionalProperties as a schema, so we
+# enumerate every known chart option explicitly (each nullable). The set covers
+# all option keys consumed by src/reports/charts.py's CHART_DISPATCH functions.
+_CHART_OPTIONS_PROPERTIES = {
+    "top_n":         {"type": ["integer", "null"]},
+    "sort":          {"type": ["string", "null"],
+                      "enum": [None, "value", "label", "none"]},
+    "normalize":     {"type": ["boolean", "null"]},
+    "freq":          {"type": ["string", "null"],
+                      "enum": [None, "day", "week", "month", "year"]},
+    "bins":          {"type": ["integer", "null"]},
+    "target":        {"type": ["number", "null"]},
+    "scale":         {"type": ["array", "null"], "items": {"type": "string"}},
+    "neutral":       {"type": ["string", "null"]},
+    "stat":          {"type": ["string", "null"],
+                      "enum": [None, "count", "mean", "sum"]},
+    "columns":       {"type": ["integer", "null"]},
+    "male_value":    {"type": ["string", "null"]},
+    "female_value":  {"type": ["string", "null"]},
+    "basemap":       {"type": ["boolean", "null"]},
+    "color_by":      {"type": ["string", "null"]},
+    "size":          {"type": ["integer", "null"]},
+    "color":         {"type": ["string", "null"]},
+    "width_inches":  {"type": ["number", "null"]},
+    "height_inches": {"type": ["number", "null"]},
+    "xlabel":        {"type": ["string", "null"]},
+    "ylabel":        {"type": ["string", "null"]},
+    "distinct_by":   {"type": ["string", "null"]},
+    "expand_multi":  {"type": ["boolean", "null"]},
+    "data_type":     {"type": ["string", "null"]},
+    "value_col":     {"type": ["string", "null"]},
+    "agg":           {"type": ["string", "null"],
+                      "enum": [None, "sum", "mean", "count", "max", "min"]},
+    "metric":        {"type": ["string", "null"]},
+}
+
+_CHART_SUGGESTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["charts"],
+    "properties": {
+        "charts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "title", "type", "questions",
+                             "options", "source", "join_parent", "filter", "sample",
+                             "aggregate"],
+                "properties": {
+                    "name":      {"type": "string"},
+                    "title":     {"type": "string"},
+                    "type":      {"type": "string", "enum": _CHART_TYPES},
+                    "questions": {"type": "array", "items": {"type": "string"}},
+                    "options": {
+                        "type": ["object", "null"],
+                        "additionalProperties": False,
+                        "required": list(_CHART_OPTIONS_PROPERTIES.keys()),
+                        "properties": _CHART_OPTIONS_PROPERTIES,
+                    },
+                    "source":      {"type": ["string", "null"]},
+                    "join_parent": {"type": ["array", "null"],
+                                    "items": {"type": "string"}},
+                    "filter":      {"type": ["string", "null"]},
+                    "sample":      {"type": ["integer", "null"]},
+                    "aggregate":   {"type": ["string", "null"]},
+                },
+            },
+        },
+    },
+}
+
+_SUMMARY_SUGGESTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["summaries"],
+    "properties": {
+        "summaries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "label", "stat", "questions", "top_n",
+                             "source", "filter", "group_by", "agg",
+                             "freq", "method", "language", "prompt", "example"],
+                "properties": {
+                    "name":      {"type": "string"},
+                    "label":     {"type": ["string", "null"]},
+                    "stat": {"type": "string",
+                             "enum": ["distribution", "stats", "crosstab", "trend",
+                                      "data_quality", "keyword_frequency", "correlation",
+                                      "grouped_agg", "ai"]},
+                    "questions": {"type": "array", "items": {"type": "string"}},
+                    "top_n":     {"type": ["integer", "null"]},
+                    "source":    {"type": ["string", "null"]},
+                    "filter":    {"type": ["string", "null"]},
+                    "group_by":  {"type": ["string", "null"]},
+                    "agg":       {"type": ["string", "null"],
+                                  "enum": [None, "sum", "mean", "count", "max", "min"]},
+                    "freq":      {"type": ["string", "null"],
+                                  "enum": [None, "day", "week", "month", "year"]},
+                    "method":    {"type": ["string", "null"],
+                                  "enum": [None, "pearson", "spearman"]},
+                    "language":  {"type": ["string", "null"]},
+                    "prompt":    {"type": ["string", "null"]},
+                    "example":   {"type": ["string", "null"]},
+                },
+            },
+        },
+    },
+}
+
+_VIEW_SUGGESTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["views"],
+    "properties": {
+        "views": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "source", "join_parent", "filter",
+                             "group_by", "question", "agg"],
+                "properties": {
+                    "name":   {"type": "string"},
+                    "source": {"type": "string"},
+                    "join_parent": {
+                        "type": ["array", "null"],
+                        "items": {"type": "string"},
+                    },
+                    "filter":     {"type": ["string", "null"]},
+                    "group_by":   {"type": ["string", "null"]},
+                    "question":   {"type": ["string", "null"]},
+                    "agg": {"type": ["string", "null"],
+                            "enum": [None, "sum", "mean", "count", "max", "min"]},
+                },
+            },
+        },
+    },
+}
+
+_NARRATOR_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["summary_text", "observations", "recommendations"],
+    "properties": {
+        "summary_text":    {"type": "string"},
+        "observations":    {"type": "string"},
+        "recommendations": {"type": "string"},
+    },
+}
+
+SeedPrompt = Dict[str, Any]   # {"messages": ChatMessages, "config": Dict[str, Any]}
+
+SEED_PROMPTS: Dict[str, SeedPrompt] = {
+    "narrator":            {"messages": _NARRATOR,
+                            "config": {"output_schema": _NARRATOR_OUTPUT_SCHEMA}},
+    "summaries":           {"messages": _SUMMARIES,            "config": {}},
+    "chart_suggester":     {"messages": _CHART_SUGGESTER,
+                            "config": {"output_schema": _CHART_SUGGESTER_OUTPUT_SCHEMA}},
+    "template_generator":  {"messages": _TEMPLATE_GENERATOR,
+                            "config": {"output_schema": _TEMPLATE_GENERATOR_OUTPUT_SCHEMA}},
+    "summary_suggester":   {"messages": _SUMMARY_SUGGESTER,
+                            "config": {"output_schema": _SUMMARY_SUGGESTER_OUTPUT_SCHEMA}},
+    "view_suggester":      {"messages": _VIEW_SUGGESTER,
+                            "config": {"output_schema": _VIEW_SUGGESTER_OUTPUT_SCHEMA}},
+    "classifier_discover":  {"messages": _CLASSIFIER_DISCOVER,
+                             "config": {"output_schema": _CLASSIFIER_DISCOVER_OUTPUT_SCHEMA}},
+    "classifier_classify":  {"messages": _CLASSIFIER_CLASSIFY,
+                             "config": {"output_schema": _CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA}},
+    "ask_propose": {"messages": _ASK_PROPOSE, "config": {}},
+    "ask_caption": {"messages": _ASK_CAPTION, "config": {}},
 }

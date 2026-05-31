@@ -2,6 +2,7 @@ import re
 from unittest import mock
 import pandas as pd
 from src.reports import narrator
+from src.utils.seed_prompts import SEED_PROMPTS
 
 _VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
@@ -26,6 +27,8 @@ def test_narrator_calls_lf_client_and_parses(monkeypatch):
     assert out == {"summary_text": "S", "observations": "O", "recommendations": "R"}
     assert ch.call_args.kwargs["trace_name"] == "narrator"
     assert ch.call_args.kwargs["json_mode"] is True
+    assert ch.call_args.kwargs["output_schema"] == \
+        SEED_PROMPTS["narrator"]["config"]["output_schema"]
 
     # Verify real compile ran: no pure-word {{tokens}} remain unresolved.
     sent = ch.call_args.args[0]

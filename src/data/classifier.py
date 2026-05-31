@@ -73,11 +73,12 @@ def discover_themes(
         "responses": "\n".join(f"- {r}" for r in sample),
         "theme_count": theme_count,
     }
-    messages = lf_client.get_prompt("classifier_discover", variables)
+    messages, config = lf_client.get_prompt("classifier_discover", variables)
     raw = lf_client.chat(
         messages, model=model, provider=provider, api_key=api_key,
         base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
         trace_name="classifier_discover", json_mode=(provider != "anthropic"),
+        output_schema=config.get("output_schema"),
     )
     data = _parse_json(raw)
     themes = data.get("themes", [])
@@ -134,15 +135,20 @@ def classify_responses(
             "themes_str": themes_str,
             "responses": "\n".join(f"- {r}" for r in batch),
         }
-        messages = lf_client.get_prompt("classifier_classify", variables)
+        messages, config = lf_client.get_prompt("classifier_classify", variables)
         raw = lf_client.chat(
             messages, model=model, provider=provider, api_key=api_key,
             base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
             trace_name="classifier_classify", json_mode=(provider != "anthropic"),
+            output_schema=config.get("output_schema"),
         )
         data = _parse_json(raw)
-        batch_result = data.get("classifications", {})
-        lookup.update(batch_result)
+        items = data.get("classifications", []) or []
+        for item in items:
+            r = item.get("response")
+            t = item.get("theme")
+            if r and t:
+                lookup[r] = t
         log.info(f"  Classified batch {i // BATCH_SIZE + 1}/{n_batches} for '{label}'")
 
     def _map(val):

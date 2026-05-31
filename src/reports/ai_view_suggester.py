@@ -56,7 +56,7 @@ def _get_suggestions(ai_cfg: Dict, cfg: Dict, user_request: str = "") -> List[Di
     max_tokens = max(int(ai_cfg.get("max_tokens", 1500)), 2500)
 
     variables = _build_variables(cfg, user_request)
-    messages = lf_client.get_prompt("view_suggester", variables)
+    messages, config = lf_client.get_prompt("view_suggester", variables)
     raw = lf_client.chat(
         messages,
         model=model,
@@ -66,6 +66,7 @@ def _get_suggestions(ai_cfg: Dict, cfg: Dict, user_request: str = "") -> List[Di
         trace_name="view_suggester",
         base_url=ai_cfg.get("base_url"),
         json_mode=(provider != "anthropic"),
+        output_schema=config.get("output_schema"),
     )
     return _parse(raw)
 

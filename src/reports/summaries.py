@@ -201,7 +201,7 @@ def _stats_text(series: pd.Series) -> str:
     mx = numeric.max()
     return (
         f"n={n:,}, mean={mean:,.1f}, median={median:,.1f}, "
-        f"range {mn:,.1f}\u2013{mx:,.1f}."
+        f"range {mn:,.1f}–{mx:,.1f}."
     )
 
 
@@ -280,7 +280,7 @@ def _ai_text(
             data_lines.append(
                 f"{q}: n={len(numeric):,}, mean={numeric.mean():,.1f}, "
                 f"median={numeric.median():,.1f}, "
-                f"range {numeric.min():,.1f}\u2013{numeric.max():,.1f}"
+                f"range {numeric.min():,.1f}–{numeric.max():,.1f}"
             )
         else:
             vc = col.astype(str).value_counts().head(5)
@@ -304,11 +304,12 @@ def _ai_text(
     }
 
     from src.utils import lf_client
-    messages = lf_client.get_prompt("summaries", variables)
+    messages, config = lf_client.get_prompt("summaries", variables)
     raw = lf_client.chat(
         messages, model=model, provider=provider, api_key=api_key,
         base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
         trace_name="summaries", json_mode=False,
+        output_schema=config.get("output_schema"),
     )
     return raw.strip()
 
@@ -423,7 +424,7 @@ def _keyword_frequency_text(series: pd.Series, top_n: int, language: str = "en")
         pass  # fall back to built-in list
 
     text = " ".join(series.dropna().astype(str).tolist()).lower()
-    tokens = re.findall(r"[a-zA-ZÀ-ÿ\u0600-\u06FF]{3,}", text)
+    tokens = re.findall(r"[a-zA-ZÀ-ÿ؀-ۿ]{3,}", text)
     freq: Dict[str, int] = {}
     for token in tokens:
         if token not in stop_words:
@@ -461,7 +462,7 @@ def _correlation_text(df: pd.DataFrame, questions: List[str], method: str = "pea
             "weak"
         )
         direction = "positive" if r > 0 else "negative"
-        sentences.append(f"{pair['a']} \u2194 {pair['b']}: r={r:.2f} ({direction} {strength})")
+        sentences.append(f"{pair['a']} ↔ {pair['b']}: r={r:.2f} ({direction} {strength})")
 
     if not sentences:
         return "No meaningful correlations found."

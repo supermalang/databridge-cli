@@ -179,6 +179,15 @@ AI feature prompts (narrator, chart suggester, template generator, etc.) are sto
 
 **Tracing:** Every LLM call is recorded in Langfuse with cost, latency, and token counts. Full pipeline runs are grouped under a single trace.
 
+### Output schemas
+
+The seven JSON-producing prompts each carry a JSON Schema (`config.output_schema` in
+Langfuse). At call time, OpenAI uses Structured Outputs (guaranteed compliance) and
+Anthropic uses forced tool-use; either way, the model can no longer drift from the
+expected shape. If a schema becomes invalid (e.g., edited badly in the UI), the
+client logs a warning and falls back to no-schema mode for that one prompt — the
+feature keeps running. Edit schemas in the Langfuse UI; the next fetch picks them up.
+
 # Installation
 ## Prerequisites
 - [Docker](https://docs.docker.com/get-docker/)
