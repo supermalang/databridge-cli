@@ -101,3 +101,42 @@ def test_run_all_builds_and_records_when_stale(tmp_path, monkeypatch):
     res = CliRunner().invoke(make.cli, ["--config", str(p), "run-all"])
     assert res.exit_code == 0 and "build-report" in calls
     assert saved == {"d": "d", "c": "c"}     # state recorded after building
+
+
+def test_run_all_auto_charts_generates_and_proceeds(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(make, "_invoke", lambda ctx, command, **kw: calls.append(command.name))
+    p = _write_cfg(tmp_path, charts=False, template_exists=True)
+    res = CliRunner().invoke(make.cli, ["--config", str(p), "run-all", "--auto-charts"])
+    assert res.exit_code == 0, res.output
+    assert "build-report" in calls
+    cfg = yaml.safe_load(p.read_text())
+    assert cfg["charts"] and cfg["charts"][0]["type"] == "bar"
+    assert cfg["charts"][0]["questions"] == ["Region"]
+
+
+def test_run_all_auto_charts_errors_when_no_chartable_questions(tmp_path, monkeypatch):
+    monkeypatch.setattr(make, "_invoke", lambda ctx, command, **kw: None)
+    cfg = {"api": _API, "form": _FORM,
+           "questions": [{"export_label": "Notes", "category": "qualitative"}],
+           "charts": [], "report": {"template": str(tmp_path / "t.docx")}}
+    (tmp_path / "t.docx").write_text("x")
+    p = tmp_path / "config.yml"; p.write_text(yaml.safe_dump(cfg))
+    res = CliRunner().invoke(make.cli, ["--config", str(p), "run-all", "--auto-charts"])
+    assert res.exit_code == 1 and "chartable" in res.output.lower()
+
+
+def test_run_all_no_flag_still_aborts_with_hint(tmp_path):
+    p = _write_cfg(tmp_path, charts=False, template_exists=True)
+    res = CliRunner().invoke(make.cli, ["--config", str(p), "run-all"])
+    assert res.exit_code == 1 and "auto-charts" in res.output.lower()
+
+
+def test_run_all_generate_template_failure_stops_chain(tmp_path, monkeypatch):
+    def _fake_invoke(ctx, command, **kw):
+        if command.name == "generate-template":
+            raise RuntimeError("boom")
+    monkeypatch.setattr(make, "_invoke", _fake_invoke)
+    p = _write_cfg(tmp_path, template_exists=False)   # questions+charts present, template missing
+    res = CliRunner().invoke(make.cli, ["--config", str(p), "run-all"])
+    assert res.exit_code == 1 and "generate-template failed" in res.output.lower()

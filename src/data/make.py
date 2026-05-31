@@ -310,8 +310,9 @@ def _invoke(ctx, command, **params):
 @click.option("--sample", default=None, type=int, help="Limit the download to first N submissions.")
 @click.option("--period", default=None, help="Period label for this run (passed to download + build-report).")
 @click.option("--force", is_flag=True, default=False, help="Rebuild the report even if data + config are unchanged.")
+@click.option("--auto-charts", is_flag=True, default=False, help="If no charts are configured, auto-create a deterministic starter set from the saved questions.")
 @click.pass_context
-def cmd_run_all(ctx, sample, period, force):
+def cmd_run_all(ctx, sample, period, force, auto_charts):
     """Run the core pipeline in order: download -> (generate-template if missing) -> build-report."""
     from src.utils import lf_client
     config_path = ctx.obj["config_path"]
@@ -320,8 +321,21 @@ def cmd_run_all(ctx, sample, period, force):
         click.echo("No questions configured — run fetch-questions first.", err=True)
         sys.exit(1)
     if not cfg.get("charts"):
-        click.echo("No charts configured — add charts (or use the Ask tab) before building a report.", err=True)
-        sys.exit(1)
+        if auto_charts:
+            from src.reports.default_charts import default_charts_from_questions
+            from src.utils.config import write_config
+            new_charts = default_charts_from_questions(cfg)
+            if not new_charts:
+                click.echo("No charts configured and --auto-charts found no chartable questions "
+                           "(need categorical or quantitative questions).", err=True)
+                sys.exit(1)
+            cfg["charts"] = new_charts
+            write_config(cfg, config_path)
+            log.info(f"✓ auto-created {len(new_charts)} chart(s) from questions.")
+        else:
+            click.echo("No charts configured — add charts (or use the Ask tab), or pass --auto-charts "
+                       "to generate a starter set before building a report.", err=True)
+            sys.exit(1)
 
     with lf_client.command_trace("run-all"):
         log.info("▶ download")
