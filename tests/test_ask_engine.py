@@ -133,3 +133,39 @@ def test_ground_captions_falls_back_to_title_on_failure(monkeypatch):
     items = [{"name": "c1", "title": "Fallback Title", "summary": "x"}]
     caps = ask_engine.ground_captions(items, {"provider": "openai", "api_key": "sk-x"})
     assert caps["c1"] == "Fallback Title"
+
+
+def test_ask_end_to_end(monkeypatch):
+    monkeypatch.setattr(ask_engine, "propose_charts",
+                        lambda q, cat, ai: [{"name": "by_region", "title": "By region", "type": "bar", "questions": ["Region"]}])
+    monkeypatch.setattr(ask_engine, "ground_captions",
+                        lambda items, ai: {it["name"]: "Region E leads." for it in items})
+    cfg = {"ai": {"provider": "openai", "api_key": "sk-x"}, "questions": [
+        {"export_label": "Region", "category": "categorical"}]}
+    df = pd.DataFrame({"_id": [1, 2, 3, 4], "Region": ["N", "E", "E", "E"]})
+    out = ask_engine.ask("by region?", cfg, df, {})
+    assert len(out["proposals"]) == 1
+    p = out["proposals"][0]
+    assert p["image"].startswith("data:image/png;base64,")
+    assert p["caption"] == "Region E leads."
+    assert out["skipped"] == []
+
+
+def test_ask_no_ai_returns_message():
+    cfg = {"ai": {"provider": "openai", "api_key": "env:OPENAI_API_KEY"}}
+    out = ask_engine.ask("q", cfg, pd.DataFrame({"_id": [1]}), {})
+    assert out["proposals"] == [] and "AI" in out["message"]
+
+
+def test_save_recipe_appends_to_config():
+    cfg = {"charts": [{"name": "existing"}]}
+    name = ask_engine.save_recipe({"name": "by_region", "type": "bar", "questions": ["Region"]}, cfg)
+    assert name == "by_region"
+    assert [c["name"] for c in cfg["charts"]] == ["existing", "by_region"]
+
+
+def test_save_recipe_dedupes_name():
+    cfg = {"charts": [{"name": "by_region"}]}
+    name = ask_engine.save_recipe({"name": "by_region", "type": "bar", "questions": ["Region"]}, cfg)
+    assert name == "by_region_2"
+    assert [c["name"] for c in cfg["charts"]] == ["by_region", "by_region_2"]

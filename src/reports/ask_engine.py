@@ -213,3 +213,72 @@ def ground_captions(items: List[Dict], ai_cfg: Dict) -> Dict[str, str]:
         log.warning(f"ask: ground_captions failed: {e}")
         caps = {}
     return {it["name"]: (caps.get(it["name"]) or fallback[it["name"]]) for it in items}
+
+
+def _ai_ready(ai_cfg: Dict) -> bool:
+    key = str(ai_cfg.get("api_key", ""))
+    return bool(ai_cfg.get("provider")) and bool(key) and not key.startswith("env:")
+
+
+def _b64_png(path: Path) -> str:
+    data = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{data}"
+
+
+def ask(question: str, cfg: Dict, df: pd.DataFrame,
+        repeat_tables: Dict[str, pd.DataFrame]) -> Dict:
+    """Full ask loop. Returns {"proposals": [...], "skipped": [...], "message": str|None}."""
+    ai_cfg = cfg.get("ai") or {}
+    if not _ai_ready(ai_cfg):
+        return {"proposals": [], "skipped": [],
+                "message": "Configure an AI provider in Sources to ask questions."}
+
+    from src.data.profile import profile_dataset
+    profile = profile_dataset(cfg, df, repeat_tables or {})
+    catalog = build_catalog(profile)
+
+    recipes = propose_charts(question, catalog, ai_cfg)
+    if not recipes:
+        return {"proposals": [], "skipped": [],
+                "message": "Couldn't turn that into a chart — try rephrasing."}
+
+    valid, skipped = [], []
+    for r in recipes:
+        title = r.get("title") or r.get("name") or r.get("type", "chart")
+        ok, reason = validate_recipe(r, profile)
+        if not ok:
+            skipped.append({"title": title, "reason": reason})
+            continue
+        rendered = render_recipe(r, df, repeat_tables or {})
+        if rendered is None:
+            skipped.append({"title": title, "reason": "could not render this chart"})
+            continue
+        png, summary = rendered
+        valid.append({"recipe": r, "png": png, "summary": summary, "title": title})
+
+    captions = ground_captions(
+        [{"name": v["recipe"].get("name", v["title"]), "title": v["title"], "summary": v["summary"]} for v in valid],
+        ai_cfg,
+    )
+    proposals = [{
+        "recipe": v["recipe"],
+        "image": _b64_png(v["png"]),
+        "caption": captions.get(v["recipe"].get("name", v["title"]), v["title"]),
+    } for v in valid]
+    return {"proposals": proposals, "skipped": skipped, "message": None}
+
+
+def save_recipe(recipe: Dict, cfg: Dict) -> str:
+    """Append a chart recipe to cfg['charts'], de-duplicating the name. Mutates cfg;
+    the caller persists via write_config. Returns the final saved name."""
+    charts = cfg.setdefault("charts", [])
+    existing = {c.get("name") for c in charts}
+    name = recipe.get("name") or "chart"
+    if name in existing:
+        i = 2
+        while f"{name}_{i}" in existing:
+            i += 1
+        name = f"{name}_{i}"
+    saved = {**recipe, "name": name}
+    charts.append(saved)
+    return name
