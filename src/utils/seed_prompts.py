@@ -303,6 +303,43 @@ _VIEW_SUGGESTER: ChatMessages = [
     )},
 ]
 
+_ASK_CHARTS: ChatMessages = [
+    {"role": "system", "content": (
+        "You are a data analyst. Given a catalog of available tables and columns "
+        "(with their roles and data shape) and a user's question, propose 1 to 3 chart "
+        "specifications that best answer the question. "
+        "Use ONLY table and column names that appear in the catalog. "
+        "Choose chart types ONLY from the provided list and respect each type's column "
+        "requirements. Always respond with valid JSON only — no markdown fences, no commentary."
+    )},
+    {"role": "user", "content": (
+        "User question: {{question}}\n\n"
+        "Available data (catalog):\n{{catalog}}\n\n"
+        "Chart types you may use (with column requirements):\n{{chart_types}}\n\n"
+        "Propose 1 to 3 charts. For each chart provide: a short snake_case \"name\", a human "
+        "\"title\", a \"type\" from the list, and a \"questions\" list of column names in the "
+        "order the chart type expects. Optionally add \"source\" (a table name from the catalog; "
+        "omit for the main table), \"group_by\" (a column), and \"filter\" (a pandas query "
+        "string over column names).\n"
+        'Return ONLY JSON: {"charts": [{"name": "...", "title": "...", "type": "...", '
+        '"questions": ["..."], "source": "...", "group_by": "...", "filter": "..."}]}'
+    )},
+]
+
+_ASK_CAPTION: ChatMessages = [
+    {"role": "system", "content": (
+        "You write one-line factual chart captions for a data report. For each chart you are "
+        "given its title and the ACTUAL computed values it shows. Write a single factual "
+        "sentence per chart describing what the data shows, using ONLY the numbers provided. "
+        "Do not invent figures. Respond with valid JSON only."
+    )},
+    {"role": "user", "content": (
+        "Charts and their computed values:\n{{charts_block}}\n\n"
+        'Return ONLY JSON mapping each chart name to a one-sentence caption: '
+        '{"captions": {"<name>": "..."}}'
+    )},
+]
+
 SEED_PROMPTS: Dict[str, ChatMessages] = {
     "narrator": _NARRATOR,
     "summaries": _SUMMARIES,
@@ -312,4 +349,6 @@ SEED_PROMPTS: Dict[str, ChatMessages] = {
     "view_suggester": _VIEW_SUGGESTER,
     "classifier_discover": _CLASSIFIER_DISCOVER,
     "classifier_classify": _CLASSIFIER_CLASSIFY,
+    "ask_charts": _ASK_CHARTS,
+    "ask_caption": _ASK_CAPTION,
 }

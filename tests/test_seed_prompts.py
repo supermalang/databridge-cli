@@ -4,9 +4,10 @@ from src.utils.seed_prompts import SEED_PROMPTS
 EXPECTED_NAMES = {
     "narrator", "summaries", "chart_suggester", "template_generator",
     "summary_suggester", "view_suggester", "classifier_discover", "classifier_classify",
+    "ask_charts", "ask_caption",
 }
 
-def test_all_eight_prompts_present():
+def test_all_ten_prompts_present():
     assert set(SEED_PROMPTS) == EXPECTED_NAMES
 
 def test_each_prompt_is_system_then_user():
