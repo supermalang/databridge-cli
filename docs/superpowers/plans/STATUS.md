@@ -3,7 +3,7 @@
 **Last updated:** 2026-05-31
 **Purpose:** Single resume point — what's done, what's left, and the decisions still needed. Architecture & build sequence live in [`../specs/2026-05-30-analyst-pipeline-architecture.md`](../specs/2026-05-30-analyst-pipeline-architecture.md); per-slice specs/plans are in `../specs/` and `./`.
 
-`main` is green at **356 tests**.
+`main` is green at **377 tests**.
 
 ---
 
@@ -31,6 +31,11 @@
 - **#20 — `outlier_rate` + `duplicate_rate` stats**: % beyond 3×IQR (via `profile.numeric_outliers`, numeric-only) and % redundant duplicates. All three are regular indicators (disaggregable, framework-linkable, in the Ask allowlist + IndicatorModal dropdown; pair with `format: percent`).
 - **#21 — Data Quality report section**: `build_data_quality` (`src/reports/data_quality.py`) → `{{ data_quality }}` (per-column completeness/outlier/duplicate for the curated question set), rendered in the auto-template. Mirrors `logframe`.
 
+### Later session (2026-05-31) — DQ web surface, direction, per-repeat-table
+- **#22 — Web surface for the DQ overview**: read-only `GET /api/data-quality` + a threshold-colored, sortable panel atop the **Validate** tab (`frontend/src/components/DataQualityPanel.jsx`). `data_quality.py` split into a numeric core (`compute_data_quality`, floats/None) + the string formatter (`build_data_quality`, report contract preserved).
+- **#23 — Direction-aware achievement**: optional `direction: increase|decrease` on indicators. `increase` (default) keeps `value/target` (backward compatible); `decrease` uses `target/value` (lower-is-better), `value==0`→"N/A". Localized to `src/reports/indicators.py`; logframe inherits the corrected string.
+- **#24 — Per-repeat-table DQ**: `compute_data_quality`/`build_data_quality` gained an additive `tables: [{name, rows}]` key (main stays in `rows`); rendered as per-table sub-sections in both the auto-template and the web panel. Linkage-only repeat tables omitted.
+
 ---
 
 ## ⏸ Settled decisions (don't re-litigate — see memory)
@@ -45,14 +50,12 @@
 
 ### Data quality (remaining)
 - **Table-level metrics** — % fully-complete rows, per-table duplicate rate. *Decision: a summary row in `{{ data_quality }}`, or a separate structure?*
-- **Per-repeat-table DQ** — `build_data_quality` currently covers the main table only. *Decision: extend to repeat tables (one section per base table)?*
 - **Inter-enumerator variance** — *needs you to name the enumerator column + which fields to check.*
-- **Web surface for the DQ overview** — an `/api/data-quality` endpoint + a panel in the Validate tab (web-first). *Clearest default of what's left; mirror the report data into the web.*
 
 ### Other frontiers (each its own spec → plan → build)
 - **Layer 2 cleaning** — type coercion / normalization before profiling & charts (the "clean" half of Layer 2; only "profile" is built). *Decision: which cleaning rules, declarative config vs auto?*
-- **Direction-aware achievement** — `pct_achievement` currently assumes higher-is-better; "reduce X" indicators (lower-is-better) need a `direction` field to compute achievement correctly. *Small, well-defined; good candidate.*
-- **Indicator metadata catalog / PIRS** — `unit`, `direction`, `frequency`, `responsible_party` + an auto-generated indicator reference sheet. *Needs your M&E reporting standard for the field set.*
+- **Baseline-anchored achievement** *(parked from #23 — recommend)* — the academically-standard `(value−baseline)/(target−baseline)` formula is direction-agnostic and more correct when a baseline exists, but it would silently change numbers for existing `increase` indicators that set a baseline. Belongs with the PIRS item below. *Decision: adopt as the default achievement formula, or keep it opt-in alongside `direction`?*
+- **Indicator metadata catalog / PIRS** — `unit`, `direction` (now consumed by achievement), `frequency`, `responsible_party` + an auto-generated indicator reference sheet, and a UI to set `baseline`/`target`/`direction` (currently YAML-only). *Needs your M&E reporting standard for the field set.*
 - **Named-view UI builder** — make `views:` first-class in the Composition tab.
 - **Ask tab polish** — conversation history, how saved recipes surface (per architecture §4b open questions).
 - **AI-narrator disaggregation awareness**, cross-period beneficiary dedup, sampling provenance (deferred per architecture §7).
@@ -68,4 +71,4 @@
 ## How to resume
 1. Pick an item from **🔲 Left**. If it's under "needs an owner decision", answer the *Decision* prompt first.
 2. Run the usual cycle: spec (`docs/superpowers/specs/`) → plan (`docs/superpowers/plans/`) → subagent-driven TDD → review → PR → squash-merge → `pull --ff-only`.
-3. My standing recommendation for a one-word "continue": **web surface for the DQ overview** (clearest default left).
+3. My standing recommendation for a one-word "continue": **Indicator metadata catalog / PIRS** — it now has the most pull (folds in the parked baseline-anchored achievement decision and a UI for the YAML-only `baseline`/`target`/`direction` fields). Otherwise **Layer 2 cleaning** is the next untouched architecture layer.
