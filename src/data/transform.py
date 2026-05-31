@@ -381,7 +381,13 @@ def build_views(
     return views
 
 
-def export_data(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
+def export_data(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None, redact: bool = True) -> None:
+    # PII gate: redact + consent-gate at the export boundary (fail-closed).
+    # redact=False is the explicit raw escape hatch (download --no-redact) and is
+    # also used when re-exporting already-gated data (e.g. after classification).
+    if redact:
+        from src.utils.pii import enforce_pii
+        df, repeat_tables = enforce_pii(df, repeat_tables, cfg)
     fmt = cfg.get("export", {}).get("format", "csv")
     if fmt in ("csv", "json", "xlsx"):
         _export_file(df, cfg, fmt, repeat_tables)
