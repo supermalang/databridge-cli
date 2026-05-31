@@ -235,6 +235,17 @@ def test_validate_indicator_missing_column():
     assert not ok and "Ghost" in reason
 
 
+def test_validate_indicator_completeness_ok_on_any_column():
+    # completeness applies to any column (not just quantitative) but needs a question
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "completeness", "question": "Region"}, _profile_fixture())
+    assert ok and reason == ""
+
+
+def test_validate_indicator_completeness_needs_question():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "completeness"}, _profile_fixture())
+    assert not ok and "question" in reason
+
+
 def test_validate_chart_still_works_without_kind():
     ok, reason = validate_recipe({"type": "bar", "questions": ["Region"]}, _profile_fixture())
     assert ok and reason == ""
