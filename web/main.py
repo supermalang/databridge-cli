@@ -75,6 +75,7 @@ ALLOWED_COMMANDS = {
     "suggest-summaries":    ["--user-request"],
     "download":             ["--sample"],
     "build-report":         ["--sample", "--split-by", "--session", "--period", "--compare"],
+    "run-all":              ["--sample", "--period"],
 }
 
 class RunPayload(BaseModel):
