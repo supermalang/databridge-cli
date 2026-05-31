@@ -12,6 +12,7 @@ from src.reports.narrator import generate_narrative
 from src.reports.summaries import compute_summaries
 from src.utils.provenance import build_provenance, data_mtime
 from src.reports.logframe import build_logframe
+from src.reports.data_quality import build_data_quality
 
 log = logging.getLogger(__name__)
 
@@ -170,6 +171,7 @@ class ReportBuilder:
             self.cfg.get("indicators", []), df, repeat_tables, per_period=per_period
         )
         logframe = build_logframe(self.cfg, indicators)
+        data_quality = build_data_quality(self.cfg, df, repeat_tables)
         summaries   = compute_summaries(
             self.cfg.get("summaries", []), df, self.cfg.get("ai"),
             repeat_tables,
@@ -204,6 +206,7 @@ class ReportBuilder:
             "generated_at":  datetime.today().strftime("%d/%m/%Y %H:%M"),
             "provenance":    provenance,
             "logframe":      logframe,
+            "data_quality":  data_quality,
             **narrative,
             "stats_table":   stats_table,
             **indicators,
