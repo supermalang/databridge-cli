@@ -76,16 +76,17 @@ def _filter_repeat_tables_by_split(
 
 
 class ReportBuilder:
-    def __init__(self, cfg: Dict):
+    def __init__(self, cfg: Dict, *, strict: bool = False):
         self.cfg = cfg
         self.report_cfg = cfg.get("report", {})
         self.charts_cfg: List[Dict] = cfg.get("charts", [])
+        self.strict = strict
 
     def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None, session: Optional[str] = None, period: Optional[str] = None, compare: Optional[List[str]] = None) -> List[Path]:
         from src.utils.periods import parse_period_arg
         resolved_period = parse_period_arg(self.cfg, period)
         df, repeat_tables = load_processed_data(self.cfg, sample_size=sample_size, random_sample=random_sample, session=session, period=resolved_period)
-        df = apply_computed_columns(df, self.cfg, repeat_tables)
+        df = apply_computed_columns(df, self.cfg, repeat_tables, strict=self.strict)
         split_col = split_by or self.report_cfg.get("split_by")
         if split_col:
             if split_col not in df.columns:
@@ -121,7 +122,7 @@ class ReportBuilder:
         # Compute named virtual views and inject into repeat_tables so all
         # consumers (charts, summaries, indicators) can reference them by name.
         # Called here so views see the already split-filtered df and repeat_tables.
-        views = build_views(self.cfg, df, repeat_tables)
+        views = build_views(self.cfg, df, repeat_tables, strict=self.strict)
         if views:
             repeat_tables = {**repeat_tables, **views}
 

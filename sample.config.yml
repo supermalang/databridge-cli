@@ -458,6 +458,7 @@ export:
     user: env:DB_USER
     password: env:DB_PASSWORD
     table: submissions
+    if_exists: replace   # replace (drop+recreate) | append | fail
     # supabase_url: https://yourproject.supabase.co
     # supabase_key: env:SUPABASE_KEY
 
