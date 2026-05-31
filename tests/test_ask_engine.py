@@ -194,3 +194,38 @@ def test_save_recipe_dedupes_name():
     name = ask_engine.save_recipe({"name": "by_region", "type": "bar", "questions": ["Region"]}, cfg)
     assert name == "by_region_2"
     assert [c["name"] for c in cfg["charts"]] == ["by_region", "by_region_2"]
+
+
+def test_validate_indicator_count_ok():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "count"}, _profile_fixture())
+    assert ok and reason == ""
+
+
+def test_validate_indicator_sum_needs_quantitative():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "sum", "question": "Region"}, _profile_fixture())
+    assert not ok and "quantitative" in reason
+
+
+def test_validate_indicator_sum_ok_on_quant():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "sum", "question": "Age"}, _profile_fixture())
+    assert ok and reason == ""
+
+
+def test_validate_indicator_percent_needs_filter_value():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "percent", "question": "Region"}, _profile_fixture())
+    assert not ok and "filter_value" in reason
+
+
+def test_validate_indicator_unknown_stat():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "wat", "question": "Age"}, _profile_fixture())
+    assert not ok and "stat" in reason
+
+
+def test_validate_indicator_missing_column():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "sum", "question": "Ghost"}, _profile_fixture())
+    assert not ok and "Ghost" in reason
+
+
+def test_validate_chart_still_works_without_kind():
+    ok, reason = validate_recipe({"type": "bar", "questions": ["Region"]}, _profile_fixture())
+    assert ok and reason == ""

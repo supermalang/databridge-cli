@@ -62,7 +62,13 @@ CHART_REQS = {
 
 
 def validate_recipe(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
-    """Validate a proposed chart recipe against the profile. Returns (ok, reason)."""
+    """Validate a proposed recipe (chart or indicator) against the profile. (ok, reason)."""
+    if recipe.get("kind", "chart") == "indicator":
+        return _validate_indicator(recipe, profile)
+    return _validate_chart(recipe, profile)
+
+
+def _validate_chart(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
     ctype = recipe.get("type")
     if ctype not in CHART_REQS:
         return False, f"unsupported chart type '{ctype}'"
@@ -86,6 +92,29 @@ def validate_recipe(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
     check, requirement = CHART_REQS[ctype]
     if not check(n_cat, n_quant, n_date):
         return False, f"'{ctype}' needs {requirement}"
+    return True, ""
+
+
+def _validate_indicator(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
+    stat = recipe.get("stat")
+    if stat not in INDICATOR_STATS:
+        return False, f"unsupported indicator stat '{stat}'"
+    source = recipe.get("source") or "main"
+    tp = profile.get(source)
+    if tp is None:
+        return False, f"unknown source table '{source}'"
+    roles = {c["name"]: c.get("role") for c in tp.get("columns", [])}
+    if stat == "count":
+        return True, ""
+    q = recipe.get("question")
+    if not q:
+        return False, f"indicator stat '{stat}' needs a question column"
+    if q not in roles:
+        return False, f"column '{q}' not found in '{source}'"
+    if stat in _NUMERIC_STATS and roles[q] != "quantitative":
+        return False, f"'{stat}' needs a quantitative column"
+    if stat == "percent" and not recipe.get("filter_value"):
+        return False, "'percent' needs a filter_value"
     return True, ""
 
 
