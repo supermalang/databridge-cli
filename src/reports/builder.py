@@ -10,6 +10,8 @@ from src.reports.charts import generate_chart, CHART_DIR
 from src.reports.indicators import compute_indicators
 from src.reports.narrator import generate_narrative
 from src.reports.summaries import compute_summaries
+from src.utils.provenance import build_provenance, data_mtime
+from src.reports.logframe import build_logframe
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +37,11 @@ def _pick_df(
         rdf = repeat_tables.get(source)
         if rdf is not None:
             return rdf
+        # AI-suggested charts often use the leaf repeat-group name; repeat_tables
+        # keys use the full slash-replaced path. Try a suffix match before falling back.
+        matches = [k for k in repeat_tables if k.endswith(f"_{source}") or k == source]
+        if len(matches) == 1:
+            return repeat_tables[matches[0]]
         log.warning(f"source '{source}' not found in repeat_tables — falling back to auto-select")
 
     if not repeat_tables:
@@ -75,14 +82,16 @@ class ReportBuilder:
         self.charts_cfg: List[Dict] = cfg.get("charts", [])
         self.strict = strict
 
-    def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None, session: Optional[str] = None) -> List[Path]:
-        df, repeat_tables = load_processed_data(self.cfg, sample_size=sample_size, random_sample=random_sample, session=session)
+    def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None, session: Optional[str] = None, period: Optional[str] = None, compare: Optional[List[str]] = None) -> List[Path]:
+        from src.utils.periods import parse_period_arg
+        resolved_period = parse_period_arg(self.cfg, period)
+        df, repeat_tables = load_processed_data(self.cfg, sample_size=sample_size, random_sample=random_sample, session=session, period=resolved_period)
         df = apply_computed_columns(df, self.cfg, repeat_tables, strict=self.strict)
         split_col = split_by or self.report_cfg.get("split_by")
         if split_col:
             if split_col not in df.columns:
                 log.warning(f"split_by column '{split_col}' not found — building single report")
-                return [self._render(df, repeat_tables, suffix="")]
+                return [self._render(df, repeat_tables, suffix="", compare=compare)]
             unique_vals = sorted(df[split_col].dropna().unique())
             if split_sample and split_sample < len(unique_vals):
                 log.info(f"Split sample: limiting to first {split_sample} of {len(unique_vals)} value(s)")
@@ -93,16 +102,22 @@ class ReportBuilder:
                 safe = str(val).replace("/", "_").replace(" ", "_")
                 # Filter repeat tables to rows whose parent submission survived the split
                 filtered_repeats = _filter_repeat_tables_by_split(df, repeat_tables, split_col, val)
-                paths.append(self._render(df[df[split_col] == val], filtered_repeats, suffix=f"_{safe}", split_value=str(val)))
+                paths.append(self._render(df[df[split_col] == val], filtered_repeats, suffix=f"_{safe}", split_value=str(val), compare=compare))
             return paths
         suffix = f"_sample{sample_size}" if sample_size else ""
-        return [self._render(df, repeat_tables, suffix=suffix)]
+        return [self._render(df, repeat_tables, suffix=suffix, compare=compare)]
 
-    def _render(self, df: "pd.DataFrame", repeat_tables: Dict, suffix: str = "", split_value: Optional[str] = None) -> Path:
+    def _render(self, df: "pd.DataFrame", repeat_tables: Dict, suffix: str = "", split_value: Optional[str] = None, compare: Optional[List[str]] = None) -> Path:
         template_path = Path(self.report_cfg.get("template","templates/report_template.docx"))
         if not template_path.exists():
             raise FileNotFoundError(f"Template not found: {template_path}\nRun generate-template or see TEMPLATE_GUIDE.md")
         tpl = DocxTemplate(template_path)
+
+        # Apply PII redaction (consent gating + column rules) before any
+        # downstream rendering — charts, indicators, summaries, views all see
+        # the redacted data.  No-op when no pii: block is configured.
+        from src.utils.pii import apply_pii
+        df, repeat_tables = apply_pii(df, repeat_tables, self.cfg)
 
         # Compute named virtual views and inject into repeat_tables so all
         # consumers (charts, summaries, indicators) can reference them by name.
@@ -112,8 +127,53 @@ class ReportBuilder:
             repeat_tables = {**repeat_tables, **views}
 
         stats_table = self._stats_table(df)
-        indicators  = compute_indicators(self.cfg.get("indicators", []), df, repeat_tables)
-        summaries   = compute_summaries(self.cfg.get("summaries", []), df, self.cfg.get("ai"), repeat_tables)
+
+        from src.utils.periods import all_periods, baseline_period
+        registry = all_periods(self.cfg)
+        per_period = None
+        if registry and len(registry) > 1:
+            base = baseline_period(self.cfg)
+            base_slug = base["slug"] if base else None
+            per_period = {}
+            for entry in registry:
+                try:
+                    p_df, p_repeats = load_processed_data(self.cfg, period=entry)
+                    per_period[entry["slug"]] = {
+                        "df": p_df,
+                        "repeat_tables": p_repeats,
+                        "label": entry["label"],
+                        "is_baseline": entry["slug"] == base_slug,
+                    }
+                except FileNotFoundError:
+                    continue
+        if compare:
+            from src.utils.periods import slugify, all_periods, baseline_period
+            c_registry = all_periods(self.cfg)
+            label_to_slug = {e["label"]: e["slug"] for e in c_registry}
+            slugs = [label_to_slug.get(lbl, slugify(lbl)) for lbl in compare]
+            if per_period:
+                # Filter per_period to just the requested slugs, preserving the compare order.
+                filtered = {}
+                for s in slugs:
+                    if s in per_period:
+                        filtered[s] = per_period[s]
+                per_period = filtered or None
+            if per_period:
+                base = baseline_period(self.cfg)
+                base_slug = base["slug"] if base else slugs[0]
+                for s in per_period:
+                    per_period[s]["is_baseline"] = (s == base_slug)
+
+        self._last_per_period = per_period   # exposed for Task 18 (chart payload)
+
+        indicators  = compute_indicators(
+            self.cfg.get("indicators", []), df, repeat_tables, per_period=per_period
+        )
+        logframe = build_logframe(self.cfg, indicators)
+        summaries   = compute_summaries(
+            self.cfg.get("summaries", []), df, self.cfg.get("ai"),
+            repeat_tables,
+        )
 
         narrative = generate_narrative(
             ai_cfg        = self.cfg.get("ai"),
@@ -127,11 +187,23 @@ class ReportBuilder:
             questions_cfg = self.cfg.get("questions"),
         )
 
+        provenance = build_provenance(
+            self.cfg,
+            df,
+            data_downloaded_at=data_mtime(
+                Path(self.cfg.get("export", {}).get("output_dir", "data/processed")),
+                self.cfg.get("form", {}).get("alias", "form"),
+            ),
+            compared_periods=compare,
+        )
+
         context = {
             "report_title":  self.report_cfg.get("title", "Report"),
             "period":        self.report_cfg.get("period", datetime.today().strftime("%B %Y")),
             "n_submissions": len(df),
             "generated_at":  datetime.today().strftime("%d/%m/%Y %H:%M"),
+            "provenance":    provenance,
+            "logframe":      logframe,
             **narrative,
             "stats_table":   stats_table,
             **indicators,
@@ -199,6 +271,32 @@ class ReportBuilder:
             agg_spec = c.get("aggregate")
             if agg_spec and source and source != "main":
                 chart_df = aggregate_repeat(chart_df, agg_spec)
+
+            # Enrich period_bar / period_line with per-period computed values
+            if c.get("type") in ("period_bar", "period_line") and getattr(self, "_last_per_period", None):
+                from src.reports.indicators import compute_indicators
+                metric = (c.get("options", {}) or {}).get("metric") or c.get("metric")
+                periods_payload = []
+                if metric:
+                    for slug, bundle in self._last_per_period.items():
+                        ind_cfg = {
+                            "name":     metric,
+                            "stat":     c.get("stat", "count"),
+                            "question": c.get("question"),
+                        }
+                        try:
+                            result = compute_indicators([ind_cfg], bundle["df"], bundle.get("repeat_tables", {}))
+                            value  = result.get(f"ind_{metric}", "0")
+                        except Exception:
+                            value  = "0"
+                        periods_payload.append({
+                            "slug":  slug,
+                            "label": bundle["label"],
+                            "value": value,
+                        })
+                # Inject the payload into a COPY of resolved so the original config isn't mutated.
+                enriched_opts = {**(resolved.get("options", {}) or {}), "periods": periods_payload}
+                resolved = {**resolved, "options": enriched_opts}
 
             png = generate_chart(resolved, chart_df)
             width = Inches(c.get("options", {}).get("width_inches", 5.5))

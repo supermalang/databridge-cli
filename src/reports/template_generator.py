@@ -58,6 +58,33 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
             _heading(doc,label,2)
             _descriptor(doc,f"{s.get('stat','distribution')} — {', '.join(s.get('questions',[]))}")
             _editable(doc,f"{{{{ summary_{name} }}}}")
+    # Logframe section — only renders when the user has a framework configured.
+    p_lf_h = doc.add_paragraph()
+    p_lf_h.style = doc.styles["Normal"]
+    run_lf_h = p_lf_h.add_run("{% if logframe.has_framework %}Results Framework{% endif %}")
+    run_lf_h.bold = True
+    run_lf_h.font.size = Pt(14)
+
+    p_lf = doc.add_paragraph()
+    p_lf.style = doc.styles["Normal"]
+    run_lf = p_lf.add_run(
+        "{% if logframe.has_framework %}"
+        "{% for row in logframe.rows %}"
+        "{{ '  ' * row.indent }}{{ row.label }}"
+        "{% if row.indicators %}: {% for ind in row.indicators %}{{ ind.name }}={{ ind.value }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}\n"
+        "{% endfor %}"
+        "{% endif %}"
+    )
+    run_lf.font.size = Pt(10)
+
+    # Provenance footer — single Jinja line; ReportBuilder fills it in.
+    # Must live BEFORE the deletable "Placeholder Reference" section so that
+    # deleting that section does not remove the footer.
+    p = doc.add_paragraph()
+    p.style = doc.styles["Normal"]
+    run = p.add_run("{{ provenance.footer }}")
+    run.italic = True
+    run.font.size = Pt(8)
     _divider(doc); _heading(doc,"Placeholder Reference",1)
     _note(doc,"Delete this section before sharing."); _ref_table(doc,cfg)
     out_path.parent.mkdir(parents=True,exist_ok=True)

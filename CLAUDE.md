@@ -6,13 +6,38 @@ This file gives Claude Code full context about this project.
 
 ## What this project does
 
-**kobo-reporter** is a CLI tool that:
+**kobo-reporter** is a CLI + web tool that:
 1. Fetches survey form schemas from Kobo/Ona platforms
 2. Lets the user configure which questions to extract, how to visualize them, and where to export
 3. Downloads submission data, applies filters, and exports to file or database
 4. Generates Word reports (.docx) with embedded charts and editable text sections
 
-Everything is driven by a single `config.yml` file.
+Everything is driven by a single `config.yml` file. The web UI is a React app talking to a FastAPI backend; both run on the same host (no Docker required).
+
+---
+
+## Architecture at a glance
+
+Three layers in two languages, all running on the same machine inside the dev container.
+
+| Layer | Language | Lives in | What it does |
+|---|---|---|---|
+| **CLI + data + reports** | Python (pandas, matplotlib, docxtpl) | `src/` | All real work: fetch schemas, download submissions, apply filters, render 21 chart types, fill Word templates |
+| **HTTP API + log streamer** | Python (FastAPI + uvicorn) | `web/main.py` | Exposes `/api/*` REST endpoints, runs CLI commands as subprocesses and streams stdout as SSE |
+| **Web UI** | JSX/React (compiled by Vite) | `frontend/src/` → `frontend/dist/` | Six-tab dashboard that calls `/api/*`; authored as `.jsx` + `styles.css`, shipped as plain HTML/JS |
+
+**Why `web/` and `frontend/` are separate folders:**
+- `web/` is a Python package — FastAPI imports it (`from web.main import app`). It needs `__init__.py` and Python-importable structure.
+- `frontend/` is a Vite project root — owns `package.json`, `node_modules/`, `vite.config.js`, and its own entry `index.html`. Vite assumes it owns its directory.
+
+Mixing them would mean either npm crawling Python files or Python's import machinery sitting next to `node_modules/`. The split is the standard layout for a Python-backend + JS-frontend project.
+
+**Two run modes, no Docker:**
+
+| Mode | Command | Ports | When to use |
+|---|---|---|---|
+| Dev (HMR) | `./scripts/dev.sh` | uvicorn `:8000` + vite `:51730` (proxies `/api`) | UI iteration — saves rebuild in ~2s |
+| Prod-like | `./scripts/serve.sh` | uvicorn `:8000` only (serves built React + API) | Demo, share, pre-deploy |
 
 ---
 
@@ -21,25 +46,56 @@ Everything is driven by a single `config.yml` file.
 ```
 databridge-cli/
 ├── CLAUDE.md                         ← you are here
-├── Dockerfile                        ← web files (main.py, index.html) generated inline via heredoc
-├── docker-compose.yml                ← app + ttyd terminal, Traefik labels (no Traefik service)
-├── requirements.txt                  ← Python deps
+├── requirements.txt                  ← Python deps (CLI + FastAPI)
 ├── sample.config.yml                 ← config template (copy to config.yml)
 ├── .env.example                      ← env vars template (copy to .env)
 ├── TEMPLATE_GUIDE.md                 ← manual Word template instructions
 │
-├── src/
+├── src/                              ← CLI code
 │   ├── data/
 │   │   ├── make.py                   ← CLI entry point (click group, 4 commands)
 │   │   ├── extract.py                ← KoboClient — API auth, pagination, schema fetch
 │   │   ├── questions.py              ← fetch schema → auto-categorize → write to config.yml
-│   │   └── transform.py             ← flatten submissions, apply filters, multi-target export
+│   │   └── transform.py              ← flatten submissions, apply filters, multi-target export
 │   ├── reports/
 │   │   ├── builder.py                ← ReportBuilder — renders Word template via docxtpl
 │   │   ├── charts.py                 ← 21 chart types via matplotlib (CHART_DISPATCH dict)
-│   │   └── template_generator.py    ← auto-generates starter .docx from config
+│   │   └── template_generator.py     ← auto-generates starter .docx from config
 │   └── utils/
 │       └── config.py                 ← load_config(), write_config(), env: var resolution
+│
+├── web/
+│   ├── __init__.py
+│   └── main.py                       ← FastAPI app: /api/* endpoints, SSE log streaming,
+│                                       serves frontend/dist/ in prod-like mode
+│
+├── frontend/                         ← React + Vite (the UI)
+│   ├── package.json                  ← deps: react, react-dom, vite, js-yaml
+│   ├── vite.config.js                ← dev server on :51730, proxies /api & /terminal → :8000
+│   ├── index.html                    ← Vite entry — mounts <App />
+│   └── src/
+│       ├── main.jsx                  ← ReactDOM root + ToastProvider
+│       ├── App.jsx                   ← Topbar + tab nav + project switcher
+│       ├── styles.css                ← Design tokens + component styles (all CSS lives here)
+│       ├── lib/config.js             ← loadConfig / saveConfigPatch / saveConfigText helpers
+│       ├── hooks/useCommand.js       ← POST /api/run/* + parse SSE stream into log lines
+│       ├── components/
+│       │   ├── BottomTerminal.jsx    ← sticky bottom log/terminal with sessions + filter
+│       │   ├── FileTable.jsx         ← reusable file-listing table
+│       │   ├── Modal.jsx             ← reusable modal overlay
+│       │   ├── Sparkline.jsx         ← small SVG sparkline
+│       │   └── Toast.jsx             ← ToastProvider + useToast() hook
+│       └── pages/
+│           ├── Dashboard.jsx         ← greeting + pipeline strip + KPIs + runs + AI queue + usage
+│           ├── Sources.jsx           ← platform picker + connection + AI narrative + output
+│           ├── Questions.jsx         ← group tree + searchable, inline-editable export labels
+│           ├── Composition.jsx       ← filters + charts + indicators + summaries + views + templates
+│           ├── Reports.jsx           ← generated .docx files + data sessions
+│           └── Templates.jsx         ← .docx template list (standalone tab)
+│
+├── scripts/
+│   ├── dev.sh                        ← uvicorn (:8000) + vite (:51730) together with HMR
+│   └── serve.sh                      ← npm run build + uvicorn — single-port prod-like
 │
 ├── data/
 │   ├── raw/                          ← gitignored
@@ -52,9 +108,39 @@ databridge-cli/
 
 ---
 
-## Four CLI commands
+## Dev workflow
 
-All commands run from project root. Set `PYTHONPATH=.` or run via Docker.
+**For UI work** — both servers, HMR on the React side:
+
+```bash
+./scripts/dev.sh
+```
+
+Runs FastAPI on `:8000` (with `--reload`) and Vite on `:51730` (with HMR). Vite proxies
+`/api/*` and `/terminal/` to uvicorn, so you hit `:51730` from the dev container's
+forwarded port and everything works end-to-end. First run installs npm deps automatically.
+
+**For a prod-like local run** — single port, no HMR:
+
+```bash
+./scripts/serve.sh
+```
+
+Runs `npm run build` once, then uvicorn on `:8000` serving the built React bundle from
+`frontend/dist/` plus all `/api/*` routes. Override with `HOST=… PORT=…` env vars.
+
+**First-time setup in this dev container:**
+
+```bash
+pip install -r requirements.txt
+# (npm deps install automatically the first time you run dev.sh / serve.sh)
+```
+
+---
+
+## CLI commands
+
+All commands run from project root. Set `PYTHONPATH=.`.
 
 ```bash
 # 1. Fetch questions from Kobo/Ona form → writes into config.yml
@@ -66,15 +152,34 @@ python3 src/data/make.py generate-template --out templates/custom.docx
 
 # 3. Download submissions, apply filters, export to configured destination
 python3 src/data/make.py download
-python3 src/data/make.py download --sample 50   # first 50 rows only (for testing)
+python3 src/data/make.py download --sample 50          # first 50 rows only (for testing)
+python3 src/data/make.py download --period "Q3 2026"   # tag download with a period (auto-registers if new)
 
 # 4. Build Word report from downloaded data
 python3 src/data/make.py build-report
 python3 src/data/make.py build-report --sample 100
 python3 src/data/make.py build-report --sample 100 --random-sample
-python3 src/data/make.py build-report --split-by Site                  # one report per Site value
-python3 src/data/make.py build-report --split-by Site --split-sample 3 # first 3 sites only
+python3 src/data/make.py build-report --split-by Site                   # one report per Site value
+python3 src/data/make.py build-report --split-by Site --split-sample 3  # first 3 sites only
+python3 src/data/make.py build-report --period "Q2 2026"                # report for a specific period
+python3 src/data/make.py build-report --compare "Q1 2026,Q2 2026"       # comparison report across periods
+
+# 5. Switch the active period (updates periods.current in config.yml)
+python3 src/data/make.py set-period "Q3 2026"
+
+# 6. Validate downloaded data (missingness, outliers, duplicates, type issues)
+python3 src/data/make.py validate
+
+# 7. Classify open-text responses using AI (writes themes back to config.yml)
+python3 src/data/make.py classify
+
+# 8. Push bundled seed prompts to Langfuse (create-if-missing; --force overwrites)
+python3 src/data/make.py push-prompts
+python3 src/data/make.py push-prompts --force
 ```
+
+The same commands are exposed in the web UI as POST `/api/run/{command}` with
+SSE-style streamed logs.
 
 ---
 
@@ -86,7 +191,7 @@ api:
   token: env:KOBO_TOKEN                    # env: prefix reads from environment variable
 
 form:
-  uid: aAbBcCdDeEfFgGhH                   # Kobo/Ona asset UID
+  uid: aAbBcCdDeEfFgGhH                    # Kobo/Ona asset UID
   alias: monitoring_survey                 # used as filename prefix in exports
 
 # Auto-filled by fetch-questions — user then edits (delete unwanted, fix categories)
@@ -106,49 +211,102 @@ filters:
   - "submission_date >= '2025-01-01'"
 
 # Named virtual tables — computed once per render, reused by charts/summaries/indicators.
-# Eliminates redundant join+filter work when multiple items share the same source.
-# Reference a view with source: <view_name> on any chart, summary, or indicator.
 views:
-  - name: villages_with_dept            # enriched view: repeat + parent fields joined in
+  - name: villages_with_dept
     source: villages                    # repeat group path (or "main")
-    join_parent: [Departement, Region]  # columns to bring in from main table
-    filter: "Number of Students > 0"   # optional pandas .query() filter
+    join_parent: [Departement, Region]
+    filter: "Number of Students > 0"
 
-  - name: dept_student_totals           # aggregated view: one row per department
+  - name: dept_student_totals           # aggregated view
     source: villages
     join_parent: [Departement]
     group_by: Departement
-    question: Number of Students        # column to aggregate
-    agg: sum                            # sum | mean | count | max | min (default: sum)
+    question: Number of Students
+    agg: sum                            # sum | mean | count | max | min
 
 # Each chart → {{ chart_<n> }} placeholder in Word template
 charts:
-  - name: satisfaction_overview            # → {{ chart_satisfaction_overview }} in template
+  - name: satisfaction_overview
     title: Overall satisfaction
-    type: horizontal_bar                   # see full list below
-    questions: [Satisfaction]              # references export_label values
+    type: horizontal_bar
+    questions: [Satisfaction]
     options:
       top_n: 10
       width_inches: 5.5
+
+# Each indicator → {{ ind_<name> }} placeholder; framework_ref links it to a framework node
+indicators:
+  - name: vaccinations_administered
+    stat: sum
+    question: Number of doses
+    framework_ref: OP1.1     # optional — links indicator to a results-framework node
+
+# AI narrative (fills {{ summary_text }}, {{ observations }}, {{ recommendations }})
+ai:
+  provider: openai                      # openai | anthropic
+  model: gpt-4o
+  api_key: env:OPENAI_API_KEY
+  base_url: ""                          # optional — Azure, Groq, Mistral, Ollama
+  language: English
+  max_tokens: 1500
+
+# Optional — multi-period support. When absent, single-period mode applies.
+periods:
+  current:  "Q2 2026"                    # active period
+  baseline: "Q1 2026"                    # canonical comparison anchor
+  registry:
+    - label: "Q1 2026"
+      slug:  "q1_2026"                   # filesystem-safe; auto-derived from label
+      started: 2026-01-01                # optional
+      ended:   2026-03-31                # optional
+    - label: "Q2 2026"
+      slug:  "q2_2026"
+
+# Optional — results framework (logframe). When absent, no framework rendering.
+framework:
+  goal:
+    id:    GOAL
+    label: "Reduce child mortality by 25% in target districts by 2030"
+  outcomes:
+    - id: OC1
+      label: "80% of children under 5 fully vaccinated"
+      parent: GOAL
+  outputs:
+    - id: OP1.1
+      label: "10,000 vaccination doses administered"
+      parent: OC1
+
+# Optional — PII redaction + consent gating. When absent, no redaction.
+pii:
+  consent_column: "Consent_to_share_data"   # rows must have this == consent_value
+  consent_value:  "yes"
+  redact:
+    - column: "Respondent_name"
+      strategy: drop
+    - column: "Phone_number"
+      strategy: hash
+    - column: "GPS"
+      strategy: generalize_geo
+      decimals: 2
 
 export:
   format: csv                              # csv | json | xlsx | mysql | postgres | supabase
   output_dir: data/processed
   database:
     host: localhost
-    port: 5432                             # 5432 postgres, 3306 mysql
+    port: 5432
     name: kobo_reports
     user: env:DB_USER
     password: env:DB_PASSWORD
     table: submissions
-    # supabase_url: https://xxx.supabase.co
-    # supabase_key: env:SUPABASE_KEY
 
 report:
   template: templates/report_template.docx
   output_dir: reports
   title: Monitoring Report
   period: Q1 2025
+  filename_pattern: "{form.alias}_{period}_{split}.docx"
+  split_by: region                       # optional — generate one .docx per unique value
 ```
 
 ---
@@ -206,6 +364,92 @@ To add a new chart type: add a function with the standard signature, add it to `
 
 ---
 
+## Prompt management (Langfuse)
+
+Prompts live in [Langfuse Cloud](https://cloud.langfuse.com) (or a self-hosted Langfuse instance). Each AI feature fetches its prompt by name at runtime via `src/utils/lf_client.py`.
+
+### Prompt names and consuming files
+
+| Prompt name | Consuming file | Output contract |
+|---|---|---|
+| `narrator` | [src/reports/narrator.py](src/reports/narrator.py) | JSON: `summary_text` / `observations` / `recommendations` |
+| `summaries` | `stat: ai` blocks in [src/reports/summaries.py](src/reports/summaries.py) | Plain text |
+| `chart_suggester` | [src/reports/ai_chart_suggester.py](src/reports/ai_chart_suggester.py) | JSON: `{"charts": [...]}` |
+| `template_generator` | [src/reports/ai_template_generator.py](src/reports/ai_template_generator.py) | JSON: layout spec |
+| `summary_suggester` | [src/reports/ai_summary_suggester.py](src/reports/ai_summary_suggester.py) | JSON: suggested summaries |
+| `view_suggester` | [src/reports/ai_view_suggester.py](src/reports/ai_view_suggester.py) | JSON: suggested views |
+| `classifier_discover` | [src/data/classifier.py](src/data/classifier.py) | JSON: discovered themes |
+| `classifier_classify` | [src/data/classifier.py](src/data/classifier.py) | JSON: per-row classifications |
+| `ask_propose` | `src/reports/ask_engine.py` | JSON: `{"items": [{"kind": ...}]}` |
+| `ask_caption` | `src/reports/ask_engine.py` | JSON: `{"captions": {...}}` |
+
+### Setup
+
+1. Create a free account at [cloud.langfuse.com](https://cloud.langfuse.com) (or use a self-hosted instance).
+2. Copy your public key, secret key, and host URL into `.env`:
+   ```
+   LANGFUSE_PUBLIC_KEY=pk-lf-...
+   LANGFUSE_SECRET_KEY=sk-lf-...
+   LANGFUSE_HOST=https://cloud.langfuse.com   # default; omit for cloud
+   # LANGFUSE_BASE_URL is accepted as an alias if LANGFUSE_HOST is unset
+   ```
+3. Seed the bundled default prompts into Langfuse:
+   ```bash
+   python3 src/data/make.py push-prompts          # create-if-missing
+   python3 src/data/make.py push-prompts --force  # overwrite existing
+   ```
+4. Edit prompts directly in the Langfuse UI — version history is tracked automatically.
+
+### Offline / fallback behavior
+
+Prompts are resolved in this order:
+1. **Cache-first** — `~/.cache/databridge/prompts/` (1-hour TTL)
+2. **Langfuse** — fetched over HTTPS if the cache is stale or missing
+3. **Bundled seeds** — `src/utils/seed_prompts.py` (always present, no network needed)
+
+AI features keep working with no Langfuse keys (they use the bundled seeds) and with no AI provider keys (the feature no-ops gracefully).
+
+### Tracing
+
+Every LLM call is recorded as a Langfuse generation with cost, latency, and token counts. CLI commands group all their calls under a single trace so you can follow the full pipeline run in the Langfuse UI.
+
+### To add a new prompt site
+
+1. Add an entry to `SEED_PROMPTS` in [src/utils/seed_prompts.py](src/utils/seed_prompts.py) with the prompt name, system message, and any variable placeholders.
+2. In your feature file, build a `variables` dict and call:
+   ```python
+   prompt = lf_client.get_prompt("<name>", variables)
+   response = lf_client.chat(..., trace_name="<name>")
+   ```
+3. Run `python3 src/data/make.py push-prompts` to seed the new prompt in Langfuse.
+4. Document the new prompt name in the table above.
+
+### Output schemas (structured outputs)
+
+Seven of the eight prompts produce JSON and have an `output_schema` in their seed's `config`.
+The schema travels with the prompt (stored in Langfuse's per-prompt `config` field) and
+is enforced at the LLM call:
+
+- **OpenAI** — sent via `response_format={"type":"json_schema", ...}` (Structured Outputs).
+  The model is guaranteed to return JSON matching the schema.
+- **Anthropic** — sent via a forced tool-use call (`tools=[{input_schema=...}]` + `tool_choice`).
+  The model's response is the tool's `input` dict.
+
+Editing a schema in the Langfuse UI updates both providers' enforcement on the next fetch.
+If you write an invalid schema (not a dict, or missing `"type"`), the next call logs a WARNING
+and falls back to no-schema mode for that one prompt — the feature still runs.
+
+To add a schema to a new prompt:
+1. Add `_<NAME>_OUTPUT_SCHEMA` literal in `src/utils/seed_prompts.py` (Strict-mode rules:
+   `additionalProperties: false`, every property listed in `required`, no `oneOf`).
+2. Reference it in the entry's `config={"output_schema": ...}`.
+3. `python3 src/data/make.py push-prompts --force` to update Langfuse.
+
+The seed-validation test (`tests/test_seed_prompts.py`) enforces meta-schema validity
+and the Strict-mode contract; intentional open maps are listed in `_ALLOWED_OPEN_MAPS`.
+
+---
+
 ## Word template placeholders
 
 Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
@@ -215,54 +459,39 @@ Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
 {{ period }}
 {{ n_submissions }}
 {{ generated_at }}
-{{ summary_text }}         ← intentionally left empty for collaborator editing
-{{ observations }}         ← intentionally left empty
-{{ recommendations }}      ← intentionally left empty
+{{ summary_text }}         ← AI-filled if ai: is configured, else left blank
+{{ observations }}
+{{ recommendations }}
 
 {{ ind_<name> }}        ← one per indicator in config.yml indicators section
-                            e.g. {{ ind_total_beneficiaries }} → "4,832"
-                                 {{ ind_pct_female }}          → "58.3%"
-                                 {{ ind_top_region }}          → "Nouakchott"
-
 {{ summary_<name> }}    ← one per summary in config.yml summaries section
-                            e.g. {{ summary_region_breakdown }} → "Leading response: North (45%). Others: South (30%)."
-                                 {{ summary_age_profile }}      → "n=382, mean=34.5, median=32.0, range 18.0–65.0."
-                                 {{ summary_context_analysis }} → AI-generated paragraph
-
 {{ chart_<n> }}         ← one per chart in config.yml
-                            e.g. {{ chart_satisfaction_overview }}
-
-{% for row in stats_table %}
-  {{ row.label }}  n={{ row.n }}  mean={{ row.mean }}  median={{ row.median }}
-{% endfor %}
+{{ split_value }}       ← when --split-by is set, the current group's value
+{{ logframe }}          ← results framework hierarchy (has_framework / rows); present only when framework: is configured
+{{ provenance.footer }}  ← one-line audit footer; includes "pii: consent=<col>, <N> columns redacted" when pii: rules are configured
 ```
 
 **Critical rule:** each `{{ chart_... }}` must be a single unbroken XML run in the .docx.
-Use `generate-template` command to auto-generate correct placeholders — never type them manually.
+Use `generate-template` to auto-generate correct placeholders — never type them manually.
 
 ---
 
-## Docker deployment
+## Web UI
 
-```bash
-cp .env.example .env              # fill KOBO_TOKEN, APP_DOMAIN, BASIC_AUTH_USERS
-cp sample.config.yml config.yml   # fill api.token, form.uid
-docker compose up -d --build
-```
+The React app under `frontend/src/pages/` has six tabs that mirror the pipeline:
 
-- Web UI: `https://<APP_DOMAIN>` — Dashboard / Config editor / Reports / Terminal tabs
-- Terminal: `https://<APP_DOMAIN>/terminal/` — ttyd web terminal, working dir `/app`
-- Requires existing Traefik with external network `traefik-public` and `websecure` entrypoint
-- `web/main.py` and `web/static/index.html` are generated inside the image via Dockerfile heredoc
-  — do **not** create a `web/` directory locally, it will conflict with the build
+| Tab | Purpose | Backend endpoints |
+|---|---|---|
+| Dashboard | Greeting + pipeline strip + KPIs + runs + AI queue + project usage | `/api/state`, `/api/run/{cmd}`, `/api/data/sessions` |
+| ① Sources | Platform picker (Ona/Kobo) · API & form · AI Narrative · Output formats | `/api/config`, `/api/ai/test` |
+| ② Questions | Group accordions with inline `export_label` editing, bulk keep/delete | `/api/questions` |
+| ③ Composition | Filters · Charts · Indicators · Summaries · Views · Templates | `/api/config`, `/api/templates` |
+| ④ Reports | Generated `.docx` reports + downloaded data sessions | `/api/reports`, `/api/data/sessions` |
+| Templates | Standalone template management (also embedded in Composition) | `/api/templates*` |
 
-Volumes mounted at runtime:
-```
-./config.yml   → /app/config.yml
-./data/        → /app/data/
-./reports/     → /app/reports/
-./templates/   → /app/templates/
-```
+The **BottomTerminal** is a sticky bottom drawer rendered on the Dashboard page: pipeline-
+run / fetch-questions log sessions plus a ttyd `shell` session (only works if you also run
+ttyd separately — not required).
 
 ---
 
@@ -280,15 +509,21 @@ if isinstance(obj, str) and obj.startswith("env:"):
 On re-run, existing `category` and `export_label` per `kobo_key` are carried over.
 New questions from the schema are appended with fresh defaults.
 
-### SSE log streaming (web/main.py — embedded in Dockerfile)
-CLI commands run as subprocesses via `asyncio.create_subprocess_exec`.
-stdout/stderr merged and streamed line-by-line via Server-Sent Events.
-`X-Accel-Buffering: no` header prevents Traefik from buffering the SSE stream.
+### SSE log streaming (web/main.py)
+CLI commands run as subprocesses via `asyncio.create_subprocess_exec`. stdout/stderr
+merged and streamed line-by-line via SSE-style frames (event: log/status/done + data: JSON).
 Only 4 whitelisted commands can be triggered — no arbitrary shell execution.
 
+The React side reads it with `fetch().body.getReader()` in `hooks/useCommand.js` (EventSource
+is GET-only).
+
+### Frontend ↔ backend wiring in dev
+Vite (`:51730`) proxies `/api/*` → uvicorn (`:8000`). All `fetch('/api/…')` calls in the
+React app go through the proxy. Same code paths work in prod-like mode (single port).
+
 ### Filter syntax (src/data/transform.py)
-Filters use `pandas.DataFrame.query()` — SQL-like expressions.
-Column names reference `export_label` values, not original `kobo_key` paths.
+Filters use `pandas.DataFrame.query()` — SQL-like expressions. Column names reference
+`export_label` values, not original `kobo_key` paths.
 
 ### Export routing (src/data/transform.py)
 ```python
@@ -298,9 +533,76 @@ export_data() → _export_file()     # csv, json, xlsx
 ```
 Database drivers are optional imports — only install what you need.
 
+### Base-table linkage columns (src/data/flatten.py)
+`load_data` flattens submissions into a main table plus one base table per repeat
+level (including nested sub-repeats) via `build_repeat_tables`. Every repeat row
+carries linkage columns:
+
+- `_root_id` — id of the root submission the row descends from
+- `_parent_index` — alias of `_root_id` (kept for backward-compat with filters,
+  computed columns, `join_repeat_to_main`, and split reports)
+- `_parent_row_id` — `_row_id` of the immediate parent repeat row
+  (equals `_root_id` for top-level repeats)
+- `_row_id` — stable composite id, e.g. `"12.0.1"` (root 12 → member 0 → illness 1)
+- `_row_index` — position within the immediate parent
+
+Join any level to its parent on `_parent_row_id == parent._row_id`, or to the
+root on `_root_id == main._id`. The catalog is exposed read-only at
+`GET /api/base-tables`.
+
+### Data profiling (src/data/profile.py)
+`profile_dataset(cfg, main_df, repeat_tables)` computes a deterministic, structured
+EDA profile for every base table — per-column `role`, completeness, cardinality,
+numeric stats + 3×IQR outliers, date ranges, low-cardinality top values, plus
+per-table numeric correlations and duplicate-id info. It is the single source of
+truth for these signals: `validate.py` (findings) and `summaries.py` (narrative)
+derive their numbers from `profile.py`'s primitives (`null_stats`, `iqr_bounds`,
+`numeric_outliers`, `correlations`). No LLM, no I/O.
+
+`top_values` are computed only for low-cardinality columns (≤ `LOW_CARDINALITY_MAX`,
+default 20) so the profile never surfaces individual free-text/PII values.
+
+Exposed read-only at `GET /api/profile`; rendered in the **Profile** tab.
+
+### PII gate (src/utils/pii.py)
+PII has two tiers:
+- **Strict export gate** — `enforce_pii` runs inside `export_data` (default `redact=True`).
+  It calls `validate_pii_config` (fail-closed: a configured `consent_column` or `redact`
+  column missing from the data, or an unknown strategy, raises `PIIConfigError` and
+  aborts the download), consent-gates the main table, prunes orphaned repeat rows
+  (parents filtered out by consent, via `_parent_index`), then applies redaction.
+  So `data/processed` + DB/Supabase are always redacted + consent-gated.
+- **Lenient render net** — the existing `apply_pii` still runs at report/preview time
+  as defense-in-depth (log-and-skip on missing columns); it operates on already-gated data.
+
+`download --no-redact` is an explicit, off-by-default escape hatch that writes RAW data
+(internal/secure use only) and logs a warning; it is CLI-only (not in the web UI's
+ALLOWED_COMMANDS flag whitelist). Reports built from a raw session are still redacted by
+the lenient render net. The post-download classification re-export passes `redact=False`
+(its data was already gated by the primary export).
+
+### Ask question-engine (src/reports/ask_engine.py)
+`ask(question, cfg, df, repeat_tables)` answers a natural-language question with 1–3
+locally-computed answers — each either a **chart** or a scalar **indicator** (the LLM
+picks per item):
+1. `build_catalog` condenses the Layer 2 profile into a data-aware catalog (roles,
+   cardinality, low-cardinality top-values, numeric ranges; linkage columns excluded).
+2. `propose_items` asks the LLM (`ask_propose` prompt) for `kind`-tagged recipes
+   (`{"items": [{"kind": "chart"|"indicator", ...}]}`).
+3. `validate_recipe` dispatches by kind: charts → `CHART_REQS` role checks; indicators →
+   `INDICATOR_STATS` + stat/column/role checks. Invalid recipes are dropped with a reason.
+4. Execute locally: charts → `render_recipe` (chart engine); indicators →
+   `compute_indicator` (the `compute_indicators` engine).
+5. `ground_captions` (`ask_caption` prompt) writes one-line captions from each answer's
+   ACTUAL computed values (chart stats block / indicator value+stat); falls back to the
+   title if AI is off.
+Duplicate names within a batch are disambiguated. `save_recipe(recipe, cfg, kind)` appends
+a chosen recipe to `config.charts` (chart) or `config.indicators` (indicator). Exposed at
+`POST /api/ask` and `POST /api/ask/save` (`{recipe, kind}`); surfaced in the **Ask** tab
+(charts as images, indicators as big-number cards). Needs an AI provider and downloaded data.
+
 ### Chart output path
 Charts are saved to `data/processed/charts/<chart_name>.png` at `build-report` time.
-The `CHART_DIR` constant in `charts.py` controls this.
 
 ---
 
@@ -309,41 +611,38 @@ The `CHART_DIR` constant in `charts.py` controls this.
 | Variable | Required | Description |
 |---|---|---|
 | `KOBO_TOKEN` | Yes | Kobo or Ona API token |
-| `APP_DOMAIN` | Docker only | Domain for Traefik routing |
-| `BASIC_AUTH_USERS` | Docker only | htpasswd format for basic auth |
 | `DB_USER` | DB export only | Database username |
 | `DB_PASSWORD` | DB export only | Database password |
 | `SUPABASE_KEY` | Supabase only | Supabase service role key |
+| `OPENAI_API_KEY` | AI narrative (OpenAI) | API key for the AI provider |
 
 ---
 
-## Common tasks for Claude Code
+## Common tasks
 
 ### Add a new chart type
 1. Add function to `src/reports/charts.py` with signature `fn(df, questions, title, out_path, opts)`
-2. Add entry to `CHART_DISPATCH` dict at the bottom of the file
-3. Update chart type table in `TEMPLATE_GUIDE.md` and `README.md`
+2. Add entry to `CHART_DISPATCH` dict
+3. Add the type to the `CHART_TYPES` list in `frontend/src/pages/Composition.jsx`
+4. Update the chart-type table here and in `README.md`
 
 ### Add a new export target
 1. Add `_export_<target>()` function in `src/data/transform.py`
 2. Add branch in `export_data()` routing function
-3. Add optional import at top of the new function (not module level)
-4. Document new env vars in `.env.example` and `README.md`
+3. Add optional import inside the function (not module level)
+4. Add a chip in the format chip-tabs in `frontend/src/pages/Sources.jsx`
+5. Document new env vars in `.env.example`
 
 ### Add a new CLI command
 1. Add `@cli.command("command-name")` function in `src/data/make.py`
-2. Add command to `ALLOWED_COMMANDS` dict in `web/main.py` (in the Dockerfile heredoc)
-3. Add a button card in `web/static/index.html` (in the Dockerfile heredoc)
+2. Add the command name to `ALLOWED_COMMANDS` dict in `web/main.py`
+3. Expose it from the UI — either as a button in the Run-pipeline wizard
+   (`frontend/src/pages/Dashboard.jsx`) or wherever it fits
 
-### Modify the web UI or FastAPI backend
-Both `web/main.py` and `web/static/index.html` live inside the Dockerfile as heredoc blocks.
-Edit them there directly — they do not exist as separate files on disk.
+### Modify the web UI
+React components are real files in `frontend/src/`. Edit them, Vite picks up the change
+via HMR (in dev). All CSS lives in `frontend/src/styles.css` — design tokens at the top,
+component styles below.
 
-### Test locally without Docker
-```bash
-pip3 install -r requirements.txt
-pip3 install fastapi uvicorn aiofiles python-multipart
-# The web UI won't work locally (web/ isn't a real folder)
-# But the CLI works:
-PYTHONPATH=. KOBO_TOKEN=xxx python3 src/data/make.py --help
-```
+### Modify the FastAPI backend
+`web/main.py` is a real file. `uvicorn --reload` (started by `dev.sh`) restarts on save.

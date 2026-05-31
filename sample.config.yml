@@ -477,5 +477,17 @@ report:
 #   base_url: null            # optional: Azure, Groq, Mistral, Ollama endpoint
 #   language: English         # language for narrative output
 #   max_tokens: 1500
-#   # custom_prompt: |        # optional: override the system prompt entirely
-#   #   You are a humanitarian reporting assistant. ...
+
+# Prompts are managed in Langfuse (see README → "Prompt management").
+# Run:  python3 src/data/make.py push-prompts   to seed them.
+
+# Optional — PII redaction + consent gating. Applied at report/preview render time.
+# pii:
+#   consent_column: "Consent_to_share_data"   # rows must have this == consent_value
+#   consent_value:  "yes"
+#   redact:
+#     - {column: "Respondent_name", strategy: drop}
+#     - {column: "Phone_number",    strategy: hash}
+#     - {column: "GPS",             strategy: generalize_geo, decimals: 2}
+#     - {column: "Date_of_birth",   strategy: generalize_date}
+#     - {column: "National_ID",     strategy: mask}

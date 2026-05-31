@@ -71,6 +71,7 @@ def cmd_generate_template(ctx, out, context, summary_prompt):
 def cmd_ai_generate_template(ctx, description, pages, language, context, summary_prompt, out):
     """AI-generate a structured Word template based on project description and config."""
     from src.reports.ai_template_generator import ai_generate_template
+    from src.utils import lf_client
     config_path = ctx.obj["config_path"]
     cfg = load_config(config_path)
     if not cfg.get("ai"):
@@ -83,14 +84,17 @@ def cmd_ai_generate_template(ctx, description, pages, language, context, summary
         out_path = Path(out)
     # --context overrides --description if both are passed; otherwise use description
     effective_description = context or description
-    ai_generate_template(cfg, out_path, effective_description, pages, language, summary_prompt=summary_prompt)
+    with lf_client.command_trace("ai-generate-template"):
+        ai_generate_template(cfg, out_path, effective_description, pages, language, summary_prompt=summary_prompt)
 
 @cli.command("suggest-charts")
 @click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
+@click.option("--user-request", default="", help="Free-text guidance for what charts the user wants (e.g. 'focus on geographic distribution').")
 @click.pass_context
-def cmd_suggest_charts(ctx, out):
+def cmd_suggest_charts(ctx, out, user_request):
     """Ask AI to suggest a charts: config block from your questions."""
     from src.reports.ai_chart_suggester import suggest_charts
+    from src.utils import lf_client
     config_path = ctx.obj["config_path"]
     cfg = load_config(config_path)
     if not cfg.get("ai"):
@@ -99,7 +103,48 @@ def cmd_suggest_charts(ctx, out):
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
         sys.exit(1)
-    suggest_charts(cfg, out_path=out)
+    with lf_client.command_trace("suggest-charts"):
+        suggest_charts(cfg, out_path=out, user_request=user_request)
+
+
+@cli.command("suggest-views")
+@click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
+@click.option("--user-request", default="", help="Free-text guidance for what views the user wants.")
+@click.pass_context
+def cmd_suggest_views(ctx, out, user_request):
+    """Ask AI to suggest a views: config block — virtual tables charts can use as source."""
+    from src.reports.ai_view_suggester import suggest_views
+    from src.utils import lf_client
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
+    if not cfg.get("ai"):
+        click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
+        sys.exit(1)
+    if not cfg.get("questions"):
+        click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
+        sys.exit(1)
+    with lf_client.command_trace("suggest-views"):
+        suggest_views(cfg, out_path=out, user_request=user_request)
+
+
+@cli.command("suggest-summaries")
+@click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
+@click.option("--user-request", default="", help="Free-text guidance for what summaries the user wants.")
+@click.pass_context
+def cmd_suggest_summaries(ctx, out, user_request):
+    """Ask AI to suggest a summaries: config block — text paragraphs for the report."""
+    from src.reports.ai_summary_suggester import suggest_summaries
+    from src.utils import lf_client
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
+    if not cfg.get("ai"):
+        click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
+        sys.exit(1)
+    if not cfg.get("questions"):
+        click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
+        sys.exit(1)
+    with lf_client.command_trace("suggest-summaries"):
+        suggest_summaries(cfg, out_path=out, user_request=user_request)
 
 
 def _run_classify(cfg, config_path, sample=None, rediscover=False):
@@ -160,33 +205,55 @@ def _run_classify(cfg, config_path, sample=None, rediscover=False):
         log.info("Themes saved to config.yml.")
 
     log.info("Saving classified data ...")
-    export_data(df, cfg)
+    export_data(df, cfg, redact=False)   # data was already PII-gated at the primary export
     log.info("Classification complete.")
 
 
 @cli.command("download")
 @click.option("--sample", default=None, type=int, help="Limit to first N submissions.")
+@click.option("--period", default=None, help="Period label to tag this download (overrides periods.current).")
+@click.option("--no-redact", is_flag=True, default=False,
+              help="RAW export: skip PII redaction & consent gating (internal/secure use only).")
 @click.pass_context
-def cmd_download(ctx, sample):
+def cmd_download(ctx, sample, period, no_redact):
     """Download submissions, apply filters, export to configured destination."""
     from src.data.extract import get_client
     from src.data.transform import load_data, apply_filters, apply_computed_columns, export_data
+    from src.utils.pii import PIIConfigError
+    from src.utils import lf_client
     config_path = ctx.obj["config_path"]
     strict = ctx.obj["strict"]
     cfg = load_config(config_path)
     if not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
         sys.exit(1)
-    client = get_client(cfg)
-    log.info("Downloading submissions ...")
-    raw = client.get_submissions(sample_size=sample)
-    log.info("Transforming data ...")
-    df, repeat_tables = load_data(raw, cfg, strict=strict)
-    df, repeat_tables = apply_filters(df, cfg, repeat_tables, strict=strict)
-    df = apply_computed_columns(df, cfg, repeat_tables, strict=strict)
-    log.info(f"Exporting {len(df)} rows ...")
-    export_data(df, cfg, repeat_tables)
-    _run_classify(cfg, config_path, sample=sample)
+    if period:
+        from src.utils.periods import slugify
+        cfg.setdefault("periods", {})
+        cfg["periods"]["current"] = period
+        registry = cfg["periods"].setdefault("registry", [])
+        if not any(e.get("label") == period for e in registry):
+            registry.append({"label": period, "slug": slugify(period)})
+    with lf_client.command_trace("download"):
+        client = get_client(cfg)
+        log.info("Downloading submissions ...")
+        raw = client.get_submissions(sample_size=sample)
+        log.info("Transforming data ...")
+        df, repeat_tables = load_data(raw, cfg, strict=strict)
+        df, repeat_tables = apply_filters(df, cfg, repeat_tables, strict=strict)
+        df = apply_computed_columns(df, cfg, repeat_tables, strict=strict)
+        log.info(f"Exporting {len(df)} rows ...")
+        if no_redact:
+            log.warning("⚠ RAW export: PII redaction & consent gating SKIPPED (--no-redact).")
+        try:
+            export_data(df, cfg, repeat_tables, redact=not no_redact)
+        except PIIConfigError as e:
+            click.echo(f"PII config error — export aborted: {e}", err=True)
+            sys.exit(1)
+        if period:
+            from src.utils.config import write_config
+            write_config(cfg, config_path)
+        _run_classify(cfg, config_path, sample=sample)
 
 
 @cli.command("list-sessions")
@@ -215,9 +282,12 @@ def cmd_list_sessions(ctx):
 @click.option("--split-sample", "split_sample", default=None, type=int,
               help="When splitting, generate reports for only the first N split values.")
 @click.option("--session", default=None, help="Session ID (YYYYMMDD_HHMMSS) to use. Defaults to latest.")
+@click.option("--period", default=None, help="Period label to build from (overrides periods.current).")
+@click.option("--compare", default=None, help='Comma-separated period labels to compare (e.g. "Q1 2026,Q2 2026").')
 @click.pass_context
-def cmd_build_report(ctx, sample, random_sample, split_by, split_sample, session):
+def cmd_build_report(ctx, sample, random_sample, split_by, split_sample, session, period, compare):
     """Build a Word report from previously downloaded data."""
+    from src.utils import lf_client
     config_path = ctx.obj["config_path"]
     strict = ctx.obj["strict"]
     cfg = load_config(config_path)
@@ -225,7 +295,48 @@ def cmd_build_report(ctx, sample, random_sample, split_by, split_sample, session
         click.echo("No charts in config.yml. Add chart configs first.", err=True)
         sys.exit(1)
     from src.reports.builder import ReportBuilder
-    ReportBuilder(cfg, strict=strict).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample, session=session)
+    compare_labels = [s.strip() for s in (compare or "").split(",") if s.strip()] or None
+    with lf_client.command_trace("build-report"):
+        ReportBuilder(cfg, strict=strict).build(sample_size=sample, split_by=split_by, random_sample=random_sample, split_sample=split_sample, session=session, period=period, compare=compare_labels)
+
+@cli.command("set-period")
+@click.argument("label")
+@click.option("--baseline", is_flag=True, default=False, help="Also set this period as the baseline.")
+@click.pass_context
+def cmd_set_period(ctx, label, baseline):
+    """Set the current period. Auto-registers it if not already in the registry."""
+    from src.utils.periods import slugify
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
+    cfg.setdefault("periods", {})
+    cfg["periods"]["current"] = label
+    if baseline:
+        cfg["periods"]["baseline"] = label
+    registry = cfg["periods"].setdefault("registry", [])
+    if not any(e.get("label") == label for e in registry):
+        registry.append({"label": label, "slug": slugify(label)})
+    from src.utils.config import write_config
+    write_config(cfg, config_path)
+    click.echo(f"Current period set to: {label}")
+    if baseline:
+        click.echo(f"Baseline period set to: {label}")
+
+@cli.command("push-prompts")
+@click.option("--force", is_flag=True, default=False,
+              help="Overwrite prompts that already exist in Langfuse.")
+@click.pass_context
+def cmd_push_prompts(ctx, force):
+    """Push bundled seed prompts to Langfuse (create-if-missing; --force overwrites)."""
+    from src.utils import lf_client
+    try:
+        results = lf_client.push_seed_prompts(force=force)
+    except RuntimeError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+    for name, action in results:
+        click.echo(f"  {action:8} {name}")
+    click.echo(f"Done — {len(results)} prompt(s) processed.")
+
 
 if __name__ == "__main__":
     cli()

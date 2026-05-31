@@ -11,55 +11,25 @@ Called by the suggest-charts CLI command.
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional  # noqa: F401
 
 import yaml
 
 log = logging.getLogger(__name__)
 
-# Full catalog passed verbatim to the LLM so it knows exactly what's available.
-_CHART_CATALOG = """
-CHART TYPE CATALOG
-==================
-Each entry: type | requires | key options | notes
 
-bar              | 1 categorical              | top_n, sort(value|label|none)
-horizontal_bar   | 1 categorical              | top_n, sort  — best for long labels
-stacked_bar      | 2 categorical [x, stack]   | top_n, normalize(true=100%)
-grouped_bar      | 2 categorical [cat, group] | top_n, sort
-pie              | 1 categorical              | top_n
-donut            | 1 categorical              | top_n
-line             | 1 date [+ 1 numeric]       | freq(day|week|month|year)
-area             | 1 date [+ 1 numeric]       | freq
-histogram        | 1 quantitative             | bins
-scatter          | 2 quantitative             | xlabel, ylabel
-box_plot         | 1 quantitative + 1 cat     | top_n  — distribution per group
-heatmap          | 2 categorical              | top_n  — frequency matrix
-treemap          | 1 categorical              | top_n
-waterfall        | 1 categorical              | top_n, sort
-funnel           | 1 categorical              | top_n  — ordered pipeline stages
-table            | 1 categorical              | top_n  — renders as PNG table
-bullet_chart     | 1 quantitative             | target(REQUIRED int)
-likert           | 1 categorical (scale)      | scale([list of ordered labels]), neutral
-scorecard        | 1+ any                     | stat(count|mean|sum), columns(int)
-pyramid          | age_group + gender cols    | male_value, female_value
-dot_map          | lat + lon cols             | basemap(true/false), color_by, size
-
-Common options (all types): width_inches, height_inches, color(hex), xlabel, ylabel
-Dedup / multi: distinct_by(col), expand_multi(true)
-Scoping: filter("pandas query"), sample(int), source("repeat/path"|"view_name"), join_parent([cols])
-Grouped aggregation (bar/horizontal_bar): value_col(col), agg(sum|mean|count|max|min)
-  — use value_col when the x-axis is a category and bars should show a numeric aggregate
-    rather than row counts. Pair with a named view as source for pre-joined data.
-"""
-
-
-def suggest_charts(cfg: Dict, out_path: Optional[str] = None) -> List[Dict]:
+def suggest_charts(
+    cfg: Dict,
+    out_path: Optional[str] = None,
+    user_request: str = "",
+) -> List[Dict]:
     """Ask the LLM to propose a charts: config block from the questions in cfg.
 
     Args:
-        cfg:      full config dict (needs questions + ai sections)
-        out_path: if set, write the YAML block to this file path
+        cfg:          full config dict (needs questions + ai sections)
+        out_path:     if set, write the YAML block to this file path
+        user_request: optional free-text instruction from the end user
+                      (e.g. "focus on geographic distribution")
 
     Returns:
         List of chart config dicts ready to be merged into cfg["charts"].
@@ -77,7 +47,7 @@ def suggest_charts(cfg: Dict, out_path: Optional[str] = None) -> List[Dict]:
         raise ValueError("No questions in config.yml. Run fetch-questions first.")
 
     log.info("Requesting chart suggestions from LLM…")
-    charts = _get_suggestions(ai_cfg, cfg)
+    charts = _get_suggestions(ai_cfg, cfg, user_request)
     log.info(f"Received {len(charts)} chart suggestion(s).")
 
     if out_path:
@@ -91,86 +61,81 @@ def suggest_charts(cfg: Dict, out_path: Optional[str] = None) -> List[Dict]:
 
 # ── LLM interaction ───────────────────────────────────────────────────────────
 
-def _get_suggestions(ai_cfg: Dict, cfg: Dict) -> List[Dict]:
-    system = _system_prompt()
-    user   = _user_prompt(cfg)
+def _get_suggestions(ai_cfg: Dict, cfg: Dict, user_request: str = "") -> List[Dict]:
+    from src.utils import lf_client
 
     provider   = ai_cfg.get("provider", "openai").lower()
     api_key    = ai_cfg.get("api_key", "")
     model      = ai_cfg.get("model", "gpt-4o")
     max_tokens = max(int(ai_cfg.get("max_tokens", 1500)), 3000)
 
-    if provider == "anthropic":
-        raw = _call_anthropic(api_key, model, system, user, max_tokens)
-    else:
-        raw = _call_openai(api_key, model, system, user, max_tokens,
-                           base_url=ai_cfg.get("base_url"))
+    variables = _build_variables(cfg, user_request)
+    messages, config = lf_client.get_prompt("chart_suggester", variables)
+    raw = lf_client.chat(
+        messages,
+        model=model,
+        provider=provider,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        trace_name="chart_suggester",
+        base_url=ai_cfg.get("base_url"),
+        json_mode=(provider != "anthropic"),
+        output_schema=config.get("output_schema"),
+    )
 
     return _parse(raw)
 
 
-def _system_prompt() -> str:
-    return (
-        "You are an expert data analyst and M&E specialist. "
-        "Given a list of survey questions (with their categories and labels), "
-        "you propose a complete, ready-to-use charts configuration for a monitoring report. "
-        "You have access to the full chart type catalog below.\n\n"
-        + _CHART_CATALOG
-        + "\n\n"
-        "Rules:\n"
-        "  - Use only column names that exist in the provided questions list (export_label values)\n"
-        "  - Choose chart types that match the column categories (categorical, quantitative, date, etc.)\n"
-        "  - Aim for 6–12 charts covering the most analytically meaningful questions\n"
-        "  - Prioritise disaggregation (stacked_bar, grouped_bar, box_plot) over simple counts\n"
-        "  - For each chart include: name, title, type, questions, and relevant options\n"
-        "  - name must be snake_case, no spaces\n"
-        "  - Return ONLY valid JSON: {\"charts\": [ ... ]} — no markdown, no explanation"
-    )
-
-
-def _user_prompt(cfg: Dict) -> str:
+def _build_variables(cfg: Dict, user_request: str = "") -> Dict:
     questions = cfg.get("questions", [])
     form_alias = cfg.get("form", {}).get("alias", "survey")
     report_title = cfg.get("report", {}).get("title", "")
 
-    lines = []
-    if report_title:
-        lines.append(f"Report: {report_title}")
-    lines.append(f"Form: {form_alias}")
-    lines.append("")
+    header_line = f"Report: {report_title}\n" if report_title else ""
+    user_request_line = (
+        f"USER REQUEST (prioritise this when choosing charts): {user_request.strip()}\n\n"
+        if user_request and user_request.strip() else ""
+    )
 
-    # Group questions by category for clarity
+    # Columns block — group questions by category for clarity
     by_cat: Dict[str, List[str]] = {}
     for q in questions:
         cat = q.get("category", "undefined")
         label = q.get("export_label") or q.get("label") or q.get("kobo_key", "")
         if label:
             by_cat.setdefault(cat, []).append(label)
-
-    lines.append("AVAILABLE COLUMNS (by category):")
+    col_lines = []
     for cat in ("categorical", "quantitative", "date", "qualitative", "geographical", "undefined"):
         cols = by_cat.get(cat, [])
         if cols:
-            lines.append(f"  {cat}: {', '.join(cols)}")
-    lines.append("")
+            col_lines.append(f"  {cat}: {', '.join(cols)}")
+    columns_block = "AVAILABLE COLUMNS (by category):\n" + "\n".join(col_lines) + "\n\n" if col_lines else ""
 
-    # Repeat groups — LLM can suggest source: for those
+    # Repeat groups block — LLM can suggest source: for those.
+    # The canonical source: identifier is the full slash-path with "/" replaced by "_"
+    # (this is what load_processed_data uses as repeat_tables keys).
+    from src.data.transform import _repeat_path
     repeat_groups: Dict[str, List[str]] = {}
     for q in questions:
         rg = q.get("repeat_group")
         if rg:
             label = q.get("export_label") or q.get("label") or q.get("kobo_key", "")
-            repeat_groups.setdefault(rg, []).append(label)
+            full_path = _repeat_path(q) or rg
+            source_key = full_path.replace("/", "_")
+            repeat_groups.setdefault(source_key, []).append(label)
+    repeat_groups_block = ""
     if repeat_groups:
-        lines.append("REPEAT GROUP COLUMNS (use source: 'group/path' to access):")
-        for rg, cols in repeat_groups.items():
-            lines.append(f"  {rg}: {', '.join(cols)}")
-        lines.append("")
+        rg_lines = [f"  source: {rg} — columns: {', '.join(cols)}" for rg, cols in repeat_groups.items()]
+        repeat_groups_block = (
+            "REPEAT GROUP COLUMNS (set source: <key> at the chart top level — exactly as printed):\n"
+            + "\n".join(rg_lines) + "\n\n"
+        )
 
-    # Named views — pre-joined/aggregated tables the LLM can reference as source
+    # Views block — pre-joined/aggregated tables the LLM can reference as source
     views = cfg.get("views", [])
+    views_block = ""
     if views:
-        lines.append("NAMED VIEWS (use source: 'view_name' — pre-joined or aggregated tables):")
+        v_lines = []
         for v in views:
             name = v.get("name", "")
             src  = v.get("source", "main")
@@ -184,19 +149,42 @@ def _user_prompt(cfg: Dict) -> str:
             col_names = [cs.get("rename") or cs.get("name") for cs in v.get("columns", [])]
             if col_names:
                 desc += f", columns: {', '.join(col_names)}"
-            lines.append(f"  {name}: {desc}")
-        lines.append("  Tip: for bar/horizontal_bar charts on aggregated views, use options.value_col to plot the numeric column instead of row counts.")
-        lines.append("")
+            v_lines.append(f"  {name}: {desc}")
+        v_lines.append("  Tip: for charts on an aggregated view (group_by + agg), the numeric column is already computed — for bar/horizontal_bar just set questions=[<group_by>, <numeric>] and the chart will plot the aggregated values. Do not re-specify value_col/agg/join_parent.")
+        views_block = (
+            "PREFERRED SOURCES — NAMED VIEWS (use source: <name> first; they pre-encode joins/aggs):\n"
+            + "\n".join(v_lines) + "\n\n"
+        )
 
-    # Existing charts — avoid duplicates
+    # Existing charts block — avoid duplicates
     existing = cfg.get("charts", [])
+    existing_block = ""
     if existing:
         existing_names = [c.get("name") for c in existing]
-        lines.append(f"Charts already configured (do not duplicate): {', '.join(existing_names)}")
-        lines.append("")
+        existing_block = f"Charts already configured (do not duplicate): {', '.join(existing_names)}\n\n"
 
-    lines.append("Suggest a charts: configuration block. Return JSON only.")
-    return "\n".join(lines)
+    # PII awareness — flag redacted columns so the LLM avoids them.
+    pii_cfg = cfg.get("pii") or {}
+    pii_lines = []
+    consent_col = pii_cfg.get("consent_column")
+    if consent_col:
+        pii_lines.append(f"  consent column: {consent_col} (rows are filtered before render)")
+    for r in (pii_cfg.get("redact") or []):
+        pii_lines.append(f"  column '{r['column']}' is redacted via strategy '{r.get('strategy', '?')}'")
+    pii_block = ""
+    if pii_lines:
+        pii_block = "PII REDACTION (avoid these columns in chart suggestions — they will be masked or dropped at render time):\n" + "\n".join(pii_lines) + "\n\n"
+
+    return {
+        "header_line": header_line,
+        "form_alias": form_alias,
+        "user_request_line": user_request_line,
+        "columns_block": columns_block,
+        "repeat_groups_block": repeat_groups_block,
+        "views_block": views_block,
+        "pii_block": pii_block,
+        "existing_block": existing_block,
+    }
 
 
 # ── output ────────────────────────────────────────────────────────────────────
@@ -212,47 +200,10 @@ def _print_yaml(charts: List[Dict]) -> None:
     print(yaml.dump({"charts": charts}, allow_unicode=True, default_flow_style=False, sort_keys=False))
 
 
-# ── callers ───────────────────────────────────────────────────────────────────
-
-def _call_openai(api_key, model, system_prompt, user_prompt, max_tokens, base_url=None) -> str:
-    try:
-        from openai import OpenAI
-    except ImportError:
-        raise ImportError("openai package not installed. Run: pip install openai>=1.0.0")
-    kwargs: Dict[str, Any] = {"api_key": api_key}
-    if base_url:
-        kwargs["base_url"] = base_url
-    client = OpenAI(**kwargs)
-    resp = client.chat.completions.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_prompt},
-        ],
-        response_format={"type": "json_object"},
-    )
-    return resp.choices[0].message.content
-
-
-def _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens) -> str:
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package not installed. Run: pip install anthropic>=0.20.0")
-    client = anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    return msg.content[0].text
-
-
 # ── parser ────────────────────────────────────────────────────────────────────
 
 def _parse(raw: str) -> List[Dict]:
+    data = None
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -262,6 +213,7 @@ def _parse(raw: str) -> List[Dict]:
                 data = json.loads(match.group())
             except json.JSONDecodeError:
                 pass
+    if data is None:
         log.warning("Could not parse JSON from LLM chart suggestions.")
         return []
     charts = data.get("charts", [])

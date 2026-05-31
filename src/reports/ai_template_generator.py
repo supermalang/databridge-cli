@@ -9,9 +9,8 @@ Called by the ai-generate-template CLI command.
 import json
 import logging
 import re
-from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from docx import Document
 
@@ -39,7 +38,10 @@ def ai_generate_template(
         raise ValueError("No ai: section in config.yml. Configure AI first.")
 
     log.info("Requesting layout from LLM…")
-    spec = _get_layout_spec(ai_cfg, cfg, description, pages, language, summary_prompt=summary_prompt)
+    spec = _get_layout_spec(
+        ai_cfg, cfg, description, pages, language,
+        summary_prompt=summary_prompt,
+    )
     log.info(f"Layout received: {len(spec.get('sections', []))} sections")
 
     doc = Document()
@@ -143,108 +145,88 @@ def _render_item(doc, item: Dict, ind_map: Dict, cfg: Dict):
 
 # ── LLM interaction ───────────────────────────────────────────────────────────
 
-def _get_layout_spec(ai_cfg: Dict, cfg: Dict, description: str, pages: int, language: str, summary_prompt: str = None) -> Dict:
-    system_prompt = _system_prompt()
-    user_prompt = _user_prompt(cfg, description, pages, language, summary_prompt=summary_prompt)
+def _get_layout_spec(
+    ai_cfg: Dict, cfg: Dict, description: str, pages: int, language: str,
+    summary_prompt: str = None,
+) -> Dict:
+    from src.utils import lf_client
 
-    provider = ai_cfg.get("provider", "openai").lower()
-    api_key = ai_cfg.get("api_key", "")
-    model = ai_cfg.get("model", "gpt-4o")
+    provider   = ai_cfg.get("provider", "openai").lower()
+    api_key    = ai_cfg.get("api_key", "")
+    model      = ai_cfg.get("model", "gpt-4o")
     max_tokens = max(int(ai_cfg.get("max_tokens", 1500)), 2000)  # layout needs more tokens
 
     if not api_key or str(api_key).startswith("env:"):
         raise ValueError("AI api_key not resolved. Set the environment variable.")
 
-    if provider == "anthropic":
-        raw = _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens)
-    else:
-        raw = _call_openai(api_key, model, system_prompt, user_prompt, max_tokens,
-                           base_url=ai_cfg.get("base_url"))
+    variables = _build_variables(cfg, description, pages, language, summary_prompt=summary_prompt)
+    messages, config = lf_client.get_prompt("template_generator", variables)
+    raw = lf_client.chat(
+        messages,
+        model=model,
+        provider=provider,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        trace_name="template_generator",
+        base_url=ai_cfg.get("base_url"),
+        json_mode=(provider != "anthropic"),
+        output_schema=config.get("output_schema"),
+    )
 
     return _parse_spec(raw)
 
 
-def _system_prompt() -> str:
-    return (
-        "You are a senior Monitoring & Evaluation (M&E) specialist and report designer. "
-        "Your task is to design structured Word report templates for data analysis and M&E reporting. "
-        "The tone is professional, evidence-based, and analytical — suitable for donors, programme managers, and field coordinators. "
-        "Reports follow standard M&E structure: context, key performance indicators, findings by theme, "
-        "geographic breakdown, trends over time, qualitative observations, and actionable recommendations.\n\n"
-        "Given a project background, available charts/indicators/summaries, and a target page count, "
-        "design a structured report template layout. "
-        "Return ONLY valid JSON — no markdown fences, no explanation.\n"
-        'Exact structure: {"sections": [{"heading": str, "level": 1 or 2, "content": [...]}]}\n\n'
-        "Content item types:\n"
-        '  {"type":"editable","placeholder":"summary_text"|"observations"|"recommendations","hint":"<specific guidance for the writer>"}\n'
-        '  {"type":"chart","name":"<chart_name>"}  — only names from the provided list\n'
-        '  {"type":"indicator","name":"<indicator_name>"}  — only names from the provided list\n'
-        '  {"type":"summary","name":"<summary_name>"}  — only names from the provided list\n'
-        '  {"type":"text","text":"..."}  — static introductory or analytical text; may reference {{ period }}, {{ n_submissions }}, {{ generated_at }}\n'
-        '  {"type":"divider"}\n'
-        '  {"type":"stats_table"}  — descriptive statistics table for numeric variables\n\n'
-        "Layout rules:\n"
-        "  - Use EVERY provided chart exactly once, in a contextually appropriate section\n"
-        "  - Use EVERY provided indicator and summary exactly once\n"
-        "  - Open with an Executive Summary section containing key indicators and the summary_text editable\n"
-        "  - Group charts and summaries thematically (e.g. coverage, demographics, food security, geography)\n"
-        "  - Place a Findings section per major theme, each with an introductory text item, then charts/summaries\n"
-        "  - End with Observations (editable) and Recommendations (editable) sections\n"
-        "  - Write hint text for editable placeholders as concrete, actionable guidance for the report author — "
-        "    e.g. 'Describe coverage rates by region, highlight any groups falling below target thresholds, and note data quality issues.'\n"
-        "  - intro text items should be short orienting sentences in the report language, referencing {{ period }} and {{ n_submissions }} where relevant\n"
-        "  - For a N-page report, create approximately N/2 top-level sections\n"
-        "  - Do NOT invent chart, indicator, or summary names — use only those provided\n"
-        "  - Return JSON only"
+def _build_variables(
+    cfg: Dict, description: str, pages: int, language: str,
+    summary_prompt: str = None,
+) -> Dict:
+    summary_prompt_line = (
+        f"Executive summary guidance (use as hint for the summary_text editable): {summary_prompt}"
+        if summary_prompt else ""
     )
 
-
-def _user_prompt(cfg: Dict, description: str, pages: int, language: str, summary_prompt: str = None) -> str:
-    lines = [
-        f"Project background and context: {description}",
-        f"Target report length: {pages} pages",
-        f"Report language: {language}",
-    ]
-    if summary_prompt:
-        lines.append(f"Executive summary guidance (use as hint for the summary_text editable): {summary_prompt}")
-    lines.append("")
-
-    # Improvement 3 — pass chart questions so LLM can group charts into logical sections
+    # Charts block — pass chart questions so LLM can group charts into logical sections
     charts = cfg.get("charts", [])
+    charts_block = ""
     if charts:
-        lines.append("Available charts:")
+        items = []
         for c in charts:
             questions_str = ", ".join(c.get("questions", []))
             detail = f"{c.get('title', c['name'])}"
             if questions_str:
                 detail += f" — columns: {questions_str}"
-            lines.append(f"  - {c['name']} ({c.get('type', '')}): {detail}")
-        lines.append("")
+            items.append(f"  - {c['name']} ({c.get('type', '')}): {detail}")
+        charts_block = "Available charts:\n" + "\n".join(items) + "\n\n"
 
+    # Indicators block
     indicators = cfg.get("indicators", [])
+    indicators_block = ""
     if indicators:
-        lines.append("Available indicators:")
-        for ind in indicators:
-            lines.append(f"  - {ind['name']}: {ind.get('label', ind['name'])} ({ind.get('stat', '')})")
-        lines.append("")
+        items = [
+            f"  - {ind['name']}: {ind.get('label', ind['name'])} ({ind.get('stat', '')})"
+            for ind in indicators
+        ]
+        indicators_block = "Available indicators:\n" + "\n".join(items) + "\n\n"
 
-    # Improvement 2 — include summaries so LLM places them in the template
+    # Summaries block
     summaries = cfg.get("summaries", [])
+    summaries_block = ""
     if summaries:
-        lines.append("Available summaries (computed text paragraphs):")
+        items = []
         for s in summaries:
             stat = s.get("stat", "")
             questions_str = ", ".join(s.get("questions", []))
             detail = s.get("label", s["name"])
             if questions_str:
                 detail += f" — {questions_str}"
-            lines.append(f"  - {s['name']} ({stat}): {detail}")
-        lines.append("")
+            items.append(f"  - {s['name']} ({stat}): {detail}")
+        summaries_block = "Available summaries (computed text paragraphs):\n" + "\n".join(items) + "\n\n"
 
-    # Named views — inform LLM of pre-built data tables so it can note them in chart hints
+    # Views block — inform LLM of pre-built data tables so it can note them in chart hints
     views = cfg.get("views", [])
+    views_block = ""
     if views:
-        lines.append("Named data views (virtual tables used as chart/summary sources):")
+        items = []
         for v in views:
             name = v.get("name", "")
             gb   = v.get("group_by", "")
@@ -252,14 +234,14 @@ def _user_prompt(cfg: Dict, description: str, pages: int, language: str, summary
             desc = f"source: {v.get('source', 'main')}"
             if v.get("join_parent"): desc += f", joined with {', '.join(v['join_parent'])}"
             if gb and q_v:           desc += f", {v.get('agg','sum')}({q_v}) by {gb}"
-            lines.append(f"  - {name}: {desc}")
-        lines.append("")
+            items.append(f"  - {name}: {desc}")
+        views_block = "Named data views (virtual tables used as chart/summary sources):\n" + "\n".join(items) + "\n\n"
 
-    # Improvement 1 — pass actual question labels grouped by category
+    # Questions block — actual question labels grouped by category
     questions = cfg.get("questions", [])
+    questions_block = ""
     if questions:
-        cat_counts = Counter(q.get("category", "undefined") for q in questions)
-        lines.append("Survey questions by category:")
+        items = []
         for cat in ("categorical", "quantitative", "qualitative", "date", "geographical", "undefined"):
             qs = [
                 q.get("export_label") or q.get("label") or q["kobo_key"]
@@ -269,49 +251,27 @@ def _user_prompt(cfg: Dict, description: str, pages: int, language: str, summary
                 # Cap to 10 per category to keep prompt bounded
                 sample = qs[:10]
                 suffix = f" (+{len(qs)-10} more)" if len(qs) > 10 else ""
-                lines.append(f"  {cat}: {', '.join(sample)}{suffix}")
-        lines.append("")
+                items.append(f"  {cat}: {', '.join(sample)}{suffix}")
+        if items:
+            questions_block = "Survey questions by category:\n" + "\n".join(items) + "\n\n"
 
-    lines.append("Design a report template layout following the JSON spec.")
-    return "\n".join(lines)
-
-
-# ── callers ───────────────────────────────────────────────────────────────────
-
-def _call_openai(api_key, model, system_prompt, user_prompt, max_tokens, base_url=None) -> str:
-    try:
-        from openai import OpenAI
-    except ImportError:
-        raise ImportError("openai package not installed. Run: pip install openai>=1.0.0")
-    kwargs: Dict[str, Any] = {"api_key": api_key}
-    if base_url:
-        kwargs["base_url"] = base_url
-    client = OpenAI(**kwargs)
-    resp = client.chat.completions.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_format={"type": "json_object"},
-    )
-    return resp.choices[0].message.content
-
-
-def _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens) -> str:
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package not installed. Run: pip install anthropic>=0.20.0")
-    client = anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    return msg.content[0].text
+    return {
+        "description": description,
+        "pages": pages,
+        "language": language,
+        "summary_prompt_line": summary_prompt_line,
+        "charts_block": charts_block,
+        "indicators_block": indicators_block,
+        "summaries_block": summaries_block,
+        "views_block": views_block,
+        "questions_block": questions_block,
+        # The template_generator system prompt documents these as docxtpl
+        # placeholders the LLM may emit in generated text. They must survive
+        # {{mustache}} compilation verbatim, so map each to its literal form.
+        "period": "{{ period }}",
+        "n_submissions": "{{ n_submissions }}",
+        "generated_at": "{{ generated_at }}",
+    }
 
 
 # ── parser ────────────────────────────────────────────────────────────────────

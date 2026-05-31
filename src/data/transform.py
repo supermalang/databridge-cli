@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
+from src.data.flatten import build_repeat_tables
 
 log = logging.getLogger(__name__)
 
@@ -181,37 +182,21 @@ def load_data(
     df = apply_choice_labels(df, main_questions)
     log.info(f"Loaded {len(df)} submissions, {len(df.columns)} columns (main table)")
 
-    # --- Repeat tables ---
+    # --- Repeat tables (recursive, multi-level, root-linked) ---
     repeat_tables: Dict[str, pd.DataFrame] = {}
-    for group_name, group_questions in repeat_groups.items():
-        rows = []
-        for i, submission in enumerate(submissions):
-            parent_id = submission.get("_id", submission.get("_index", i))
-            repeat_data = _resolve_nested(submission, group_name)
-            if not isinstance(repeat_data, list):
-                continue
-            for row_idx, entry in enumerate(repeat_data):
-                row = {"_parent_index": parent_id, "_row_index": row_idx}
-                for q in group_questions:
-                    # Try: full path within repeat, path relative to group, then just field name
-                    field_name = q["kobo_key"].split("/")[-1]
-                    full_key = q["kobo_key"]
-                    relative_key = "/".join(q["kobo_key"].split("/")[1:]) if "/" in q["kobo_key"] else field_name
-                    value = entry.get(full_key, entry.get(relative_key, entry.get(field_name)))
-                    label = q.get("export_label") or q.get("label") or q["kobo_key"]
-                    row[label] = value
-                rows.append(row)
-        if rows:
-            rdf = pd.DataFrame(rows)
-            for q in group_questions:
-                label = q.get("export_label") or q.get("label") or q["kobo_key"]
-                if label in rdf.columns:
-                    rdf[label] = _cast(rdf[label], q.get("category", "undefined"))
-            rdf = apply_choice_labels(rdf, group_questions)
-            repeat_tables[group_name] = rdf
-            log.info(f"Loaded {len(rdf)} rows for repeat group '{group_name}'")
-        else:
+    built = build_repeat_tables(submissions, repeat_groups)
+    for group_name, rdf in built.items():
+        if rdf.empty:
             log.info(f"No data for repeat group '{group_name}'")
+            continue
+        group_questions = repeat_groups[group_name]
+        for q in group_questions:
+            label = q.get("export_label") or q.get("label") or q["kobo_key"]
+            if label in rdf.columns:
+                rdf[label] = _cast(rdf[label], q.get("category", "undefined"))
+        rdf = apply_choice_labels(rdf, group_questions)
+        repeat_tables[group_name] = rdf
+        log.info(f"Loaded {len(rdf)} rows for repeat group '{group_name}'")
 
     df.attrs["schema_match_report"] = {
         "fuzzy_matches": fuzzy_matches,
@@ -219,21 +204,6 @@ def load_data(
     }
 
     return df, repeat_tables
-
-
-def _resolve_nested(data: Dict, key: str) -> any:
-    """Look up a key that may be top-level or nested (e.g., 'household/members').
-    Tries the flat key first, then walks nested dicts."""
-    if key in data:
-        return data[key]
-    parts = key.split("/")
-    obj = data
-    for part in parts:
-        if isinstance(obj, dict) and part in obj:
-            obj = obj[part]
-        else:
-            return []
-    return obj
 
 
 def _cast(series: pd.Series, category: str) -> pd.Series:
@@ -430,6 +400,14 @@ def build_views(
                 agg_result.columns = [group_by, question]
                 df = agg_result
 
+            # Drop unwanted columns FIRST (references original column names — matches
+            # what users select in the preview before any renames are applied).
+            drop_cols = v.get("drop_columns", []) or []
+            if drop_cols:
+                df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore")
+
+            # Apply column renames and type overrides AFTER drops, so renames only
+            # affect columns that survived the drop.
             col_specs = v.get("columns", [])
             if col_specs:
                 rename_map = {}
@@ -463,7 +441,13 @@ def build_views(
     return views
 
 
-def export_data(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
+def export_data(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None, redact: bool = True) -> None:
+    # PII gate: redact + consent-gate at the export boundary (fail-closed).
+    # redact=False is the explicit raw escape hatch (download --no-redact) and is
+    # also used when re-exporting already-gated data (e.g. after classification).
+    if redact:
+        from src.utils.pii import enforce_pii
+        df, repeat_tables = enforce_pii(df, repeat_tables, cfg)
     fmt = cfg.get("export", {}).get("format", "csv")
     if fmt in ("csv", "json", "xlsx"):
         _export_file(df, cfg, fmt, repeat_tables)
@@ -479,11 +463,14 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
     out_dir = Path(cfg.get("export", {}).get("output_dir", "data/processed"))
     out_dir.mkdir(parents=True, exist_ok=True)
     alias = cfg.get("form", {}).get("alias", "form")
+    from src.utils.periods import current_period
+    period = current_period(cfg)
+    prefix = f"{alias}_{period['slug']}" if period else alias
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if fmt == "xlsx":
         # XLSX: multiple sheets in one file
-        out = out_dir / f"{alias}_data_{ts}.xlsx"
+        out = out_dir / f"{prefix}_data_{ts}.xlsx"
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
             df.to_excel(writer, sheet_name="main", index=False)
             if repeat_tables:
@@ -494,10 +481,10 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
     else:
         # CSV / JSON: one file per table
         if fmt == "csv":
-            out = out_dir / f"{alias}_data_{ts}.csv"
+            out = out_dir / f"{prefix}_data_{ts}.csv"
             df.to_csv(out, index=False, encoding="utf-8-sig")
         elif fmt == "json":
-            out = out_dir / f"{alias}_data_{ts}.json"
+            out = out_dir / f"{prefix}_data_{ts}.json"
             df.to_json(out, orient="records", force_ascii=False, indent=2, date_format="iso")
         log.info(f"Data exported → {out}")
 
@@ -505,10 +492,10 @@ def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str,
             for name, rdf in repeat_tables.items():
                 safe_name = name.replace("/", "_")
                 if fmt == "csv":
-                    rout = out_dir / f"{alias}_{safe_name}_{ts}.csv"
+                    rout = out_dir / f"{prefix}_{safe_name}_{ts}.csv"
                     rdf.to_csv(rout, index=False, encoding="utf-8-sig")
                 elif fmt == "json":
-                    rout = out_dir / f"{alias}_{safe_name}_{ts}.json"
+                    rout = out_dir / f"{prefix}_{safe_name}_{ts}.json"
                     rdf.to_json(rout, orient="records", force_ascii=False, indent=2, date_format="iso")
                 log.info(f"Repeat group exported → {rout}")
 
@@ -727,12 +714,16 @@ def join_repeat_to_main(
     return merged
 
 
-def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sample: bool = False, session: Optional[str] = None) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sample: bool = False, session: Optional[str] = None, period: Optional[Dict] = None) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """Load the main processed DataFrame plus any repeat-group tables from disk.
 
     Args:
         session: Optional session ID (YYYYMMDD_HHMMSS) to load a specific download run.
                  Defaults to the latest session when not provided.
+        period: Optional period dict (with at least a ``slug`` key) to scope file
+                discovery to a specific period.  When *None* the current period is
+                resolved from ``cfg`` via ``current_period(cfg)``.  Pass an explicit
+                dict to override (e.g. when loading a non-current period for comparison).
 
     Returns:
         (main_df, repeat_tables) where repeat_tables is {safe_group_name: DataFrame}
@@ -740,6 +731,9 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
     fmt = cfg.get("export", {}).get("format", "csv")
     out_dir = Path(cfg.get("export", {}).get("output_dir", "data/processed"))
     alias = cfg.get("form", {}).get("alias", "form")
+    from src.utils.periods import current_period
+    period = period or current_period(cfg)
+    prefix = f"{alias}_{period['slug']}" if period else alias
 
     def _latest(pattern, session=session):
         matches = sorted(out_dir.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True)
@@ -754,13 +748,13 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
         return matches[0]
 
     if fmt == "csv":
-        df = pd.read_csv(_latest(f"{alias}_data*.csv"))
+        df = pd.read_csv(_latest(f"{prefix}_data*.csv"))
     elif fmt == "json":
-        df = pd.read_json(_latest(f"{alias}_data*.json"), orient="records")
+        df = pd.read_json(_latest(f"{prefix}_data*.json"), orient="records")
     elif fmt == "xlsx":
-        df = pd.read_excel(_latest(f"{alias}_data*.xlsx"), sheet_name="main")
+        df = pd.read_excel(_latest(f"{prefix}_data*.xlsx"), sheet_name="main")
     else:
-        df = pd.read_csv(_latest(f"{alias}_data*.csv"))
+        df = pd.read_csv(_latest(f"{prefix}_data*.csv"))
 
     if sample_size:
         if random_sample:
@@ -777,7 +771,7 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
     # --- Load repeat tables ---
     repeat_tables: Dict[str, pd.DataFrame] = {}
     if fmt == "xlsx":
-        xl_path = _latest(f"{alias}_data*.xlsx")
+        xl_path = _latest(f"{prefix}_data*.xlsx")
         import openpyxl
         wb = openpyxl.load_workbook(xl_path, read_only=True)
         for sheet in wb.sheetnames:
@@ -785,19 +779,19 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
                 repeat_tables[sheet] = pd.read_excel(xl_path, sheet_name=sheet)
         wb.close()
     else:
-        # CSV / JSON: repeat files are named {alias}_{safe_group}_{ts}.{ext}
-        # Main file is {alias}_data_{ts}.{ext} — skip it
+        # CSV / JSON: repeat files are named {prefix}_{safe_group}_{ts}.{ext}
+        # Main file is {prefix}_data_{ts}.{ext} — skip it
         ext = "csv" if fmt == "csv" else "json"
-        main_stem_prefix = f"{alias}_data_"
-        candidates = sorted(out_dir.glob(f"{alias}_*.{ext}"), key=lambda x: x.stat().st_mtime, reverse=True)
+        main_stem_prefix = f"{prefix}_data_"
+        candidates = sorted(out_dir.glob(f"{prefix}_*.{ext}"), key=lambda x: x.stat().st_mtime, reverse=True)
         if session:
             candidates = [f for f in candidates if f.stem.endswith(session)]
         for f in candidates:
             if f.stem.startswith(main_stem_prefix):
                 continue
-            # stem = {alias}_{safe_name}_{YYYYMMDD}_{HHMMSS}
+            # stem = {prefix}_{safe_name}_{YYYYMMDD}_{HHMMSS}
             # rsplit on "_" twice to strip the two timestamp segments
-            remainder = f.stem[len(f"{alias}_"):]
+            remainder = f.stem[len(f"{prefix}_"):]
             parts = remainder.rsplit("_", 2)
             if len(parts) != 3:
                 continue

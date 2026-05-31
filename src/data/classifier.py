@@ -60,21 +60,26 @@ def discover_themes(
 
     sample = unique.sample(min(SAMPLE_SIZE, len(unique)), random_state=42).tolist()
 
-    system = (
-        "You are a survey data analyst. When given free-text survey responses, "
-        "you identify concise, mutually-exclusive themes that cover most answers. "
-        "Always return valid JSON only — no markdown fences, no commentary."
-    )
-    user = (
-        f'Free-text responses to the survey question: "{label}"\n\n'
-        f"Responses:\n" + "\n".join(f"- {r}" for r in sample) + "\n\n"
-        f"Propose exactly {theme_count} concise theme names (2–5 words each) that "
-        f"cover the majority of these responses. Add an \"Other\" theme only if a "
-        f"significant share of responses clearly don't fit the others.\n"
-        f'Return JSON: {{"themes": ["Theme A", "Theme B", ...]}}'
-    )
+    from src.utils import lf_client
+    provider   = ai_cfg.get("provider", "openai").lower()
+    api_key    = ai_cfg.get("api_key", "")
+    if not api_key or str(api_key).startswith("env:"):
+        raise ValueError("AI api_key is not resolved — check your ai: section in config.yml.")
+    model      = ai_cfg.get("model", "gpt-4o")
+    max_tokens = int(ai_cfg.get("max_tokens", 1500))
 
-    raw = _call_llm(system, user, ai_cfg)
+    variables = {
+        "label": label,
+        "responses": "\n".join(f"- {r}" for r in sample),
+        "theme_count": theme_count,
+    }
+    messages, config = lf_client.get_prompt("classifier_discover", variables)
+    raw = lf_client.chat(
+        messages, model=model, provider=provider, api_key=api_key,
+        base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
+        trace_name="classifier_discover", json_mode=(provider != "anthropic"),
+        output_schema=config.get("output_schema"),
+    )
     data = _parse_json(raw)
     themes = data.get("themes", [])
     if not themes:
@@ -112,27 +117,38 @@ def classify_responses(
         return pd.Series([None] * len(series), index=series.index)
 
     themes_str = ", ".join(f'"{t}"' for t in themes)
-    system = (
-        "You are a survey data analyst. Classify free-text survey responses into "
-        "predefined themes. Always return valid JSON only — no markdown, no commentary."
-    )
+
+    from src.utils import lf_client
+    provider   = ai_cfg.get("provider", "openai").lower()
+    api_key    = ai_cfg.get("api_key", "")
+    if not api_key or str(api_key).startswith("env:"):
+        raise ValueError("AI api_key is not resolved — check your ai: section in config.yml.")
+    model      = ai_cfg.get("model", "gpt-4o")
+    max_tokens = int(ai_cfg.get("max_tokens", 1500))
 
     lookup: Dict[str, str] = {}
     n_batches = (len(unique_vals) - 1) // BATCH_SIZE + 1
     for i in range(0, len(unique_vals), BATCH_SIZE):
         batch = unique_vals[i: i + BATCH_SIZE]
-        user = (
-            f'Classify each response to the question "{label}" into exactly one of '
-            f"these themes: [{themes_str}]\n\n"
-            f'For responses that clearly don\'t fit any theme, use "Other".\n\n'
-            f"Responses to classify:\n" + "\n".join(f"- {r}" for r in batch) + "\n\n"
-            f'Return JSON: {{"classifications": {{"<response text>": "<theme name>", ...}}}}\n'
-            f"Include every response from the list, even if only one word."
+        variables = {
+            "label": label,
+            "themes_str": themes_str,
+            "responses": "\n".join(f"- {r}" for r in batch),
+        }
+        messages, config = lf_client.get_prompt("classifier_classify", variables)
+        raw = lf_client.chat(
+            messages, model=model, provider=provider, api_key=api_key,
+            base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
+            trace_name="classifier_classify", json_mode=(provider != "anthropic"),
+            output_schema=config.get("output_schema"),
         )
-        raw = _call_llm(system, user, ai_cfg)
         data = _parse_json(raw)
-        batch_result = data.get("classifications", {})
-        lookup.update(batch_result)
+        items = data.get("classifications", []) or []
+        for item in items:
+            r = item.get("response")
+            t = item.get("theme")
+            if r and t:
+                lookup[r] = t
         log.info(f"  Classified batch {i // BATCH_SIZE + 1}/{n_batches} for '{label}'")
 
     def _map(val):
@@ -142,26 +158,6 @@ def classify_responses(
         return lookup.get(key, "Other")
 
     return series.apply(_map)
-
-
-def _call_llm(system_prompt: str, user_prompt: str, ai_cfg: Dict) -> str:
-    """Route LLM call to the correct provider based on ai_cfg."""
-    from src.reports.narrator import _call_openai, _call_anthropic
-
-    provider = ai_cfg.get("provider", "openai").lower()
-    api_key = ai_cfg.get("api_key", "")
-    model = ai_cfg.get("model", "gpt-4o")
-    max_tokens = int(ai_cfg.get("max_tokens", 1500))
-
-    if not api_key or str(api_key).startswith("env:"):
-        raise ValueError("AI api_key is not resolved — check your ai: section in config.yml.")
-
-    if provider == "anthropic":
-        return _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens)
-    return _call_openai(
-        api_key, model, system_prompt, user_prompt, max_tokens,
-        base_url=ai_cfg.get("base_url"),
-    )
 
 
 def _parse_json(raw: str) -> Dict:

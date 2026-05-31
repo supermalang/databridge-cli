@@ -27,8 +27,11 @@ import logging
 import re
 from typing import Dict, List, Optional
 import pandas as pd
+from src.data.profile import numeric_outliers, correlations
 
 log = logging.getLogger(__name__)
+
+
 
 
 def compute_summaries(
@@ -105,7 +108,9 @@ def _resolve_source(s: Dict, main_df: pd.DataFrame, repeat_tables: Dict) -> pd.D
     return df
 
 
-def _compute_summary(s: Dict, df: pd.DataFrame, ai_cfg: Optional[Dict]) -> str:
+def _compute_summary(
+    s: Dict, df: pd.DataFrame, ai_cfg: Optional[Dict],
+) -> str:
     stat = s.get("stat", "distribution")
     questions = s.get("questions", [])
     top_n = s.get("top_n", 5)
@@ -161,7 +166,10 @@ def _compute_summary(s: Dict, df: pd.DataFrame, ai_cfg: Optional[Dict]) -> str:
         return _grouped_agg_text(df, group_by, questions[0], agg, top_n)
 
     if stat == "ai":
-        return _ai_text(df, questions, s.get("prompt", ""), ai_cfg, s.get("language"), s.get("example"))
+        return _ai_text(
+            df, questions, s.get("prompt", ""), ai_cfg,
+            s.get("language"), s.get("example"),
+        )
 
     raise ValueError(f"unknown stat '{stat}'")
 
@@ -193,7 +201,7 @@ def _stats_text(series: pd.Series) -> str:
     mx = numeric.max()
     return (
         f"n={n:,}, mean={mean:,.1f}, median={median:,.1f}, "
-        f"range {mn:,.1f}\u2013{mx:,.1f}."
+        f"range {mn:,.1f}–{mx:,.1f}."
     )
 
 
@@ -272,7 +280,7 @@ def _ai_text(
             data_lines.append(
                 f"{q}: n={len(numeric):,}, mean={numeric.mean():,.1f}, "
                 f"median={numeric.median():,.1f}, "
-                f"range {numeric.min():,.1f}\u2013{numeric.max():,.1f}"
+                f"range {numeric.min():,.1f}–{numeric.max():,.1f}"
             )
         else:
             vc = col.astype(str).value_counts().head(5)
@@ -280,29 +288,29 @@ def _ai_text(
             parts = [f"{v} ({c/total*100:.0f}%)" for v, c in vc.items()]
             data_lines.append(f"{q}: {', '.join(parts)}")
 
-    user_prompt = (
-        f"Write a summary in {lang} of the following data.\n"
-        + (f"Focus: {prompt}\n" if prompt else "")
-        + "\nDATA:\n"
-        + "\n".join(data_lines)
-        + (f"\n\nIMPORTANT: Your output must strictly follow this example — same format, same length, same structure. Only replace the values with those from the data above:\n{example}" if example else "")
-        + "\n\nReturn only the output text — no headers, no JSON, no markdown."
-    )
-    system_prompt = (
-        "You are a humanitarian data analyst. Write clear, professional text "
-        "for a monitoring report. Be concise and data-driven."
-        + (" When an example format is provided, it overrides all default style choices — match it exactly." if example else "")
-    )
+    focus_line = f"Focus: {prompt}" if prompt else ""
+    data_block = "\n".join(data_lines)
+    example_block = (
+        "\n\nIMPORTANT: Your output must strictly follow this example — same format, "
+        "same length, same structure. Only replace the values with those from the data above:\n"
+        f"{example}"
+    ) if example else ""
 
-    from src.reports.narrator import _call_openai, _call_anthropic
+    variables = {
+        "language": lang,
+        "focus_line": focus_line,
+        "data_block": data_block,
+        "example_block": example_block,
+    }
 
-    if provider == "anthropic":
-        raw = _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens)
-    else:
-        raw = _call_openai(
-            api_key, model, system_prompt, user_prompt, max_tokens,
-            base_url=ai_cfg.get("base_url"),
-        )
+    from src.utils import lf_client
+    messages, config = lf_client.get_prompt("summaries", variables)
+    raw = lf_client.chat(
+        messages, model=model, provider=provider, api_key=api_key,
+        base_url=ai_cfg.get("base_url"), max_tokens=max_tokens,
+        trace_name="summaries", json_mode=False,
+        output_schema=config.get("output_schema"),
+    )
     return raw.strip()
 
 
@@ -376,16 +384,9 @@ def _data_quality_text(df: pd.DataFrame, questions: List[str]) -> str:
     for col in questions:
         if col not in df.columns:
             continue
-        numeric = pd.to_numeric(df[col], errors="coerce").dropna()
-        if len(numeric) < 4:
-            continue
-        q1, q3 = numeric.quantile(0.25), numeric.quantile(0.75)
-        iqr = q3 - q1
-        if iqr == 0:
-            continue
-        n_outliers = int(((numeric < q1 - 1.5 * iqr) | (numeric > q3 + 1.5 * iqr)).sum())
-        if n_outliers > 0:
-            outlier_parts.append(f"{col}: {n_outliers} flagged")
+        o = numeric_outliers(df[col])  # 3×IQR via the shared primitive
+        if o["count"] > 0:
+            outlier_parts.append(f"{col}: {o['count']} flagged")
     if outlier_parts:
         parts.append(f"Outliers (IQR): {', '.join(outlier_parts)}.")
 
@@ -423,7 +424,7 @@ def _keyword_frequency_text(series: pd.Series, top_n: int, language: str = "en")
         pass  # fall back to built-in list
 
     text = " ".join(series.dropna().astype(str).tolist()).lower()
-    tokens = re.findall(r"[a-zA-ZÀ-ÿ\u0600-\u06FF]{3,}", text)
+    tokens = re.findall(r"[a-zA-ZÀ-ÿ؀-ۿ]{3,}", text)
     freq: Dict[str, int] = {}
     for token in tokens:
         if token not in stop_words:
@@ -443,38 +444,25 @@ def _correlation_text(df: pd.DataFrame, questions: List[str], method: str = "pea
     if len(numeric_cols) < 2:
         return "Not enough numeric columns for correlation."
 
+    # Kept intentionally: preserves the distinct "No numeric data available." message
+    # for the no-numeric-data case (correlations() would otherwise fall through to
+    # "No meaningful correlations found."). Behavior-preserving — do not remove.
     nums = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
     if nums.dropna(how="all").empty:
         return "No numeric data available."
 
-    corr = nums.corr(method=method)
     sentences = []
-    seen = set()
-    for i, col_a in enumerate(numeric_cols):
-        for col_b in numeric_cols[i + 1:]:
-            pair = (col_a, col_b)
-            if pair in seen:
-                continue
-            seen.add(pair)
-            try:
-                r = corr.loc[col_a, col_b]
-            except KeyError:
-                continue
-            if pd.isna(r):
-                continue
-            abs_r = abs(r)
-            if abs_r < 0.1:
-                continue  # negligible — skip
-            strength = (
-                "very strong" if abs_r >= 0.8 else
-                "strong" if abs_r >= 0.6 else
-                "moderate" if abs_r >= 0.4 else
-                "weak"
-            )
-            direction = "positive" if r > 0 else "negative"
-            sentences.append(
-                f"{col_a} \u2194 {col_b}: r={r:.2f} ({direction} {strength})"
-            )
+    for pair in correlations(df, numeric_cols, method=method, threshold=0.1):
+        r = pair["r"]
+        abs_r = abs(r)
+        strength = (
+            "very strong" if abs_r >= 0.8 else
+            "strong" if abs_r >= 0.6 else
+            "moderate" if abs_r >= 0.4 else
+            "weak"
+        )
+        direction = "positive" if r > 0 else "negative"
+        sentences.append(f"{pair['a']} ↔ {pair['b']}: r={r:.2f} ({direction} {strength})")
 
     if not sentences:
         return "No meaningful correlations found."

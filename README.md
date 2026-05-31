@@ -25,6 +25,169 @@ databridge-cli
 - Web terminal (ttyd) for direct CLI access from the browser
 - Export to CSV, JSON, XLSX, MySQL, PostgreSQL, or Supabase
 
+### Trust & audit
+
+- Every value shown in the Composition tab — indicator "Latest", view dimensions — is computed live from your downloaded data. No placeholders.
+- Generated `.docx` reports include a provenance footer: when the report was generated, when the underlying data was downloaded, the number of submissions, the active filters, and a short hash of the config that produced the report. Two reports from the same config + data set have the same hash; if they differ, something in the inputs changed.
+- A pytest suite under `tests/` covers the provenance helper and a build-report smoke path. Run `pytest -v` to verify.
+
+### Validate (data quality)
+
+The **Validate** tab (step 3 of 5) scans your downloaded submissions and surfaces:
+
+- **Missingness** — columns where ≥5% of rows are blank or NaN, with severity escalating at 20% and 50%.
+- **Numeric outliers** — quantitative columns with values outside `Q1 − 3·IQR` to `Q3 + 3·IQR`. Catches mistyped Age=999 or NumStudents=-1 without flooding on legitimate skew.
+- **Duplicate identifiers** — rows that share `_uuid`, `_id`, or `_index` (whichever the data uses).
+- **Type-coercion issues** — quantitative columns containing non-numeric strings like `"n/a"` or `"TBD"`.
+
+Findings are computed by `src/data/validate.py` and served by `POST /api/validate`. There are no user-configurable thresholds in this MVP — the defaults are tuned for typical M&E survey data.
+
+### Multi-period workflow
+
+`databridge-cli` can track data collection across multiple periods (baseline, midline, endline; or quarterly rounds) without overwriting earlier downloads.
+
+**Config**:
+
+```yaml
+periods:
+  current:  "Q2 2026"
+  baseline: "Q1 2026"
+  registry:
+    - { label: "Q1 2026", slug: "q1_2026" }
+    - { label: "Q2 2026", slug: "q2_2026" }
+```
+
+**Commands**:
+
+```bash
+# Tag a download with a period (auto-registers if new)
+python3 src/data/make.py download --period "Q3 2026"
+
+# Build the report for a specific period
+python3 src/data/make.py build-report --period "Q2 2026"
+
+# Comparison report (any number of periods)
+python3 src/data/make.py build-report --compare "Q1 2026,Q2 2026"
+
+# Switch the active period
+python3 src/data/make.py set-period "Q3 2026"
+```
+
+**Template placeholders** (in addition to the standard `{{ ind_<name> }}`):
+
+- `{{ ind_<name>_p_<slug> }}` — value for a specific period
+- `{{ ind_<name>_delta }}` — current minus baseline
+- `{{ ind_<name>_pct_change }}` — percent change from baseline
+- `{{ provenance.period_label }}` — the active period label
+- `{{ provenance.compared_periods }}` — list when --compare was used
+
+**Backward compatibility**: configs without a `periods:` block behave exactly as before. Single-period mode is the default.
+
+### Results framework (logframe)
+
+Structure your indicators in a Goal → Outcomes → Outputs hierarchy. The framework is editable in the Composition tab and renders as a `{{ logframe }}` section in generated reports.
+
+**Config**:
+
+```yaml
+framework:
+  goal:
+    id:    GOAL
+    label: "Reduce child mortality by 25% in target districts by 2030"
+  outcomes:
+    - id: OC1
+      label: "80% of children under 5 fully vaccinated"
+      parent: GOAL
+  outputs:
+    - id: OP1.1
+      label: "10,000 vaccination doses administered"
+      parent: OC1
+
+indicators:
+  - name: vaccinations_administered
+    framework_ref: OP1.1
+    stat: sum
+    question: Number of doses
+```
+
+**Template usage**:
+
+```
+{% if logframe.has_framework %}
+Results Framework
+{% for row in logframe.rows %}
+{{ '  ' * row.indent }}{{ row.label }}{% if row.indicators %}: {% for ind in row.indicators %}{{ ind.name }}={{ ind.value }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+{% endfor %}
+{% endif %}
+```
+
+**Validation**: indicators whose `framework_ref` doesn't match any node appear as warnings in the **Validate** tab (`orphan_framework_ref` finding).
+
+**Backward compatibility**: configs without a `framework:` block behave exactly as today.
+
+### Privacy & consent (PII)
+
+Redact PII columns and gate on respondent consent at render time. Raw values stay in `data/processed/` for internal analysis; reports, previews, and exported result tables never expose them.
+
+**Config**:
+
+```yaml
+pii:
+  consent_column: "Consent_to_share_data"
+  consent_value:  "yes"                     # default
+  redact:
+    - column: "Respondent_name"
+      strategy: drop                        # remove column from output
+    - column: "Phone_number"
+      strategy: hash                        # sha256(value)[:8], deterministic
+    - column: "GPS"
+      strategy: generalize_geo
+      decimals: 2                           # ~1 km precision
+    - column: "Date_of_birth"
+      strategy: generalize_date             # year only
+    - column: "National_ID"
+      strategy: mask                        # ***
+```
+
+**Where it applies**: report rendering (`build-report`), all preview endpoints (chart/indicator/summary/view), and the Validate tab. The data files on disk are NOT redacted (they live under `data/processed/` and never leave your machine).
+
+**Suggestions**: the Validate tab surfaces columns whose name looks PII-shaped (`name`, `phone`, `email`, `gps`, `dob`, etc.) as info-level findings — a soft prompt to add them to `pii.redact`.
+
+**Backward compatibility**: configs without a `pii:` block behave exactly as today.
+
+### Prompt management
+
+AI feature prompts (narrator, chart suggester, template generator, etc.) are stored and versioned in [Langfuse](https://cloud.langfuse.com). This lets you edit prompts in the Langfuse UI without touching code, track version history, and monitor cost/latency per call.
+
+**Setup:**
+
+1. Create a free account at [cloud.langfuse.com](https://cloud.langfuse.com).
+2. Go to **Settings → API Keys** and copy your public key and secret key.
+3. Add them to your `.env` file:
+   ```
+   LANGFUSE_PUBLIC_KEY=pk-lf-...
+   LANGFUSE_SECRET_KEY=sk-lf-...
+   LANGFUSE_HOST=https://cloud.langfuse.com   # default; omit for cloud
+   ```
+4. Seed the bundled default prompts into Langfuse:
+   ```bash
+   python3 src/data/make.py push-prompts
+   ```
+   Use `--force` to overwrite already-seeded prompts with the current bundled defaults.
+
+**Offline fallback:** Prompts are cached locally in `~/.cache/databridge/prompts/` (1-hour TTL). If Langfuse is unreachable, the cached version is used; if there is no cache, the bundled defaults in `src/utils/seed_prompts.py` are used. All AI features work without Langfuse keys.
+
+**Tracing:** Every LLM call is recorded in Langfuse with cost, latency, and token counts. Full pipeline runs are grouped under a single trace.
+
+### Output schemas
+
+The seven JSON-producing prompts each carry a JSON Schema (`config.output_schema` in
+Langfuse). At call time, OpenAI uses Structured Outputs (guaranteed compliance) and
+Anthropic uses forced tool-use; either way, the model can no longer drift from the
+expected shape. If a schema becomes invalid (e.g., edited badly in the UI), the
+client logs a warning and falls back to no-schema mode for that one prompt — the
+feature keeps running. Edit schemas in the Langfuse UI; the next fetch picks them up.
+
 # Installation
 ## Prerequisites
 - [Docker](https://docs.docker.com/get-docker/)
