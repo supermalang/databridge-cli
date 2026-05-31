@@ -63,6 +63,40 @@ def validate_pii_config(df: pd.DataFrame, repeat_tables: Dict[str, pd.DataFrame]
     return None
 
 
+def enforce_pii(df: pd.DataFrame, repeat_tables: Dict[str, pd.DataFrame], cfg: Dict) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+    """Strict, fail-closed PII gate for the EXPORT boundary.
+
+    Order: validate config (raises PIIConfigError on misconfig) -> consent-gate
+    the main table -> prune orphaned repeat rows whose parent was filtered out ->
+    apply redaction (via the lenient per-table apply_redaction). No-op when cfg
+    has no pii block.
+    """
+    repeat_tables = repeat_tables or {}
+    if not (cfg.get("pii") or {}):
+        return df, repeat_tables
+    validate_pii_config(df, repeat_tables, cfg)
+
+    pii_cfg = cfg["pii"]
+    consent_col = pii_cfg.get("consent_column")
+    gated = df
+    if consent_col:
+        expected = pii_cfg.get("consent_value", _DEFAULT_CONSENT_VALUE)
+        mask = df[consent_col].astype(str).str.strip() == str(expected)
+        gated = df[mask].reset_index(drop=True)
+
+    id_col = next((c for c in ("_id", "_index", "_uuid") if c in gated.columns), None)
+    surviving = set(gated[id_col]) if id_col is not None else None
+    pruned: Dict[str, pd.DataFrame] = {}
+    for name, rdf in repeat_tables.items():
+        if surviving is not None and "_parent_index" in rdf.columns:
+            rdf = rdf[rdf["_parent_index"].isin(surviving)]
+        pruned[name] = rdf
+
+    out_df = apply_redaction(gated, cfg)
+    out_repeats = {name: apply_redaction(rdf, cfg) for name, rdf in pruned.items()}
+    return out_df, out_repeats
+
+
 def apply_consent(df: pd.DataFrame, cfg: Dict) -> pd.DataFrame:
     """Filter rows by the consent column. No-op when no consent column configured."""
     pii_cfg = cfg.get("pii") or {}
