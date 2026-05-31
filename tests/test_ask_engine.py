@@ -33,11 +33,12 @@ def test_build_catalog_condenses_and_excludes_linkage():
     assert main["rows"] == 3
 
 
-def test_ask_charts_prompt_resolves_offline():
-    msgs = lf_client.get_prompt("ask_charts", {
+def test_ask_propose_prompt_resolves_offline():
+    msgs = lf_client.get_prompt("ask_propose", {
         "question": "How many people by region?",
         "catalog": "{}",
         "chart_types": "bar: >=1 categorical",
+        "indicator_stats": "count: rows",
     })
     assert isinstance(msgs, list) and msgs
     blob = " ".join(m["content"] for m in msgs)
