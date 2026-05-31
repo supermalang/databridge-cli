@@ -383,6 +383,7 @@ Prompts live in [Langfuse Cloud](https://cloud.langfuse.com) (or a self-hosted L
 | `classifier_classify` | [src/data/classifier.py](src/data/classifier.py) | JSON: per-row classifications |
 | `ask_propose` | `src/reports/ask_engine.py` | JSON: `{"items": [{"kind": ...}]}` |
 | `ask_caption` | `src/reports/ask_engine.py` | JSON: `{"captions": {...}}` |
+| `ask_refine` | `src/reports/ask_engine.py` | JSON: `{"item": {"kind": ...}}` |
 
 ### Setup
 
@@ -601,6 +602,13 @@ Duplicate names within a batch are disambiguated. `save_recipe(recipe, cfg, kind
 a chosen recipe to `config.charts` (chart) or `config.indicators` (indicator). Exposed at
 `POST /api/ask` and `POST /api/ask/save` (`{recipe, kind}`); surfaced in the **Ask** tab
 (charts as images, indicators as big-number cards). Needs an AI provider and downloaded data.
+
+A returned answer can be **refined** in plain language ("make it a line chart", "split by
+sex", "just give me the number") via `refine_item` (the `ask_refine` prompt) → `POST
+/api/ask/refine`; the revised recipe is re-validated/executed (it may switch chart↔indicator)
+and the Ask tab replaces the card in place. `_execute_item` is the shared
+validate→execute helper used by both `ask` and `refine_item`, so a refined answer behaves
+identically to an asked one.
 
 ### Chart output path
 Charts are saved to `data/processed/charts/<chart_name>.png` at `build-report` time.
