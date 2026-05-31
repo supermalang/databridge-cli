@@ -260,6 +260,15 @@ def test_compute_indicator_bad_returns_none():
     assert compute_indicator({"name": "x", "stat": "sum", "question": "Ghost"}, df, {}) is None
 
 
+def test_compute_indicator_percent_formats_with_pct():
+    # 2 of 4 rows are "N" -> 50%; percent stat should render with a trailing %
+    df = pd.DataFrame({"Region": ["N", "N", "S", "S"]})
+    val = compute_indicator(
+        {"name": "pct_n", "stat": "percent", "question": "Region", "filter_value": "N"}, df, {}
+    )
+    assert val is not None and val.endswith("%")
+
+
 def test_ask_skips_chart_when_image_unreadable(monkeypatch):
     monkeypatch.setattr(ask_engine, "propose_items", lambda q, cat, ai: [
         {"kind": "chart", "name": "by_region", "title": "By region", "type": "bar", "questions": ["Region"]},
