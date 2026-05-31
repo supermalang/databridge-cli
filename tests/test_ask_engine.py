@@ -82,20 +82,26 @@ def test_validate_recipe_unknown_source():
 from src.reports import ask_engine
 
 
-def test_propose_charts_parses_llm_json(monkeypatch):
+def test_propose_items_parses_mixed(monkeypatch):
     monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [{"role": "user", "content": "x"}])
     monkeypatch.setattr(ask_engine.lf_client, "chat",
-                        lambda *a, **k: '{"charts": [{"name": "by_region", "type": "bar", "questions": ["Region"]}]}')
-    ai_cfg = {"provider": "openai", "api_key": "sk-x", "model": "gpt-4o"}
-    out = ask_engine.propose_charts("q", {"tables": []}, ai_cfg)
-    assert out == [{"name": "by_region", "type": "bar", "questions": ["Region"]}]
+                        lambda *a, **k: '{"items": [{"kind": "chart", "name": "by_region", "type": "bar", "questions": ["Region"]}, {"kind": "indicator", "name": "n", "stat": "count"}]}')
+    out = ask_engine.propose_items("q", {"tables": []}, {"provider": "openai", "api_key": "sk-x"})
+    assert [i["kind"] for i in out] == ["chart", "indicator"]
 
 
-def test_propose_charts_malformed_returns_empty(monkeypatch):
+def test_propose_items_defaults_kind_chart(monkeypatch):
+    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [])
+    monkeypatch.setattr(ask_engine.lf_client, "chat",
+                        lambda *a, **k: '{"items": [{"name": "x", "type": "bar", "questions": ["Region"]}]}')
+    out = ask_engine.propose_items("q", {"tables": []}, {"provider": "openai", "api_key": "sk-x"})
+    assert out[0]["kind"] == "chart"
+
+
+def test_propose_items_malformed_returns_empty(monkeypatch):
     monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [])
     monkeypatch.setattr(ask_engine.lf_client, "chat", lambda *a, **k: "not json at all")
-    out = ask_engine.propose_charts("q", {"tables": []}, {"provider": "openai", "api_key": "sk-x"})
-    assert out == []
+    assert ask_engine.propose_items("q", {"tables": []}, {"provider": "openai", "api_key": "sk-x"}) == []
 
 
 from src.reports.ask_engine import render_recipe
@@ -137,7 +143,7 @@ def test_ground_captions_falls_back_to_title_on_failure(monkeypatch):
 
 
 def test_ask_end_to_end(monkeypatch):
-    monkeypatch.setattr(ask_engine, "propose_charts",
+    monkeypatch.setattr(ask_engine, "propose_items",
                         lambda q, cat, ai: [{"name": "by_region", "title": "By region", "type": "bar", "questions": ["Region"]}])
     monkeypatch.setattr(ask_engine, "ground_captions",
                         lambda items, ai: {it["name"]: "Region E leads." for it in items})
@@ -159,7 +165,7 @@ def test_ask_no_ai_returns_message():
 
 
 def test_ask_disambiguates_duplicate_recipe_names(monkeypatch):
-    monkeypatch.setattr(ask_engine, "propose_charts", lambda q, cat, ai: [
+    monkeypatch.setattr(ask_engine, "propose_items", lambda q, cat, ai: [
         {"name": "dup", "title": "A", "type": "bar", "questions": ["Region"]},
         {"name": "dup", "title": "B", "type": "bar", "questions": ["Region"]},
     ])

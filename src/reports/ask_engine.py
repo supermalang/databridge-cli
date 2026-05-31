@@ -91,9 +91,20 @@ def validate_recipe(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
 
 _CHART_TYPES_BLOCK = "\n".join(f"- {t}: {req}" for t, (_chk, req) in CHART_REQS.items())
 
+INDICATOR_STATS = {"count", "count_distinct", "sum", "mean", "median",
+                   "min", "max", "percent", "most_common"}
+_NUMERIC_STATS = {"sum", "mean", "median", "min", "max"}
+_INDICATOR_STATS_BLOCK = (
+    "- count: number of rows (no column)\n"
+    "- count_distinct: unique values of a column\n"
+    "- most_common: most frequent value of a column\n"
+    "- sum / mean / median / min / max: a quantitative column\n"
+    "- percent: share of rows where a column equals filter_value (needs filter_value)"
+)
 
-def _parse_charts(raw: str) -> List[Dict]:
-    """Parse {"charts": [...]} from an LLM response, tolerating fences/prose."""
+
+def _parse_items(raw: str) -> List[Dict]:
+    """Parse {"items": [...]} from an LLM response, tolerating fences/prose."""
     import re
     try:
         data = json.loads(raw)
@@ -105,34 +116,39 @@ def _parse_charts(raw: str) -> List[Dict]:
             data = json.loads(m.group(0))
         except (ValueError, TypeError):
             return []
-    charts = data.get("charts") if isinstance(data, dict) else None
-    return charts if isinstance(charts, list) else []
+    items = data.get("items") if isinstance(data, dict) else None
+    return items if isinstance(items, list) else []
 
 
-def propose_charts(question: str, catalog: Dict, ai_cfg: Dict) -> List[Dict]:
-    """Ask the LLM for 1–3 chart recipes for the question. Returns [] on any failure."""
+def propose_items(question: str, catalog: Dict, ai_cfg: Dict) -> List[Dict]:
+    """Ask the LLM for 1–3 answer items (charts or indicators), each tagged with a
+    "kind" (defaulting to "chart"). Returns [] on any failure."""
     provider = (ai_cfg.get("provider") or "openai").lower()
     variables = {
         "question": question,
         "catalog": json.dumps(catalog, ensure_ascii=False),
         "chart_types": _CHART_TYPES_BLOCK,
+        "indicator_stats": _INDICATOR_STATS_BLOCK,
     }
     try:
-        messages = lf_client.get_prompt("ask_charts", variables)
+        messages = lf_client.get_prompt("ask_propose", variables)
         raw = lf_client.chat(
             messages,
             model=ai_cfg.get("model", "gpt-4o"),
             provider=provider,
             api_key=ai_cfg.get("api_key", ""),
             max_tokens=max(int(ai_cfg.get("max_tokens", 1500)), 2000),
-            trace_name="ask_charts",
+            trace_name="ask_propose",
             base_url=ai_cfg.get("base_url"),
             json_mode=(provider != "anthropic"),
         )
     except Exception as e:  # noqa: BLE001
-        log.warning(f"ask: propose_charts failed: {e}")
+        log.warning(f"ask: propose_items failed: {e}")
         return []
-    return _parse_charts(raw)[:3]
+    items = _parse_items(raw)[:3]
+    for it in items:
+        it.setdefault("kind", "chart")
+    return items
 
 
 def _result_summary(recipe: Dict, chart_df: pd.DataFrame) -> str:
@@ -237,7 +253,7 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
     profile = profile_dataset(cfg, df, repeat_tables or {})
     catalog = build_catalog(profile)
 
-    recipes = propose_charts(question, catalog, ai_cfg)
+    recipes = propose_items(question, catalog, ai_cfg)
     if not recipes:
         return {"proposals": [], "skipped": [],
                 "message": "Couldn't turn that into a chart — try rephrasing."}
