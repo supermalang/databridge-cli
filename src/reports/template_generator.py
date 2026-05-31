@@ -50,6 +50,8 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
         for ind in indicators:
             name=ind.get("name",""); label=ind.get("label",name)
             _meta(doc,label,f"{{{{ ind_{name} }}}}")
+            if ind.get("disaggregate_by"):
+                _meta(doc,f"{label} — breakdown",f"{{{{ ind_{name}_table }}}}")
     summaries=cfg.get("summaries",[])
     if summaries:
         _divider(doc); _heading(doc,"Data Summaries",1)
@@ -71,7 +73,10 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
         "{% if logframe.has_framework %}"
         "{% for row in logframe.rows %}"
         "{{ '  ' * row.indent }}{{ row.label }}"
-        "{% if row.indicators %}: {% for ind in row.indicators %}{{ ind.name }}={{ ind.value }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}\n"
+        "{% if row.node_pct_achievement %} — {{ row.node_pct_achievement }} achieved{% endif %}"
+        "{% if row.indicators %}: {% for ind in row.indicators %}{{ ind.name }}={{ ind.value }}"
+        "{% if ind.target %}/{{ ind.target }} ({{ ind.pct_achievement }}){% endif %}"
+        "{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}\n"
         "{% endfor %}"
         "{% endif %}"
     )
