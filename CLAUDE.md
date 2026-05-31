@@ -167,14 +167,15 @@ python3 src/data/make.py build-report --compare "Q1 2026,Q2 2026"       # compar
 # 5. Switch the active period (updates periods.current in config.yml)
 python3 src/data/make.py set-period "Q3 2026"
 
-# 6. Validate downloaded data (missingness, outliers, duplicates, type issues)
-python3 src/data/make.py validate
-
-# 7. Classify open-text responses using AI (writes themes back to config.yml)
-python3 src/data/make.py classify
-
-# 8. Push bundled seed prompts to Langfuse (create-if-missing; --force overwrites)
+# 6. Push bundled seed prompts to Langfuse (create-if-missing; --force overwrites)
 python3 src/data/make.py push-prompts
+```
+
+> **Validation and classification are not standalone CLI commands.**
+> - *Validation* (missingness, outliers, duplicates, type issues) runs in the web **Validate** tab via `POST /api/validate`; the detectors live in `src/data/validate.py`.
+> - *Classification* of open-text responses runs **automatically at the end of `download`** (`_run_classify` in `src/data/make.py`) when `ai:` is configured and a question sets `classify.enabled: true`; discovered themes are written back to `config.yml`.
+
+```bash
 python3 src/data/make.py push-prompts --force
 ```
 

@@ -356,6 +356,10 @@ def compute_indicator(recipe: Dict, df: pd.DataFrame,
     name = recipe.get("name") or "indicator"
     ind = {k: v for k, v in recipe.items() if k != "kind"}
     ind["name"] = name
+    # A `percent` stat returns e.g. 58.3; without an explicit format it renders as "58"
+    # (default number). Default to the percent format so it shows "58.3%".
+    if ind.get("stat") == "percent" and "format" not in ind:
+        ind["format"] = "percent"
     try:
         result = compute_indicators([ind], df, repeat_tables or {})
     except Exception as e:  # noqa: BLE001
