@@ -74,6 +74,7 @@ export default function Dashboard() {
   const [termOpen, setTermOpen] = useState(false);
   const [logLines, setLogLines] = useState([]);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [autoCharts, setAutoCharts] = useState(false);
 
   const nowTime = () => {
     const d = new Date();
@@ -129,7 +130,11 @@ export default function Dashboard() {
           <button className="btn" onClick={() => setWizardOpen(true)} disabled={running}>
             Step by step
           </button>
-          <button className="btn btn-primary" onClick={() => run('run-all')} disabled={running}>
+          <label className="run-opt" title="If no charts are configured, auto-create a starter set from your questions">
+            <input type="checkbox" checked={autoCharts} onChange={(e) => setAutoCharts(e.target.checked)} disabled={running} />
+            Auto-create charts
+          </label>
+          <button className="btn btn-primary" onClick={() => run('run-all', { auto_charts: autoCharts })} disabled={running}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><polygon points="4 3 13 8 4 13"/></svg>
             {running && activeCmd === 'run-all' ? 'Running…' : 'Run pipeline'}
           </button>
