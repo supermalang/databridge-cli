@@ -27,11 +27,11 @@ export default function Ask() {
     }
   }
 
-  async function save(recipe) {
+  async function save(recipe, kind) {
     try {
       const r = await fetch('/api/ask/save', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipe }),
+        body: JSON.stringify({ recipe, kind }),
       });
       const data = await r.json().catch(() => ({}));
       if (data.ok) setSaved(s => ({ ...s, [recipe.name]: true }));
@@ -72,9 +72,13 @@ export default function Ask() {
           <div key={p.recipe?.name || i}
                style={{ border: '1px solid var(--line, #e5e7eb)', borderRadius: 10, padding: 12, width: 380, maxWidth: '100%' }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>{p.recipe?.title || p.recipe?.name}</div>
-            <img src={p.image} alt={p.recipe?.title || 'chart'} style={{ width: '100%', borderRadius: 6 }} />
+            {p.kind === 'indicator' ? (
+              <div style={{ fontSize: 34, fontWeight: 700, padding: '12px 0' }}>{p.value}</div>
+            ) : (
+              <img src={p.image} alt={p.recipe?.title || 'chart'} style={{ width: '100%', borderRadius: 6 }} />
+            )}
             <div style={{ color: 'var(--ink-3)', fontSize: 13, margin: '8px 0' }}>{p.caption}</div>
-            <button onClick={() => save(p.recipe)} disabled={saved[p.recipe?.name]}
+            <button onClick={() => save(p.recipe, p.kind)} disabled={saved[p.recipe?.name]}
                     style={{ padding: '6px 12px', borderRadius: 6 }}>
               {saved[p.recipe?.name] ? 'Saved ✓' : 'Save to report'}
             </button>
