@@ -249,6 +249,8 @@ indicators:
     stat: sum
     question: Number of doses
     framework_ref: OP1.1     # optional — links indicator to a results-framework node
+    disaggregate_by: [Region, Sex]   # optional — also compute this stat per group;
+                                     # adds ind_<name>_breakdown (list) + ind_<name>_table (text)
 
 # AI narrative (fills {{ summary_text }}, {{ observations }}, {{ recommendations }})
 ai:
@@ -474,6 +476,8 @@ Templates use Jinja2 syntax via `docxtpl`. Available placeholders:
 {{ recommendations }}
 
 {{ ind_<name> }}        ← one per indicator in config.yml indicators section
+{{ ind_<name>_breakdown }}  ← list of {group,value,formatted} when the indicator sets disaggregate_by (loop in the template)
+{{ ind_<name>_table }}      ← plain-text "group: value" fallback for the same breakdown
 {{ summary_<name> }}    ← one per summary in config.yml summaries section
 {{ chart_<n> }}         ← one per chart in config.yml
 {{ split_value }}       ← when --split-by is set, the current group's value
