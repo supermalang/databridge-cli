@@ -229,3 +229,23 @@ def test_validate_indicator_missing_column():
 def test_validate_chart_still_works_without_kind():
     ok, reason = validate_recipe({"type": "bar", "questions": ["Region"]}, _profile_fixture())
     assert ok and reason == ""
+
+
+from src.reports.ask_engine import compute_indicator
+
+
+def test_compute_indicator_count():
+    df = pd.DataFrame({"_id": [1, 2, 3], "Region": ["N", "E", "E"]})
+    val = compute_indicator({"name": "n", "stat": "count"}, df, {})
+    assert val == "3"
+
+
+def test_compute_indicator_sum():
+    df = pd.DataFrame({"Age": [10, 20, 30]})
+    val = compute_indicator({"name": "total_age", "stat": "sum", "question": "Age"}, df, {})
+    assert val == "60"
+
+
+def test_compute_indicator_bad_returns_none():
+    df = pd.DataFrame({"Region": ["N"]})
+    assert compute_indicator({"name": "x", "stat": "sum", "question": "Ghost"}, df, {}) is None

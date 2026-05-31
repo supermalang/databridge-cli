@@ -326,6 +326,25 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
     return {"proposals": proposals, "skipped": skipped, "message": None}
 
 
+def compute_indicator(recipe: Dict, df: pd.DataFrame,
+                      repeat_tables: Dict[str, pd.DataFrame]) -> Optional[str]:
+    """Compute a single indicator's formatted value via the indicator engine.
+    Returns the value string, or None on failure / N/A."""
+    from src.reports.indicators import compute_indicators
+    name = recipe.get("name") or "indicator"
+    ind = {k: v for k, v in recipe.items() if k != "kind"}
+    ind["name"] = name
+    try:
+        result = compute_indicators([ind], df, repeat_tables or {})
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"ask: compute_indicator failed for '{name}': {e}")
+        return None
+    val = result.get(f"ind_{name}")
+    if val is None or val == "N/A":
+        return None
+    return val
+
+
 def save_recipe(recipe: Dict, cfg: Dict) -> str:
     """Append a chart recipe to cfg['charts'], de-duplicating the name. Mutates cfg;
     the caller persists via write_config. Returns the final saved name."""
