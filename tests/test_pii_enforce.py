@@ -87,3 +87,13 @@ def test_enforce_pii_misconfig_raises():
     cfg = {"pii": {"consent_column": "Consent"}}
     with pytest.raises(PIIConfigError):
         enforce_pii(main, {}, cfg)
+
+
+def test_enforce_pii_warns_when_no_id_col_for_pruning(caplog):
+    import logging
+    main = pd.DataFrame({"Consent": ["yes", "no"]})  # no _id/_index/_uuid
+    repeats = {"r": pd.DataFrame({"_parent_index": [1, 2], "X": ["a", "b"]})}
+    cfg = {"pii": {"consent_column": "Consent"}}
+    with caplog.at_level(logging.WARNING):
+        enforce_pii(main, repeats, cfg)
+    assert any("cannot prune orphaned" in r.message for r in caplog.records)

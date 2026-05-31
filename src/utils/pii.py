@@ -85,6 +85,9 @@ def enforce_pii(df: pd.DataFrame, repeat_tables: Dict[str, pd.DataFrame], cfg: D
         gated = df[mask].reset_index(drop=True)
 
     id_col = next((c for c in ("_id", "_index", "_uuid") if c in gated.columns), None)
+    if id_col is None and repeat_tables:
+        log.warning("PII: no _id/_index/_uuid in main table — cannot prune orphaned "
+                    "repeat rows of consent-rejected parents; they pass through.")
     surviving = set(gated[id_col]) if id_col is not None else None
     pruned: Dict[str, pd.DataFrame] = {}
     for name, rdf in repeat_tables.items():
