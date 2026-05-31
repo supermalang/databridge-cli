@@ -314,3 +314,26 @@ def test_ask_refine_prompt_resolves_offline():
     assert isinstance(msgs, list) and msgs
     blob = " ".join(m["content"] for m in msgs)
     assert "make it a line chart" in blob
+
+
+from src.reports.ask_engine import _execute_item
+
+
+def test_execute_item_chart_returns_entry():
+    profile = _profile_fixture()
+    df = pd.DataFrame({"Region": ["N", "E", "E"]})
+    out = _execute_item({"kind": "chart", "name": "c", "title": "C", "type": "bar", "questions": ["Region"]}, profile, df, {})
+    assert "skip" not in out and out["kind"] == "chart" and "png" in out
+
+
+def test_execute_item_indicator_returns_entry():
+    profile = _profile_fixture()
+    df = pd.DataFrame({"_id": [1, 2, 3]})
+    out = _execute_item({"kind": "indicator", "name": "n", "title": "N", "stat": "count"}, profile, df, {})
+    assert "skip" not in out and out["kind"] == "indicator" and out["value"] == "3"
+
+
+def test_execute_item_invalid_returns_skip():
+    profile = _profile_fixture()
+    out = _execute_item({"kind": "chart", "name": "c", "type": "bar", "questions": ["Ghost"]}, profile, pd.DataFrame({"Region": ["N"]}), {})
+    assert "skip" in out and "Ghost" in out["skip"]

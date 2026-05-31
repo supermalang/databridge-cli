@@ -272,6 +272,31 @@ def _b64_png(path: Path) -> str:
     return f"data:image/png;base64,{data}"
 
 
+def _execute_item(recipe: Dict, profile: Dict[str, Dict], df: pd.DataFrame,
+                  repeat_tables: Dict[str, pd.DataFrame]) -> Dict:
+    """Validate + execute one recipe (chart or indicator). Returns a valid entry
+    {"kind","recipe","png"|"value","summary","title"} or {"skip": reason, "title": title}."""
+    kind = recipe.get("kind", "chart")
+    title = (recipe.get("title") or recipe.get("name")
+             or (recipe.get("type") if kind == "chart" else recipe.get("stat")) or kind)
+    ok, reason = validate_recipe(recipe, profile)
+    if not ok:
+        return {"skip": reason, "title": title}
+    if kind == "indicator":
+        value = compute_indicator(recipe, df, repeat_tables or {})
+        if value is None:
+            return {"skip": "could not compute this indicator", "title": title}
+        stat = recipe.get("stat", "")
+        qcol = recipe.get("question")
+        summary = f"{value} ({stat}{' of ' + qcol if qcol else ''})"
+        return {"kind": "indicator", "recipe": recipe, "value": value, "summary": summary, "title": title}
+    rendered = render_recipe(recipe, df, repeat_tables or {})
+    if rendered is None:
+        return {"skip": "could not render this chart", "title": title}
+    png, summary = rendered
+    return {"kind": "chart", "recipe": recipe, "png": png, "summary": summary, "title": title}
+
+
 def ask(question: str, cfg: Dict, df: pd.DataFrame,
         repeat_tables: Dict[str, pd.DataFrame]) -> Dict:
     """Full ask loop (charts + indicators). Returns
@@ -292,28 +317,11 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
 
     valid, skipped = [], []
     for r in items:
-        kind = r.get("kind", "chart")
-        title = r.get("title") or r.get("name") or (r.get("type") if kind == "chart" else r.get("stat")) or kind
-        ok, reason = validate_recipe(r, profile)
-        if not ok:
-            skipped.append({"title": title, "reason": reason})
-            continue
-        if kind == "indicator":
-            value = compute_indicator(r, df, repeat_tables or {})
-            if value is None:
-                skipped.append({"title": title, "reason": "could not compute this indicator"})
-                continue
-            stat = r.get("stat", "")
-            qcol = r.get("question")
-            summary = f"{value} ({stat}{' of ' + qcol if qcol else ''})"
-            valid.append({"kind": "indicator", "recipe": r, "value": value, "summary": summary, "title": title})
+        out = _execute_item(r, profile, df, repeat_tables or {})
+        if "skip" in out:
+            skipped.append({"title": out["title"], "reason": out["skip"]})
         else:
-            rendered = render_recipe(r, df, repeat_tables or {})
-            if rendered is None:
-                skipped.append({"title": title, "reason": "could not render this chart"})
-                continue
-            png, summary = rendered
-            valid.append({"kind": "chart", "recipe": r, "png": png, "summary": summary, "title": title})
+            valid.append(out)
 
     # Disambiguate duplicate names within this batch (captions map 1:1; UI keys unique).
     seen_names = set()
