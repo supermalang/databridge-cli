@@ -941,8 +941,8 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
         if (!r.ok) {
           setLatest(prev => ({ ...prev, [ind.name]: { error: data.detail || 'error' } }));
         } else {
-          // Endpoint returns { value, n_rows, trend }; value may be string or number.
-          setLatest(prev => ({ ...prev, [ind.name]: { value: data.value, trend: data.trend || [] } }));
+          // Endpoint returns { value, n_rows, trend, breakdown }; value may be string or number.
+          setLatest(prev => ({ ...prev, [ind.name]: { value: data.value, trend: data.trend || [], breakdown: data.breakdown || [] } }));
         }
       } catch {
         if (!cancelled) setLatest(prev => ({ ...prev, [ind.name]: { error: 'network' } }));
@@ -996,6 +996,11 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
                 <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--font-mono, monospace)' }}>
                   {latest[ind.name].trend.map(t => `${t.label}: ${t.value}`).join(' → ')}
                 </span>
+              )}
+              {(latest[ind.name]?.breakdown?.length || 0) > 0 && (
+                <div style={{ marginTop: 4, fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--font-mono, monospace)' }}>
+                  {latest[ind.name].breakdown.map(b => `${b.group}: ${b.formatted}`).join(' · ')}
+                </div>
               )}
             </div>
             <div className="comp-row__actions">
@@ -1325,6 +1330,9 @@ function IndicatorModal({ initial, onClose, onSave }) {
   const [format, setFormat]     = useState(initial?.format || '');
   const [compareTo, setCompareTo] = useState(initial?.compare_to || '');
   const [frameworkRef, setFrameworkRef] = useState(initial?.framework_ref || '');
+  const [disagg, setDisagg] = useState(csv(
+    Array.isArray(initial?.disaggregate_by) ? initial.disaggregate_by
+      : (initial?.disaggregate_by ? [initial.disaggregate_by] : [])));
   const submit = () => {
     if (!name.trim()) return alert('Name is required.');
     const item = { name: name.trim(), stat };
@@ -1333,6 +1341,7 @@ function IndicatorModal({ initial, onClose, onSave }) {
     if (format.trim()) item.format = format.trim();
     if (compareTo) item.compare_to = compareTo;
     if (frameworkRef) item.framework_ref = frameworkRef;
+    const dis = fromCsv(disagg); if (dis.length) item.disaggregate_by = dis;
     onSave(item);
   };
   return (
@@ -1350,6 +1359,9 @@ function IndicatorModal({ initial, onClose, onSave }) {
       </ModalField>
       <ModalField label="Framework link" hint="Optional. Pick a goal/outcome/output node to link this indicator to.">
         <FrameworkPicker value={frameworkRef} onChange={v => setFrameworkRef(v || '')} />
+      </ModalField>
+      <ModalField label="Disaggregate by" hint="Optional. Comma-separated columns — computes the stat per group; adds {{ ind_<name>_breakdown }} + {{ ind_<name>_table }}.">
+        <input className="src-input" value={disagg} onChange={e => setDisagg(e.target.value)} placeholder="Region, Sex" />
       </ModalField>
     </Modal>
   );
