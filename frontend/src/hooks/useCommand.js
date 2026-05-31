@@ -34,6 +34,14 @@ export function useCommand({ onLog, onStatus } = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      if (!res.ok) {
+        let detail = `Request failed (${res.status})`;
+        try { detail = (await res.json()).detail || detail; } catch {}
+        onLogRef.current?.(detail, 'error');
+        onStatusRef.current?.({ command, status: 'error', error: detail });
+        finalStatus = 'error';
+        return;   // finally still resets running/activeCmd
+      }
       if (!res.body) throw new Error('No response body');
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
