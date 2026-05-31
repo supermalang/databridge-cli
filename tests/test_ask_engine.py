@@ -75,3 +75,22 @@ def test_validate_recipe_rejects_unknown_type():
 def test_validate_recipe_unknown_source():
     ok, reason = validate_recipe({"type": "bar", "questions": ["X"], "source": "ghost"}, _profile_fixture())
     assert not ok and "source" in reason
+
+
+from src.reports import ask_engine
+
+
+def test_propose_charts_parses_llm_json(monkeypatch):
+    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [{"role": "user", "content": "x"}])
+    monkeypatch.setattr(ask_engine.lf_client, "chat",
+                        lambda *a, **k: '{"charts": [{"name": "by_region", "type": "bar", "questions": ["Region"]}]}')
+    ai_cfg = {"provider": "openai", "api_key": "sk-x", "model": "gpt-4o"}
+    out = ask_engine.propose_charts("q", {"tables": []}, ai_cfg)
+    assert out == [{"name": "by_region", "type": "bar", "questions": ["Region"]}]
+
+
+def test_propose_charts_malformed_returns_empty(monkeypatch):
+    monkeypatch.setattr(ask_engine.lf_client, "get_prompt", lambda *a, **k: [])
+    monkeypatch.setattr(ask_engine.lf_client, "chat", lambda *a, **k: "not json at all")
+    out = ask_engine.propose_charts("q", {"tables": []}, {"provider": "openai", "api_key": "sk-x"})
+    assert out == []

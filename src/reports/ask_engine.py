@@ -13,6 +13,8 @@ from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from src.utils import lf_client
+
 log = logging.getLogger(__name__)
 
 
@@ -85,3 +87,49 @@ def validate_recipe(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
     if not check(n_cat, n_quant, n_date):
         return False, f"'{ctype}' needs {requirement}"
     return True, ""
+
+
+_CHART_TYPES_BLOCK = "\n".join(f"- {t}: {req}" for t, (_chk, req) in CHART_REQS.items())
+
+
+def _parse_charts(raw: str) -> List[Dict]:
+    """Parse {"charts": [...]} from an LLM response, tolerating fences/prose."""
+    import re
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        m = re.search(r"\{.*\}", raw or "", re.DOTALL)
+        if not m:
+            return []
+        try:
+            data = json.loads(m.group(0))
+        except (ValueError, TypeError):
+            return []
+    charts = data.get("charts") if isinstance(data, dict) else None
+    return charts if isinstance(charts, list) else []
+
+
+def propose_charts(question: str, catalog: Dict, ai_cfg: Dict) -> List[Dict]:
+    """Ask the LLM for 1–3 chart recipes for the question. Returns [] on any failure."""
+    provider = (ai_cfg.get("provider") or "openai").lower()
+    variables = {
+        "question": question,
+        "catalog": json.dumps(catalog, ensure_ascii=False),
+        "chart_types": _CHART_TYPES_BLOCK,
+    }
+    try:
+        messages = lf_client.get_prompt("ask_charts", variables)
+        raw = lf_client.chat(
+            messages,
+            model=ai_cfg.get("model", "gpt-4o"),
+            provider=provider,
+            api_key=ai_cfg.get("api_key", ""),
+            max_tokens=max(int(ai_cfg.get("max_tokens", 1500)), 2000),
+            trace_name="ask_charts",
+            base_url=ai_cfg.get("base_url"),
+            json_mode=(provider != "anthropic"),
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"ask: propose_charts failed: {e}")
+        return []
+    return _parse_charts(raw)[:3]
