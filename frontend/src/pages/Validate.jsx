@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
+import DataQualityPanel from '../components/DataQualityPanel.jsx';
 
 export default function Validate() {
   const [report, setReport] = useState(null);   // null | { n_rows, n_columns, checks, summary }
@@ -33,6 +34,7 @@ export default function Validate() {
         accent="data."
         sub="Scan the downloaded submissions for missingness, duplicates, outliers, and type problems before composing charts."
       />
+      <DataQualityPanel />
       {loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 60 }}>Running validation…</div>}
       {error && (
         <div style={{ padding: 24, color: 'var(--danger, #b91c1c)' }}>

@@ -1479,6 +1479,22 @@ async def data_profile():
     return {"profiles": list(profiles.values())}
 
 
+@app.get("/api/data-quality")
+async def data_quality_overview():
+    """Per-column completeness / outlier-rate / duplicate-rate for the main table
+    of the latest download session, post-PII-redaction. Read-only. Mirrors the
+    report's {{ data_quality }} section as numeric values for the web panel."""
+    from src.reports.data_quality import compute_data_quality
+    from src.utils.pii import apply_pii
+    cfg = load_config(CONFIG_PATH)
+    try:
+        df, repeats = load_processed_data(cfg)
+    except FileNotFoundError:
+        return {"has_data": False, "rows": [], "message": "No downloaded data. Run download first."}
+    df, repeats = apply_pii(df, repeats, cfg)
+    return compute_data_quality(cfg, df, repeats)
+
+
 class AskPayload(BaseModel):
     question: str = ""
 

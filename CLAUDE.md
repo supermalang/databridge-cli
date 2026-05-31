@@ -179,6 +179,7 @@ python3 src/data/make.py run-all --auto-charts   # if no charts configured, deri
 
 > **Validation and classification are not standalone CLI commands.**
 > - *Validation* (missingness, outliers, duplicates, type issues) runs in the web **Validate** tab via `POST /api/validate`; the detectors live in `src/data/validate.py`.
+> - *Data-quality overview* (per-column completeness / outlier-rate / duplicate-rate for the main table) is served read-only at `GET /api/data-quality` and rendered as a threshold-colored, sortable panel atop the **Validate** tab. It reuses `compute_data_quality` in `src/reports/data_quality.py` — the same numeric core the report's `{{ data_quality }}` section formats.
 > - *Classification* of open-text responses runs **automatically at the end of `download`** (`_run_classify` in `src/data/make.py`) when `ai:` is configured and a question sets `classify.enabled: true`; discovered themes are written back to `config.yml`.
 
 ```bash
