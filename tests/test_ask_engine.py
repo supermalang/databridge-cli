@@ -246,6 +246,26 @@ def test_validate_indicator_completeness_needs_question():
     assert not ok and "question" in reason
 
 
+def test_validate_indicator_outlier_rate_needs_quantitative():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "outlier_rate", "question": "Region"}, _profile_fixture())
+    assert not ok and "quantitative" in reason
+
+
+def test_validate_indicator_outlier_rate_ok_on_quant():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "outlier_rate", "question": "Age"}, _profile_fixture())
+    assert ok and reason == ""
+
+
+def test_validate_indicator_duplicate_rate_ok_on_any_column():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "duplicate_rate", "question": "Region"}, _profile_fixture())
+    assert ok and reason == ""
+
+
+def test_validate_indicator_duplicate_rate_needs_question():
+    ok, reason = validate_recipe({"kind": "indicator", "stat": "duplicate_rate"}, _profile_fixture())
+    assert not ok and "question" in reason
+
+
 def test_validate_chart_still_works_without_kind():
     ok, reason = validate_recipe({"type": "bar", "questions": ["Region"]}, _profile_fixture())
     assert ok and reason == ""

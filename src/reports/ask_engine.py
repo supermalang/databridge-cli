@@ -121,15 +121,18 @@ def _validate_indicator(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, s
 _CHART_TYPES_BLOCK = "\n".join(f"- {t}: {req}" for t, (_chk, req) in CHART_REQS.items())
 
 INDICATOR_STATS = {"count", "count_distinct", "sum", "mean", "median",
-                   "min", "max", "percent", "most_common", "completeness"}
-_NUMERIC_STATS = {"sum", "mean", "median", "min", "max"}
+                   "min", "max", "percent", "most_common", "completeness",
+                   "outlier_rate", "duplicate_rate"}
+_NUMERIC_STATS = {"sum", "mean", "median", "min", "max", "outlier_rate"}
 _INDICATOR_STATS_BLOCK = (
     "- count: number of rows (no column)\n"
     "- count_distinct: unique values of a column\n"
     "- most_common: most frequent value of a column\n"
     "- sum / mean / median / min / max: a quantitative column\n"
     "- percent: share of rows where a column equals filter_value (needs filter_value)\n"
-    "- completeness: % of present (non-blank) values in a column (data quality)"
+    "- completeness: % of present (non-blank) values in a column (data quality)\n"
+    "- outlier_rate: % of a quantitative column's values beyond the 3xIQR fence (data quality)\n"
+    "- duplicate_rate: % of rows that are redundant duplicates of a column's value (data quality)"
 )
 
 
