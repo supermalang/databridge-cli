@@ -70,16 +70,21 @@ export default function Validate() {
     </div>
   );
 
-  const tree = report ? buildGroupTree(report.checks, {
+  // Only consider/display findings on columns that are NOT hidden.
+  const visibleChecks = report
+    ? report.checks.filter((chk) => {
+        const q = questionsByColumn.get(chk.column);
+        return !(q && isHidden(q));
+      })
+    : [];
+
+  const tree = buildGroupTree(visibleChecks, {
     getPath: (chk) => {
       const q = questionsByColumn.get(chk.column);
       return q ? q.group : 'Ungrouped';
     },
-    getHidden: (chk) => {
-      const q = questionsByColumn.get(chk.column);
-      return q ? isHidden(q) : false;
-    },
-  }) : [];
+    getHidden: () => false,
+  });
 
   return (
     <div style={{ padding: '0 0 40px' }}>
@@ -106,10 +111,10 @@ export default function Validate() {
             <span style={{ marginLeft: 8, color: 'var(--warn, #b45309)' }}>{report.summary.warning} warnings</span> ·
             <span style={{ marginLeft: 8 }}>{report.summary.info} notes</span>
           </div>
-          {report.checks.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>No issues found — your data looks clean.</div>
+          {visibleChecks.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>No issues found on visible columns — your data looks clean.</div>
           ) : (
-            <GroupTree tree={tree} renderVisible={renderFindings} renderHidden={renderFindings} />
+            <GroupTree tree={tree} renderVisible={renderFindings} />
           )}
         </div>
       )}
