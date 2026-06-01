@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
-import { indexQuestionsByColumn, buildColumnTree } from '../lib/questionGroups.js';
+import { isHidden, indexQuestionsByColumn, buildColumnTree } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
 
 function ColumnRow({ c }) {
@@ -101,16 +101,20 @@ export default function Profile() {
           {message || 'No data to profile. Run Download first.'}
         </div>
       )}
-      {profiles && profiles.map(t => (
+      {profiles && profiles.map(t => {
+        // Only consider/display columns that are not linkage and not hidden.
+        const visibleCols = (t.columns || []).filter(
+          c => c.role !== 'linkage' && !isHidden(questionsByColumn.get(c.name))
+        );
+        return (
         <details key={t.name} open style={{ margin: '0 8px 16px', border: '1px solid var(--line, #e5e7eb)', borderRadius: 8 }}>
           <summary style={{ cursor: 'pointer', padding: '10px 14px', fontWeight: 600 }}>
-            {t.name} <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>· {(t.rows ?? 0).toLocaleString()} rows · {(t.columns?.length ?? 0)} columns</span>
+            {t.name} <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>· {(t.rows ?? 0).toLocaleString()} rows · {visibleCols.length} columns</span>
           </summary>
           <div style={{ padding: '0 14px 14px' }}>
             <GroupTree
-              tree={buildColumnTree((t.columns || []).filter(c => c.role !== 'linkage'), questionsByColumn)}
+              tree={buildColumnTree(visibleCols, questionsByColumn)}
               renderVisible={renderCols}
-              renderHidden={renderCols}
             />
             {t.correlations?.length > 0 && (
               <div style={{ marginTop: 10, color: 'var(--ink-3)', fontSize: 12.5 }}>
@@ -124,7 +128,8 @@ export default function Profile() {
             )}
           </div>
         </details>
-      ))}
+        );
+      })}
     </div>
   );
 }
