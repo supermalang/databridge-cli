@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Home from './pages/Home.jsx';
 import Sources from './pages/Sources.jsx';
 import Questions from './pages/Questions.jsx';
@@ -90,6 +90,27 @@ export default function App() {
     setVisited(prev => (prev.has(activeKey) ? prev : new Set(prev).add(activeKey)));
   }, [activeKey]);
 
+  // Cache invalidation for the keep-alive panes. `epoch` bumps every hour and on
+  // any data change (a command finishing, or questions being saved/fetched). A
+  // pane's React key carries the epoch it was last mounted at, and is only
+  // bumped when the pane becomes active — so a stale tab refreshes when you next
+  // open it, and the tab you're currently editing is never yanked out.
+  const [epoch, setEpoch] = useState(0);
+  const [keyEpoch, setKeyEpoch] = useState({});
+  const epochRef = useRef(0);
+  useEffect(() => { epochRef.current = epoch; }, [epoch]);
+
+  useEffect(() => {
+    setKeyEpoch(prev => (prev[activeKey] === epochRef.current ? prev : { ...prev, [activeKey]: epochRef.current }));
+  }, [activeKey]);
+
+  useEffect(() => {
+    const bump = () => setEpoch(e => e + 1);
+    const id = setInterval(bump, 60 * 60 * 1000);   // hourly
+    window.addEventListener('databridge:data-changed', bump);
+    return () => { clearInterval(id); window.removeEventListener('databridge:data-changed', bump); };
+  }, []);
+
   return (
     <div className="layout">
       <header>
@@ -150,7 +171,7 @@ export default function App() {
           .filter(p => visited.has(p.key) || p.key === activeKey)
           .map(p => (
             <div
-              key={p.key}
+              key={`${p.key}#${keyEpoch[p.key] ?? epoch}`}
               className="tab-content"
               style={{
                 flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',

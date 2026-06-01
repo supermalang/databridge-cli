@@ -76,6 +76,10 @@ export function useCommand({ onLog, onStatus } = {}) {
     } finally {
       setRunning(false);
       setActiveCmd(null);
+      if (finalStatus === 'success') {
+        // Let keep-alive tabs know data/config changed so they refresh.
+        window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { command } }));
+      }
       if (finalStatus && finalStatus !== 'success' && finalStatus !== 'error') {
         // ensure caller sees a terminal status
         onStatusRef.current?.({ command, status: finalStatus });
