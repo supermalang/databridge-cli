@@ -70,10 +70,25 @@ export default function App() {
     setSubId(stage.home ? null : (nextSub || stage.subs[0].id));
   };
 
+  const [visited, setVisited] = useState(() => new Set(['home']));
+
   const stage = STAGES.find(s => s.id === stageId) || STAGES[0];
   const subs = stage.subs || [];
   const activeSub = stage.home ? null : (subs.find(s => s.id === subId) || subs[0]);
   const showSubBar = !stage.home && subs.length > 1;
+  const activeKey = stage.home ? 'home' : `${stage.id}/${activeSub?.id}`;
+
+  // Keep-alive panes: a tab mounts on first visit (lazy), then stays mounted but
+  // hidden when you leave — so its fetched data, edits, and scroll are retained.
+  const panes = [{ key: 'home', render: () => <Home navigate={navigate} /> }];
+  for (const s of STAGES) {
+    if (!s.subs) continue;
+    for (const sub of s.subs) panes.push({ key: `${s.id}/${sub.id}`, render: sub.render });
+  }
+
+  useEffect(() => {
+    setVisited(prev => (prev.has(activeKey) ? prev : new Set(prev).add(activeKey)));
+  }, [activeKey]);
 
   return (
     <div className="layout">
@@ -131,9 +146,20 @@ export default function App() {
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
-        <div className="tab-content active" id={`tab-${stageId}-${subId || 'home'}`} style={{ overflow: 'auto', flex: 1 }}>
-          {stage.home ? <Home navigate={navigate} /> : activeSub?.render()}
-        </div>
+        {panes
+          .filter(p => visited.has(p.key) || p.key === activeKey)
+          .map(p => (
+            <div
+              key={p.key}
+              className="tab-content"
+              style={{
+                flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
+                display: p.key === activeKey ? 'flex' : 'none',
+              }}
+            >
+              {p.render()}
+            </div>
+          ))}
       </div>
     </div>
   );
