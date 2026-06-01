@@ -32,18 +32,18 @@ export default function Questions() {
   const [original,  setOriginal]  = useState({});          // { idx: {export_label, hidden} } at load
   const [search,    setSearch]    = useState('');
   const [filter,    setFilter]    = useState('all');       // all | renamed | used
-  const [suggesting, setSuggesting] = useState(false);
+  const [suggesting, setSuggesting] = useState(null);      // null | 'hidden' | 'pii'
   const [cfg, setCfg] = useState({});
 
   const snapshot = (list) =>
-    Object.fromEntries(list.map((q, i) => [i, { export_label: q.export_label || '', hidden: isHidden(q) }]));
+    Object.fromEntries(list.map((q, i) => [i, { export_label: q.export_label || '', hidden: isHidden(q), pii: !!q.pii }]));
 
   const load = useCallback(async () => {
     try {
       const data = await (await fetch('/api/questions')).json();
       const list = data.questions || [];
       setQuestions(list);
-      setOriginal(Object.fromEntries(list.map((q, i) => [i, { export_label: q.export_label || '', hidden: isHidden(q) }])));
+      setOriginal(snapshot(list));
       setCfg(await loadConfig());
     } catch (e) { toast(String(e), 'err'); }
   }, [toast]);
@@ -72,7 +72,8 @@ export default function Questions() {
       const o = original[i];
       if (o === undefined) return;
       if (o.export_label !== (q.export_label || '')) { s.add(i); return; }
-      if (o.hidden !== isHidden(q)) s.add(i);
+      if (o.hidden !== isHidden(q)) { s.add(i); return; }
+      if (o.pii !== !!q.pii) s.add(i);
     });
     return s;
   }, [questions, original]);
@@ -111,26 +112,45 @@ export default function Questions() {
     setQuestions(prev => prev.map((q, i) => (i === idx ? { ...q, hidden: !isHidden(q) } : q)));
   };
 
-  const suggestHidden = async () => {
-    setSuggesting(true);
+  const togglePII = (idx) => {
+    setQuestions(prev => prev.map((q, i) => (i === idx ? { ...q, pii: !q.pii } : q)));
+  };
+
+  // Shared LLM-suggest runner for the two metadata-only assistants.
+  const runSuggest = async (kind, { endpoint, apply, emptyMsg, okMsg }) => {
+    setSuggesting(kind);
     try {
-      const res = await fetch('/api/questions/suggest-hidden', { method: 'POST' });
+      const res = await fetch(endpoint, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Request failed');
       const suggestions = data.suggestions || [];
       if (suggestions.length) {
         const flag = new Set(suggestions);
-        setQuestions(prev => prev.map(q => (flag.has(q.kobo_key) ? { ...q, hidden: true } : q)));
-        toast(`Flagged ${suggestions.length} field(s) to hide — review and Save`, 'ok');
+        setQuestions(prev => prev.map(q => (flag.has(q.kobo_key) ? apply(q) : q)));
+        toast(okMsg(suggestions.length), 'ok');
       } else {
-        toast(data.message || 'AI found no extra fields to hide', 'ok');
+        toast(data.message || emptyMsg, 'ok');
       }
     } catch (e) {
       toast(String(e.message || e), 'err');
     } finally {
-      setSuggesting(false);
+      setSuggesting(null);
     }
   };
+
+  const suggestHidden = () => runSuggest('hidden', {
+    endpoint: '/api/questions/suggest-hidden',
+    apply: (q) => ({ ...q, hidden: true }),
+    emptyMsg: 'Nothing to tidy — no extra clutter found',
+    okMsg: (n) => `Flagged ${n} field(s) to hide — review and Save`,
+  });
+
+  const suggestPII = () => runSuggest('pii', {
+    endpoint: '/api/questions/suggest-pii',
+    apply: (q) => ({ ...q, pii: true }),
+    emptyMsg: 'No likely-PII fields detected',
+    okMsg: (n) => `Flagged ${n} field(s) as PII — review and Save`,
+  });
 
   const save = async () => {
     try {
@@ -163,9 +183,13 @@ export default function Questions() {
           const dirty = dirtyIndices.has(idx);
           const isUsed = usedInCharts.has(colName(q));
           const hidden = isHidden(q);
+          const pii = !!q.pii;
           return (
             <tr key={idx}>
-              <td className="q-table__name">{bareName(q)}</td>
+              <td className="q-table__name">
+                {bareName(q)}
+                {pii && <span className="q-pii-badge" title="Flagged as PII — excluded from AI metadata">PII</span>}
+              </td>
               <td>
                 <span className="q-type-badge" data-cat={q.category || 'undefined'}>{q.type || ''}</span>
               </td>
@@ -186,6 +210,15 @@ export default function Questions() {
                       <line x1="3" y1="13" x2="3" y2="8"/>
                       <line x1="7" y1="13" x2="7" y2="4"/>
                       <line x1="11" y1="13" x2="11" y2="10"/>
+                    </svg>
+                  </button>
+                  <button
+                    className={pii ? 'is-active' : ''}
+                    title={pii ? 'Unflag PII' : 'Flag as PII — exclude from AI metadata'}
+                    onClick={() => togglePII(idx)}
+                  >
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M8 1.5l5 2v4c0 3-2.2 5-5 6-2.8-1-5-3-5-6v-4z"/>
                     </svg>
                   </button>
                   <button
@@ -265,8 +298,11 @@ export default function Questions() {
             </button>
             <button className={`view-btn ${filter === 'used' ? 'active' : ''}`} onClick={() => setFilter('used')}>Used in charts</button>
           </div>
-          <button className="ai-btn" onClick={suggestHidden} disabled={suggesting}>
-            {suggesting ? 'Asking AI…' : 'Suggest fields to hide'}
+          <button className="ai-btn" onClick={suggestHidden} disabled={!!suggesting} title="Ask the AI to flag non-analytical clutter to hide (reads only field metadata)">
+            {suggesting === 'hidden' ? 'Asking AI…' : '✦ Auto-hide clutter'}
+          </button>
+          <button className="ai-btn" onClick={suggestPII} disabled={!!suggesting} title="Ask the AI to flag fields that likely contain personal data (reads only field metadata)">
+            {suggesting === 'pii' ? 'Asking AI…' : '✦ Flag PII'}
           </button>
         </div>
         <div className="q-stats">

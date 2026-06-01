@@ -18,15 +18,29 @@ from src.utils import lf_client
 log = logging.getLogger(__name__)
 
 
-def build_catalog(profile: Dict[str, Dict]) -> Dict:
+def build_catalog(profile: Dict[str, Dict], cfg: Optional[Dict] = None) -> Dict:
     """Condense a profile_dataset result into a compact, token-friendly, data-aware
     catalog for the proposer prompt. Excludes linkage columns; keeps roles, cardinality,
-    missingness, low-cardinality top-values, and numeric range."""
+    missingness, low-cardinality top-values, and numeric range.
+
+    When cfg is provided, any column whose matching question is effective-hidden or
+    PII-flagged is dropped so its values/metadata never reach the LLM."""
+    unsafe_names: set = set()
+    if cfg is not None:
+        from src.utils.config import is_effective_hidden, is_pii
+        for q in (cfg.get("questions", []) or []):
+            if is_effective_hidden(q) or is_pii(q):
+                for k in ("export_label", "label", "kobo_key"):
+                    v = q.get(k)
+                    if v:
+                        unsafe_names.add(v)
     tables = []
     for tname, tp in (profile or {}).items():
         cols = []
         for c in tp.get("columns", []):
             if c.get("role") == "linkage":
+                continue
+            if c.get("name") in unsafe_names:
                 continue
             entry = {
                 "name": c["name"],
@@ -312,7 +326,7 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
 
     from src.data.profile import profile_dataset
     profile = profile_dataset(cfg, df, repeat_tables or {})
-    catalog = build_catalog(profile)
+    catalog = build_catalog(profile, cfg)
 
     items = propose_items(question, catalog, ai_cfg)
     if not items:
@@ -437,7 +451,7 @@ def refine_item(recipe: Dict, kind: str, instruction: str, cfg: Dict,
                 "message": "Configure an AI provider in Sources to ask questions."}
     from src.data.profile import profile_dataset
     profile = profile_dataset(cfg, df, repeat_tables or {})
-    catalog = build_catalog(profile)
+    catalog = build_catalog(profile, cfg)
     revised = _propose_refinement(recipe, kind, instruction, catalog, ai_cfg)
     if not revised:
         return {"proposal": None, "skipped": None,

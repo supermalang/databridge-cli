@@ -1,60 +1,30 @@
 """
-ai_hidden_suggester.py — LLM-powered "hide by default" question suggester.
+ai_pii_suggester.py — LLM-powered PII (personally-identifiable information) suggester.
 
-Given the questions in config.yml, asks the LLM which questions are
-non-analytical "display-only" fields (instructions, section labels,
-acknowledgment prompts, comments) that carry no analyzable data and should
-be HIDDEN by default in the UI.
+Given the questions in config.yml, asks the LLM which questions likely contain
+personally-identifiable information (names, phone numbers, exact GPS, national
+IDs, addresses, emails, dates of birth, free-text that often holds names, etc.)
+so the user can flag them `pii: true` and keep them out of LLM catalogs / redact
+them on export.
 
-The deterministic rule already hides type=="note" fields; this catches the
-fuzzy cases — e.g. a `text` field that is actually an instruction or an
-acknowledgment prompt. The model is instructed to be CONSERVATIVE and never
-flag analyzable question types (select_one/select_multiple/integer/decimal/
-date/gps).
+The model is instructed to be reasonably INCLUSIVE for PII (recall matters for
+privacy) while only flagging plausible PII.
 
-Mirrors the structure of ai_chart_suggester.py: build a catalog, fetch a
-prompt via lf_client, call lf_client.chat with a structured output schema,
-and parse the JSON.
+Mirrors the structure of ai_hidden_suggester.py: build a metadata-only catalog,
+fetch a prompt via lf_client, call lf_client.chat with a structured output
+schema, and parse the JSON. ONLY metadata (kobo_key, label, type, group) is sent
+to the LLM — never choices, values, or data.
 """
 import json
 import logging
 import re
-from typing import Dict, List, Optional  # noqa: F401
+from typing import Dict, List  # noqa: F401
 
 log = logging.getLogger(__name__)
 
-# Question types that are inherently analyzable — never suggested for hiding.
-_ANALYTICAL_TYPES = {
-    "select_one", "select_multiple", "integer", "decimal", "range",
-    "date", "datetime", "time", "gps", "geotrace", "geoshape",
-}
 
-# Categories that are already analytical — never offered as hide candidates.
-_ANALYTICAL_CATEGORIES = {"qualitative", "quantitative"}
-
-
-def _effective_hidden(q: Dict) -> bool:
-    """A question's effective-hidden state: explicit hidden, else note-type."""
-    return bool(q.get("hidden", q.get("type") == "note"))
-
-
-def _candidates(questions: List[Dict]) -> List[Dict]:
-    """The pool of questions worth asking the LLM about: those NOT already
-    analytical (category not qualitative/quantitative) AND NOT already
-    effective-hidden. These are the categorical/geographical/date/undefined,
-    not-yet-hidden fields that might still be display-only."""
-    out = []
-    for q in questions:
-        if q.get("category") in _ANALYTICAL_CATEGORIES:
-            continue
-        if _effective_hidden(q):
-            continue
-        out.append(q)
-    return out
-
-
-def suggest_hidden(cfg: Dict) -> Dict:
-    """Ask the LLM which questions are non-analytical display-only fields to hide.
+def suggest_pii(cfg: Dict) -> Dict:
+    """Ask the LLM which questions likely contain PII.
 
     Args:
         cfg: full config dict (needs questions + ai sections).
@@ -74,19 +44,13 @@ def suggest_hidden(cfg: Dict) -> Dict:
     if not questions:
         return {"suggestions": [], "reasons": {}}
 
-    # Only offer the LLM questions that are not already analytical and not
-    # already hidden — those are the only ones it could usefully flag to hide.
-    candidates = _candidates(questions)
-    if not candidates:
-        return {"suggestions": [], "message": "Nothing to review"}
-
-    # Valid keys we may return — only kobo_keys among the candidates.
-    valid_keys = {q.get("kobo_key") for q in candidates if q.get("kobo_key")}
+    # Valid keys we may return — only kobo_keys present in the input.
+    valid_keys = {q.get("kobo_key") for q in questions if q.get("kobo_key")}
 
     try:
-        items = _get_suggestions(ai_cfg, candidates)
+        items = _get_suggestions(ai_cfg, questions)
     except Exception as exc:  # noqa: BLE001
-        log.warning(f"hidden_suggester failed ({type(exc).__name__}: {exc}).")
+        log.warning(f"pii_suggester failed ({type(exc).__name__}: {exc}).")
         return {"suggestions": [], "reasons": {}}
 
     suggestions: List[str] = []
@@ -100,7 +64,7 @@ def suggest_hidden(cfg: Dict) -> Dict:
         suggestions.append(key)
         reasons[key] = (item.get("reason") or "").strip()
 
-    log.info(f"hidden_suggester proposed {len(suggestions)} field(s) to hide.")
+    log.info(f"pii_suggester proposed {len(suggestions)} field(s) as PII.")
     return {"suggestions": suggestions, "reasons": reasons}
 
 
@@ -115,14 +79,14 @@ def _get_suggestions(ai_cfg: Dict, questions: List[Dict]) -> List[Dict]:
     max_tokens = max(int(ai_cfg.get("max_tokens", 1500)), 1500)
 
     variables = _build_variables(questions)
-    messages, config = lf_client.get_prompt("hidden_suggester", variables)
+    messages, config = lf_client.get_prompt("pii_suggester", variables)
     raw = lf_client.chat(
         messages,
         model=model,
         provider=provider,
         api_key=api_key,
         max_tokens=max_tokens,
-        trace_name="hidden_suggester",
+        trace_name="pii_suggester",
         base_url=ai_cfg.get("base_url"),
         json_mode=(provider != "anthropic"),
         output_schema=config.get("output_schema"),
@@ -131,7 +95,8 @@ def _get_suggestions(ai_cfg: Dict, questions: List[Dict]) -> List[Dict]:
 
 
 def _build_variables(questions: List[Dict]) -> Dict:
-    """Build a compact catalog line per question: kobo_key | type | group | label."""
+    """Build a compact catalog line per question using ONLY metadata:
+    kobo_key | type | group | label. Never includes choices or values."""
     lines = []
     for q in questions:
         key = q.get("kobo_key", "")
@@ -160,7 +125,7 @@ def _parse(raw: str) -> List[Dict]:
             except json.JSONDecodeError:
                 pass
     if data is None:
-        log.warning("Could not parse JSON from LLM hidden-field suggestions.")
+        log.warning("Could not parse JSON from LLM PII suggestions.")
         return []
     items = data.get("suggestions", [])
     if not isinstance(items, list):

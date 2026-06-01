@@ -147,6 +147,25 @@ async def suggest_hidden_questions():
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"suggest-hidden failed: {e}")
 
+@app.post("/api/questions/suggest-pii")
+async def suggest_pii_questions():
+    """Ask the configured AI provider which questions likely contain
+    personally-identifiable information (PII).
+
+    Returns {"suggestions": [kobo_key, ...], "reasons": {kobo_key: reason}}.
+    When AI is not configured, returns 200 with
+    {"suggestions": [], "message": "AI not configured"}.
+    """
+    from src.reports.ai_pii_suggester import suggest_pii
+    try:
+        cfg = load_config(CONFIG_PATH)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        return suggest_pii(cfg)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"suggest-pii failed: {e}")
+
 @app.post("/api/ai/test")
 async def test_ai(payload: AITestPayload):
     api_key = payload.api_key.strip()

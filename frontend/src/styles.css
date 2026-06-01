@@ -579,6 +579,8 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .q-row-actions button{width:30px;height:30px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border-2);border-radius:7px;color:var(--ink-3);cursor:pointer}
 .q-row-actions button:hover{background:var(--bg-2);color:var(--ink);border-color:var(--border-strong)}
 .q-row-actions button svg{width:14px;height:14px}
+.q-row-actions button.is-active{background:var(--rose,#e11d48);border-color:var(--rose,#e11d48);color:#fff}
+.q-pii-badge{display:inline-flex;align-items:center;margin-left:8px;padding:1px 7px;border-radius:999px;font-size:9.5px;font-weight:700;letter-spacing:.04em;background:color-mix(in srgb,var(--rose,#e11d48) 16%,transparent);color:var(--rose,#e11d48)}
 
 /* empty state inside group */
 .q-table-empty{padding:30px;text-align:center;color:var(--ink-3);font-size:13px}
