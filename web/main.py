@@ -74,6 +74,8 @@ ALLOWED_COMMANDS = {
     "suggest-charts":       ["--user-request"],
     "suggest-views":        ["--user-request"],
     "suggest-summaries":    ["--user-request"],
+    "suggest-tables":       ["--user-request"],
+    "suggest-indicators":   ["--user-request"],
     "download":             ["--sample"],
     "build-report":         ["--sample", "--split-by", "--session", "--period", "--compare"],
     "run-all":              ["--sample", "--period", "--auto-charts"],

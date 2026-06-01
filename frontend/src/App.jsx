@@ -11,7 +11,7 @@ import Templates from './pages/Templates.jsx';
 
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
-const ANALYZE_SECTIONS = ['charts', 'indicators', 'summaries', 'framework', 'pii'];
+const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'framework', 'pii'];
 
 // The workflow: Home + five ordered stages. Stages with >1 sub render a
 // secondary sub-tab strip; single-sub stages navigate straight to their page.
@@ -29,8 +29,8 @@ const STAGES = [
     { id: 'views', label: 'Views', render: () => <Composition sections={VIEWS_SECTIONS} /> },
   ] },
   { id: 'analyze', label: 'Analyze', subs: [
-    { id: 'composition', label: 'Charts & indicators', render: () => <Composition sections={ANALYZE_SECTIONS} /> },
     { id: 'ask',         label: 'Ask',                  render: () => <Ask /> },
+    { id: 'composition', label: 'Charts & indicators', render: () => <Composition sections={ANALYZE_SECTIONS} /> },
   ] },
   { id: 'present', label: 'Present', subs: [
     { id: 'templates', label: 'Templates', render: () => <Templates /> },

@@ -81,6 +81,7 @@ class ReportBuilder:
         self.cfg = cfg
         self.report_cfg = cfg.get("report", {})
         self.charts_cfg: List[Dict] = cfg.get("charts", [])
+        self.tables_cfg: List[Dict] = cfg.get("tables", [])
         self.strict = strict
 
     def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None, session: Optional[str] = None, period: Optional[str] = None, compare: Optional[List[str]] = None) -> List[Path]:
@@ -212,6 +213,7 @@ class ReportBuilder:
             **indicators,
             **summaries,
             **self._generate_charts(tpl, df, repeat_tables),
+            **self._generate_tables(tpl, df, repeat_tables),
         }
         tpl.render(context)
         out_dir = Path(self.report_cfg.get("output_dir","reports"))
@@ -304,6 +306,59 @@ class ReportBuilder:
             png = generate_chart(resolved, chart_df)
             width = Inches(c.get("options", {}).get("width_inches", 5.5))
             images[f"chart_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
+        return images
+
+    def _generate_tables(self, tpl, df, repeat_tables: Dict):
+        """Render each cfg['tables'] recipe via the `table` chart type → {{ table_<name> }}.
+
+        A table is a chart-like recipe: same source/filter/aggregate handling as a chart,
+        but its type is forced to "table" so it renders as a PNG table image.
+        """
+        CHART_DIR.mkdir(parents=True, exist_ok=True)
+        key_to_label = {
+            q["kobo_key"]: q.get("export_label") or q.get("label") or q["kobo_key"]
+            for q in self.cfg.get("questions", [])
+        }
+        images = {}
+        for t in self.tables_cfg:
+            name = t.get("name")
+            if not name:
+                continue
+
+            # Resolve question names (kobo_key → export_label), same as charts.
+            resolved_questions = [
+                key_to_label.get(q, q) if q not in df.columns else q
+                for q in t.get("questions", [])
+            ]
+
+            # Force the table chart type — a table IS a chart rendered as a PNG table.
+            resolved = {**t, "questions": resolved_questions, "type": "table"}
+
+            # 1. Select explicit source or auto-pick.
+            source = t.get("source")
+            table_df = _pick_df(resolved_questions, df, repeat_tables, source=source)
+
+            # 1b. Join parent fields into repeat table if requested.
+            join_parent = t.get("join_parent")
+            if join_parent and source and source != "main":
+                table_df = join_repeat_to_main(table_df, df, join_parent)
+
+            # 2. Apply per-table filter and sample.
+            filter_expr = t.get("filter")
+            sample_n = t.get("sample")
+            if filter_expr or sample_n:
+                table_df = apply_local_scope(
+                    table_df, {}, filter_expr=filter_expr, sample_n=sample_n
+                )
+
+            # 3. Apply repeat-group aggregation if requested.
+            agg_spec = t.get("aggregate")
+            if agg_spec and source and source != "main":
+                table_df = aggregate_repeat(table_df, agg_spec)
+
+            png = generate_chart(resolved, table_df)
+            width = Inches(t.get("options", {}).get("width_inches", 5.5))
+            images[f"table_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
         return images
 
     def _stats_table(self, df):

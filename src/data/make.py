@@ -148,6 +148,46 @@ def cmd_suggest_summaries(ctx, out, user_request):
         suggest_summaries(cfg, out_path=out, user_request=user_request)
 
 
+@cli.command("suggest-tables")
+@click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
+@click.option("--user-request", default="", help="Free-text guidance for what tables the user wants.")
+@click.pass_context
+def cmd_suggest_tables(ctx, out, user_request):
+    """Ask AI to suggest a tables: config block — frequency/breakdown tables for the report."""
+    from src.reports.ai_table_suggester import suggest_tables
+    from src.utils import lf_client
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
+    if not cfg.get("ai"):
+        click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
+        sys.exit(1)
+    if not cfg.get("questions"):
+        click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
+        sys.exit(1)
+    with lf_client.command_trace("suggest-tables"):
+        suggest_tables(cfg, out_path=out, user_request=user_request)
+
+
+@cli.command("suggest-indicators")
+@click.option("--out", default=None, help="Write YAML to this file instead of printing to stdout.")
+@click.option("--user-request", default="", help="Free-text guidance for what indicators the user wants.")
+@click.pass_context
+def cmd_suggest_indicators(ctx, out, user_request):
+    """Ask AI to suggest an indicators: config block — single-number stats for the report."""
+    from src.reports.ai_indicator_suggester import suggest_indicators
+    from src.utils import lf_client
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
+    if not cfg.get("ai"):
+        click.echo("No ai: section in config.yml. Configure AI in the web UI first.", err=True)
+        sys.exit(1)
+    if not cfg.get("questions"):
+        click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
+        sys.exit(1)
+    with lf_client.command_trace("suggest-indicators"):
+        suggest_indicators(cfg, out_path=out, user_request=user_request)
+
+
 def _run_classify(cfg, config_path, sample=None, rediscover=False):
     """Run text classification for any questions with classify.enabled: true.
 

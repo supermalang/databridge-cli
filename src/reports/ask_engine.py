@@ -72,13 +72,20 @@ CHART_REQS = {
     "grouped_bar":    (lambda c, q, d: c >= 2, "≥2 categorical columns"),
     "stacked_bar":    (lambda c, q, d: c >= 2, "≥2 categorical columns"),
     "heatmap":        (lambda c, q, d: c >= 2, "≥2 categorical columns"),
+    "table":          (lambda c, q, d: c >= 1, "≥1 categorical column"),
 }
 
 
 def validate_recipe(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
-    """Validate a proposed recipe (chart or indicator) against the profile. (ok, reason)."""
-    if recipe.get("kind", "chart") == "indicator":
+    """Validate a proposed recipe (chart, table, or indicator) against the profile. (ok, reason).
+
+    A `table` is a chart-like recipe rendered with the `table` chart type, so it is
+    validated exactly like a chart with type forced to "table"."""
+    kind = recipe.get("kind", "chart")
+    if kind == "indicator":
         return _validate_indicator(recipe, profile)
+    if kind == "table":
+        return _validate_chart({**recipe, "type": "table"}, profile)
     return _validate_chart(recipe, profile)
 
 
@@ -296,7 +303,7 @@ def _execute_item(recipe: Dict, profile: Dict[str, Dict], df: pd.DataFrame,
     {"kind","recipe","png"|"value","summary","title"} or {"skip": reason, "title": title}."""
     kind = recipe.get("kind", "chart")
     title = (recipe.get("title") or recipe.get("name")
-             or (recipe.get("type") if kind == "chart" else recipe.get("stat")) or kind)
+             or (recipe.get("stat") if kind == "indicator" else recipe.get("type")) or kind)
     ok, reason = validate_recipe(recipe, profile)
     if not ok:
         return {"skip": reason, "title": title}
@@ -308,11 +315,13 @@ def _execute_item(recipe: Dict, profile: Dict[str, Dict], df: pd.DataFrame,
         qcol = recipe.get("question")
         summary = f"{value} ({stat}{' of ' + qcol if qcol else ''})"
         return {"kind": "indicator", "recipe": recipe, "value": value, "summary": summary, "title": title}
-    rendered = render_recipe(recipe, df, repeat_tables or {})
+    # chart and table both render via the chart engine; a table forces type "table".
+    render_recipe_in = {**recipe, "type": "table"} if kind == "table" else recipe
+    rendered = render_recipe(render_recipe_in, df, repeat_tables or {})
     if rendered is None:
-        return {"skip": "could not render this chart", "title": title}
+        return {"skip": f"could not render this {kind}", "title": title}
     png, summary = rendered
-    return {"kind": "chart", "recipe": recipe, "png": png, "summary": summary, "title": title}
+    return {"kind": kind, "recipe": recipe, "png": png, "summary": summary, "title": title}
 
 
 def ask(question: str, cfg: Dict, df: pd.DataFrame,
@@ -474,11 +483,15 @@ def refine_item(recipe: Dict, kind: str, instruction: str, cfg: Dict,
     return {"proposal": proposal, "skipped": None, "message": None}
 
 
+_SAVE_SECTIONS = {"indicator": "indicators", "table": "tables", "chart": "charts"}
+
+
 def save_recipe(recipe: Dict, cfg: Dict, kind: str = "chart") -> str:
-    """Append a recipe to cfg['charts'] (kind='chart') or cfg['indicators']
-    (kind='indicator'), de-duplicating the name and stripping the 'kind' field.
+    """Append a recipe to the config section matching `kind`:
+    'chart' → cfg['charts'], 'indicator' → cfg['indicators'], 'table' → cfg['tables'].
+    De-duplicates the name and strips the 'kind' field; for tables, forces type 'table'.
     Mutates cfg; the caller persists via write_config. Returns the final name."""
-    section = "indicators" if kind == "indicator" else "charts"
+    section = _SAVE_SECTIONS.get(kind, "charts")
     items = cfg.setdefault(section, [])
     existing = {c.get("name") for c in items}
     name = recipe.get("name") or kind
@@ -489,5 +502,7 @@ def save_recipe(recipe: Dict, cfg: Dict, kind: str = "chart") -> str:
         name = f"{name}_{i}"
     saved = {k: v for k, v in recipe.items() if k != "kind"}
     saved["name"] = name
+    if kind == "table":
+        saved["type"] = "table"
     items.append(saved)
     return name

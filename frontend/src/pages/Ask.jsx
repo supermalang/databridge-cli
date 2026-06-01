@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import PageHeader from './PageHeader.jsx';
+import Modal from '../components/Modal.jsx';
 
 export default function Ask() {
   const [question, setQuestion] = useState('');
@@ -96,47 +97,55 @@ export default function Ask() {
       </form>
 
       {error && <div style={{ padding: 24, color: 'var(--danger, #b91c1c)' }}>{error}</div>}
-      {result?.message && (
+      {result?.message && !(result?.proposals?.length) && (
         <div style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)' }}>{result.message}</div>
       )}
-      {result?.skipped?.length > 0 && (
-        <div style={{ padding: '0 8px 12px', color: 'var(--ink-3)', fontSize: 12.5 }}>
-          Skipped {result.skipped.length} suggestion(s): {result.skipped.map(s => `${s.title} (${s.reason})`).join('; ')}
-        </div>
-      )}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, padding: '0 8px' }}>
-        {result?.proposals?.map((p, i) => (
-          <div key={p.recipe?.name || i}
-               style={{ border: '1px solid var(--line, #e5e7eb)', borderRadius: 10, padding: 12, width: 380, maxWidth: '100%' }}>
-            <div style={{ fontWeight: 600, marginBottom: 6 }}>{p.recipe?.title || p.recipe?.name}</div>
-            {p.kind === 'indicator' ? (
-              <div style={{ fontSize: 34, fontWeight: 700, padding: '12px 0' }}>{p.value}</div>
-            ) : (
-              <img src={p.image} alt={p.recipe?.title || 'chart'} style={{ width: '100%', borderRadius: 6 }} />
-            )}
-            <div style={{ color: 'var(--ink-3)', fontSize: 13, margin: '8px 0' }}>{p.caption}</div>
-            <button onClick={() => save(p.recipe, p.kind)} disabled={saved[p.recipe?.name]}
-                    style={{ padding: '6px 12px', borderRadius: 6 }}>
-              {saved[p.recipe?.name] ? 'Saved ✓' : 'Save to report'}
-            </button>
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <input
-                value={refineInputs[i] || ''}
-                onChange={e => setRefineInputs(s => ({ ...s, [i]: e.target.value }))}
-                placeholder="Refine — e.g. make it a line chart, split by sex"
-                style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--line, #e5e7eb)', fontSize: 12.5 }}
-              />
-              <button onClick={() => refine(i, p.recipe, p.kind)} disabled={refining[i]}
-                      style={{ padding: '6px 10px', borderRadius: 6, fontSize: 12.5 }}>
-                {refining[i] ? '…' : 'Refine'}
-              </button>
+
+      {result?.proposals?.length > 0 && (
+        <Modal title={`Results · “${result.question || question}”`} onClose={() => setResult(null)} width={860}>
+          {result?.skipped?.length > 0 && (
+            <div style={{ marginBottom: 12, color: 'var(--ink-3)', fontSize: 12.5 }}>
+              Skipped {result.skipped.length} suggestion(s): {result.skipped.map(s => `${s.title} (${s.reason})`).join('; ')}
             </div>
-            {p.refineNote && (
-              <div style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 4 }}>{p.refineNote}</div>
-            )}
+          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+            {result.proposals.map((p, i) => (
+              <div key={p.recipe?.name || i}
+                   style={{ border: '1px solid var(--line, #e5e7eb)', borderRadius: 10, padding: 12, width: 370, maxWidth: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <span style={{ fontWeight: 600, flex: 1 }}>{p.recipe?.title || p.recipe?.name}</span>
+                  <span className="tag" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--ink-3)' }}>{p.kind}</span>
+                </div>
+                {p.kind === 'indicator' ? (
+                  <div style={{ fontSize: 34, fontWeight: 700, padding: '12px 0' }}>{p.value}</div>
+                ) : (
+                  <img src={p.image} alt={p.recipe?.title || p.kind} style={{ width: '100%', borderRadius: 6 }} />
+                )}
+                <div style={{ color: 'var(--ink-3)', fontSize: 13, margin: '8px 0' }}>{p.caption}</div>
+                <button className="btn btn-primary btn-sm" onClick={() => save(p.recipe, p.kind)} disabled={saved[p.recipe?.name]}
+                        style={{ padding: '6px 12px', borderRadius: 6 }}>
+                  {saved[p.recipe?.name] ? 'Applied ✓' : `Apply to ${p.kind === 'indicator' ? 'indicators' : p.kind === 'table' ? 'tables' : 'charts'}`}
+                </button>
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <input
+                    value={refineInputs[i] || ''}
+                    onChange={e => setRefineInputs(s => ({ ...s, [i]: e.target.value }))}
+                    placeholder="Refine — e.g. make it a line chart, split by sex"
+                    style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--line, #e5e7eb)', fontSize: 12.5 }}
+                  />
+                  <button className="btn btn-ghost btn-sm" onClick={() => refine(i, p.recipe, p.kind)} disabled={refining[i]}
+                          style={{ padding: '6px 10px', borderRadius: 6, fontSize: 12.5 }}>
+                    {refining[i] ? '…' : 'Refine'}
+                  </button>
+                </div>
+                {p.refineNote && (
+                  <div style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 4 }}>{p.refineNote}</div>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </Modal>
+      )}
     </div>
   );
 }

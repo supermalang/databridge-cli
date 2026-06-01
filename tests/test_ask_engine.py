@@ -205,6 +205,26 @@ def test_save_recipe_dedupes_name():
     assert name == "by_region_2"
 
 
+def test_save_recipe_table_to_tables():
+    cfg = {}
+    name = ask_engine.save_recipe(
+        {"name": "region_breakdown", "questions": ["Region"], "kind": "table"}, cfg, "table"
+    )
+    assert name == "region_breakdown"
+    assert [t["name"] for t in cfg["tables"]] == ["region_breakdown"]
+    saved = cfg["tables"][0]
+    assert saved["type"] == "table"      # forced
+    assert "kind" not in saved
+    assert "charts" not in cfg and "indicators" not in cfg
+
+
+def test_validate_recipe_table_needs_categorical():
+    ok, reason = validate_recipe({"kind": "table", "questions": ["Region"]}, _profile_fixture())
+    assert ok and reason == ""
+    ok2, reason2 = validate_recipe({"kind": "table", "questions": ["Age"]}, _profile_fixture())
+    assert not ok2 and "categorical" in reason2
+
+
 def test_validate_indicator_count_ok():
     ok, reason = validate_recipe({"kind": "indicator", "stat": "count"}, _profile_fixture())
     assert ok and reason == ""
