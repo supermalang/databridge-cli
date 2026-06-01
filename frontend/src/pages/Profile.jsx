@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
-import { isHidden, indexQuestionsByColumn, buildGroupTree } from '../lib/questionGroups.js';
+import { isHidden, indexQuestionsByColumn, buildGroupTree, GROUP_LABELS } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
 
 function ColumnRow({ c }) {
@@ -44,29 +44,32 @@ function renderCols(cols) {
   );
 }
 
-// Visible (non-linkage, non-hidden) columns of a table profile.
 function visibleColumns(profile, questionsByColumn) {
   return (profile.columns || []).filter(
     c => c.role !== 'linkage' && !isHidden(questionsByColumn.get(c.name))
   );
 }
 
-// One table's body: its columns grouped by SUB-structure (the table's own path
+// One table's body: columns grouped by SUB-structure (the table's own path
 // prefix is stripped so we don't repeat the outer tree), plus correlations/dupes.
 function TableBody({ profile, tablePath, questionsByColumn }) {
   const cols = visibleColumns(profile, questionsByColumn);
   const tree = buildGroupTree(cols, {
     getPath: (c) => {
       const q = questionsByColumn.get(c.name);
-      let g = q ? (q.group || '') : 'Ungrouped';
+      let g = q ? (q.group || '') : GROUP_LABELS.UNGROUPED;
       if (tablePath && g.startsWith(tablePath)) g = g.slice(tablePath.length).replace(/^\//, '');
       return g;
     },
     getHidden: () => false,
   });
+  // No real sub-groups → render the columns flat (skip the "— no group —" wrapper).
+  const flat = tree.length === 1 && tree[0].children.length === 0;
   return (
-    <div style={{ padding: '4px 0 10px' }}>
-      <GroupTree tree={tree} renderVisible={renderCols} />
+    <div style={{ padding: '2px 8px 10px' }}>
+      {cols.length === 0
+        ? <div style={{ color: 'var(--ink-3)', fontSize: 12.5, padding: '4px 0' }}>No visible columns.</div>
+        : flat ? renderCols(tree[0].visible) : <GroupTree tree={tree} renderVisible={renderCols} />}
       {profile.correlations?.length > 0 && (
         <div style={{ marginTop: 10, color: 'var(--ink-3)', fontSize: 12.5 }}>
           Correlations: {profile.correlations.map(p => `${p.a}↔${p.b} (r=${p.r != null ? p.r.toFixed(2) : 'N/A'})`).join('; ')}
@@ -81,14 +84,13 @@ function TableBody({ profile, tablePath, questionsByColumn }) {
   );
 }
 
-// Build the table arborescence: main at the root, repeat tables nested under
-// their group/sub-group folders (derived from each table's slash path).
-function buildTableTree(profiles, resolveSlash) {
-  const root = { name: 'main', path: 'main', slash: '', profile: profiles.find(p => p.name === 'main') || null, children: [], _kids: new Map() };
+// Build the table forest: `main` plus one node per top-level group; repeat
+// tables nest under their group/sub-group folders (from each table's slash path).
+function buildTableForest(profiles, resolveSlash) {
+  const root = { children: [], _kids: new Map() };
   for (const p of profiles) {
     if (p.name === 'main') continue;
-    const slash = resolveSlash(p.name);
-    const segs = slash.split('/').filter(Boolean);
+    const segs = resolveSlash(p.name).split('/').filter(Boolean);
     let node = root;
     const acc = [];
     for (const seg of segs) {
@@ -101,19 +103,36 @@ function buildTableTree(profiles, resolveSlash) {
       }
       node = child;
     }
-    node.profile = p;          // deepest segment is the actual repeat table
-    node.slash = slash;
+    node.profile = p;
+    node.slash = resolveSlash(p.name);
   }
   const strip = (n) => { delete n._kids; n.children.forEach(strip); return n; };
-  strip(root);
-  return root;
+  root.children.forEach(strip);
+  const mainProfile = profiles.find(p => p.name === 'main');
+  const mainNode = { name: 'main', path: 'main', slash: '', profile: mainProfile || null, children: [] };
+  return [mainNode, ...root.children];
+}
+
+function countTables(node) {
+  let n = node.profile ? 1 : 0;
+  for (const c of node.children) n += countTables(c);
+  return n;
+}
+
+function Chevron() {
+  return (
+    <svg className="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="6 4 10 8 6 12" />
+    </svg>
+  );
 }
 
 export default function Profile() {
   const [profiles, setProfiles] = useState(null);
   const [questionsByColumn, setQuestionsByColumn] = useState(() => new Map());
   const [san2slash, setSan2slash] = useState({});   // sanitized group path → slash path
-  const [openCols, setOpenCols] = useState(() => new Set());
+  const [open, setOpen] = useState(() => new Set());
+  const initRef = useRef(false);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -135,8 +154,6 @@ export default function Profile() {
         if (!cancelled) setLoading(false);
       }
     })();
-    // Questions give us each column's group + the slash→underscore mapping used
-    // to rebuild the table hierarchy. Best-effort: failure → flat names.
     (async () => {
       try {
         const r = await fetch('/api/questions');
@@ -152,7 +169,23 @@ export default function Profile() {
     return () => { cancelled = true; };
   }, []);
 
-  const toggle = (path) => setOpenCols(prev => {
+  const forest = useMemo(
+    () => (profiles && profiles.length ? buildTableForest(profiles, (key) => san2slash[key] || key) : []),
+    [profiles, san2slash]
+  );
+
+  // First time the forest is ready, expand the folder skeleton (every node that
+  // has children); repeat tables stay collapsed so columns load on demand.
+  useEffect(() => {
+    if (initRef.current || forest.length === 0) return;
+    initRef.current = true;
+    const s = new Set();
+    const walk = (n) => { if (n.children.length) s.add(n.path); n.children.forEach(walk); };
+    forest.forEach(walk);
+    setOpen(s);
+  }, [forest]);
+
+  const toggle = (path) => setOpen(prev => {
     const next = new Set(prev);
     next.has(path) ? next.delete(path) : next.add(path);
     return next;
@@ -160,28 +193,26 @@ export default function Profile() {
 
   const renderNode = (node, depth) => {
     const isTable = !!node.profile;
-    const open = openCols.has(node.path);
+    const isOpen = open.has(node.path);
     const colCount = isTable ? visibleColumns(node.profile, questionsByColumn).length : 0;
+    const nTables = countTables(node);
     return (
-      <div key={node.path}>
-        {isTable ? (
-          <button className="tt-toggle" style={{ paddingLeft: 6 + depth * 16 }} onClick={() => toggle(node.path)} aria-expanded={open}>
-            <span className="tt-caret" data-open={open}>▸</span>
-            <span className="tt-name tt-name--table">{node.name}</span>
-            <span className="tt-meta">· {(node.profile.rows ?? 0).toLocaleString()} rows · {colCount} columns</span>
-          </button>
-        ) : (
-          <div className="tt-folder" style={{ paddingLeft: 6 + depth * 16 }}>
-            <span className="tt-folder__ico">▾</span>
-            <span className="tt-name">{node.name}</span>
+      <div className="gt-node" data-open={isOpen} data-depth={depth} key={node.path}>
+        <div className="gt-node__head" onClick={() => toggle(node.path)}>
+          <Chevron />
+          <span className="gt-node__name">{node.name}</span>
+          <span className="gt-node__count">
+            {isTable
+              ? `${(node.profile.rows ?? 0).toLocaleString()} rows · ${colCount} columns`
+              : `${nTables} table${nTables === 1 ? '' : 's'}`}
+          </span>
+        </div>
+        {isOpen && (
+          <div className="gt-node__body">
+            {isTable && <TableBody profile={node.profile} tablePath={node.slash} questionsByColumn={questionsByColumn} />}
+            {node.children.map(c => renderNode(c, depth + 1))}
           </div>
         )}
-        {isTable && open && (
-          <div style={{ paddingLeft: 6 + (depth + 1) * 16, paddingRight: 8 }}>
-            <TableBody profile={node.profile} tablePath={node.slash} questionsByColumn={questionsByColumn} />
-          </div>
-        )}
-        {node.children.map(c => renderNode(c, depth + 1))}
       </div>
     );
   };
@@ -192,7 +223,7 @@ export default function Profile() {
         eyebrow="Data profile"
         title="Understand your"
         accent="tables."
-        sub="A read-only EDA snapshot of every base table, arranged as a tree: main, its repeat groups, and their sub-groups. Click a table to inspect its columns."
+        sub="A read-only EDA snapshot of every base table, arranged as a tree of accordions: main, its repeat groups, and their sub-groups. Open a table to inspect its columns."
       />
       {loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 60 }}>Profiling…</div>}
       {error && (
@@ -207,9 +238,9 @@ export default function Profile() {
           {message || 'No data to profile. Run Download first.'}
         </div>
       )}
-      {profiles && profiles.length > 0 && (
-        <div className="tt-tree" style={{ margin: '0 8px', border: '1px solid var(--line, #e5e7eb)', borderRadius: 8, padding: '6px 0' }}>
-          {renderNode(buildTableTree(profiles, (key) => san2slash[key] || key), 0)}
+      {forest.length > 0 && (
+        <div className="gt" style={{ padding: '0 8px' }}>
+          {forest.map(node => renderNode(node, 0))}
         </div>
       )}
     </div>
