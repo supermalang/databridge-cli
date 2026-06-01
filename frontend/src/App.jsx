@@ -18,7 +18,8 @@ const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'framew
 const STAGES = [
   { id: 'home', label: 'Home', home: true },
   { id: 'extract', label: 'Extract', subs: [
-    { id: 'sources', label: 'Sources', render: () => <Sources /> },
+    { id: 'connection', label: 'Connection & output', render: () => <Sources section="setup" /> },
+    { id: 'ai',         label: 'AI configuration',     render: () => <Sources section="ai" /> },
   ] },
   { id: 'transform', label: 'Transform', subs: [
     { id: 'questions', label: 'Questions', render: () => <Questions /> },
