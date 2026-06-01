@@ -5,6 +5,7 @@ import FrameworkPicker from '../components/FrameworkPicker.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useCommand } from '../hooks/useCommand.js';
 import { loadConfig, saveConfigPatch } from '../lib/config.js';
+import PageHeader from './PageHeader.jsx';
 
 // ── chart type catalog ───────────────────────────────────────────────────────
 const CHART_TYPES = [
@@ -380,7 +381,7 @@ export default function Composition({ sections } = {}) {
   const questionCount = (cfg.questions || []).length;
 
   return (
-    <div className="comp-page">
+    <div className="page">
       <Header
         questionCount={questionCount}
         counts={{ charts: charts.length, indicators: indicators.length, tables: tables.length, summaries: summaries.length, views: views.length }}
@@ -679,34 +680,30 @@ function Header({ questionCount, counts, sections = ALL_SECTIONS, onSave }) {
     has('views')      && `${counts.views} views`,
   ].filter(Boolean);
   return (
-    <div className="comp-header">
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="greeting__date">{viewsOnly ? 'Load · Derived views' : 'Analyze · Compose'}</div>
-        <h1 className="comp-header__title">
-          {viewsOnly ? <>Build your <em>views.</em></> : <>Shape your <em>composition.</em></>}
-        </h1>
-        <div className="comp-header__sub">
-          {viewsOnly
-            ? <>Virtual data tables — computed once and reused by charts, summaries, and indicators downstream.</>
-            : <>Define what shows up in the report — charts, indicators, summaries, and the framework.
-                Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
-        </div>
-      </div>
-      <div className="comp-header__actions">
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', color: 'var(--ink-3)', fontSize: 12.5, marginRight: 12 }}>
-          {countItems.map((c, i) => (
-            <Fragment key={c}>
-              {i > 0 && <span>·</span>}
-              <span>{c}</span>
-            </Fragment>
-          ))}
-        </div>
-        <button className="btn btn-primary" onClick={onSave}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
-          Save changes
-        </button>
-      </div>
-    </div>
+    <PageHeader
+      eyebrow={viewsOnly ? 'Load · Derived views' : 'Analyze · Compose'}
+      title={viewsOnly ? 'Build your' : 'Shape your'}
+      accent={viewsOnly ? 'views.' : 'composition.'}
+      sub={viewsOnly
+        ? 'Virtual data tables — computed once and reused by charts, summaries, and indicators downstream.'
+        : <>Define what shows up in the report — charts, indicators, summaries, and the framework. Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
+      actions={
+        <>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', color: 'var(--ink-3)', fontSize: 12.5, marginRight: 12 }}>
+            {countItems.map((c, i) => (
+              <Fragment key={c}>
+                {i > 0 && <span>·</span>}
+                <span>{c}</span>
+              </Fragment>
+            ))}
+          </div>
+          <button className="btn btn-primary" onClick={onSave}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
+            Save changes
+          </button>
+        </>
+      }
+    />
   );
 }
 

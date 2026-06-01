@@ -77,14 +77,14 @@ export default function Ask() {
   }
 
   return (
-    <div style={{ padding: '0 0 40px' }}>
+    <div className="page">
       <PageHeader
         eyebrow="Ask"
         title="Ask your"
         accent="data."
         sub="Ask a question in plain language — get charts computed from your data, with captions grounded in the actual numbers."
       />
-      <form onSubmit={submit} style={{ display: 'flex', gap: 8, padding: '0 8px 16px' }}>
+      <form onSubmit={submit} style={{ display: 'flex', gap: 8 }}>
         <input
           value={question}
           onChange={e => setQuestion(e.target.value)}

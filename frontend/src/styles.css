@@ -46,7 +46,11 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 .page-greeting{font-family:var(--font-sans);font-size:32px;font-weight:800;letter-spacing:-.028em;line-height:1.1;color:var(--ink);margin:4px 0 6px}
 .page-greeting em{font-style:normal;color:var(--accent)}
 .page-eyebrow{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
-.page-sub{color:var(--ink-2);font-size:14px;line-height:1.55;max-width:64ch;margin-bottom:20px}
+.page-sub{color:var(--ink-2);font-size:14px;line-height:1.55;max-width:64ch;margin-bottom:0}
+/* Shared page header (eyebrow + title + sub, with an optional right-aligned actions slot) */
+.page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.page-header__text{flex:1;min-width:0}
+.page-header__actions{display:flex;gap:10px;align-items:center;flex-shrink:0;align-self:flex-end}
 .dashboard{padding:24px 28px 32px;display:grid;grid-template-columns:2fr 3fr;gap:16px;flex:1;min-height:0;overflow:hidden}
 .dashboard-right{display:flex;flex-direction:column;gap:16px;min-height:0;overflow:hidden;min-width:0}
 .dashboard-terminal{background:var(--slate-dark);border-radius:var(--r-lg);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow-md);flex-shrink:0;border:1px solid var(--slate-dark-2)}
@@ -162,8 +166,8 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 .toast.ok{background:var(--green-soft);color:#0F5132}.toast.err{background:var(--rose-soft);color:#7F1D1D}
 @keyframes slide-in{from{transform:translateY(10px);opacity:0}}
 
-/* ─── Shared page container — keeps all pages at the same max width ─── */
-.page{max-width:1320px;margin:0 auto;width:100%;display:flex;flex-direction:column}
+/* ─── Shared page shell — same max width, gutters, top spacing, and gap ─── */
+.page{max-width:1320px;margin:0 auto;width:100%;display:flex;flex-direction:column;padding:20px 32px 56px;gap:20px}
 
 .greeting__date{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);display:inline-flex;align-items:center;gap:8px}
 .greeting__date::before{content:"";width:18px;height:1px;background:var(--border-strong)}
@@ -221,12 +225,6 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 .app, .layout{padding-bottom:42px}
 
 /* ─────────── Sources page ─────────── */
-.src-page{padding:24px 32px 60px;max-width:1320px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:20px}
-.src-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
-.src-header__title{font-size:30px;font-weight:800;letter-spacing:-.028em;line-height:1.1;color:var(--ink);margin:6px 0 8px}
-.src-header__title em{font-style:italic;color:var(--accent)}
-.src-header__sub{color:var(--ink-2);font-size:13.5px;line-height:1.55;max-width:64ch}
-.src-header__actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
 
 .src-grid{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start}
 @media (max-width:1100px){.src-grid{grid-template-columns:1fr}}
@@ -331,13 +329,6 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .src-card .form-section{padding:0;background:transparent;border:0;box-shadow:none;margin:0}
 
 /* ─────────── Questions page ─────────── */
-.q-page{padding:24px 32px 60px;max-width:1320px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:20px}
-.q-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
-.q-header__title{font-size:34px;font-weight:800;letter-spacing:-.028em;line-height:1.08;color:var(--ink);margin:6px 0 10px;max-width:18ch}
-.q-header__title em{font-style:italic;color:var(--accent)}
-.q-header__sub{color:var(--ink-2);font-size:13.5px;line-height:1.55;max-width:60ch}
-.q-header__sub b{color:var(--ink);font-weight:700}
-.q-header__actions{display:flex;gap:10px;align-items:center;flex-shrink:0;align-self:flex-end}
 .q-unsaved-pill{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;background:var(--warm-soft);color:var(--warm);font-size:11.5px;font-weight:700;letter-spacing:.005em}
 
 /* toolbar */
@@ -397,7 +388,6 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .subtab.active{color:var(--accent);font-weight:600;border-bottom-color:var(--accent)}
 
 /* ── Home (workflow landing) ────────────────────────────────────────────── */
-.home-page{padding:28px 28px 80px;display:flex;flex-direction:column;gap:24px}
 .home-head{display:flex;align-items:flex-start;gap:20px}
 .home-head__title{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:4px 0 6px;color:var(--ink)}
 .home-head__title em{font-style:normal;color:var(--accent)}
@@ -465,13 +455,6 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .q-table-empty{padding:30px;text-align:center;color:var(--ink-3);font-size:13px}
 
 /* ─────────── Composition page ─────────── */
-.comp-page{padding:24px 32px 60px;max-width:1320px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:20px}
-.comp-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
-.comp-header__title{font-size:32px;font-weight:800;letter-spacing:-.028em;line-height:1.1;color:var(--ink);margin:6px 0 10px}
-.comp-header__title em{font-style:italic;color:var(--accent)}
-.comp-header__sub{color:var(--ink-2);font-size:13.5px;line-height:1.55;max-width:70ch}
-.comp-header__sub b{color:var(--ink);font-weight:700}
-.comp-header__actions{display:flex;gap:8px;align-items:center;align-self:flex-end;flex-shrink:0}
 
 .comp-grid{display:grid;grid-template-columns:1fr 280px;gap:18px;align-items:start}
 @media (max-width:1100px){.comp-grid{grid-template-columns:1fr}}

@@ -157,7 +157,7 @@ export default function Validate() {
   );
 
   return (
-    <div style={{ padding: '0 0 40px' }}>
+    <div className="page">
       <PageHeader
         eyebrow="Step 03 · Validate"
         title="Check your"
@@ -173,7 +173,7 @@ export default function Validate() {
         </div>
       )}
       {report && (
-        <div style={{ padding: '0 8px' }}>
+        <div>
           <div style={{ color: 'var(--ink-3)', fontSize: 13, marginBottom: 16 }}>
             Scanned {report.n_rows.toLocaleString()} rows · {report.n_columns} columns ·
             <span style={{ marginLeft: 8, color: 'var(--danger, #b91c1c)' }}>{counts.error} errors</span> ·
