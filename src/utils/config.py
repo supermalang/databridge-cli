@@ -26,6 +26,38 @@ def write_config(cfg: Dict, path: Path = CONFIG_PATH) -> None:
         yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
     log.info(f"Config updated → {path}")
 
+def is_effective_hidden(q: Dict) -> bool:
+    """A question's effective-hidden state: explicit `hidden: true`, else
+    defaults to True for `note` type fields."""
+    return bool(q.get("hidden", q.get("type") == "note"))
+
+
+def is_pii(q: Dict) -> bool:
+    """Whether a question is flagged as containing PII (sensitive)."""
+    return bool(q.get("pii"))
+
+
+def llm_safe_questions(cfg: Dict) -> list:
+    """Return cfg['questions'] EXCLUDING any question that is effective-hidden
+    or PII-flagged. This is the single gate enforcing the rule that LLM features
+    must never see hidden or sensitive columns' metadata."""
+    questions = cfg.get("questions", []) or []
+    return [q for q in questions
+            if not is_effective_hidden(q) and not is_pii(q)]
+
+
+def llm_safe_column_names(cfg: Dict) -> set:
+    """Export-label/label/kobo_key names of the llm-safe questions — useful for
+    dropping unsafe columns from a data-derived catalog (e.g. a profile)."""
+    names: set = set()
+    for q in llm_safe_questions(cfg):
+        for k in ("export_label", "label", "kobo_key"):
+            v = q.get(k)
+            if v:
+                names.add(v)
+    return names
+
+
 def _resolve_env(cfg: Dict) -> Dict:
     def _walk(obj: Any) -> Any:
         if isinstance(obj, dict): return {k: _walk(v) for k, v in obj.items()}

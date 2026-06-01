@@ -357,9 +357,11 @@ _ASK_REFINE: ChatMessages = [
 
 _HIDDEN_SUGGESTER: ChatMessages = [
     {"role": "system", "content": (
-        "You are a survey data analyst. Given a list of survey questions (each with "
-        "its kobo_key, raw XLSForm type, group, and label), identify which questions "
-        "are NON-ANALYTICAL 'display-only' fields that carry no analyzable data and "
+        "You are a survey data analyst. You are given a PRE-FILTERED list of survey "
+        "questions (each with its kobo_key, raw XLSForm type, group, and label) — "
+        "questions that are already analytical or already hidden have been removed, "
+        "so every field shown is a candidate. Identify which of these are "
+        "NON-ANALYTICAL 'display-only' fields that carry no analyzable data and "
         "should be HIDDEN by default in the data tool — for example: on-screen "
         "instructions, section headers / labels, acknowledgment or consent-prompt "
         "text the respondent merely reads, 'thank you' messages, and free-text "
@@ -383,6 +385,35 @@ _HIDDEN_SUGGESTER: ChatMessages = [
         "{{questions_block}}\n\n"
         "Which of these are non-analytical display-only fields that should be hidden "
         "by default? Return JSON only."
+    )},
+]
+
+_PII_SUGGESTER: ChatMessages = [
+    {"role": "system", "content": (
+        "You are a data-privacy reviewer for survey data. Given a list of survey "
+        "questions (each with its kobo_key, raw XLSForm type, group, and label), "
+        "identify which questions likely contain PERSONALLY-IDENTIFIABLE INFORMATION "
+        "(PII) about an individual — for example: a person's name, phone number, "
+        "email address, postal/street address, national ID / passport / SSN, exact "
+        "GPS coordinates, date of birth, photographs, vehicle plates, or free-text "
+        "fields that commonly hold a name or other personal detail.\n\n"
+        "Privacy matters, so be REASONABLY INCLUSIVE — when a field plausibly holds "
+        "personal data, flag it. But do NOT flag clearly non-personal analytical "
+        "fields such as region, satisfaction rating, counts, or generic category "
+        "selections.\n\n"
+        "HARD RULES:\n"
+        "  - You are given ONLY field metadata (key, type, group, label) — never any "
+        "actual answer values. Judge from the metadata alone.\n"
+        "  - Use ONLY the exact kobo_key values from the provided list.\n"
+        "  - Each flagged field needs a short (<= 12 word) reason.\n"
+        '  - Return ONLY valid JSON: {"suggestions": [{"kobo_key": "...", "reason": "..."}]} '
+        "— no markdown, no explanation. Return an empty list if nothing plausibly qualifies."
+    )},
+    {"role": "user", "content": (
+        "Survey questions:\n"
+        "{{questions_block}}\n\n"
+        "Which of these likely contain personally-identifiable information (PII)? "
+        "Return JSON only."
     )},
 ]
 
@@ -656,6 +687,28 @@ _HIDDEN_SUGGESTER_OUTPUT_SCHEMA = {
     },
 }
 
+# Same list-of-objects shape as the hidden suggester (open maps forbidden in
+# Strict mode); the Python suggester reshapes it into {suggestions, reasons}.
+_PII_SUGGESTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["suggestions"],
+    "properties": {
+        "suggestions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["kobo_key", "reason"],
+                "properties": {
+                    "kobo_key": {"type": "string"},
+                    "reason":   {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
 _NARRATOR_OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -687,6 +740,8 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
                              "config": {"output_schema": _CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA}},
     "hidden_suggester":     {"messages": _HIDDEN_SUGGESTER,
                              "config": {"output_schema": _HIDDEN_SUGGESTER_OUTPUT_SCHEMA}},
+    "pii_suggester":        {"messages": _PII_SUGGESTER,
+                             "config": {"output_schema": _PII_SUGGESTER_OUTPUT_SCHEMA}},
     "ask_propose": {"messages": _ASK_PROPOSE, "config": {}},
     "ask_caption": {"messages": _ASK_CAPTION, "config": {}},
     "ask_refine":  {"messages": _ASK_REFINE,  "config": {}},

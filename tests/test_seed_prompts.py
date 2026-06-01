@@ -5,7 +5,7 @@ EXPECTED_NAMES = {
     "narrator", "summaries", "chart_suggester", "template_generator",
     "summary_suggester", "view_suggester", "classifier_discover", "classifier_classify",
     "ask_propose", "ask_caption", "ask_refine",
-    "hidden_suggester",
+    "hidden_suggester", "pii_suggester",
 }
 
 def test_all_eleven_prompts_present():

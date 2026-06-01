@@ -87,7 +87,9 @@ def _get_suggestions(ai_cfg: Dict, cfg: Dict, user_request: str = "") -> List[Di
 
 
 def _build_variables(cfg: Dict, user_request: str = "") -> Dict:
-    questions = cfg.get("questions", [])
+    from src.utils.config import llm_safe_questions
+    # Never expose hidden or PII-flagged columns' metadata to the LLM.
+    questions = llm_safe_questions(cfg)
     form_alias = cfg.get("form", {}).get("alias", "survey")
     report_title = cfg.get("report", {}).get("title", "")
 
