@@ -207,7 +207,7 @@ export default function Questions() {
               </td>
               <td>
                 <div className="q-row-actions">
-                  <button disabled={hidden} title={isUsed ? 'Used in charts' : 'Not currently used'} onClick={() => toast(isUsed ? `${colName(q)} is wired to a chart` : 'Not used yet', isUsed ? 'ok' : 'err')}>
+                  <button disabled={hidden} className={isUsed ? 'q-act--used' : ''} title={isUsed ? 'Used in charts' : 'Not currently used'} onClick={() => toast(isUsed ? `${colName(q)} is wired to a chart` : 'Not used yet', isUsed ? 'ok' : 'err')}>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="3" y1="13" x2="3" y2="8"/>
                       <line x1="7" y1="13" x2="7" y2="4"/>
@@ -216,7 +216,7 @@ export default function Questions() {
                   </button>
                   <button
                     disabled={hidden}
-                    className={pii ? 'is-active' : ''}
+                    className={pii ? 'q-act--pii' : ''}
                     title={pii ? 'Unflag PII' : 'Flag as PII — exclude from AI metadata'}
                     onClick={() => togglePII(idx)}
                   >
@@ -225,6 +225,7 @@ export default function Questions() {
                     </svg>
                   </button>
                   <button
+                    className={hidden ? 'q-act--hidden' : ''}
                     title={hidden ? 'Unhide — show in report' : 'Hide — exclude from analysis'}
                     onClick={() => toggleHidden(idx)}
                   >
