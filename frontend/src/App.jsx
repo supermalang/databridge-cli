@@ -23,8 +23,8 @@ const STAGES = [
   ] },
   { id: 'transform', label: 'Transform', subs: [
     { id: 'questions', label: 'Questions', render: () => <Questions /> },
-    { id: 'validate',  label: 'Validate',  render: () => <Validate /> },
     { id: 'profile',   label: 'Profile',   render: () => <Profile /> },
+    { id: 'validate',  label: 'Validate',  render: () => <Validate /> },
   ] },
   { id: 'load', label: 'Load', subs: [
     { id: 'views', label: 'Views', render: () => <Composition sections={VIEWS_SECTIONS} /> },
