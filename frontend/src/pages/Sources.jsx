@@ -3,6 +3,7 @@ import yaml from 'js-yaml';
 import { useToast } from '../components/Toast.jsx';
 import { loadConfig, loadConfigText, saveConfigPatch, saveConfigText } from '../lib/config.js';
 import PeriodPicker from '../components/PeriodPicker.jsx';
+import PageHeader from './PageHeader.jsx';
 
 const PLATFORMS = [
   { id: 'ona',  name: 'Ona',          tag: 'ona.io · self-hosted',         defaultUrl: 'https://api.ona.io/api/v1' },
@@ -93,31 +94,32 @@ export default function Sources({ section = 'setup' } = {}) {
   };
 
   // ── early states ─────────────────────────────────────────────────────────
-  if (cfg === null) return <div className="src-page"><p className="empty-state">Loading config…</p></div>;
+  if (cfg === null) return <div className="page"><p className="empty-state">Loading config…</p></div>;
 
   // ── render ───────────────────────────────────────────────────────────────
   return (
-    <div className="src-page">
-      <div className="src-header">
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="greeting__date">Step 1 of 4 · Configure sources</div>
-          <h1 className="src-header__title">Connect your data <em>source.</em></h1>
-          <div className="src-header__sub">Choose a platform, point at the right form, and pick the voice the AI uses when it writes narrative blocks.</div>
-        </div>
-        <div className="src-header__actions">
-          <div className="config-view-toggle">
-            <button className={`view-btn ${view === 'form' ? 'active' : ''}`} onClick={() => setView('form')}>↻ Form</button>
-            <button className={`view-btn ${view === 'yaml' ? 'active' : ''}`} onClick={() => setView('yaml')}>{'{ } YAML'}</button>
-          </div>
-          <button className="btn" onClick={reload}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="4" width="9" height="9" rx="1.5"/><path d="M2 11V3a1 1 0 0 1 1-1h8"/></svg>
-            Duplicate
-          </button>
-          <button className="btn btn-primary" onClick={view === 'yaml' ? saveYaml : saveAll} disabled={view === 'form' && !dirty}>
-            Save changes
-          </button>
-        </div>
-      </div>
+    <div className="page">
+      <PageHeader
+        eyebrow="Step 1 of 4 · Configure sources"
+        title="Connect your data"
+        accent="source."
+        sub="Choose a platform, point at the right form, and pick the voice the AI uses when it writes narrative blocks."
+        actions={
+          <>
+            <div className="config-view-toggle">
+              <button className={`view-btn ${view === 'form' ? 'active' : ''}`} onClick={() => setView('form')}>↻ Form</button>
+              <button className={`view-btn ${view === 'yaml' ? 'active' : ''}`} onClick={() => setView('yaml')}>{'{ } YAML'}</button>
+            </div>
+            <button className="btn" onClick={reload}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="4" width="9" height="9" rx="1.5"/><path d="M2 11V3a1 1 0 0 1 1-1h8"/></svg>
+              Duplicate
+            </button>
+            <button className="btn btn-primary" onClick={view === 'yaml' ? saveYaml : saveAll} disabled={view === 'form' && !dirty}>
+              Save changes
+            </button>
+          </>
+        }
+      />
 
       {view === 'yaml' ? (
         <div className="src-card">

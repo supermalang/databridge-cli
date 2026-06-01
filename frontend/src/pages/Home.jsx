@@ -73,7 +73,7 @@ export default function Home({ navigate }) {
   const go = (stageId, subId) => (e) => { e?.stopPropagation?.(); navigate(stageId, subId); };
 
   return (
-    <div className="home-page">
+    <div className="page">
       <div className="home-head">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="greeting__date">DATABRIDGE · WORKFLOW</div>

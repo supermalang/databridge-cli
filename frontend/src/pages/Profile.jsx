@@ -154,7 +154,7 @@ export default function Profile() {
   }, []);
 
   return (
-    <div style={{ padding: '0 0 40px' }}>
+    <div className="page">
       <PageHeader
         eyebrow="Data profile"
         title="Understand your"
@@ -175,7 +175,7 @@ export default function Profile() {
         </div>
       )}
       {profiles && profiles.length > 0 && (
-        <div style={{ padding: '0 8px' }}>
+        <div>
           <TableTree
             tables={profiles}
             resolveSlash={(key) => san2slash[key] || key}

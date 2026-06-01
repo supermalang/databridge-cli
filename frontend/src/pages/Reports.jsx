@@ -63,7 +63,7 @@ export default function Reports() {
         accent="generated reports."
         sub="Word reports rendered by build-report appear here. Download individual files or grab everything as a zip."
       />
-      <div style={{ padding: '0 28px 40px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
         {/* ─── Reports ─── */}
         <div className="form-section">

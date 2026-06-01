@@ -3,6 +3,7 @@ import { useToast } from '../components/Toast.jsx';
 import { loadConfig } from '../lib/config.js';
 import { isHidden, buildGroupTree } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
+import PageHeader from './PageHeader.jsx';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function colName(q) {
@@ -264,10 +265,10 @@ export default function Questions() {
   };
 
   // ── render ───────────────────────────────────────────────────────────────
-  if (questions === null) return <div className="q-page"><p className="empty-state">Loading…</p></div>;
+  if (questions === null) return <div className="page"><p className="empty-state">Loading…</p></div>;
   if (questions.length === 0) {
     return (
-      <div className="q-page">
+      <div className="page">
         <Header total={0} groups={0} unsaved={0} onRefresh={load} onSave={save} />
         <div className="src-card"><p className="empty-state">No questions yet — run <b>fetch-questions</b> from the Dashboard.</p></div>
       </div>
@@ -283,7 +284,7 @@ export default function Questions() {
   const totalHidden = questions.filter(q => isHidden(q)).length;
 
   return (
-    <div className="q-page">
+    <div className="page">
       <Header
         total={questions.length}
         groups={totalGroups}
@@ -342,25 +343,24 @@ export default function Questions() {
 // ── Header band ──────────────────────────────────────────────────────────────
 function Header({ total, groups, unsaved, onRefresh, onSave }) {
   return (
-    <div className="q-header">
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="greeting__date">Questions · {total} fields · {groups} groups</div>
-        <h1 className="q-header__title">Rename what shows up <em>in the report.</em></h1>
-        <div className="q-header__sub">
-          Each row is a survey question. Edit the <b>Export label</b> to change how that column appears in charts, indicators, and Word placeholders — no YAML required.
-        </div>
-      </div>
-      <div className="q-header__actions">
-        {unsaved > 0 && <span className="q-unsaved-pill">{unsaved} unsaved</span>}
-        <button className="btn" onClick={onRefresh}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><polyline points="2 4 2 8 6 8"/><path d="M3 11a6 6 0 1 0 1.4-7"/></svg>
-          Refresh from form
-        </button>
-        <button className="btn btn-primary" onClick={onSave} disabled={unsaved === 0}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
-          Save changes
-        </button>
-      </div>
-    </div>
+    <PageHeader
+      eyebrow={`Questions · ${total} fields · ${groups} groups`}
+      title="Rename what shows up"
+      accent="in the report."
+      sub="Each row is a survey question. Edit the Export label to change how that column appears in charts, indicators, and Word placeholders — no YAML required."
+      actions={
+        <>
+          {unsaved > 0 && <span className="q-unsaved-pill">{unsaved} unsaved</span>}
+          <button className="btn" onClick={onRefresh}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><polyline points="2 4 2 8 6 8"/><path d="M3 11a6 6 0 1 0 1.4-7"/></svg>
+            Refresh from form
+          </button>
+          <button className="btn btn-primary" onClick={onSave} disabled={unsaved === 0}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
+            Save changes
+          </button>
+        </>
+      }
+    />
   );
 }

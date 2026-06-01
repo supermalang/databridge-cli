@@ -55,7 +55,7 @@ export default function Templates() {
         accent="templates."
         sub="Manage the .docx templates used by build-report. Each placeholder ({{ chart_x }}, {{ ind_y }}) gets filled at render time."
       />
-      <div style={{ padding: '0 28px 40px' }}>
+      <div>
         <div className="form-section">
           <div className="form-section-title">
             Templates
