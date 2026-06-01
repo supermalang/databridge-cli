@@ -33,8 +33,8 @@ const STAGES = [
     { id: 'ask',         label: 'Ask',                  render: () => <Ask /> },
   ] },
   { id: 'present', label: 'Present', subs: [
-    { id: 'reports',   label: 'Reports',   render: () => <Reports /> },
     { id: 'templates', label: 'Templates', render: () => <Templates /> },
+    { id: 'reports',   label: 'Reports',   render: () => <Reports /> },
   ] },
 ];
 
