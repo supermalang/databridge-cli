@@ -335,19 +335,6 @@ function AINarrativeCard({ cfg, set }) {
           <span className="slider-row__limit">limit</span>
         </div>
       </div>
-      <div className="src-field">
-        <div className="src-field__label">Preview · <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5 }}>summary_text</code></div>
-        <div className="preview-card">
-          <div className="preview-card__head">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-            Preview · summary_text
-          </div>
-          <div className="preview-card__body">
-            In the first quarter of 2026, <b>12,471 households</b> were surveyed across Mauritania's <b>13 regions</b>, with a response rate of <b>94.2%</b>. Female-headed households represent 27.1% of the sample — up 2.1 points on the same period last year — and average household size has held steady at 5.0.
-          </div>
-          <div className="preview-card__tokens">~ {Math.round(maxTok * 0.99)} tokens</div>
-        </div>
-      </div>
     </div>
   );
 }
