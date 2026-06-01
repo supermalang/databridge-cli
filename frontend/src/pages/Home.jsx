@@ -23,7 +23,7 @@ const STAGE_CARDS = [
     id: 'load', step: '03', label: 'Load', tone: 'violet',
     desc: 'Build derived views and virtual tables — joins and aggregates reused downstream.',
     subs: [{ id: 'views', label: 'Views' }],
-    icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><line x1="2.5" y1="6.5" x2="13.5" y2="6.5"/><line x1="6" y1="3" x2="6" y2="13"/></svg>,
+    icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="8" cy="3.5" rx="5" ry="2"/><path d="M3 3.5v9c0 1.1 2.2 2 5 2s5-.9 5-2v-9"/><path d="M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg>,
   },
   {
     id: 'analyze', step: '04', label: 'Analyze', tone: 'warm',
