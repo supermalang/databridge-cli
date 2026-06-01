@@ -17,22 +17,22 @@ const ANALYZE_SECTIONS = ['charts', 'indicators', 'summaries', 'framework', 'pii
 // secondary sub-tab strip; single-sub stages navigate straight to their page.
 const STAGES = [
   { id: 'home', label: 'Home', home: true },
-  { id: 'extract', label: 'Extract', step: '1', subs: [
+  { id: 'extract', label: 'Extract', subs: [
     { id: 'sources', label: 'Sources', render: () => <Sources /> },
   ] },
-  { id: 'transform', label: 'Transform', step: '2', subs: [
+  { id: 'transform', label: 'Transform', subs: [
     { id: 'questions', label: 'Questions', render: () => <Questions /> },
     { id: 'validate',  label: 'Validate',  render: () => <Validate /> },
     { id: 'profile',   label: 'Profile',   render: () => <Profile /> },
   ] },
-  { id: 'load', label: 'Load', step: '3', subs: [
+  { id: 'load', label: 'Load', subs: [
     { id: 'views', label: 'Views', render: () => <Composition sections={VIEWS_SECTIONS} /> },
   ] },
-  { id: 'analyze', label: 'Analyze', step: '4', subs: [
+  { id: 'analyze', label: 'Analyze', subs: [
     { id: 'composition', label: 'Charts & indicators', render: () => <Composition sections={ANALYZE_SECTIONS} /> },
     { id: 'ask',         label: 'Ask',                  render: () => <Ask /> },
   ] },
-  { id: 'present', label: 'Present', step: '5', subs: [
+  { id: 'present', label: 'Present', subs: [
     { id: 'reports',   label: 'Reports',   render: () => <Reports /> },
     { id: 'templates', label: 'Templates', render: () => <Templates /> },
   ] },
@@ -110,7 +110,6 @@ export default function App() {
             data-tab={s.id}
             onClick={() => navigate(s.id)}
           >
-            {s.step && <span className="tab__num">{s.step}</span>}
             {s.label}
           </div>
         ))}
