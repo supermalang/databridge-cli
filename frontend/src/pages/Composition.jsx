@@ -59,7 +59,13 @@ function ChartIcon({ type }) {
 }
 
 // ── component ────────────────────────────────────────────────────────────────
-export default function Composition() {
+// `sections` selects which cards render + which config keys this instance saves,
+// so the same component backs both the Load (views) and Analyze (charts/etc) tabs.
+const ALL_SECTIONS = ['charts', 'pii', 'framework', 'indicators', 'summaries', 'views', 'templates'];
+
+export default function Composition({ sections } = {}) {
+  const secs = Array.isArray(sections) && sections.length ? sections : ALL_SECTIONS;
+  const has = (k) => secs.includes(k);
   const toast = useToast();
   const [cfg,        setCfg]       = useState({});
   const [filters,    setFilters]   = useState([]);
@@ -281,11 +287,13 @@ export default function Composition() {
           if (Array.isArray(v) && v.length === 0) delete c[k];
           else c[k] = v;
         };
-        setOrDelete('filters', filters.filter(f => f.trim()));
-        setOrDelete('charts', charts);
-        setOrDelete('indicators', indicators);
-        setOrDelete('summaries', summaries);
-        setOrDelete('views', views);
+        if (has('charts')) {
+          setOrDelete('filters', filters.filter(f => f.trim()));
+          setOrDelete('charts', charts);
+        }
+        if (has('indicators')) setOrDelete('indicators', indicators);
+        if (has('summaries')) setOrDelete('summaries', summaries);
+        if (has('views')) setOrDelete('views', views);
       });
       toast('Saved ✓', 'ok');
     } catch (e) { toast(e.message, 'err'); }
@@ -311,60 +319,73 @@ export default function Composition() {
       <Header
         questionCount={questionCount}
         counts={{ charts: charts.length, indicators: indicators.length, summaries: summaries.length, views: views.length }}
+        sections={secs}
         onSave={saveAll}
       />
       <div className="comp-grid">
         <div className="comp-col">
-          <ChartsCard
-            charts={charts}
-            onAdd={() => openEdit('chart', null)}
-            onEdit={(i) => openEdit('chart', i)}
-            onRemove={remove('chart', setCharts)}
-            onSuggest={() => openSuggestModal('chart')}
-            onPreview={openChartPreview}
-            suggesting={suggesting === 'chart'}
-            toast={toast}
-          />
-          <PIICard />
-          <FrameworkCard />
-          <IndicatorsCard
-            indicators={indicators}
-            onAdd={() => openEdit('indicator', null)}
-            onEdit={(i) => openEdit('indicator', i)}
-            onRemove={remove('indicator', setIndicators)}
-          />
-          <SummariesCard
-            summaries={summaries}
-            onAdd={() => openEdit('summary', null)}
-            onEdit={(i) => openEdit('summary', i)}
-            onRemove={remove('summary', setSummaries)}
-            onSuggest={() => openSuggestModal('summary')}
-            onPreview={openSummaryPreview}
-            suggesting={suggesting === 'summary'}
-          />
-          <ViewsCard
-            views={views}
-            onAdd={() => openEdit('view', null)}
-            onEdit={(i) => openEdit('view', i)}
-            onRemove={remove('view', setViews)}
-            onSuggest={() => openSuggestModal('view')}
-            onPreview={openViewPreview}
-            suggesting={suggesting === 'view'}
-          />
-          <TemplatesCard
-            templates={templates}
-            active={activeTpl}
-            onReload={reload}
-            toast={toast}
-          />
+          {has('charts') && (
+            <ChartsCard
+              charts={charts}
+              onAdd={() => openEdit('chart', null)}
+              onEdit={(i) => openEdit('chart', i)}
+              onRemove={remove('chart', setCharts)}
+              onSuggest={() => openSuggestModal('chart')}
+              onPreview={openChartPreview}
+              suggesting={suggesting === 'chart'}
+              toast={toast}
+            />
+          )}
+          {has('pii') && <PIICard />}
+          {has('framework') && <FrameworkCard />}
+          {has('indicators') && (
+            <IndicatorsCard
+              indicators={indicators}
+              onAdd={() => openEdit('indicator', null)}
+              onEdit={(i) => openEdit('indicator', i)}
+              onRemove={remove('indicator', setIndicators)}
+            />
+          )}
+          {has('summaries') && (
+            <SummariesCard
+              summaries={summaries}
+              onAdd={() => openEdit('summary', null)}
+              onEdit={(i) => openEdit('summary', i)}
+              onRemove={remove('summary', setSummaries)}
+              onSuggest={() => openSuggestModal('summary')}
+              onPreview={openSummaryPreview}
+              suggesting={suggesting === 'summary'}
+            />
+          )}
+          {has('views') && (
+            <ViewsCard
+              views={views}
+              onAdd={() => openEdit('view', null)}
+              onEdit={(i) => openEdit('view', i)}
+              onRemove={remove('view', setViews)}
+              onSuggest={() => openSuggestModal('view')}
+              onPreview={openViewPreview}
+              suggesting={suggesting === 'view'}
+            />
+          )}
+          {has('templates') && (
+            <TemplatesCard
+              templates={templates}
+              active={activeTpl}
+              onReload={reload}
+              toast={toast}
+            />
+          )}
         </div>
-        <aside className="comp-col">
-          <div className="comp-rail">
-            <TokenAnatomy />
-            <ChartLibrary />
-            <TipsCard />
-          </div>
-        </aside>
+        {has('charts') && (
+          <aside className="comp-col">
+            <div className="comp-rail">
+              <TokenAnatomy />
+              <ChartLibrary />
+              <TipsCard />
+            </div>
+          </aside>
+        )}
       </div>
 
       {editing?.kind === 'chart' && (
@@ -560,26 +581,37 @@ export default function Composition() {
 }
 
 // ── Header band ──────────────────────────────────────────────────────────────
-function Header({ questionCount, counts, onSave }) {
+function Header({ questionCount, counts, sections = ALL_SECTIONS, onSave }) {
+  const has = (k) => sections.includes(k);
+  const viewsOnly = has('views') && !has('charts');
+  const countItems = [
+    has('charts')     && `${counts.charts} charts`,
+    has('indicators') && `${counts.indicators} indicators`,
+    has('summaries')  && `${counts.summaries} summaries`,
+    has('views')      && `${counts.views} views`,
+  ].filter(Boolean);
   return (
     <div className="comp-header">
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="greeting__date">Step 3 of 4 · Compose charts</div>
-        <h1 className="comp-header__title">Shape your <em>composition.</em></h1>
+        <div className="greeting__date">{viewsOnly ? 'Load · Derived views' : 'Analyze · Compose'}</div>
+        <h1 className="comp-header__title">
+          {viewsOnly ? <>Build your <em>views.</em></> : <>Shape your <em>composition.</em></>}
+        </h1>
         <div className="comp-header__sub">
-          Define what shows up in the report — charts, indicators, summaries, and the underlying views.
-          Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.
+          {viewsOnly
+            ? <>Virtual data tables — computed once and reused by charts, summaries, and indicators downstream.</>
+            : <>Define what shows up in the report — charts, indicators, summaries, and the framework.
+                Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
         </div>
       </div>
       <div className="comp-header__actions">
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', color: 'var(--ink-3)', fontSize: 12.5, marginRight: 12 }}>
-          <span>{counts.charts} charts</span>
-          <span>·</span>
-          <span>{counts.indicators} indicators</span>
-          <span>·</span>
-          <span>{counts.summaries} summaries</span>
-          <span>·</span>
-          <span>{counts.views} views</span>
+          {countItems.map((c, i) => (
+            <Fragment key={c}>
+              {i > 0 && <span>·</span>}
+              <span>{c}</span>
+            </Fragment>
+          ))}
         </div>
         <button className="btn btn-primary" onClick={onSave}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>

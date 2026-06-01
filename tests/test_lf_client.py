@@ -180,7 +180,8 @@ def test_push_seed_prompts_creates_missing(monkeypatch):
     actions = dict(results)
     assert actions["narrator"] == "skipped"
     assert actions["classifier_discover"] == "created"
-    assert len([a for a in actions.values() if a == "created"]) == 10
+    # All seeds except the one pre-existing ("narrator") are created.
+    assert len([a for a in actions.values() if a == "created"]) == len(lf_client.SEED_PROMPTS) - 1
     assert fake.flushed  # flush() must run so created prompts are ingested
 
 
@@ -190,7 +191,7 @@ def test_push_seed_prompts_force_overwrites(monkeypatch):
     monkeypatch.setattr(lf_client, "is_enabled", lambda: True)
     results = dict(lf_client.push_seed_prompts(force=True))
     assert all(a == "updated" for a in results.values())
-    assert len(fake.created) == 11
+    assert len(fake.created) == len(lf_client.SEED_PROMPTS)
 
 
 def test_push_seed_prompts_requires_enabled(monkeypatch):

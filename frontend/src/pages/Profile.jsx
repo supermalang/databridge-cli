@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
+import { indexQuestionsByColumn, buildColumnTree } from '../lib/questionGroups.js';
+import GroupTree from '../components/GroupTree.jsx';
 
 function ColumnRow({ c }) {
   const detail =
@@ -25,6 +27,7 @@ function ColumnRow({ c }) {
 
 export default function Profile() {
   const [profiles, setProfiles] = useState(null);
+  const [questionsByColumn, setQuestionsByColumn] = useState(() => new Map());
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -46,8 +49,36 @@ export default function Profile() {
         if (!cancelled) setLoading(false);
       }
     })();
+    // Fetch questions separately so a failure here never blocks the profile.
+    (async () => {
+      try {
+        const r = await fetch('/api/questions');
+        const data = await r.json().catch(() => ({}));
+        if (cancelled || !r.ok) return;
+        setQuestionsByColumn(indexQuestionsByColumn(data.questions));
+      } catch {
+        // fall back to empty index → everything "Ungrouped", nothing hidden
+      }
+    })();
     return () => { cancelled = true; };
   }, []);
+
+  const renderCols = (cols) => (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <thead>
+        <tr style={{ textAlign: 'left', color: 'var(--ink-3)' }}>
+          <th style={{ padding: '6px 8px' }}>Column</th>
+          <th style={{ padding: '6px 8px' }}>Role</th>
+          <th style={{ padding: '6px 8px' }}>Missing</th>
+          <th style={{ padding: '6px 8px' }}>Distinct</th>
+          <th style={{ padding: '6px 8px' }}>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {cols.map(c => <ColumnRow key={c.name} c={c} />)}
+      </tbody>
+    </table>
+  );
 
   return (
     <div style={{ padding: '0 0 40px' }}>
@@ -76,20 +107,11 @@ export default function Profile() {
             {t.name} <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>· {(t.rows ?? 0).toLocaleString()} rows · {(t.columns?.length ?? 0)} columns</span>
           </summary>
           <div style={{ padding: '0 14px 14px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ textAlign: 'left', color: 'var(--ink-3)' }}>
-                  <th style={{ padding: '6px 8px' }}>Column</th>
-                  <th style={{ padding: '6px 8px' }}>Role</th>
-                  <th style={{ padding: '6px 8px' }}>Missing</th>
-                  <th style={{ padding: '6px 8px' }}>Distinct</th>
-                  <th style={{ padding: '6px 8px' }}>Detail</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(t.columns || []).filter(c => c.role !== 'linkage').map(c => <ColumnRow key={c.name} c={c} />)}
-              </tbody>
-            </table>
+            <GroupTree
+              tree={buildColumnTree((t.columns || []).filter(c => c.role !== 'linkage'), questionsByColumn)}
+              renderVisible={renderCols}
+              renderHidden={renderCols}
+            />
             {t.correlations?.length > 0 && (
               <div style={{ marginTop: 10, color: 'var(--ink-3)', fontSize: 12.5 }}>
                 Correlations: {t.correlations.map(p => `${p.a}↔${p.b} (r=${p.r != null ? p.r.toFixed(2) : 'N/A'})`).join('; ')}

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../components/Toast.jsx';
 import { loadConfig } from '../lib/config.js';
+import { isHidden, buildGroupTree } from '../lib/questionGroups.js';
+import GroupTree from '../components/GroupTree.jsx';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function colName(q) {
@@ -9,9 +11,6 @@ function colName(q) {
 function bareName(q) {
   // The last segment of the kobo_key path — what shows in the NAME column.
   return (q.kobo_key || '').split('/').pop() || '';
-}
-function groupKey(q) {
-  return q.group?.trim() || '— no group —';
 }
 
 // "5 select_one · 3 decimal · …"
@@ -30,18 +29,21 @@ function buildTypeBreakdown(qs) {
 export default function Questions() {
   const toast = useToast();
   const [questions, setQuestions] = useState(null);
-  const [original,  setOriginal]  = useState({});          // { idx: exportLabel } at load
+  const [original,  setOriginal]  = useState({});          // { idx: {export_label, hidden} } at load
   const [search,    setSearch]    = useState('');
   const [filter,    setFilter]    = useState('all');       // all | renamed | used
-  const [openGroups, setOpenGroups] = useState(new Set());
+  const [suggesting, setSuggesting] = useState(false);
   const [cfg, setCfg] = useState({});
+
+  const snapshot = (list) =>
+    Object.fromEntries(list.map((q, i) => [i, { export_label: q.export_label || '', hidden: isHidden(q) }]));
 
   const load = useCallback(async () => {
     try {
       const data = await (await fetch('/api/questions')).json();
       const list = data.questions || [];
       setQuestions(list);
-      setOriginal(Object.fromEntries(list.map((q, i) => [i, q.export_label || ''])));
+      setOriginal(Object.fromEntries(list.map((q, i) => [i, { export_label: q.export_label || '', hidden: isHidden(q) }])));
       setCfg(await loadConfig());
     } catch (e) { toast(String(e), 'err'); }
   }, [toast]);
@@ -62,59 +64,73 @@ export default function Questions() {
     return s;
   }, [cfg]);
 
-  // Indices of dirty rows (export_label edited since load)
+  // Indices of dirty rows (export_label OR hidden changed since load)
   const dirtyIndices = useMemo(() => {
     if (!questions) return new Set();
     const s = new Set();
     questions.forEach((q, i) => {
-      if (original[i] !== undefined && original[i] !== (q.export_label || '')) s.add(i);
+      const o = original[i];
+      if (o === undefined) return;
+      if (o.export_label !== (q.export_label || '')) { s.add(i); return; }
+      if (o.hidden !== isHidden(q)) s.add(i);
     });
     return s;
   }, [questions, original]);
 
-  // Group questions, applying filter + search
-  const groups = useMemo(() => {
+  // Apply filter + search → list of { q, idx }, then build the nested group tree.
+  const tree = useMemo(() => {
     if (!questions) return [];
     const sLower = search.trim().toLowerCase();
-    const visibleIdx = questions.map((q, i) => i).filter(i => {
-      const q = questions[i];
-      if (filter === 'renamed' && !dirtyIndices.has(i) && original[i] === undefined) return false;
-      if (filter === 'renamed' && original[i] !== undefined && original[i] === (q.export_label || '')) {
-        // "renamed" = export_label differs from the underlying label (which is what the
-        // fetch-questions auto-default would use). If they match, it's not renamed.
-        if ((q.export_label || '') === (q.label || '')) return false;
+    const items = [];
+    questions.forEach((q, i) => {
+      if (filter === 'renamed') {
+        const dirty = dirtyIndices.has(i);
+        if (!dirty && (q.export_label || '') === (q.label || '')) return;
       }
       if (filter === 'used') {
-        if (!usedInCharts.has(colName(q)) && !boundIndicators.has(colName(q))) return false;
+        if (!usedInCharts.has(colName(q)) && !boundIndicators.has(colName(q))) return;
       }
       if (sLower) {
         const hay = [q.kobo_key, q.label, q.export_label].filter(Boolean).join(' ').toLowerCase();
-        if (!hay.includes(sLower)) return false;
+        if (!hay.includes(sLower)) return;
       }
-      return true;
+      items.push({ q, idx: i });
     });
 
-    const byGroup = new Map();
-    for (const i of visibleIdx) {
-      const g = groupKey(questions[i]);
-      if (!byGroup.has(g)) byGroup.set(g, []);
-      byGroup.get(g).push(i);
-    }
-    return Array.from(byGroup.entries()).map(([name, indices]) => ({
-      name, indices,
-      breakdown: buildTypeBreakdown(indices.map(i => questions[i])),
-    }));
-  }, [questions, filter, search, dirtyIndices, original, usedInCharts, boundIndicators]);
+    return buildGroupTree(items, {
+      getPath: ({ q }) => q.group,
+      getHidden: ({ q }) => isHidden(q),
+    });
+  }, [questions, filter, search, dirtyIndices, usedInCharts, boundIndicators]);
 
   const setExportLabel = (idx, value) => {
     setQuestions(prev => prev.map((q, i) => (i === idx ? { ...q, export_label: value } : q)));
   };
 
-  const toggleGroup = (name) => setOpenGroups(prev => {
-    const next = new Set(prev);
-    next.has(name) ? next.delete(name) : next.add(name);
-    return next;
-  });
+  const toggleHidden = (idx) => {
+    setQuestions(prev => prev.map((q, i) => (i === idx ? { ...q, hidden: !isHidden(q) } : q)));
+  };
+
+  const suggestHidden = async () => {
+    setSuggesting(true);
+    try {
+      const res = await fetch('/api/questions/suggest-hidden', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Request failed');
+      const suggestions = data.suggestions || [];
+      if (suggestions.length) {
+        const flag = new Set(suggestions);
+        setQuestions(prev => prev.map(q => (flag.has(q.kobo_key) ? { ...q, hidden: true } : q)));
+        toast(`Flagged ${suggestions.length} field(s) to hide — review and Save`, 'ok');
+      } else {
+        toast(data.message || 'AI found no extra fields to hide', 'ok');
+      }
+    } catch (e) {
+      toast(String(e.message || e), 'err');
+    } finally {
+      setSuggesting(false);
+    }
+  };
 
   const save = async () => {
     try {
@@ -126,8 +142,86 @@ export default function Questions() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Save failed');
       toast(`Saved ${data.saved} questions.`, 'ok');
-      setOriginal(Object.fromEntries(questions.map((q, i) => [i, q.export_label || ''])));
+      setOriginal(snapshot(questions));
     } catch (e) { toast(e.message, 'err'); }
+  };
+
+  // Row renderer shared by visible and hidden buckets. `items` = [{ q, idx }].
+  const renderRows = (items) => (
+    <table className="q-table">
+      <thead>
+        <tr>
+          <th style={{ width: '20%' }}>Name</th>
+          <th style={{ width: '12%' }}>Type</th>
+          <th style={{ width: '30%' }}>Label (from form)</th>
+          <th style={{ width: '30%' }}>Export label · used in charts &amp; template</th>
+          <th style={{ width: '8%' }}></th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map(({ q, idx }) => {
+          const dirty = dirtyIndices.has(idx);
+          const isUsed = usedInCharts.has(colName(q));
+          const hidden = isHidden(q);
+          return (
+            <tr key={idx}>
+              <td className="q-table__name">{bareName(q)}</td>
+              <td>
+                <span className="q-type-badge" data-cat={q.category || 'undefined'}>{q.type || ''}</span>
+              </td>
+              <td className="q-table__label">{q.label || ''}</td>
+              <td>
+                <input
+                  className="q-export-input"
+                  data-dirty={dirty}
+                  value={q.export_label || ''}
+                  placeholder={q.label || q.kobo_key}
+                  onChange={e => setExportLabel(idx, e.target.value)}
+                />
+              </td>
+              <td>
+                <div className="q-row-actions">
+                  <button title={isUsed ? 'Used in charts' : 'Not currently used'} onClick={() => toast(isUsed ? `${colName(q)} is wired to a chart` : 'Not used yet', isUsed ? 'ok' : 'err')}>
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="3" y1="13" x2="3" y2="8"/>
+                      <line x1="7" y1="13" x2="7" y2="4"/>
+                      <line x1="11" y1="13" x2="11" y2="10"/>
+                    </svg>
+                  </button>
+                  <button
+                    title={hidden ? 'Unhide — show in report' : 'Hide — exclude from analysis'}
+                    onClick={() => toggleHidden(idx)}
+                  >
+                    {hidden ? (
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M2 2l12 12"/>
+                        <path d="M6.5 6.6a2 2 0 0 0 2.8 2.8"/>
+                        <path d="M4.3 4.4C2.7 5.4 1.5 8 1.5 8s2.5 4 6.5 4c1 0 1.9-.2 2.7-.6"/>
+                        <path d="M7 4.1A6 6 0 0 1 8 4c4 0 6.5 4 6.5 4a12 12 0 0 1-1.6 2"/>
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1.5 8S4 4 8 4s6.5 4 6.5 4-2.5 4-6.5 4-6.5-4-6.5-4z"/>
+                        <circle cx="8" cy="8" r="2"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+
+  const renderHeaderExtra = (node) => {
+    const breakdown = buildTypeBreakdown(node.visible.map(({ q }) => q));
+    return (
+      <span className="q-group__breakdown">
+        {breakdown.map((b, i) => <span key={i}>{b}</span>)}
+      </span>
+    );
   };
 
   // ── render ───────────────────────────────────────────────────────────────
@@ -141,11 +235,12 @@ export default function Questions() {
     );
   }
 
-  const totalGroups = new Set(questions.map(groupKey)).size;
+  const totalGroups = tree.length;
   const totalUsedInCharts = questions.filter(q => usedInCharts.has(colName(q))).length;
   const totalBoundInd     = questions.filter(q => boundIndicators.has(colName(q))).length;
-  const totalRenamed = dirtyIndices.size +
-    questions.filter(q => (q.export_label || '') !== '' && (q.export_label || '') !== (q.label || '')).length;
+  const totalRenamed = questions.filter((q, i) =>
+    dirtyIndices.has(i) || ((q.export_label || '') !== '' && (q.export_label || '') !== (q.label || ''))
+  ).length;
 
   return (
     <div className="q-page">
@@ -170,6 +265,9 @@ export default function Questions() {
             </button>
             <button className={`view-btn ${filter === 'used' ? 'active' : ''}`} onClick={() => setFilter('used')}>Used in charts</button>
           </div>
+          <button className="ai-btn" onClick={suggestHidden} disabled={suggesting}>
+            {suggesting ? 'Asking AI…' : 'Suggest fields to hide'}
+          </button>
         </div>
         <div className="q-stats">
           <span><b>{questions.length}</b> fields</span>
@@ -181,22 +279,16 @@ export default function Questions() {
       </div>
 
       <div className="q-groups">
-        {groups.map(g => (
-          <Group
-            key={g.name}
-            name={g.name}
-            indices={g.indices}
-            breakdown={g.breakdown}
-            open={openGroups.has(g.name)}
-            onToggle={() => toggleGroup(g.name)}
-            questions={questions}
-            dirtyIndices={dirtyIndices}
-            usedInCharts={usedInCharts}
-            onChangeLabel={setExportLabel}
-            toast={toast}
+        {tree.length > 0 ? (
+          <GroupTree
+            tree={tree}
+            renderVisible={renderRows}
+            renderHidden={renderRows}
+            renderHeaderExtra={renderHeaderExtra}
           />
-        ))}
-        {groups.length === 0 && <p className="empty-state" style={{ padding: 30 }}>No questions match your filter.</p>}
+        ) : (
+          <p className="empty-state" style={{ padding: 30 }}>No questions match your filter.</p>
+        )}
       </div>
     </div>
   );
@@ -224,76 +316,6 @@ function Header({ total, groups, unsaved, onRefresh, onSave }) {
           Save changes
         </button>
       </div>
-    </div>
-  );
-}
-
-// ── Group accordion ──────────────────────────────────────────────────────────
-function Group({ name, indices, breakdown, open, onToggle, questions, dirtyIndices, usedInCharts, onChangeLabel, toast }) {
-  return (
-    <div className="q-group" data-open={open}>
-      <div className="q-group__head" onClick={onToggle}>
-        <svg className="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 4 10 8 6 12"/></svg>
-        <span className="q-group__name">{name}</span>
-        <span className="q-group__count">({indices.length})</span>
-        <span className="q-group__breakdown">
-          {breakdown.map((b, i) => <span key={i}>{b}</span>)}
-        </span>
-      </div>
-      {open && (
-        <div className="q-group__body">
-          <table className="q-table">
-            <thead>
-              <tr>
-                <th style={{ width: '20%' }}>Name</th>
-                <th style={{ width: '12%' }}>Type</th>
-                <th style={{ width: '30%' }}>Label (from form)</th>
-                <th style={{ width: '30%' }}>Export label · used in charts &amp; template</th>
-                <th style={{ width: '8%' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {indices.map(i => {
-                const q = questions[i];
-                const dirty = dirtyIndices.has(i);
-                const isUsed = usedInCharts.has(colName(q));
-                return (
-                  <tr key={i}>
-                    <td className="q-table__name">{bareName(q)}</td>
-                    <td>
-                      <span className="q-type-badge" data-cat={q.category || 'undefined'}>{q.type || ''}</span>
-                    </td>
-                    <td className="q-table__label">{q.label || ''}</td>
-                    <td>
-                      <input
-                        className="q-export-input"
-                        data-dirty={dirty}
-                        value={q.export_label || ''}
-                        placeholder={q.label || q.kobo_key}
-                        onChange={e => onChangeLabel(i, e.target.value)}
-                      />
-                    </td>
-                    <td>
-                      <div className="q-row-actions">
-                        <button title={isUsed ? 'Used in charts' : 'Not currently used'} onClick={() => toast(isUsed ? `${colName(q)} is wired to a chart` : 'Not used yet', isUsed ? 'ok' : 'err')}>
-                          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="3" y1="13" x2="3" y2="8"/>
-                            <line x1="7" y1="13" x2="7" y2="4"/>
-                            <line x1="11" y1="13" x2="11" y2="10"/>
-                          </svg>
-                        </button>
-                        <button title="More" onClick={() => toast('Row actions coming next', 'err')}>
-                          <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12" cy="8" r="1.4"/></svg>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }

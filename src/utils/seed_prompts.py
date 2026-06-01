@@ -355,6 +355,37 @@ _ASK_REFINE: ChatMessages = [
     )},
 ]
 
+_HIDDEN_SUGGESTER: ChatMessages = [
+    {"role": "system", "content": (
+        "You are a survey data analyst. Given a list of survey questions (each with "
+        "its kobo_key, raw XLSForm type, group, and label), identify which questions "
+        "are NON-ANALYTICAL 'display-only' fields that carry no analyzable data and "
+        "should be HIDDEN by default in the data tool — for example: on-screen "
+        "instructions, section headers / labels, acknowledgment or consent-prompt "
+        "text the respondent merely reads, 'thank you' messages, and free-text "
+        "comment fields that exist only as a catch-all note.\n\n"
+        "Be VERY CONSERVATIVE. Only flag a field when its label clearly shows it is "
+        "an instruction, a heading, an acknowledgment, or a non-data note. When in "
+        "doubt, do NOT flag it.\n\n"
+        "HARD RULES:\n"
+        "  - NEVER flag analyzable question types: select_one, select_multiple, "
+        "integer, decimal, range, date, datetime, time, gps, geotrace, geoshape.\n"
+        "    Only fuzzy text-like fields may ever be flagged.\n"
+        "  - 'note' type fields are already hidden by a deterministic rule — you do "
+        "not need to return them; focus on the fuzzy cases.\n"
+        "  - Use ONLY the exact kobo_key values from the provided list.\n"
+        "  - Each flagged field needs a short (<= 12 word) reason.\n"
+        '  - Return ONLY valid JSON: {"suggestions": [{"kobo_key": "...", "reason": "..."}]} '
+        "— no markdown, no explanation. Return an empty list if nothing clearly qualifies."
+    )},
+    {"role": "user", "content": (
+        "Survey questions:\n"
+        "{{questions_block}}\n\n"
+        "Which of these are non-analytical display-only fields that should be hidden "
+        "by default? Return JSON only."
+    )},
+]
+
 _ASK_CAPTION: ChatMessages = [
     {"role": "system", "content": (
         "You write one-line factual chart captions for a data report. For each chart you are "
@@ -602,6 +633,29 @@ _VIEW_SUGGESTER_OUTPUT_SCHEMA = {
     },
 }
 
+# OpenAI Strict mode forbids open maps (additionalProperties as a schema), so the
+# `reasons` map is modeled as a list of {kobo_key, reason} objects; the Python
+# suggester reshapes it into {suggestions: [...], reasons: {...}}.
+_HIDDEN_SUGGESTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["suggestions"],
+    "properties": {
+        "suggestions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["kobo_key", "reason"],
+                "properties": {
+                    "kobo_key": {"type": "string"},
+                    "reason":   {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
 _NARRATOR_OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -631,6 +685,8 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
                              "config": {"output_schema": _CLASSIFIER_DISCOVER_OUTPUT_SCHEMA}},
     "classifier_classify":  {"messages": _CLASSIFIER_CLASSIFY,
                              "config": {"output_schema": _CLASSIFIER_CLASSIFY_OUTPUT_SCHEMA}},
+    "hidden_suggester":     {"messages": _HIDDEN_SUGGESTER,
+                             "config": {"output_schema": _HIDDEN_SUGGESTER_OUTPUT_SCHEMA}},
     "ask_propose": {"messages": _ASK_PROPOSE, "config": {}},
     "ask_caption": {"messages": _ASK_CAPTION, "config": {}},
     "ask_refine":  {"messages": _ASK_REFINE,  "config": {}},
