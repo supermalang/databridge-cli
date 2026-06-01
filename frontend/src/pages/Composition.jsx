@@ -61,7 +61,7 @@ function ChartIcon({ type }) {
 // ── component ────────────────────────────────────────────────────────────────
 // `sections` selects which cards render + which config keys this instance saves,
 // so the same component backs both the Load (views) and Analyze (charts/etc) tabs.
-const ALL_SECTIONS = ['charts', 'pii', 'framework', 'indicators', 'summaries', 'views', 'templates'];
+const ALL_SECTIONS = ['charts', 'pii', 'framework', 'indicators', 'tables', 'summaries', 'views', 'templates'];
 
 export default function Composition({ sections } = {}) {
   const secs = Array.isArray(sections) && sections.length ? sections : ALL_SECTIONS;
@@ -71,6 +71,7 @@ export default function Composition({ sections } = {}) {
   const [filters,    setFilters]   = useState([]);
   const [charts,     setCharts]    = useState([]);
   const [indicators, setIndicators]= useState([]);
+  const [tables,     setTables]    = useState([]);
   const [summaries,  setSummaries] = useState([]);
   const [views,      setViews]     = useState([]);
   const [templates,  setTemplates] = useState([]);
@@ -88,6 +89,10 @@ export default function Composition({ sections } = {}) {
   const suggestSpec = {
     chart:   { command: 'suggest-charts',    key: 'charts',    setter: setCharts,    label: 'chart',   plural: 'charts',
                placeholder: 'e.g. Focus on geographic distribution. Include a stacked bar of food security by region. Avoid simple count charts where possible.' },
+    indicator: { command: 'suggest-indicators', key: 'indicators', setter: setIndicators, label: 'indicator', plural: 'indicators',
+               placeholder: 'e.g. Headline counts and averages — total households, average household size, % female-headed.' },
+    table:   { command: 'suggest-tables',    key: 'tables',    setter: setTables,    label: 'table',   plural: 'tables',
+               placeholder: 'e.g. A breakdown table of households by region, and one of food-security class by wilaya.' },
     view:    { command: 'suggest-views',     key: 'views',     setter: setViews,     label: 'view',    plural: 'views',
                placeholder: 'e.g. Per-Wilaya aggregates for health and education. Join location into all repeat groups.' },
     summary: { command: 'suggest-summaries', key: 'summaries', setter: setSummaries, label: 'summary', plural: 'summaries',
@@ -298,12 +303,33 @@ export default function Composition({ sections } = {}) {
     }
   };
 
+  // Tables reuse the chart `table` renderer — preview through /api/charts/preview.
+  const openTablePreview = async (i) => {
+    const t = tables[i];
+    if (!t) return;
+    const chart = { ...t, type: 'table' };
+    setPreview({ chart, loading: true });
+    try {
+      const resp = await fetch('/api/charts/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chart }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) { setPreview({ chart, error: data.detail || `Request failed (${resp.status})` }); return; }
+      setPreview({ chart, image: data.image });
+    } catch (e) {
+      setPreview({ chart, error: e.message || 'Network error' });
+    }
+  };
+
   const reload = useCallback(async () => {
     const c = await loadConfig();
     setCfg(c);
     setFilters(Array.isArray(c.filters) ? c.filters : []);
     setCharts(Array.isArray(c.charts) ? c.charts : []);
     setIndicators(Array.isArray(c.indicators) ? c.indicators : []);
+    setTables(Array.isArray(c.tables) ? c.tables : []);
     setSummaries(Array.isArray(c.summaries) ? c.summaries : []);
     setViews(Array.isArray(c.views) ? c.views : []);
     try {
@@ -330,6 +356,7 @@ export default function Composition({ sections } = {}) {
           setOrDelete('charts', charts);
         }
         if (has('indicators')) setOrDelete('indicators', indicators);
+        if (has('tables')) setOrDelete('tables', tables);
         if (has('summaries')) setOrDelete('summaries', summaries);
         if (has('views')) setOrDelete('views', views);
       });
@@ -356,7 +383,7 @@ export default function Composition({ sections } = {}) {
     <div className="comp-page">
       <Header
         questionCount={questionCount}
-        counts={{ charts: charts.length, indicators: indicators.length, summaries: summaries.length, views: views.length }}
+        counts={{ charts: charts.length, indicators: indicators.length, tables: tables.length, summaries: summaries.length, views: views.length }}
         sections={secs}
         onSave={saveAll}
       />
@@ -382,6 +409,19 @@ export default function Composition({ sections } = {}) {
               onAdd={() => openEdit('indicator', null)}
               onEdit={(i) => openEdit('indicator', i)}
               onRemove={remove('indicator', setIndicators)}
+              onSuggest={() => openSuggestModal('indicator')}
+              suggesting={suggesting === 'indicator'}
+            />
+          )}
+          {has('tables') && (
+            <TablesCard
+              tables={tables}
+              onAdd={() => openEdit('table', null)}
+              onEdit={(i) => openEdit('table', i)}
+              onRemove={remove('table', setTables)}
+              onSuggest={() => openSuggestModal('table')}
+              onPreview={openTablePreview}
+              suggesting={suggesting === 'table'}
             />
           )}
           {has('summaries') && (
@@ -437,6 +477,9 @@ export default function Composition({ sections } = {}) {
       )}
       {editing?.kind === 'view' && (
         <ViewModal initial={editing.index !== null ? views[editing.index] : null} onClose={closeEdit} onSave={(item) => upsert(setViews)(item, editing.index)} />
+      )}
+      {editing?.kind === 'table' && (
+        <TableModal initial={editing.index !== null ? tables[editing.index] : null} onClose={closeEdit} onSave={(item) => upsert(setTables)(item, editing.index)} />
       )}
 
       {suggestKind && (
@@ -631,6 +674,7 @@ function Header({ questionCount, counts, sections = ALL_SECTIONS, onSave }) {
   const countItems = [
     has('charts')     && `${counts.charts} charts`,
     has('indicators') && `${counts.indicators} indicators`,
+    has('tables')     && `${counts.tables} tables`,
     has('summaries')  && `${counts.summaries} summaries`,
     has('views')      && `${counts.views} views`,
   ].filter(Boolean);
@@ -1000,7 +1044,7 @@ function FrameworkCard() {
 }
 
 // ── Indicators card ──────────────────────────────────────────────────────────
-function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
+function IndicatorsCard({ indicators, onAdd, onEdit, onRemove, onSuggest, suggesting }) {
   const [latest, setLatest] = useState({}); // { [indicator.name]: { value, error } }
 
   useEffect(() => {
@@ -1038,6 +1082,11 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
           <div className="comp-card__sub">Text/number values → <code>{'{{ ind_<name> }}'}</code> placeholders in template</div>
         </div>
         <div className="comp-card__head-actions">
+          {onSuggest && (
+            <button className="ai-btn" onClick={onSuggest} disabled={suggesting}>
+              {suggesting ? 'Asking AI…' : 'Suggest with AI'}
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add indicator</button>
         </div>
       </div>
@@ -1080,6 +1129,59 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
               )}
             </div>
             <div className="comp-row__actions">
+              <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
+              </button>
+              <button className="icon-btn" title="Delete" onClick={onRemove(i)}>
+                <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12" cy="8" r="1.4"/></svg>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Tables card ──────────────────────────────────────────────────────────────
+// Tables are chart-like recipes rendered with the `table` chart type →
+// {{ table_<name> }} placeholders in the Word template.
+function TablesCard({ tables, onAdd, onEdit, onRemove, onSuggest, onPreview, suggesting }) {
+  return (
+    <div className="comp-card">
+      <div className="comp-card__head">
+        <div className="comp-card__head-text">
+          <div className="comp-card__title">Tables</div>
+          <div className="comp-card__sub">Tabular breakdowns → <code>{'{{ table_<name> }}'}</code> token in Word template</div>
+        </div>
+        <div className="comp-card__head-actions">
+          <button className="ai-btn" onClick={onSuggest} disabled={suggesting}>
+            {suggesting ? 'Asking AI…' : 'Suggest with AI'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add table</button>
+        </div>
+      </div>
+      <div className="comp-card__body">
+        {tables.length === 0 && <p className="empty-state" style={{ padding: 20 }}>No tables configured.</p>}
+        {tables.map((t, i) => (
+          <div className="comp-row" key={`${t.name}-${i}`}>
+            <div className="comp-row__icon" data-tone="green">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><line x1="2.5" y1="6.5" x2="13.5" y2="6.5"/><line x1="6" y1="3" x2="6" y2="13"/></svg>
+            </div>
+            <div className="comp-row__body">
+              <div className="comp-row__name">
+                {t.name || '(unnamed)'}
+                {t.ai && <span className="tag tag--warm">AI</span>}
+              </div>
+              <div className="comp-row__meta">
+                <span>{(t.questions || []).join(', ') || 'no columns'}</span>
+              </div>
+            </div>
+            <div className="comp-row__actions">
+              <button className="btn btn-ghost" onClick={() => onPreview(i)}>
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
+                Preview
+              </button>
               <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
               </button>
@@ -1480,6 +1582,29 @@ function SummaryModal({ initial, onClose, onSave }) {
         <ModalField label="Frequency"><select className="src-input" value={freq} onChange={e => setFreq(e.target.value)}>{['', 'day', 'week', 'month', 'year'].map(f => <option key={f} value={f}>{f || '—'}</option>)}</select></ModalField>
       )}
       {stat === 'ai' && <ModalField label="Prompt"><textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={4} className="src-input" style={{ height: 'auto', padding: 10 }} /></ModalField>}
+    </Modal>
+  );
+}
+
+// Tables are chart recipes of type `table`. Minimal editor: name, title, columns.
+function TableModal({ initial, onClose, onSave }) {
+  const [name, setName]   = useState(initial?.name || '');
+  const [title, setTitle] = useState(initial?.title || '');
+  const [cols, setCols]   = useState(csv(initial?.questions || []));
+  const submit = () => {
+    if (!name.trim()) return alert('Name is required.');
+    const item = { name: name.trim(), title: title.trim(), type: 'table', questions: fromCsv(cols) };
+    if (initial?.options) item.options = initial.options;
+    if (initial?.source) item.source = initial.source;
+    if (initial?.join_parent) item.join_parent = initial.join_parent;
+    if (initial?.filter) item.filter = initial.filter;
+    onSave(item);
+  };
+  return (
+    <Modal title={initial ? `Edit table: ${initial.name}` : 'Add table'} onClose={onClose} onSave={submit} width={560}>
+      <ModalField label="Name" hint="Used as {{ table_<name> }} in the template"><input className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
+      <ModalField label="Title"><input className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
+      <ModalField label="Columns" hint="Comma-separated column names (export labels)."><input className="src-input" value={cols} onChange={e => setCols(e.target.value)} /></ModalField>
     </Modal>
   );
 }

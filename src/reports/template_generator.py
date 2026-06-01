@@ -52,6 +52,13 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
             _meta(doc,label,f"{{{{ ind_{name} }}}}")
             if ind.get("disaggregate_by"):
                 _meta(doc,f"{label} — breakdown",f"{{{{ ind_{name}_table }}}}")
+    tables=cfg.get("tables",[])
+    if tables:
+        _divider(doc); _heading(doc,"Data Tables",1)
+        for t in tables:
+            name=t.get("name",""); _heading(doc,t.get("title",name),2)
+            _descriptor(doc,f"Table — {', '.join(t.get('questions',[]))}")
+            _chart_ph(doc,f"{{{{ table_{name} }}}}"); doc.add_paragraph()
     summaries=cfg.get("summaries",[])
     if summaries:
         _divider(doc); _heading(doc,"Data Summaries",1)
@@ -122,6 +129,7 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
     doc.save(out_path)
     log.info(f"Template saved → {out_path}")
     for c in charts: log.info(f"  {{{{ chart_{c.get('name')} }}}}")
+    for t in tables: log.info(f"  {{{{ table_{t.get('name')} }}}}")
     return out_path
 
 def _margins(doc):
@@ -184,6 +192,8 @@ def _ref_table(doc,cfg):
         rows.append((f"{{{{ summary_{s.get('name','')} }}}}",f"Summary: {s.get('label',s.get('name',''))}"))
     for c in cfg.get("charts",[]):
         rows.append((f"{{{{ chart_{c.get('name','')} }}}}",f"Chart: {c.get('title','')}"))
+    for t in cfg.get("tables",[]):
+        rows.append((f"{{{{ table_{t.get('name','')} }}}}",f"Table: {t.get('title','')}"))
     table=doc.add_table(rows=1,cols=2); table.style="Table Grid"
     hdr=table.rows[0].cells
     hdr[0].text="Placeholder"; hdr[1].text="Description"

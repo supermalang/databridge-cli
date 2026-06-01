@@ -303,29 +303,103 @@ _VIEW_SUGGESTER: ChatMessages = [
     )},
 ]
 
+_TABLE_SUGGESTER: ChatMessages = [
+    {"role": "system", "content": (
+        "You are a data analyst designing data TABLES for a survey reporting pipeline. "
+        "A table is rendered as a frequency/breakdown table image in the final Word "
+        "report (one {{ table_<name> }} placeholder each). Given the survey's columns and "
+        "any repeat groups, propose 3-6 useful tables.\n\n"
+        "Table YAML shape:\n"
+        "  name:        snake_case identifier — becomes {{ table_<name> }} in the template\n"
+        "  title:       short human title shown above the table\n"
+        "  questions:   array of EXACT column names from the provided lists — pick 1 or more\n"
+        "               CATEGORICAL columns for a frequency / breakdown table\n"
+        "  options:     optional; supports top_n (limit rows), width_inches\n"
+        "  source:      optional repeat-group key (exactly as printed) for repeat-group tables\n"
+        "  join_parent: optional [parent_col, ...] — only when source is a repeat group\n"
+        "  filter:      optional pandas .query() expression\n\n"
+        "Rules:\n"
+        "  - Each table needs at least 1 categorical column in `questions`\n"
+        "  - Use ONLY column names that exist in the provided lists\n"
+        "  - Prefer categorical columns that yield a meaningful count/breakdown\n"
+        "  - name must be snake_case and unique; avoid duplicating existing tables (listed below)\n"
+        "  - Do NOT set `type` — tables always render with the table chart type\n"
+        '  - Return ONLY valid JSON: {"tables": [ ... ]} — no markdown, no explanation'
+    )},
+    {"role": "user", "content": (
+        "{{header_line}}Form: {{form_alias}}\n"
+        "\n"
+        "{{user_request_line}}{{columns_block}}{{repeat_groups_block}}{{existing_block}}"
+        "Suggest a tables: configuration block. Return JSON only."
+    )},
+]
+
+_INDICATOR_SUGGESTER: ChatMessages = [
+    {"role": "system", "content": (
+        "You are an M&E specialist designing single-number INDICATORS for a survey "
+        "reporting pipeline. Each indicator becomes one {{ ind_<name> }} number in the "
+        "final Word report. Given the survey's columns, propose 4-8 useful indicators.\n\n"
+        "Indicator YAML shape:\n"
+        "  name:     snake_case identifier — becomes {{ ind_<name> }} in the template\n"
+        "  label:    short human title shown beside the number (recommended)\n"
+        "  stat:     one of the stats below\n"
+        "  question: EXACT column name (omit ONLY for stat: count)\n"
+        "  format:   number (default) | decimal | percent | text\n"
+        "  source:   optional repeat-group key (exactly as printed) for repeat tables\n"
+        "  filter_value: required ONLY for stat: percent (the value to match)\n\n"
+        "Stat semantics:\n"
+        "  count          — number of rows (no question)\n"
+        "  count_distinct — unique values of a column\n"
+        "  most_common    — most frequent value of a column\n"
+        "  sum/mean/median/min/max — a quantitative column\n"
+        "  percent        — share of rows where question == filter_value (needs filter_value; use format: percent)\n"
+        "  completeness   — % of present (non-blank) values in a column (data quality; format: percent)\n"
+        "  outlier_rate   — % of a quantitative column beyond the 3xIQR fence (data quality; format: percent)\n"
+        "  duplicate_rate — % of rows that are redundant duplicates of a column (data quality; format: percent)\n\n"
+        "Rules:\n"
+        "  - sum/mean/median/min/max/outlier_rate require a QUANTITATIVE column\n"
+        "  - percent requires both question and filter_value, and should set format: percent\n"
+        "  - completeness/outlier_rate/duplicate_rate should set format: percent\n"
+        "  - Use ONLY column names that exist in the provided lists\n"
+        "  - name must be snake_case and unique; avoid duplicating existing indicators (listed below)\n"
+        '  - Return ONLY valid JSON: {"indicators": [ ... ]} — no markdown, no explanation'
+    )},
+    {"role": "user", "content": (
+        "{{header_line}}Form: {{form_alias}}\n"
+        "\n"
+        "{{user_request_line}}{{columns_block}}{{repeat_groups_block}}{{existing_block}}"
+        "Suggest an indicators: configuration block. Return JSON only."
+    )},
+]
+
 _ASK_PROPOSE: ChatMessages = [
     {"role": "system", "content": (
         "You are a data analyst. Given a catalog of available tables and columns "
         "(with roles and data shape) and a user's question, propose 1 to 3 ANSWERS that "
-        "best fit. Each answer is either a CHART or a single-number INDICATOR. "
+        "best fit. Each answer is a CHART, a TABLE, or a single-number INDICATOR. "
         "Use an indicator (a number) for 'how many / total / average / percentage' "
-        "questions; use a chart for distributions, comparisons, breakdowns, and trends. "
+        "questions; use a chart for distributions, comparisons, breakdowns, and trends; "
+        "use a table when the user asks for a tabular breakdown / frequency table / a "
+        "'list' or 'table' of values across one or more categorical columns. "
         "Use ONLY table and column names that appear in the catalog. For charts, choose a "
-        "type from the chart list and respect its column requirements. For indicators, "
-        "choose a stat from the indicator list. Respond with valid JSON only — no fences, "
-        "no commentary."
+        "type from the chart list and respect its column requirements. A table needs ≥1 "
+        "categorical column in \"questions\" (do not set a \"type\" for tables). For "
+        "indicators, choose a stat from the indicator list. Respond with valid JSON only — "
+        "no fences, no commentary."
     )},
     {"role": "user", "content": (
         "User question: {{question}}\n\n"
         "Available data (catalog):\n{{catalog}}\n\n"
         "Chart types (with column requirements):\n{{chart_types}}\n\n"
         "Indicator stats:\n{{indicator_stats}}\n\n"
-        "Propose 1 to 3 items. Every item has: \"kind\" (\"chart\" or \"indicator\"), a "
-        "snake_case \"name\", a human \"title\", and optionally \"source\" (a table name "
-        "from the catalog; omit for the main table).\n"
+        "Propose 1 to 3 items. Every item has: \"kind\" (\"chart\", \"table\", or "
+        "\"indicator\"), a snake_case \"name\", a human \"title\", and optionally \"source\" "
+        "(a table name from the catalog; omit for the main table).\n"
         "- chart items also: \"type\" (from the chart list) and \"questions\" (column names "
         "in the order the type expects); optionally \"group_by\" and \"filter\" (a pandas "
         "query string).\n"
+        "- table items also: \"questions\" (≥1 categorical column name); optionally "
+        "\"filter\". Do NOT set \"type\" for table items.\n"
         "- indicator items also: \"stat\" (from the indicator list) and \"question\" (a "
         "column; omit only for \"count\"); optionally \"filter\", and \"filter_value\" "
         "(required when stat is \"percent\").\n"
@@ -664,6 +738,74 @@ _VIEW_SUGGESTER_OUTPUT_SCHEMA = {
     },
 }
 
+# A table is a chart-like recipe rendered with the `table` chart type, so it shares
+# the chart options block. `type` is omitted from the schema (the suggester forces it
+# to "table") to keep the LLM focused on picking columns.
+_TABLE_SUGGESTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["tables"],
+    "properties": {
+        "tables": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "title", "questions", "options",
+                             "source", "join_parent", "filter"],
+                "properties": {
+                    "name":      {"type": "string"},
+                    "title":     {"type": "string"},
+                    "questions": {"type": "array", "items": {"type": "string"}},
+                    "options": {
+                        "type": ["object", "null"],
+                        "additionalProperties": False,
+                        "required": list(_CHART_OPTIONS_PROPERTIES.keys()),
+                        "properties": _CHART_OPTIONS_PROPERTIES,
+                    },
+                    "source":      {"type": ["string", "null"]},
+                    "join_parent": {"type": ["array", "null"],
+                                    "items": {"type": "string"}},
+                    "filter":      {"type": ["string", "null"]},
+                },
+            },
+        },
+    },
+}
+
+# Indicators are single-number stats. The stat enum mirrors the indicator engine's
+# supported stats (src/reports/indicators.py); format mirrors _format()'s modes.
+_INDICATOR_SUGGESTER_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["indicators"],
+    "properties": {
+        "indicators": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "stat", "question", "format", "label",
+                             "source", "filter_value"],
+                "properties": {
+                    "name":  {"type": "string"},
+                    "stat":  {"type": "string",
+                              "enum": ["count", "count_distinct", "sum", "mean",
+                                       "median", "min", "max", "percent",
+                                       "most_common", "completeness",
+                                       "outlier_rate", "duplicate_rate"]},
+                    "question":     {"type": ["string", "null"]},
+                    "format":       {"type": ["string", "null"],
+                                     "enum": [None, "number", "decimal", "percent", "text"]},
+                    "label":        {"type": ["string", "null"]},
+                    "source":       {"type": ["string", "null"]},
+                    "filter_value": {"type": ["string", "null"]},
+                },
+            },
+        },
+    },
+}
+
 # OpenAI Strict mode forbids open maps (additionalProperties as a schema), so the
 # `reasons` map is modeled as a list of {kobo_key, reason} objects; the Python
 # suggester reshapes it into {suggestions: [...], reasons: {...}}.
@@ -734,6 +876,10 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
                             "config": {"output_schema": _SUMMARY_SUGGESTER_OUTPUT_SCHEMA}},
     "view_suggester":      {"messages": _VIEW_SUGGESTER,
                             "config": {"output_schema": _VIEW_SUGGESTER_OUTPUT_SCHEMA}},
+    "table_suggester":     {"messages": _TABLE_SUGGESTER,
+                            "config": {"output_schema": _TABLE_SUGGESTER_OUTPUT_SCHEMA}},
+    "indicator_suggester": {"messages": _INDICATOR_SUGGESTER,
+                            "config": {"output_schema": _INDICATOR_SUGGESTER_OUTPUT_SCHEMA}},
     "classifier_discover":  {"messages": _CLASSIFIER_DISCOVER,
                              "config": {"output_schema": _CLASSIFIER_DISCOVER_OUTPUT_SCHEMA}},
     "classifier_classify":  {"messages": _CLASSIFIER_CLASSIFY,
