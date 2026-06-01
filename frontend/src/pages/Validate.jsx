@@ -70,19 +70,45 @@ export default function Validate() {
     </div>
   );
 
+  // Robust column → question match: exact, then normalized (case/punctuation-
+  // insensitive) so findings reliably land under their real group instead of
+  // falling into "Ungrouped".
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normIndex = new Map();
+  for (const [k, q] of questionsByColumn) {
+    const nk = norm(k);
+    if (nk && !normIndex.has(nk)) normIndex.set(nk, q);
+  }
+  const findQuestion = (column) => questionsByColumn.get(column) || normIndex.get(norm(column)) || null;
+  const groupOf = (chk) => {
+    const q = findQuestion(chk.column);
+    return q ? (q.group || '') : 'Ungrouped';
+  };
+
   // Only consider/display findings on columns that are NOT hidden.
   const visibleChecks = report
     ? report.checks.filter((chk) => {
-        const q = questionsByColumn.get(chk.column);
+        const q = findQuestion(chk.column);
         return !(q && isHidden(q));
       })
     : [];
 
-  const tree = buildGroupTree(visibleChecks, {
-    getPath: (chk) => {
-      const q = questionsByColumn.get(chk.column);
-      return q ? q.group : 'Ungrouped';
-    },
+  // Organize strictly by group: every group's findings (errors, warnings, notes)
+  // stay together under that group. Groups are contiguous with the structural/
+  // unmatched "Ungrouped" bucket LAST; within a group, errors come first.
+  const SEV_RANK = { error: 0, warning: 1, info: 2 };
+  const orderedChecks = [...visibleChecks].sort((a, b) => {
+    const ga = groupOf(a), gb = groupOf(b);
+    const ra = ga === 'Ungrouped' ? 1 : 0, rb = gb === 'Ungrouped' ? 1 : 0;
+    if (ra !== rb) return ra - rb;
+    if (ga !== gb) return ga.localeCompare(gb);
+    const sa = SEV_RANK[a.severity] ?? 9, sb = SEV_RANK[b.severity] ?? 9;
+    if (sa !== sb) return sa - sb;
+    return (b.count || 0) - (a.count || 0);
+  });
+
+  const tree = buildGroupTree(orderedChecks, {
+    getPath: groupOf,
     getHidden: () => false,
   });
 
