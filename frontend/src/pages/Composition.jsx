@@ -242,6 +242,44 @@ export default function Composition({ sections } = {}) {
     toast('Updated — click Save changes at the top to persist', 'ok');
   };
 
+  // Download the FULL view table as CSV, reflecting the interactive drops/renames
+  // applied in the preview. Hidden columns are excluded server-side.
+  const downloadViewCsv = async () => {
+    if (!viewPreview) return;
+    const removed = viewPreview.removed || new Set();
+    const renames = viewPreview.renames || new Map();
+    const exportView = { ...viewPreview.view };
+    delete exportView.drop_columns;
+    delete exportView.columns;
+    if (removed.size) exportView.drop_columns = [...removed];
+    const cols = [];
+    for (const [name, rename] of renames) cols.push({ name, rename });
+    if (cols.length) exportView.columns = cols;
+    try {
+      const resp = await fetch('/api/views/export-csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ view: exportView }),
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({}));
+        toast(e.detail || `CSV export failed (${resp.status})`, 'err');
+        return;
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${viewPreview.view?.name || 'view'}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast(String(e.message || e), 'err');
+    }
+  };
+
   const openSummaryPreview = async (i) => {
     const summary = summaries[i];
     if (!summary) return;
@@ -483,9 +521,15 @@ export default function Composition({ sections } = {}) {
               const displayName = (c) => renames.get(c.name) || c.name;
               return (
                 <>
-                  <div style={{ color: 'var(--ink-3)', fontSize: 12, marginBottom: 8 }}>
-                    Showing {viewPreview.rows.length} of {viewPreview.n_rows?.toLocaleString() ?? viewPreview.rows.length} row{viewPreview.n_rows === 1 ? '' : 's'} · {visibleCols.length} of {viewPreview.columns.length} column{viewPreview.columns.length === 1 ? '' : 's'}
-                    <span style={{ marginLeft: 10 }}>Click <strong>×</strong> to drop a column · click the name to rename it.</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <div style={{ color: 'var(--ink-3)', fontSize: 12, flex: 1 }}>
+                      Showing {viewPreview.rows.length} of {viewPreview.n_rows?.toLocaleString() ?? viewPreview.rows.length} row{viewPreview.n_rows === 1 ? '' : 's'} · {visibleCols.length} of {viewPreview.columns.length} column{viewPreview.columns.length === 1 ? '' : 's'}
+                      <span style={{ marginLeft: 10 }}>Click <strong>×</strong> to drop a column · click the name to rename it.</span>
+                    </div>
+                    <button className="btn btn-ghost btn-sm" onClick={downloadViewCsv} title="Download the full view table as CSV">
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="3 9 8 14 13 9"/><line x1="8" y1="2" x2="8" y2="14"/></svg>
+                      Download CSV
+                    </button>
                   </div>
                   <div style={{ maxHeight: 460, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 4 }}>
                     <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5, fontFamily: 'var(--font-mono, monospace)' }}>

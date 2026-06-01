@@ -826,8 +826,23 @@ class ViewPreviewPayload(BaseModel):
     data_file: Optional[str] = None
     sample_n: Optional[int] = None
 
-@app.post("/api/views/preview")
-async def preview_view(payload: ViewPreviewPayload):
+def _hidden_view_columns(cfg) -> set:
+    """Display-names of questions that are hidden — a view must not consider these."""
+    from src.utils.config import is_effective_hidden
+    names = set()
+    for q in (cfg or {}).get("questions", []) or []:
+        if is_effective_hidden(q):
+            for k in (q.get("export_label"), q.get("label"), (q.get("kobo_key") or "").split("/")[-1]):
+                if k:
+                    names.add(str(k))
+    return names
+
+
+async def _compute_view_df(payload):
+    """Resolve a view definition to a DataFrame. Shared by preview + CSV export.
+
+    Hidden columns are dropped before renames so the view never considers
+    fields the user has hidden. Returns (df, cfg)."""
     import pandas as pd
     from src.data.transform import join_repeat_to_main, apply_choice_labels
     _questions_cfg = []
@@ -912,6 +927,11 @@ async def preview_view(payload: ViewPreviewPayload):
     drop_cols = v.get("drop_columns", []) or []
     if drop_cols:
         df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore")
+    # Exclude hidden columns — the view must not consider hidden fields. Done
+    # before renames so matching uses the original (display) column names.
+    hidden_names = _hidden_view_columns(_cfg or {})
+    if hidden_names:
+        df = df.drop(columns=[c for c in df.columns if c in hidden_names], errors="ignore")
     # Apply renames and type overrides AFTER drops.
     col_specs = v.get("columns", [])
     rename_map = {}
@@ -934,6 +954,13 @@ async def preview_view(payload: ViewPreviewPayload):
             rename_map[original] = renamed
     if rename_map:
         df = df.rename(columns=rename_map)
+    return df, _cfg
+
+
+@app.post("/api/views/preview")
+async def preview_view(payload: ViewPreviewPayload):
+    import pandas as pd
+    df, _cfg = await _compute_view_df(payload)
     # Auto-detect column types for UI
     col_info = []
     for col in df.columns:
@@ -961,6 +988,21 @@ async def preview_view(payload: ViewPreviewPayload):
         return v
     rows = [{col: _safe(row[col]) for col in preview_rows.columns} for _, row in preview_rows.iterrows()]
     return {"columns": col_info, "data": rows, "n_rows": n_rows}
+
+
+@app.post("/api/views/export-csv")
+async def export_view_csv(payload: ViewPreviewPayload):
+    """Download the FULL view table as CSV (hidden columns already excluded)."""
+    from fastapi.responses import Response
+    df, _cfg = await _compute_view_df(payload)
+    csv_text = df.to_csv(index=False)
+    raw = (payload.view or {}).get("name") or "view"
+    safe = "".join(c if (c.isalnum() or c in "_-.") else "_" for c in str(raw)) or "view"
+    return Response(
+        content=csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{safe}.csv"'},
+    )
 
 @app.post("/api/run/{command}")
 async def run_command(command: str, payload: RunPayload):
