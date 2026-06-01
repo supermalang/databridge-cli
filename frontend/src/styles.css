@@ -443,6 +443,9 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .q-table__label{color:var(--ink-2);font-size:13px}
 .q-export-input{width:100%;padding:7px 10px;background:var(--surface);border:1.5px solid transparent;border-radius:7px;font-size:13px;color:var(--ink);outline:0;font-weight:500;font-family:var(--font-sans);transition:border-color .12s,background .12s}
 .q-export-input:hover{background:var(--bg-2)}
+.q-export-input:disabled{opacity:.45;cursor:not-allowed;background:var(--bg-2)}
+.q-export-input:disabled:hover{background:var(--bg-2)}
+.q-row-actions button:disabled{opacity:.35;cursor:not-allowed;pointer-events:none}
 .q-export-input:focus{border-color:var(--accent);background:var(--surface);box-shadow:0 0 0 3px var(--accent-soft)}
 .q-export-input[data-dirty="true"]{border-color:var(--warm);background:var(--warm-soft)}
 .q-row-actions{display:flex;gap:4px;justify-content:flex-end}

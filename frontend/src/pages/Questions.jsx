@@ -88,9 +88,7 @@ export default function Questions() {
         const dirty = dirtyIndices.has(i);
         if (!dirty && (q.export_label || '') === (q.label || '')) return;
       }
-      if (filter === 'used') {
-        if (!usedInCharts.has(colName(q)) && !boundIndicators.has(colName(q))) return;
-      }
+      if (filter === 'hidden' && !isHidden(q)) return;
       if (sLower) {
         const hay = [q.kobo_key, q.label, q.export_label].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(sLower)) return;
@@ -98,11 +96,14 @@ export default function Questions() {
       items.push({ q, idx: i });
     });
 
+    // In the "Hidden" view every row is hidden — render them as normal group
+    // rows (not tucked into a collapsed sub-section).
+    const bucketHidden = filter !== 'hidden';
     return buildGroupTree(items, {
       getPath: ({ q }) => q.group,
-      getHidden: ({ q }) => isHidden(q),
+      getHidden: ({ q }) => (bucketHidden ? isHidden(q) : false),
     });
-  }, [questions, filter, search, dirtyIndices, usedInCharts, boundIndicators]);
+  }, [questions, filter, search, dirtyIndices]);
 
   const setExportLabel = (idx, value) => {
     setQuestions(prev => prev.map((q, i) => (i === idx ? { ...q, export_label: value } : q)));
@@ -201,11 +202,12 @@ export default function Questions() {
                   value={q.export_label || ''}
                   placeholder={q.label || q.kobo_key}
                   onChange={e => setExportLabel(idx, e.target.value)}
+                  disabled={hidden}
                 />
               </td>
               <td>
                 <div className="q-row-actions">
-                  <button title={isUsed ? 'Used in charts' : 'Not currently used'} onClick={() => toast(isUsed ? `${colName(q)} is wired to a chart` : 'Not used yet', isUsed ? 'ok' : 'err')}>
+                  <button disabled={hidden} title={isUsed ? 'Used in charts' : 'Not currently used'} onClick={() => toast(isUsed ? `${colName(q)} is wired to a chart` : 'Not used yet', isUsed ? 'ok' : 'err')}>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="3" y1="13" x2="3" y2="8"/>
                       <line x1="7" y1="13" x2="7" y2="4"/>
@@ -213,6 +215,7 @@ export default function Questions() {
                     </svg>
                   </button>
                   <button
+                    disabled={hidden}
                     className={pii ? 'is-active' : ''}
                     title={pii ? 'Unflag PII' : 'Flag as PII — exclude from AI metadata'}
                     onClick={() => togglePII(idx)}
@@ -274,6 +277,7 @@ export default function Questions() {
   const totalRenamed = questions.filter((q, i) =>
     dirtyIndices.has(i) || ((q.export_label || '') !== '' && (q.export_label || '') !== (q.label || ''))
   ).length;
+  const totalHidden = questions.filter(q => isHidden(q)).length;
 
   return (
     <div className="q-page">
@@ -296,7 +300,9 @@ export default function Questions() {
             <button className={`view-btn ${filter === 'renamed' ? 'active' : ''}`} onClick={() => setFilter('renamed')}>
               Renamed <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalRenamed})</span>
             </button>
-            <button className={`view-btn ${filter === 'used' ? 'active' : ''}`} onClick={() => setFilter('used')}>Used in charts</button>
+            <button className={`view-btn ${filter === 'hidden' ? 'active' : ''}`} onClick={() => setFilter('hidden')}>
+              Hidden <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalHidden})</span>
+            </button>
           </div>
           <button className="ai-btn" onClick={suggestHidden} disabled={!!suggesting} title="Ask the AI to flag non-analytical clutter to hide (reads only field metadata)">
             {suggesting === 'hidden' ? 'Asking AI…' : '✦ Auto-hide clutter'}
