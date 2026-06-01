@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { isHidden, indexQuestionsByColumn, buildGroupTree } from '../lib/questionGroups.js';
+import GroupTree from './GroupTree.jsx';
 
 // Threshold bands (see spec). completeness: higher is better; rates: lower is better.
 function band(metric, v) {
@@ -58,6 +60,7 @@ function DQTable({ rows }) {
 
 export default function DataQualityPanel() {
   const [data, setData] = useState(null);   // null | { has_data, rows, tables, message? }
+  const [questionsByColumn, setQuestionsByColumn] = useState(() => new Map());
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -77,8 +80,32 @@ export default function DataQualityPanel() {
         if (!cancelled) setLoading(false);
       }
     })();
+    // Questions are best-effort: failure → empty index (everything "Ungrouped",
+    // nothing excluded).
+    (async () => {
+      try {
+        const r = await fetch('/api/questions');
+        const body = await r.json().catch(() => ({}));
+        if (!cancelled && r.ok) setQuestionsByColumn(indexQuestionsByColumn(body.questions));
+      } catch { /* keep empty index */ }
+    })();
     return () => { cancelled = true; };
   }, []);
+
+  // Drop hidden + PII columns, then group the remaining rows by question group.
+  const groupRows = (rows) => {
+    const visible = (rows || []).filter((r) => {
+      const q = questionsByColumn.get(r.column);
+      return !(q && (isHidden(q) || q.pii));
+    });
+    return buildGroupTree(visible, {
+      getPath: (r) => {
+        const q = questionsByColumn.get(r.column);
+        return q ? q.group : 'Ungrouped';
+      },
+      getHidden: () => false,
+    });
+  };
 
   if (loading) return <div className="dq-panel dq-panel--muted">Loading data quality…</div>;
   if (error)   return <div className="dq-panel dq-panel--muted">Data quality unavailable: {error}</div>;
@@ -86,17 +113,25 @@ export default function DataQualityPanel() {
     return <div className="dq-panel dq-panel--muted">{data?.message || 'No downloaded data — run Download first.'}</div>;
 
   const tables = data.tables || [];
+  const mainTree = groupRows(data.rows);
+  const renderRows = (rows) => <DQTable rows={rows} />;
 
   return (
     <div className="dq-panel">
       <div className="dq-panel__title">Data quality overview</div>
-      <DQTable rows={data.rows} />
-      {tables.map((t) => (
-        <div key={t.name} className="dq-subtable">
-          <div className="dq-panel__subtitle">{t.name}</div>
-          <DQTable rows={t.rows} />
-        </div>
-      ))}
+      {mainTree.length > 0
+        ? <GroupTree tree={mainTree} renderVisible={renderRows} />
+        : <div className="dq-panel--muted">No visible columns to report.</div>}
+      {tables.map((t) => {
+        const tree = groupRows(t.rows);
+        if (tree.length === 0) return null;
+        return (
+          <div key={t.name} className="dq-subtable">
+            <div className="dq-panel__subtitle">{t.name}</div>
+            <GroupTree tree={tree} renderVisible={renderRows} />
+          </div>
+        );
+      })}
     </div>
   );
 }
