@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
 import { isHidden, indexQuestionsByColumn, buildGroupTree, GROUP_LABELS } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
+import TableTree from '../components/TableTree.jsx';
 
 function ColumnRow({ c }) {
   const detail =
@@ -84,55 +85,10 @@ function TableBody({ profile, tablePath, questionsByColumn }) {
   );
 }
 
-// Build the table forest: `main` plus one node per top-level group; repeat
-// tables nest under their group/sub-group folders (from each table's slash path).
-function buildTableForest(profiles, resolveSlash) {
-  const root = { children: [], _kids: new Map() };
-  for (const p of profiles) {
-    if (p.name === 'main') continue;
-    const segs = resolveSlash(p.name).split('/').filter(Boolean);
-    let node = root;
-    const acc = [];
-    for (const seg of segs) {
-      acc.push(seg);
-      let child = node._kids.get(seg);
-      if (!child) {
-        child = { name: seg, path: acc.join('/'), slash: acc.join('/'), profile: null, children: [], _kids: new Map() };
-        node._kids.set(seg, child);
-        node.children.push(child);
-      }
-      node = child;
-    }
-    node.profile = p;
-    node.slash = resolveSlash(p.name);
-  }
-  const strip = (n) => { delete n._kids; n.children.forEach(strip); return n; };
-  root.children.forEach(strip);
-  const mainProfile = profiles.find(p => p.name === 'main');
-  const mainNode = { name: 'main', path: 'main', slash: '', profile: mainProfile || null, children: [] };
-  return [mainNode, ...root.children];
-}
-
-function countTables(node) {
-  let n = node.profile ? 1 : 0;
-  for (const c of node.children) n += countTables(c);
-  return n;
-}
-
-function Chevron() {
-  return (
-    <svg className="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="6 4 10 8 6 12" />
-    </svg>
-  );
-}
-
 export default function Profile() {
   const [profiles, setProfiles] = useState(null);
   const [questionsByColumn, setQuestionsByColumn] = useState(() => new Map());
   const [san2slash, setSan2slash] = useState({});   // sanitized group path → slash path
-  const [open, setOpen] = useState(() => new Set());
-  const initRef = useRef(false);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -169,54 +125,6 @@ export default function Profile() {
     return () => { cancelled = true; };
   }, []);
 
-  const forest = useMemo(
-    () => (profiles && profiles.length ? buildTableForest(profiles, (key) => san2slash[key] || key) : []),
-    [profiles, san2slash]
-  );
-
-  // First time the forest is ready, expand the folder skeleton (every node that
-  // has children); repeat tables stay collapsed so columns load on demand.
-  useEffect(() => {
-    if (initRef.current || forest.length === 0) return;
-    initRef.current = true;
-    const s = new Set();
-    const walk = (n) => { if (n.children.length) s.add(n.path); n.children.forEach(walk); };
-    forest.forEach(walk);
-    setOpen(s);
-  }, [forest]);
-
-  const toggle = (path) => setOpen(prev => {
-    const next = new Set(prev);
-    next.has(path) ? next.delete(path) : next.add(path);
-    return next;
-  });
-
-  const renderNode = (node, depth) => {
-    const isTable = !!node.profile;
-    const isOpen = open.has(node.path);
-    const colCount = isTable ? visibleColumns(node.profile, questionsByColumn).length : 0;
-    const nTables = countTables(node);
-    return (
-      <div className="gt-node" data-open={isOpen} data-depth={depth} key={node.path}>
-        <div className="gt-node__head" onClick={() => toggle(node.path)}>
-          <Chevron />
-          <span className="gt-node__name">{node.name}</span>
-          <span className="gt-node__count">
-            {isTable
-              ? `${(node.profile.rows ?? 0).toLocaleString()} rows · ${colCount} columns`
-              : `${nTables} table${nTables === 1 ? '' : 's'}`}
-          </span>
-        </div>
-        {isOpen && (
-          <div className="gt-node__body">
-            {isTable && <TableBody profile={node.profile} tablePath={node.slash} questionsByColumn={questionsByColumn} />}
-            {node.children.map(c => renderNode(c, depth + 1))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div style={{ padding: '0 0 40px' }}>
       <PageHeader
@@ -238,9 +146,14 @@ export default function Profile() {
           {message || 'No data to profile. Run Download first.'}
         </div>
       )}
-      {forest.length > 0 && (
-        <div className="gt" style={{ padding: '0 8px' }}>
-          {forest.map(node => renderNode(node, 0))}
+      {profiles && profiles.length > 0 && (
+        <div style={{ padding: '0 8px' }}>
+          <TableTree
+            tables={profiles}
+            resolveSlash={(key) => san2slash[key] || key}
+            tableMeta={(p) => `${(p.rows ?? 0).toLocaleString()} rows · ${visibleColumns(p, questionsByColumn).length} columns`}
+            renderBody={(p, slash) => <TableBody profile={p} tablePath={slash} questionsByColumn={questionsByColumn} />}
+          />
         </div>
       )}
     </div>
