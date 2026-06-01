@@ -25,6 +25,7 @@ export default function Sources() {
   const [original, setOriginal] = useState(null);
   const [yamlText, setYamlText] = useState('');
   const [view,     setView]     = useState('form');
+  const [tab,      setTab]      = useState('setup');   // setup | ai
   const [showToken,setShowToken]= useState(false);
   const [questionCount, setQuestionCount] = useState(0);
   const [lastCheck, setLastCheck] = useState(null);
@@ -135,28 +136,48 @@ export default function Sources() {
           />
         </div>
       ) : (
-        <div className="src-grid">
-          {/* ── main column ── */}
-          <div className="src-col">
-            <ConnectionCard
-              cfg={cfg} set={set} platform={platform}
-              showToken={showToken} setShowToken={setShowToken}
-              testConnection={testConnection} lastCheck={lastCheck}
-              questionCount={questionCount}
-            />
-            <AINarrativeCard cfg={cfg} set={set} />
-            <OutputCard cfg={cfg} set={set} period={period} setPeriod={setPeriod} />
+        <>
+          <div className="config-view-toggle" style={{ marginBottom: 16 }}>
+            <button className={`view-btn ${tab === 'setup' ? 'active' : ''}`} onClick={() => setTab('setup')}>Connection &amp; output</button>
+            <button className={`view-btn ${tab === 'ai' ? 'active' : ''}`} onClick={() => setTab('ai')}>AI configuration</button>
           </div>
 
-          {/* ── right rail ── */}
-          <aside className="src-col">
-            <div className="rail">
-              <ProjectRailCard cfg={cfg} />
-              <ValidationRailCard cfg={cfg} questionCount={questionCount} lastCheck={lastCheck} />
-              <TipsRailCard />
+          {tab === 'setup' ? (
+            <div className="src-grid">
+              {/* ── main column ── */}
+              <div className="src-col">
+                <ConnectionCard
+                  cfg={cfg} set={set} platform={platform}
+                  showToken={showToken} setShowToken={setShowToken}
+                  testConnection={testConnection} lastCheck={lastCheck}
+                  questionCount={questionCount}
+                />
+                <OutputCard cfg={cfg} set={set} period={period} setPeriod={setPeriod} />
+              </div>
+
+              {/* ── right rail ── */}
+              <aside className="src-col">
+                <div className="rail">
+                  <ProjectRailCard cfg={cfg} />
+                  <ValidationRailCard cfg={cfg} questionCount={questionCount} lastCheck={lastCheck} />
+                  <TipsRailCard />
+                </div>
+              </aside>
             </div>
-          </aside>
-        </div>
+          ) : (
+            <div className="src-grid">
+              <div className="src-col">
+                <AINarrativeCard cfg={cfg} set={set} />
+              </div>
+              <aside className="src-col">
+                <div className="rail">
+                  <ValidationRailCard cfg={cfg} questionCount={questionCount} lastCheck={lastCheck} />
+                  <TipsRailCard />
+                </div>
+              </aside>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
