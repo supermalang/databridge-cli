@@ -66,6 +66,8 @@ export default function Validate() {
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Save failed'); }
       toast(okMsg, 'ok');
+      // Questions changed → let other keep-alive tabs (Profile/Questions/…) refresh.
+      window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'validate' } }));
     } catch (e) {
       toast(String(e.message || e), 'err');
       loadQuestions();   // resync on failure

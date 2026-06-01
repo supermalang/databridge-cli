@@ -164,6 +164,8 @@ export default function Questions() {
       if (!res.ok) throw new Error(data.detail || 'Save failed');
       toast(`Saved ${data.saved} questions.`, 'ok');
       setOriginal(snapshot(questions));
+      // Questions changed → let other keep-alive tabs (Profile/Validate/…) refresh.
+      window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'questions' } }));
     } catch (e) { toast(e.message, 'err'); }
   };
 
