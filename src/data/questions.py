@@ -30,6 +30,9 @@ def fetch_and_write_questions(client, cfg: Dict, config_path: Path) -> None:
             prev_cat = prev.get("category", q["category"])
             q["category"] = prev_cat if prev_cat != "undefined" else q["category"]
             q["export_label"] = prev.get("export_label", q["export_label"])
+            # Preserve an explicit user hide/unhide choice across re-fetches.
+            if "hidden" in prev:
+                q["hidden"] = prev["hidden"]
         merged.append(q)
     cfg["questions"] = merged
     write_config(cfg, config_path)
@@ -162,6 +165,9 @@ def _make_question(item: Dict, raw_type: str, group_stack: List[str], repeat_sta
         "category": TYPE_CATEGORY_MAP.get(q_type, "undefined"),
         "group": group_path, "choice_list": choice_list, "export_label": label,
         "repeat_group": repeat_group, "choices": choices,
+        # Display-only fields (notes/labels/instructions) carry no data and are hidden
+        # by default in the Questions/Validate/Profile tabs. User can override.
+        "hidden": q_type == "note",
     }
 
 def _resolve_label(label: Any) -> str:

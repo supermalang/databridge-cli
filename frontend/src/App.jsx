@@ -1,25 +1,41 @@
 import { useEffect, useState } from 'react';
-import yaml from 'js-yaml';
-import Dashboard from './pages/Dashboard.jsx';
+import Home from './pages/Home.jsx';
 import Sources from './pages/Sources.jsx';
 import Questions from './pages/Questions.jsx';
-import Composition from './pages/Composition.jsx';
-import Reports from './pages/Reports.jsx';
-import Templates from './pages/Templates.jsx';
 import Validate from './pages/Validate.jsx';
 import Profile from './pages/Profile.jsx';
+import Composition from './pages/Composition.jsx';
 import Ask from './pages/Ask.jsx';
+import Reports from './pages/Reports.jsx';
+import Templates from './pages/Templates.jsx';
 
-const TABS = [
-  { id: 'dashboard',   label: 'Dashboard',                         component: Dashboard },
-  { id: 'ask',         label: 'Ask',                               component: Ask },
-  { id: 'sources',     label: 'Sources',     step: '1',            component: Sources },
-  { id: 'questions',   label: 'Questions',   step: '2',            component: Questions },
-  { id: 'validate',    label: 'Validate',    step: '3',            component: Validate },
-  { id: 'composition', label: 'Composition', step: '4',            component: Composition },
-  { id: 'reports',     label: 'Reports',     step: '5',            component: Reports },
-  { id: 'profile',     label: 'Profile',                           component: Profile, secondary: true },
-  { id: 'templates',   label: 'Templates',                         component: Templates, secondary: true },
+// Composition backs two stages with different card/section sets.
+const VIEWS_SECTIONS   = ['views'];
+const ANALYZE_SECTIONS = ['charts', 'indicators', 'summaries', 'framework', 'pii'];
+
+// The workflow: Home + five ordered stages. Stages with >1 sub render a
+// secondary sub-tab strip; single-sub stages navigate straight to their page.
+const STAGES = [
+  { id: 'home', label: 'Home', home: true },
+  { id: 'extract', label: 'Extract', step: '1', subs: [
+    { id: 'sources', label: 'Sources', render: () => <Sources /> },
+  ] },
+  { id: 'transform', label: 'Transform', step: '2', subs: [
+    { id: 'questions', label: 'Questions', render: () => <Questions /> },
+    { id: 'validate',  label: 'Validate',  render: () => <Validate /> },
+    { id: 'profile',   label: 'Profile',   render: () => <Profile /> },
+  ] },
+  { id: 'load', label: 'Load', step: '3', subs: [
+    { id: 'views', label: 'Views', render: () => <Composition sections={VIEWS_SECTIONS} /> },
+  ] },
+  { id: 'analyze', label: 'Analyze', step: '4', subs: [
+    { id: 'composition', label: 'Charts & indicators', render: () => <Composition sections={ANALYZE_SECTIONS} /> },
+    { id: 'ask',         label: 'Ask',                  render: () => <Ask /> },
+  ] },
+  { id: 'present', label: 'Present', step: '5', subs: [
+    { id: 'reports',   label: 'Reports',   render: () => <Reports /> },
+    { id: 'templates', label: 'Templates', render: () => <Templates /> },
+  ] },
 ];
 
 const PROJECT = { name: 'PCP Mauritania', slug: 'pcp_mauritanie_v1', avatar: 'MR' };
@@ -44,31 +60,19 @@ function ActivePeriodChip() {
 }
 
 export default function App() {
-  const [active, setActive] = useState('dashboard');
-  const [counts, setCounts] = useState({});
+  const [stageId, setStageId] = useState('home');
+  const [subId, setSubId] = useState(null);
 
-  // Load counts (questions / composition / reports) once so the tabs show real chips.
-  useEffect(() => {
-    (async () => {
-      const next = {};
-      try {
-        const [q, r, c] = await Promise.all([
-          fetch('/api/questions').then(r => r.json()).catch(() => ({})),
-          fetch('/api/reports').then(r => r.json()).catch(() => ({})),
-          fetch('/api/config').then(r => r.json()).catch(() => ({})),
-        ]);
-        next.questions = q.questions?.length ?? 0;
-        next.reports   = r.files?.length     ?? 0;
-        const cfg = yaml.load(c.content || '') || {};
-        next.composition = ['charts', 'indicators', 'summaries', 'views']
-          .reduce((a, k) => a + (Array.isArray(cfg[k]) ? cfg[k].length : 0), 0);
-        next.sources = Object.keys(cfg).filter(k => ['api', 'form'].includes(k)).length;
-      } catch { /* ignore */ }
-      setCounts(next);
-    })();
-  }, [active]); // refresh counts after each tab switch
+  const navigate = (nextStage, nextSub) => {
+    const stage = STAGES.find(s => s.id === nextStage) || STAGES[0];
+    setStageId(stage.id);
+    setSubId(stage.home ? null : (nextSub || stage.subs[0].id));
+  };
 
-  const ActivePage = TABS.find(t => t.id === active).component;
+  const stage = STAGES.find(s => s.id === stageId) || STAGES[0];
+  const subs = stage.subs || [];
+  const activeSub = stage.home ? null : (subs.find(s => s.id === subId) || subs[0]);
+  const showSubBar = !stage.home && subs.length > 1;
 
   return (
     <div className="layout">
@@ -99,26 +103,36 @@ export default function App() {
       </header>
 
       <nav className="tabs-bar">
-        {TABS.map(t => (
+        {STAGES.map(s => (
           <div
-            key={t.id}
-            className={`tab ${active === t.id ? 'active' : ''}`}
-            data-tab={t.id}
-            onClick={() => setActive(t.id)}
-            style={t.secondary ? { marginLeft: 'auto', color: 'var(--ink-3)', fontSize: 12.5 } : undefined}
+            key={s.id}
+            className={`tab ${stageId === s.id ? 'active' : ''}`}
+            data-tab={s.id}
+            onClick={() => navigate(s.id)}
           >
-            {t.step && <span className="tab__num">{t.step}</span>}
-            {t.label}
-            {counts[t.id] != null && counts[t.id] > 0 && (
-              <span className="tab__num" style={{ marginLeft: 4 }}>{counts[t.id]}</span>
-            )}
+            {s.step && <span className="tab__num">{s.step}</span>}
+            {s.label}
           </div>
         ))}
       </nav>
 
+      {showSubBar && (
+        <nav className="subtabs-bar">
+          {subs.map(sub => (
+            <div
+              key={sub.id}
+              className={`subtab ${activeSub?.id === sub.id ? 'active' : ''}`}
+              onClick={() => setSubId(sub.id)}
+            >
+              {sub.label}
+            </div>
+          ))}
+        </nav>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
-        <div className="tab-content active" id={`tab-${active}`} style={{ overflow: 'auto', flex: 1 }}>
-          <ActivePage />
+        <div className="tab-content active" id={`tab-${stageId}-${subId || 'home'}`} style={{ overflow: 'auto', flex: 1 }}>
+          {stage.home ? <Home navigate={navigate} /> : activeSub?.render()}
         </div>
       </div>
     </div>

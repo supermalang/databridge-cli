@@ -128,6 +128,25 @@ async def save_questions(payload: QuestionsPayload):
         await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
     return {"ok": True, "saved": len(payload.questions)}
 
+@app.post("/api/questions/suggest-hidden")
+async def suggest_hidden_questions():
+    """Ask the configured AI provider which questions are non-analytical
+    display-only fields that should be hidden by default.
+
+    Returns {"suggestions": [kobo_key, ...], "reasons": {kobo_key: reason}}.
+    When AI is not configured, returns 200 with
+    {"suggestions": [], "message": "AI not configured"}.
+    """
+    from src.reports.ai_hidden_suggester import suggest_hidden
+    try:
+        cfg = load_config(CONFIG_PATH)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        return suggest_hidden(cfg)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"suggest-hidden failed: {e}")
+
 @app.post("/api/ai/test")
 async def test_ai(payload: AITestPayload):
     api_key = payload.api_key.strip()
