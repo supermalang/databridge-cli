@@ -7,6 +7,9 @@ import os
 import time
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi.responses import JSONResponse
+from starlette.responses import RedirectResponse
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import Request
 
 
 def _fernet_key(secret: str) -> bytes:
@@ -72,6 +75,64 @@ def _needs_auth(path: str) -> bool:
     return any(path.startswith(p) for p in _PROTECTED_PREFIXES)
 
 
+_oauth = None  # Authlib registry, built lazily once auth is enabled
+
+
+def _get_oauth():
+    global _oauth
+    if _oauth is None:
+        from authlib.integrations.starlette_client import OAuth
+        _oauth = OAuth()
+        _oauth.register(
+            name="zitadel",
+            client_id=os.environ["OIDC_CLIENT_ID"],
+            client_secret=os.environ["OIDC_CLIENT_SECRET"],
+            server_metadata_url=os.environ["OIDC_ISSUER"].rstrip("/")
+            + "/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid email profile offline_access"},
+        )
+    return _oauth
+
+
+def _redirect_uri() -> str:
+    return os.environ.get("APP_BASE_URL", "http://localhost:8000").rstrip("/") + "/auth/callback"
+
+
+async def build_login_redirect(request, redirect_uri):
+    """Authlib: stash PKCE/state/nonce in the handshake session and 302 to the IdP."""
+    return await _get_oauth().zitadel.authorize_redirect(request, redirect_uri)
+
+
+async def exchange_token(request) -> dict:
+    """Authlib: exchange the code, validate the id_token, return a flat claims dict."""
+    token = await _get_oauth().zitadel.authorize_access_token(request)
+    info = token.get("userinfo") or {}
+    return {
+        "sub": info.get("sub"),
+        "email": info.get("email", ""),
+        "name": info.get("name", ""),
+        "refresh_token": token.get("refresh_token", ""),
+        "expires_in": token.get("expires_in", 3600),
+    }
+
+
+def end_session_url() -> str:
+    meta = _get_oauth().zitadel.load_server_metadata()
+    base = meta.get("end_session_endpoint", os.environ["OIDC_ISSUER"].rstrip("/") + "/oidc/v1/end_session")
+    redir = os.environ.get("APP_BASE_URL", "http://localhost:8000").rstrip("/")
+    return f"{base}?post_logout_redirect_uri={redir}"
+
+
+def _build_session_cookie(claims: dict) -> str:
+    now = time.time()
+    return session_codec().encode({
+        "sub": claims["sub"], "email": claims["email"], "name": claims["name"],
+        "refresh_token": claims["refresh_token"],
+        "access_exp": now + claims.get("expires_in", 3600),
+        "sess_exp": now + 12 * 3600,
+    })
+
+
 def register_auth(app) -> None:
     """Install the enforcement middleware (and, in a later task, the /auth routes)."""
     if auth_enabled():
@@ -86,3 +147,30 @@ def register_auth(app) -> None:
         if user is None and _needs_auth(request.url.path):
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
         return await call_next(request)
+
+    if auth_enabled():
+        app.add_middleware(SessionMiddleware,
+                           secret_key=os.environ.get("SESSION_SECRET", "dev-insecure-secret"),
+                           same_site="lax", https_only=False)
+
+    @app.get("/auth/login")
+    async def auth_login(request: Request):
+        return await build_login_redirect(request, _redirect_uri())
+
+    @app.get("/auth/callback")
+    async def auth_callback(request: Request):
+        claims = await exchange_token(request)
+        resp = RedirectResponse("/", status_code=302)
+        resp.set_cookie(SESSION_COOKIE, _build_session_cookie(claims),
+                        httponly=True, secure=False, samesite="lax", path="/")
+        return resp
+
+    @app.post("/auth/logout")
+    async def auth_logout(request: Request):
+        resp = RedirectResponse(end_session_url(), status_code=302)
+        resp.delete_cookie(SESSION_COOKIE, path="/")
+        return resp
+
+    @app.get("/api/me")
+    async def auth_me(request: Request):
+        return request.state.user

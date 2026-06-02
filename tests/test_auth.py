@@ -128,3 +128,64 @@ def test_middleware_allows_api_with_valid_session(monkeypatch):
     client = TestClient(_app_with_auth())
     client.cookies.set(auth.SESSION_COOKIE, token)
     assert client.get("/api/ping").status_code == 200
+
+
+def _enable(monkeypatch):
+    monkeypatch.setenv("OIDC_ISSUER", "https://z.example")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "cid")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("SESSION_SECRET", "s3cr3t")
+    monkeypatch.setenv("APP_BASE_URL", "http://testserver")
+
+
+def test_login_redirects_to_idp(monkeypatch):
+    _enable(monkeypatch)
+
+    async def fake_redirect(request, redirect_uri):
+        from starlette.responses import RedirectResponse
+        return RedirectResponse(f"https://z.example/authorize?redirect_uri={redirect_uri}")
+
+    monkeypatch.setattr(auth, "build_login_redirect", fake_redirect)
+    client = TestClient(_app_with_auth(), follow_redirects=False)
+    r = client.get("/auth/login")
+    assert r.status_code in (302, 307)
+    assert "z.example/authorize" in r.headers["location"]
+
+
+def test_callback_sets_session_and_redirects(monkeypatch):
+    _enable(monkeypatch)
+
+    async def fake_exchange(request):
+        return {"sub": "abc", "email": "abc@x.io", "name": "Abc",
+                "refresh_token": "rt", "expires_in": 3600}
+
+    monkeypatch.setattr(auth, "exchange_token", fake_exchange)
+    client = TestClient(_app_with_auth(), follow_redirects=False)
+    r = client.get("/auth/callback?code=xyz&state=s")
+    assert r.status_code in (302, 307)
+    assert r.headers["location"] == "/"
+    assert auth.SESSION_COOKIE in r.cookies
+    client.cookies.set(auth.SESSION_COOKIE, r.cookies[auth.SESSION_COOKIE])
+    me = client.get("/api/me")
+    assert me.status_code == 200 and me.json()["email"] == "abc@x.io"
+
+
+def test_me_returns_401_without_session(monkeypatch):
+    _enable(monkeypatch)
+    client = TestClient(_app_with_auth())
+    assert client.get("/api/me").status_code == 401
+
+
+def test_logout_clears_cookie(monkeypatch):
+    _enable(monkeypatch)
+    monkeypatch.setattr(auth, "end_session_url", lambda: "https://z.example/logout")
+    token = auth.session_codec().encode({
+        "sub": "u1", "email": "u1@x.io", "name": "One",
+        "sess_exp": time.time() + 3600, "access_exp": time.time() + 3600,
+        "refresh_token": "rt",
+    })
+    client = TestClient(_app_with_auth(), follow_redirects=False)
+    client.cookies.set(auth.SESSION_COOKIE, token)
+    r = client.post("/auth/logout")
+    assert r.status_code in (302, 307)
+    assert "z.example/logout" in r.headers["location"]
