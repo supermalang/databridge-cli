@@ -35,3 +35,12 @@ def test_s3_backend_selected(monkeypatch):
     assert isinstance(s, S3Storage)
     assert s.bucket == "bkt"
     factory.reset_storage()
+
+
+def test_local_missing_dir_raises_runtimeerror(monkeypatch):
+    monkeypatch.setenv("STORAGE_BACKEND", "local")
+    monkeypatch.delenv("STORAGE_LOCAL_DIR", raising=False)
+    factory.reset_storage()
+    with pytest.raises(RuntimeError):
+        factory.get_storage()
+    factory.reset_storage()

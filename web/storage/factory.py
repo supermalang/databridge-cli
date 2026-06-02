@@ -18,7 +18,10 @@ def get_storage() -> Storage:
         return _storage
     if os.environ.get("STORAGE_BACKEND") == "local":
         from web.storage.local import LocalStorage
-        _storage = LocalStorage(os.environ["STORAGE_LOCAL_DIR"])
+        local_dir = os.environ.get("STORAGE_LOCAL_DIR")
+        if not local_dir:
+            raise RuntimeError("STORAGE_BACKEND=local requires STORAGE_LOCAL_DIR to be set")
+        _storage = LocalStorage(local_dir)
         return _storage
     needed = ("S3_ENDPOINT_URL", "S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_BUCKET")
     if all(os.environ.get(k) for k in needed):

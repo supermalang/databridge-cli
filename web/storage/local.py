@@ -56,3 +56,13 @@ class LocalStorage(Storage):
     def delete_prefix(self, prefix: str) -> None:
         for key in self.list(prefix):
             self._path(key).unlink(missing_ok=True)
+        # Prune now-empty directories under the prefix (deepest first) so a deleted
+        # project subtree doesn't leave empty dirs behind.
+        prefix_dir = self._path(prefix)
+        if prefix_dir.is_dir():
+            for d in sorted((p for p in prefix_dir.rglob("*") if p.is_dir()),
+                            key=lambda p: len(p.parts), reverse=True):
+                if not any(d.iterdir()):
+                    d.rmdir()
+            if not any(prefix_dir.iterdir()):
+                prefix_dir.rmdir()

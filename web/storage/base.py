@@ -3,7 +3,6 @@
 No web.db import — keys are built from plain string IDs so storage stays decoupled
 from the data model."""
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import List
 
 CATEGORIES = ("raw", "processed", "charts", "reports", "templates")
@@ -31,7 +30,11 @@ class Storage(ABC):
     def get_file(self, key: str, dest_path) -> None: ...
 
     @abstractmethod
-    def list(self, prefix: str) -> List[str]: ...
+    def list(self, prefix: str) -> List[str]:
+        """Return all keys starting with `prefix`, sorted. Matching is by string
+        prefix (not path segments), so callers should pass a trailing '/' (e.g.
+        'orgs/o/projects/p/') to avoid matching sibling keys like '.../p2/...'."""
+        ...
 
     @abstractmethod
     def exists(self, key: str) -> bool: ...

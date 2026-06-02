@@ -55,3 +55,10 @@ def test_delete_prefix_removes_subtree_only(store):
     store.delete_prefix("orgs/o/projects/p/")
     assert store.list("orgs/o/projects/p/") == []
     assert store.list("orgs/o/projects/q/") == ["orgs/o/projects/q/raw/c.txt"]
+
+
+def test_delete_prefix_prunes_empty_dirs(store, tmp_path):
+    store.put_bytes("orgs/o/projects/p/raw/a.txt", b"1")
+    store.delete_prefix("orgs/o/projects/p/")
+    # the pruned project dir should no longer exist on disk
+    assert not (tmp_path / "orgs/o/projects/p").exists()
