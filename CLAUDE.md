@@ -528,6 +528,21 @@ ttyd separately — not required).
 
 ## Key implementation details
 
+### App database & project model (web/db/)
+App state (users ↔ orgs ↔ projects) lives in **Postgres** via SQLAlchemy 2.0 (`web/db/`:
+`models.py`, `session.py`, `repository.py`, `provision.py`, `bridge.py`, `bootstrap.py`).
+Each project's config is stored as a `jsonb` column (source of truth); every project/org
+query is **membership-scoped** so a user only sees their orgs' projects. Users + a personal
+org are auto-provisioned from the Zitadel identity on login (and for the dev user at startup).
+`DATABASE_URL` is **required** — e.g. a local Postgres via
+`docker run --rm -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=databridge -p 5432:5432 postgres:16`.
+Migrations are **Alembic** (`alembic upgrade head`), run automatically by the FastAPI startup
+lifespan; tests run against SQLite (`DATABRIDGE_SKIP_MIGRATIONS=1` → `init_schema`).
+`/api/config` reads/writes the caller's **active project** (`users.active_project_id`); on save
+or project switch the config is mirrored to `config.yml` so the file-based CLI and the existing
+config-reading endpoints stay consistent (interim until Slice 3's per-job hydration). The
+repo's existing `config.yml` is imported once at startup as the first project.
+
 ### env: variable resolution (src/utils/config.py)
 Config values starting with `env:` are resolved from environment at load time.
 ```python
