@@ -135,7 +135,10 @@ def create_project(payload: NewProjectPayload, request: Request, db: Session = D
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     import uuid as _uuid
-    org_id = _uuid.UUID(payload.org_id) if payload.org_id else None
+    try:
+        org_id = _uuid.UUID(payload.org_id) if payload.org_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid org_id")
     try:
         p = db_repo.create_project(db, user=user, name=payload.name, org_id=org_id)
     except db_repo.AccessError:
@@ -1136,10 +1139,17 @@ async def run_command(command: str, payload: RunPayload, request: Request):
         raise HTTPException(status_code=409,
             detail=f"A command is already running ('{_running_command}'). Stop it or wait for it to finish.")
     _running_command = command  # reserve synchronously (atomic: no await before return)
-    with db_session.SessionLocal() as _db:
-        _user = _current_user(request, _db)
-        if _user is not None:
-            db_bridge.mirror_active(_db, _user)
+    # Mirror the active project's config to config.yml for the CLI subprocess.
+    # If this fails we MUST release the lock — _stream's finally only runs once the
+    # generator starts, which won't happen if we raise before returning the response.
+    try:
+        with db_session.SessionLocal() as _db:
+            _user = _current_user(request, _db)
+            if _user is not None:
+                db_bridge.mirror_active(_db, _user)
+    except Exception:
+        _running_command = None
+        raise
     return StreamingResponse(
         _stream(command, cmd),
         media_type="text/event-stream",
