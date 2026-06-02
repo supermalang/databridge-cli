@@ -47,6 +47,12 @@ async def serve_ui():
         )
     return index.read_text(encoding="utf-8")
 
+@app.get("/api/health")
+async def health():
+    # Unauthenticated liveness probe (whitelisted by the auth middleware) for
+    # load balancers / container orchestration.
+    return {"status": "ok"}
+
 @app.get("/api/config")
 async def get_config():
     if not CONFIG_PATH.exists():

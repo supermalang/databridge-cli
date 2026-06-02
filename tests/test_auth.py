@@ -244,3 +244,13 @@ def test_refresh_failure_invalidates_session(monkeypatch):
     })
     user, new_cookie = asyncio.run(auth.resolve_session(token))
     assert user is None and new_cookie is None
+
+
+def test_real_app_health_endpoint_ok():
+    """The real app exposes an unauthenticated /api/health liveness probe
+    (whitelisted by the auth middleware)."""
+    from fastapi.testclient import TestClient
+    from web.main import app as real_app
+    r = TestClient(real_app).get("/api/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
