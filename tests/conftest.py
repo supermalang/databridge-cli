@@ -24,6 +24,19 @@ def _app_database(tmp_path_factory):
     dbs.reset_engine()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _app_storage(tmp_path_factory):
+    """Session-wide local-filesystem Storage backend so get_storage() works in tests
+    (real use requires S3_*)."""
+    storage_dir = tmp_path_factory.mktemp("appstorage")
+    _os.environ["STORAGE_BACKEND"] = "local"
+    _os.environ["STORAGE_LOCAL_DIR"] = str(storage_dir)
+    from web.storage import factory
+    factory.reset_storage()
+    yield
+    factory.reset_storage()
+
+
 @pytest.fixture(autouse=True)
 def _isolate_prompt_cache(tmp_path, monkeypatch):
     """Point the Langfuse prompt cache at a throwaway dir for every test.
