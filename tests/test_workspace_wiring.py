@@ -54,3 +54,44 @@ def test_activate_swaps_mirror_between_projects(isolated_base):
         c.post(f"/api/projects/{pid_b}/activate")
         assert (isolated_base / "reports" / "b_only.docx").exists()
         assert not (isolated_base / "reports" / "a_only.docx").exists()
+
+
+def test_successful_run_pushes_outputs(isolated_base, monkeypatch):
+    import web.main as wm
+    from web.storage import factory
+    from web.storage.base import storage_key
+
+    class _FakeStdout:
+        def __init__(self, lines): self._lines = list(lines)
+        def __aiter__(self): return self
+        async def __anext__(self):
+            if not self._lines:
+                raise StopAsyncIteration
+            return self._lines.pop(0)
+
+    class _FakeProc:
+        def __init__(self):
+            self.stdout = _FakeStdout([b"working\n", b"done\n"])
+            self.returncode = 0
+        async def wait(self): return 0
+
+    async def _fake_exec(*a, **k):
+        # simulate the CLI writing an output report into the (isolated) mirror
+        (isolated_base / "reports").mkdir(parents=True, exist_ok=True)
+        (isolated_base / "reports" / "produced.docx").write_bytes(b"NEW")
+        return _FakeProc()
+
+    monkeypatch.setattr(wm.asyncio, "create_subprocess_exec", _fake_exec)
+    wm._running_command = None
+
+    with _client() as c:
+        pid = _make_project_with_report(c, "WS-RUN", "seed.docx")
+        c.post(f"/api/projects/{pid}/activate")
+        with wm.db_session.SessionLocal() as db:
+            org_id = str(db.get(wm.db_repo.Project, uuid.UUID(pid)).org_id)
+        resp = c.post("/api/run/build-report", json={})
+        assert resp.status_code == 200
+        _ = resp.text          # drain the SSE stream so _stream completes
+        store = factory.get_storage()
+        assert storage_key(org_id, pid, "reports", "produced.docx") in \
+            store.list(f"orgs/{org_id}/projects/{pid}/")
