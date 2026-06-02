@@ -154,7 +154,11 @@ def _get_layout_spec(
     provider   = ai_cfg.get("provider", "openai").lower()
     api_key    = ai_cfg.get("api_key", "")
     model      = ai_cfg.get("model", "gpt-4o")
-    max_tokens = max(int(ai_cfg.get("max_tokens", 1500)), 2000)  # layout needs more tokens
+    # Layout is the largest structured output we ask for — it scales with the
+    # number of charts/indicators/summaries. A low cap truncates the JSON
+    # mid-stream, _parse_spec then fails and silently drops to the minimal
+    # fallback layout. 8000 gives comfortable headroom for large configs.
+    max_tokens = max(int(ai_cfg.get("max_tokens", 1500)), 8000)
 
     if not api_key or str(api_key).startswith("env:"):
         raise ValueError("AI api_key not resolved. Set the environment variable.")

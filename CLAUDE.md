@@ -398,6 +398,10 @@ Prompts live in [Langfuse Cloud](https://cloud.langfuse.com) (or a self-hosted L
 | `template_generator` | [src/reports/ai_template_generator.py](src/reports/ai_template_generator.py) | JSON: layout spec |
 | `summary_suggester` | [src/reports/ai_summary_suggester.py](src/reports/ai_summary_suggester.py) | JSON: suggested summaries |
 | `view_suggester` | [src/reports/ai_view_suggester.py](src/reports/ai_view_suggester.py) | JSON: suggested views |
+| `table_suggester` | [src/reports/ai_table_suggester.py](src/reports/ai_table_suggester.py) | JSON: `{"tables": [...]}` |
+| `indicator_suggester` | [src/reports/ai_indicator_suggester.py](src/reports/ai_indicator_suggester.py) | JSON: `{"indicators": [...]}` |
+| `hidden_suggester` | [src/reports/ai_hidden_suggester.py](src/reports/ai_hidden_suggester.py) | JSON: `{"suggestions": [...]}` |
+| `pii_suggester` | [src/reports/ai_pii_suggester.py](src/reports/ai_pii_suggester.py) | JSON: `{"suggestions": [...]}` |
 | `classifier_discover` | [src/data/classifier.py](src/data/classifier.py) | JSON: discovered themes |
 | `classifier_classify` | [src/data/classifier.py](src/data/classifier.py) | JSON: per-row classifications |
 | `ask_propose` | `src/reports/ask_engine.py` | JSON: `{"items": [{"kind": ...}]}` |
@@ -447,7 +451,8 @@ Every LLM call is recorded as a Langfuse generation with cost, latency, and toke
 
 ### Output schemas (structured outputs)
 
-Seven of the eight prompts produce JSON and have an `output_schema` in their seed's `config`.
+Eleven of the fifteen prompts produce JSON and have an `output_schema` in their seed's `config`
+(all except `summaries`, `ask_propose`, `ask_caption`, and `ask_refine`).
 The schema travels with the prompt (stored in Langfuse's per-prompt `config` field) and
 is enforced at the LLM call:
 

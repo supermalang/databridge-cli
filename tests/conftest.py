@@ -9,6 +9,21 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
+@pytest.fixture(autouse=True)
+def _isolate_prompt_cache(tmp_path, monkeypatch):
+    """Point the Langfuse prompt cache at a throwaway dir for every test.
+
+    get_prompt() is cache-first: it reads ~/.cache/databridge/prompts before
+    falling back to Langfuse/seed. The developer's real cache can hold stale
+    Langfuse copies (e.g. a prompt fetched before its output_schema was synced),
+    which would silently leak into tests that expect the bundled seed — making
+    prompt-resolution tests pass or fail depending on local cache state.
+    Isolating CACHE_DIR keeps resolution deterministic across machines and runs.
+    """
+    from src.utils import lf_client
+    monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path / "prompt_cache")
+
+
 @pytest.fixture(scope="module")
 def api_client():
     """Synchronous test client for the FastAPI ASGI app, shared per test module.
