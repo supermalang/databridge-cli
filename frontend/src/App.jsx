@@ -13,6 +13,7 @@ import BottomTerminal from './components/BottomTerminal.jsx';
 import { useToast } from './components/Toast.jsx';
 import { useCommand } from './hooks/useCommand.js';
 import { fetchMe } from './lib/auth.js';
+import { listProjects, activateProject, createProject } from './lib/projects.js';
 
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
@@ -44,7 +45,6 @@ const STAGES = [
   ] },
 ];
 
-const PROJECT = { name: 'PCP Mauritania', slug: 'pcp_mauritanie_v1', avatar: 'MR' };
 const USER = { initials: 'MK' };
 
 function ActivePeriodChip() {
@@ -80,6 +80,31 @@ export default function App() {
   const [formAlias, setFormAlias] = useState('');
   const [me, setMe] = useState(null);
   useEffect(() => { fetchMe().then(setMe); }, []);
+
+  const [projects, setProjects] = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [projMenuOpen, setProjMenuOpen] = useState(false);
+  useEffect(() => {
+    listProjects().then(({ projects, active_id }) => {
+      setProjects(projects); setActiveProjectId(active_id);
+    });
+  }, []);
+  const activeProject = projects.find(p => p.id === activeProjectId) || null;
+
+  const switchProject = async (id) => {
+    await activateProject(id);
+    setActiveProjectId(id);
+    setProjMenuOpen(false);
+    window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
+  };
+  const addProject = async () => {
+    const name = window.prompt('New project name?');
+    if (!name) return;
+    const { id } = await createProject(name);
+    const { projects: updated } = await listProjects();
+    setProjects(updated);
+    await switchProject(id);
+  };
 
   const nowTime = () => {
     const d = new Date();
@@ -162,14 +187,31 @@ export default function App() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
           <ActivePeriodChip />
-          <button className="project-switcher" title="Switch project" type="button">
-            <span className="project-switcher__avatar">{PROJECT.avatar}</span>
-            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
-              <span className="project-switcher__name">{PROJECT.name}</span>
-              <span className="project-switcher__slug">{PROJECT.slug}</span>
-            </span>
-            <span className="project-switcher__chev">▾</span>
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button className="project-switcher" title="Switch project" type="button"
+                    onClick={() => setProjMenuOpen(o => !o)}>
+              <span className="project-switcher__avatar">
+                {(activeProject?.name || '?').slice(0, 2).toUpperCase()}
+              </span>
+              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
+                <span className="project-switcher__name">{activeProject?.name || 'No project'}</span>
+                <span className="project-switcher__slug">{activeProject?.slug || ''}</span>
+              </span>
+              <span className="project-switcher__chev">▾</span>
+            </button>
+            {projMenuOpen && (
+              <div className="project-menu">
+                {projects.map(p => (
+                  <div key={p.id}
+                       className={`project-menu__item ${p.id === activeProjectId ? 'active' : ''}`}
+                       onClick={() => switchProject(p.id)}>
+                    {p.name}
+                  </div>
+                ))}
+                <div className="project-menu__item project-menu__add" onClick={addProject}>+ New project</div>
+              </div>
+            )}
+          </div>
           <button className="iconbtn" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
           </button>
