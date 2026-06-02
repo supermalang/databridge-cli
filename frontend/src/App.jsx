@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import yaml from 'js-yaml';
 import Home from './pages/Home.jsx';
 import Sources from './pages/Sources.jsx';
 import Questions from './pages/Questions.jsx';
@@ -8,6 +9,9 @@ import Composition from './pages/Composition.jsx';
 import Ask from './pages/Ask.jsx';
 import Reports from './pages/Reports.jsx';
 import Templates from './pages/Templates.jsx';
+import BottomTerminal from './components/BottomTerminal.jsx';
+import { useToast } from './components/Toast.jsx';
+import { useCommand } from './hooks/useCommand.js';
 
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
@@ -64,6 +68,40 @@ export default function App() {
   const [stageId, setStageId] = useState('home');
   const [subId, setSubId] = useState(null);
 
+  // Global terminal: a single instance lives here so it's present on every tab
+  // (the panel is position:fixed and .layout reserves space for its collapsed
+  // bar). Command/log state lives here too, so pipeline-run logs survive tab
+  // switches. The topbar terminal button and Home's button both toggle it via
+  // the databridge:toggle-terminal event that BottomTerminal listens for.
+  const toast = useToast();
+  const [termOpen, setTermOpen] = useState(false);
+  const [logLines, setLogLines] = useState([]);
+  const [formAlias, setFormAlias] = useState('');
+
+  const nowTime = () => {
+    const d = new Date();
+    return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+  };
+
+  const { run, running, activeCmd } = useCommand({
+    onLog: (line, level) => setLogLines(prev => [...prev, { line, level, time: nowTime() }]),
+    onStatus: ({ command, status }) => {
+      if (status === 'running') { setLogLines([]); setTermOpen(true); }
+      if (status === 'success') toast(`${command} done ✓`, 'ok');
+      if (status === 'error')   toast(`${command} failed`, 'err');
+    },
+  });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const c = await (await fetch('/api/config')).json();
+        const cfg = yaml.load(c.content || '') || {};
+        setFormAlias(cfg.form?.alias || '');
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
   const navigate = (nextStage, nextSub) => {
     const stage = STAGES.find(s => s.id === nextStage) || STAGES[0];
     setStageId(stage.id);
@@ -80,7 +118,7 @@ export default function App() {
 
   // Keep-alive panes: a tab mounts on first visit (lazy), then stays mounted but
   // hidden when you leave — so its fetched data, edits, and scroll are retained.
-  const panes = [{ key: 'home', render: () => <Home navigate={navigate} /> }];
+  const panes = [{ key: 'home', render: () => <Home navigate={navigate} run={run} running={running} activeCmd={activeCmd} /> }];
   for (const s of STAGES) {
     if (!s.subs) continue;
     for (const sub of s.subs) panes.push({ key: `${s.id}/${sub.id}`, render: sub.render });
@@ -182,6 +220,15 @@ export default function App() {
             </div>
           ))}
       </div>
+
+      <BottomTerminal
+        project={formAlias || 'databridge'}
+        cmd={activeCmd}
+        lines={logLines}
+        onClear={() => setLogLines([])}
+        open={termOpen}
+        setOpen={setTermOpen}
+      />
     </div>
   );
 }

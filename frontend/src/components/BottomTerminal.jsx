@@ -2,6 +2,22 @@ import { useEffect, useRef, useState } from 'react';
 
 const LEVELS = ['info', 'ok', 'warn', 'error'];
 
+// Sessions mirror the app's workflow: a "Pipeline" parent with the five ordered
+// stages as children (fetch.questions nests under Transform, the stage it
+// belongs to). These are navigation labels over the shared run log — selecting
+// one highlights it; the log buffer itself is shared (the pipeline emits a
+// single stream, not per-stage streams). `shell` is the only session that
+// swaps content, to the ttyd iframe.
+const PIPELINE_TREE = [
+  { id: 'pipeline',        label: 'Pipeline',        depth: 0, parent: true },
+  { id: 'extract',         label: 'Extract',         depth: 1 },
+  { id: 'transform',       label: 'Transform',       depth: 1 },
+  { id: 'fetch.questions', label: 'fetch.questions', depth: 2 },
+  { id: 'load',            label: 'Load',            depth: 1 },
+  { id: 'analyze',         label: 'Analyze',         depth: 1 },
+  { id: 'present',         label: 'Present',         depth: 1 },
+];
+
 // Map a raw log-line level (cmd|info|success|warning|error from useCommand) to the
 // short label rendered as a colored badge in the terminal view.
 function lvlLabel(level) {
@@ -36,7 +52,7 @@ function nowTime() {
 //   onClear    optional callback for the trash icon
 //   open, setOpen  hoisted state so the topbar terminal icon can toggle it
 export default function BottomTerminal({ project = 'databridge', cmd, lines = [], onClear, open, setOpen }) {
-  const [session, setSession] = useState('pipeline.run');
+  const [session, setSession] = useState('pipeline');
   const [filters, setFilters] = useState(() => new Set(LEVELS));
   const bodyRef = useRef(null);
 
@@ -96,12 +112,20 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
         <aside className="bottom-term__side">
           <div className="bottom-term__side-label">Sessions</div>
           <ul>
-            <li data-active={session === 'pipeline.run'} onClick={() => setSession('pipeline.run')}>
-              <span className="dot" />pipeline.run
-            </li>
-            <li data-active={session === 'fetch.questions'} onClick={() => setSession('fetch.questions')}>
-              <span className="dot" />fetch.questions
-            </li>
+            {PIPELINE_TREE.map(s => (
+              <li
+                key={s.id}
+                data-depth={s.depth}
+                data-active={session === s.id}
+                className={s.parent ? 'bottom-term__session-parent' : undefined}
+                onClick={() => setSession(s.id)}
+              >
+                <span
+                  className="dot"
+                  style={s.parent ? { background: cmd ? 'var(--warm)' : 'var(--green)' } : undefined}
+                />{s.label}
+              </li>
+            ))}
             <li data-active={session === 'shell'} onClick={() => setSession('shell')}>
               <span className="dot" />shell (ttyd)
             </li>

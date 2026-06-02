@@ -1,8 +1,4 @@
-import { useEffect, useState } from 'react';
-import yaml from 'js-yaml';
-import BottomTerminal from '../components/BottomTerminal.jsx';
-import { useToast } from '../components/Toast.jsx';
-import { useCommand } from '../hooks/useCommand.js';
+import { useState } from 'react';
 
 // The five ordered workflow stages. Each card deep-links into its stage (and a
 // specific sub-page). `navigate(stageId, subId)` is provided by App.
@@ -39,36 +35,14 @@ const STAGE_CARDS = [
   },
 ];
 
-export default function Home({ navigate }) {
-  const toast = useToast();
-  const [termOpen, setTermOpen] = useState(false);
-  const [logLines, setLogLines] = useState([]);
+// The terminal itself now lives in App (one global instance present on every
+// tab). Home triggers pipeline runs through the hoisted `run`/`running`/
+// `activeCmd` props and toggles the shared terminal via the same event the
+// topbar button uses.
+export default function Home({ navigate, run, running, activeCmd }) {
   const [autoCharts, setAutoCharts] = useState(false);
-  const [formAlias, setFormAlias] = useState('');
 
-  const nowTime = () => {
-    const d = new Date();
-    return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
-  };
-
-  const { run, running, activeCmd } = useCommand({
-    onLog: (line, level) => setLogLines(prev => [...prev, { line, level, time: nowTime() }]),
-    onStatus: ({ command, status }) => {
-      if (status === 'running') { setLogLines([]); setTermOpen(true); }
-      if (status === 'success') toast(`${command} done ✓`, 'ok');
-      if (status === 'error')   toast(`${command} failed`, 'err');
-    },
-  });
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const c = await (await fetch('/api/config')).json();
-        const cfg = yaml.load(c.content || '') || {};
-        setFormAlias(cfg.form?.alias || '');
-      } catch { /* ignore */ }
-    })();
-  }, []);
+  const toggleTerminal = () => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'));
 
   const go = (stageId, subId) => (e) => { e?.stopPropagation?.(); navigate(stageId, subId); };
 
@@ -87,7 +61,7 @@ export default function Home({ navigate }) {
             <input type="checkbox" checked={autoCharts} onChange={(e) => setAutoCharts(e.target.checked)} disabled={running} />
             Auto-create charts
           </label>
-          <button className="btn" onClick={() => setTermOpen(o => !o)}>
+          <button className="btn" onClick={toggleTerminal}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
             Terminal
           </button>
@@ -124,15 +98,6 @@ export default function Home({ navigate }) {
           </div>
         ))}
       </div>
-
-      <BottomTerminal
-        project={formAlias || 'databridge'}
-        cmd={activeCmd}
-        lines={logLines}
-        onClear={() => setLogLines([])}
-        open={termOpen}
-        setOpen={setTermOpen}
-      />
     </div>
   );
 }

@@ -205,6 +205,9 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 .bottom-term__side li .dot{width:7px;height:7px;border-radius:50%;background:#4a5466;flex-shrink:0}
 .bottom-term__side li[data-active="true"] .dot{background:var(--green);box-shadow:0 0 0 2px rgba(22,163,74,.3)}
 .bottom-term__side li input[type="checkbox"]{accent-color:var(--accent);width:13px;height:13px;cursor:pointer}
+.bottom-term__side li[data-depth="1"]{padding-left:34px}
+.bottom-term__side li[data-depth="2"]{padding-left:50px}
+.bottom-term__session-parent{color:#d6dde9;font-weight:600;letter-spacing:-.005em}
 
 .bottom-term__main{padding:12px 18px;overflow-y:auto;font-family:var(--font-mono);font-size:12.5px;line-height:1.7;background:var(--slate-dark)}
 .bottom-term__main .log{display:grid;grid-template-columns:78px 56px 1fr;gap:14px;align-items:start;padding:1px 0}
