@@ -198,3 +198,48 @@ def test_logout_clears_cookie(monkeypatch):
     r = client.post("/auth/logout")
     assert r.status_code in (302, 307)
     assert "z.example/logout" in r.headers["location"]
+
+
+def test_refresh_renews_expired_access_token(monkeypatch):
+    monkeypatch.setenv("OIDC_ISSUER", "https://z.example")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "cid")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("SESSION_SECRET", "s3cr3t")
+
+    def fake_refresh(refresh_token):
+        assert refresh_token == "rt"
+        return {"refresh_token": "rt2", "expires_in": 3600}
+
+    monkeypatch.setattr(auth, "refresh_access_token", fake_refresh)
+    now = time.time()
+    token = auth.session_codec().encode({
+        "sub": "u1", "email": "u1@x.io", "name": "One",
+        "sess_exp": now + 3600, "access_exp": now - 1,   # access expired, session valid
+        "refresh_token": "rt",
+    })
+    user, new_cookie = auth.resolve_session(token)
+    assert user["sub"] == "u1"
+    assert new_cookie is not None                       # a refreshed cookie was minted
+    refreshed = auth.session_codec().decode(new_cookie)
+    assert refreshed["refresh_token"] == "rt2"
+    assert refreshed["access_exp"] > now
+
+
+def test_refresh_failure_invalidates_session(monkeypatch):
+    monkeypatch.setenv("OIDC_ISSUER", "https://z.example")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "cid")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("SESSION_SECRET", "s3cr3t")
+
+    def fake_refresh(refresh_token):
+        raise RuntimeError("refresh rejected")
+
+    monkeypatch.setattr(auth, "refresh_access_token", fake_refresh)
+    now = time.time()
+    token = auth.session_codec().encode({
+        "sub": "u1", "email": "u1@x.io", "name": "One",
+        "sess_exp": now + 3600, "access_exp": now - 1,
+        "refresh_token": "rt",
+    })
+    user, new_cookie = auth.resolve_session(token)
+    assert user is None and new_cookie is None

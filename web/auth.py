@@ -62,6 +62,36 @@ def current_user(cookie_value: str | None) -> dict | None:
     return _public_user(payload)
 
 
+def refresh_access_token(refresh_token: str) -> dict:
+    """Exchange a refresh token for a new one at the IdP. Returns the new token dict."""
+    return _get_oauth().zitadel.fetch_access_token(
+        refresh_token=refresh_token, grant_type="refresh_token")
+
+
+def resolve_session(cookie_value: str | None):
+    """Return (user|None, new_cookie|None). Refreshes transparently when the access
+    token is expired but the session window is still open. new_cookie is set only
+    when a refresh produced a new payload."""
+    if not auth_enabled():
+        return DEV_USER, None
+    if not cookie_value:
+        return None, None
+    payload = session_codec().decode(cookie_value)
+    if not payload or payload.get("sess_exp", 0) < time.time():
+        return None, None
+    if payload.get("access_exp", 0) >= time.time():
+        return _public_user(payload), None
+    # access token expired, session still valid -> try refresh
+    try:
+        tok = refresh_access_token(payload.get("refresh_token", ""))
+    except Exception:
+        return None, None
+    now = time.time()
+    payload["refresh_token"] = tok.get("refresh_token", payload.get("refresh_token", ""))
+    payload["access_exp"] = now + tok.get("expires_in", 3600)
+    return _public_user(payload), session_codec().encode(payload)
+
+
 log = logging.getLogger("databridge.auth")
 
 # Paths reachable without a session. Everything else under these prefixes is gated.
@@ -142,11 +172,15 @@ def register_auth(app) -> None:
 
     @app.middleware("http")
     async def _auth_mw(request, call_next):
-        user = current_user(request.cookies.get(SESSION_COOKIE))
+        user, new_cookie = resolve_session(request.cookies.get(SESSION_COOKIE))
         request.state.user = user
         if user is None and _needs_auth(request.url.path):
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
-        return await call_next(request)
+        response = await call_next(request)
+        if new_cookie:
+            response.set_cookie(SESSION_COOKIE, new_cookie,
+                                httponly=True, secure=False, samesite="lax", path="/")
+        return response
 
     @app.get("/api/me")
     async def auth_me(request: Request):
