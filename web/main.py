@@ -174,6 +174,8 @@ def activate_project(project_id: str, request: Request, db: Session = Depends(db
     except (db_repo.AccessError, ValueError):
         raise HTTPException(status_code=404, detail="Project not found")
     project = db_repo.get_project_for_user(db, user, pid)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
     db_bridge.mirror_active(db, user)
     storage_workspace.pull_workspace(str(project.org_id), str(project.id), base=BASE_DIR)
     return {"ok": True, "active_id": project_id}

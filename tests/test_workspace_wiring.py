@@ -1,10 +1,24 @@
 import uuid
+import pytest
 from fastapi.testclient import TestClient
 
 
 def _client():
     from web.main import app
     return TestClient(app)
+
+
+@pytest.fixture
+def isolated_base(tmp_path, monkeypatch):
+    """Redirect the app's working-dir root to a temp dir so activate/run workspace
+    operations (which clear/write data/processed, reports, templates) never touch the
+    real repo dirs. The handlers pass base=BASE_DIR (a module global) to the workspace
+    helpers, so patching wm.BASE_DIR fully isolates them."""
+    import web.main as wm
+    monkeypatch.setattr(wm, "BASE_DIR", tmp_path)
+    for sub in ("data/processed", "reports", "templates"):
+        (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+    return tmp_path
 
 
 def _make_project_with_report(c, name, report_name):
@@ -22,23 +36,21 @@ def _make_project_with_report(c, name, report_name):
     return pid
 
 
-def test_activate_pulls_workspace_into_reports_dir(tmp_path, monkeypatch):
+def test_activate_pulls_workspace_into_reports_dir(isolated_base):
     with _client() as c:
         pid = _make_project_with_report(c, "WS-A", "ra.docx")
         r = c.post(f"/api/projects/{pid}/activate")     # re-activate -> fresh pull
         assert r.status_code == 200
-        import web.main as wm
-        assert (wm.REPORTS_DIR / "ra.docx").exists()
+        assert (isolated_base / "reports" / "ra.docx").exists()
 
 
-def test_activate_swaps_mirror_between_projects(monkeypatch):
+def test_activate_swaps_mirror_between_projects(isolated_base):
     with _client() as c:
-        import web.main as wm
         pid_a = _make_project_with_report(c, "WS-1", "a_only.docx")
         pid_b = _make_project_with_report(c, "WS-2", "b_only.docx")
         c.post(f"/api/projects/{pid_a}/activate")
-        assert (wm.REPORTS_DIR / "a_only.docx").exists()
-        assert not (wm.REPORTS_DIR / "b_only.docx").exists()
+        assert (isolated_base / "reports" / "a_only.docx").exists()
+        assert not (isolated_base / "reports" / "b_only.docx").exists()
         c.post(f"/api/projects/{pid_b}/activate")
-        assert (wm.REPORTS_DIR / "b_only.docx").exists()
-        assert not (wm.REPORTS_DIR / "a_only.docx").exists()
+        assert (isolated_base / "reports" / "b_only.docx").exists()
+        assert not (isolated_base / "reports" / "a_only.docx").exists()
