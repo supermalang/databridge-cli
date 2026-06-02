@@ -18,6 +18,7 @@ from web import auth
 from web.db import bootstrap as db_bootstrap
 from web.db import session as db_session, repository as db_repo, provision as db_provision
 from web.db import bridge as db_bridge
+from web.storage import workspace as storage_workspace
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -168,10 +169,13 @@ def activate_project(project_id: str, request: Request, db: Session = Depends(db
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        db_repo.set_active_project(db, user, _uuid.UUID(project_id))
+        pid = _uuid.UUID(project_id)
+        db_repo.set_active_project(db, user, pid)
     except (db_repo.AccessError, ValueError):
         raise HTTPException(status_code=404, detail="Project not found")
+    project = db_repo.get_project_for_user(db, user, pid)
     db_bridge.mirror_active(db, user)
+    storage_workspace.pull_workspace(str(project.org_id), str(project.id), base=BASE_DIR)
     return {"ok": True, "active_id": project_id}
 
 
