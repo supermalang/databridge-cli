@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Optional
 
 import aiofiles, yaml
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, UploadFile, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -13,8 +13,11 @@ from src.utils.config import load_config, write_config
 from src.data.transform import load_processed_data
 from src.data.profile import profile_dataset
 from src.reports import ask_engine
+from sqlalchemy.orm import Session
 from web import auth
 from web.db import bootstrap as db_bootstrap
+from web.db import session as db_session, repository as db_repo, provision as db_provision
+from web.db import bridge as db_bridge
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -41,6 +44,22 @@ _running_command: Optional[str] = None  # single-flight: name of the in-flight r
 if ASSETS_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
+
+def _current_user(request: Request, db: Session):
+    claims = getattr(request.state, "user", None) or {}
+    sub = claims.get("sub")
+    user = db_repo.get_user_by_sub(db, sub) if sub else None
+    if user is None and sub:
+        user = db_provision.ensure_user(db, claims)
+    return user
+
+
+def _active_project(request: Request, db: Session):
+    user = _current_user(request, db)
+    if user is None or user.active_project_id is None:
+        return user, None
+    return user, db_repo.get_project_for_user(db, user, user.active_project_id)
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     index = STATIC_DIR / "index.html"
@@ -61,25 +80,35 @@ async def health():
     return {"status": "ok"}
 
 @app.get("/api/config")
-async def get_config():
-    if not CONFIG_PATH.exists():
+def get_config(request: Request, db: Session = Depends(db_session.get_db)):
+    _user, project = _active_project(request, db)
+    if project is None:
         return {"content": "", "exists": False}
-    async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        content = await f.read()
-    return {"content": content, "exists": True}
+    content = yaml.safe_dump(project.config or {}, allow_unicode=True,
+                             default_flow_style=False, sort_keys=False)
+    return {"content": content, "exists": True, "version": project.config_version}
+
 
 class ConfigPayload(BaseModel):
     content: str
+    version: Optional[int] = None
+
 
 @app.post("/api/config")
-async def save_config(payload: ConfigPayload):
+def save_config(payload: ConfigPayload, request: Request, db: Session = Depends(db_session.get_db)):
     try:
-        yaml.safe_load(payload.content)
+        parsed = yaml.safe_load(payload.content) or {}
     except yaml.YAMLError as e:
         raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
-    async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        await f.write(payload.content)
-    return {"ok": True, "saved_at": datetime.now().isoformat()}
+    user, project = _active_project(request, db)
+    if project is None:
+        raise HTTPException(status_code=400, detail="No active project")
+    try:
+        db_repo.update_project_config(db, project, parsed, expected_version=getattr(payload, "version", None))
+    except db_repo.StaleConfigError:
+        raise HTTPException(status_code=409, detail="Config changed since you loaded it; reload and retry.")
+    db_bridge.materialize_config(project)
+    return {"ok": True, "saved_at": datetime.now().isoformat(), "version": project.config_version}
 
 ALLOWED_COMMANDS = {
     "fetch-questions":      [],
