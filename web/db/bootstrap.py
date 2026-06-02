@@ -56,6 +56,18 @@ def import_legacy_config(db: Session, owner: User, config_path: Path = CONFIG_PA
     return p
 
 
+def import_legacy_workspace(db, project, base=None) -> int:
+    """One-time: push the project's existing local files to Minio if its prefix is empty.
+    Returns #files pushed (0 if already populated). Idempotent."""
+    from pathlib import Path
+    from web.storage import workspace
+    base = Path(base) if base is not None else Path(__file__).resolve().parent.parent.parent
+    org_id, project_id = str(project.org_id), str(project.id)
+    if not workspace.is_empty(org_id, project_id):
+        return 0
+    return workspace.push_outputs(org_id, project_id, base=base)
+
+
 def init_db() -> None:
     """Startup entry point: migrate, then ensure the dev user + legacy import when auth
     is disabled (dev). For real auth, provisioning happens at /auth/callback."""
@@ -65,4 +77,6 @@ def init_db() -> None:
     if not auth.auth_enabled():
         with dbs.SessionLocal() as db:
             dev = provision.ensure_dev_user(db)
-            import_legacy_config(db, owner=dev)
+            project = import_legacy_config(db, owner=dev)
+            if project is not None:
+                import_legacy_workspace(db, project)
