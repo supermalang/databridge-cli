@@ -1,4 +1,5 @@
 import asyncio, base64, io, json, os, sys, tempfile, zipfile
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Optional
@@ -13,6 +14,7 @@ from src.data.transform import load_processed_data
 from src.data.profile import profile_dataset
 from src.reports import ask_engine
 from web import auth
+from web.db import bootstrap as db_bootstrap
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -25,7 +27,12 @@ DATA_DIR      = BASE_DIR / "data" / "processed"
 STATIC_DIR    = BASE_DIR / "frontend" / "dist"
 ASSETS_DIR    = STATIC_DIR / "assets"
 
-app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def _lifespan(app):
+    db_bootstrap.init_db()
+    yield
+
+app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None, lifespan=_lifespan)
 auth.register_auth(app)
 _last_status: Dict = {"command": None, "status": "idle", "finished_at": None}
 _proc: Optional[asyncio.subprocess.Process] = None
