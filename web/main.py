@@ -60,6 +60,21 @@ def _active_project(request: Request, db: Session):
         return user, None
     return user, db_repo.get_project_for_user(db, user, user.active_project_id)
 
+
+def _sync_active_project_from_file(request: Request) -> None:
+    """After an endpoint mutates config.yml directly, push the file's contents back into
+    the active project's DB row so the DB (source of truth) stays in sync and the next
+    materialize_config doesn't discard the edit. No-op if there's no active project."""
+    if not CONFIG_PATH.exists():
+        return
+    with db_session.SessionLocal() as db:
+        user, project = _active_project(request, db)
+        if project is None:
+            return
+        cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        db_repo.update_project_config(db, project, cfg)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     index = STATIC_DIR / "index.html"
@@ -213,7 +228,7 @@ async def get_questions():
     return {"questions": cfg.get("questions", [])}
 
 @app.post("/api/questions")
-async def save_questions(payload: QuestionsPayload):
+async def save_questions(payload: QuestionsPayload, request: Request):
     if not CONFIG_PATH.exists():
         raise HTTPException(status_code=400, detail="config.yml not found")
     async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -222,6 +237,7 @@ async def save_questions(payload: QuestionsPayload):
     cfg["questions"] = payload.questions
     async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
         await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
+    _sync_active_project_from_file(request)
     return {"ok": True, "saved": len(payload.questions)}
 
 @app.post("/api/questions/suggest-hidden")
@@ -1478,7 +1494,7 @@ async def get_active_template():
     return {"active": Path(tpl).name if tpl else None}
 
 @app.post("/api/templates/set-active/{filename}")
-async def set_active_template(filename: str):
+async def set_active_template(filename: str, request: Request):
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = TEMPLATES_DIR / filename
@@ -1494,6 +1510,7 @@ async def set_active_template(filename: str):
     cfg["report"]["template"] = f"templates/{filename}"
     async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
         await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
+    _sync_active_project_from_file(request)
     return {"ok": True, "template": filename}
 
 @app.get("/api/templates/preview/{filename}")
@@ -1551,7 +1568,7 @@ async def get_periods():
 
 
 @app.post("/api/periods/current")
-async def set_current_period(payload: PeriodLabelPayload):
+async def set_current_period(payload: PeriodLabelPayload, request: Request):
     from src.utils.periods import slugify
     cfg = _load_cfg()
     cfg.setdefault("periods", {})
@@ -1560,11 +1577,12 @@ async def set_current_period(payload: PeriodLabelPayload):
     if not any(e.get("label") == payload.label for e in registry):
         registry.append({"label": payload.label, "slug": slugify(payload.label)})
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"current": payload.label, "registry": cfg["periods"]["registry"]}
 
 
 @app.post("/api/periods/registry")
-async def add_registry_period(payload: PeriodLabelPayload):
+async def add_registry_period(payload: PeriodLabelPayload, request: Request):
     from src.utils.periods import slugify
     cfg = _load_cfg()
     cfg.setdefault("periods", {})
@@ -1572,16 +1590,18 @@ async def add_registry_period(payload: PeriodLabelPayload):
     if not any(e.get("label") == payload.label for e in registry):
         registry.append({"label": payload.label, "slug": slugify(payload.label)})
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"registry": registry}
 
 
 @app.delete("/api/periods/registry/{slug}")
-async def delete_registry_period(slug: str):
+async def delete_registry_period(slug: str, request: Request):
     cfg = _load_cfg()
     p = cfg.setdefault("periods", {})
     registry = p.get("registry", []) or []
     p["registry"] = [e for e in registry if e.get("slug") != slug]
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"registry": p["registry"]}
 
 
@@ -1712,7 +1732,7 @@ async def api_ask(payload: AskPayload):
 
 
 @app.post("/api/ask/save")
-async def api_ask_save(payload: AskSavePayload):
+async def api_ask_save(payload: AskSavePayload, request: Request):
     """Append a proposed chart recipe to config.charts."""
     recipe = payload.recipe
     if not isinstance(recipe, dict):
@@ -1720,6 +1740,7 @@ async def api_ask_save(payload: AskSavePayload):
     cfg = load_config(CONFIG_PATH)
     name = ask_engine.save_recipe(recipe, cfg, payload.kind)
     write_config(cfg, CONFIG_PATH)
+    _sync_active_project_from_file(request)
     return {"ok": True, "name": name}
 
 
@@ -1755,7 +1776,7 @@ async def get_framework():
 
 
 @app.post("/api/framework")
-async def set_framework(payload: FrameworkPayload):
+async def set_framework(payload: FrameworkPayload, request: Request):
     cfg = _load_cfg()
     cfg["framework"] = {
         "goal":     payload.goal,
@@ -1763,6 +1784,7 @@ async def set_framework(payload: FrameworkPayload):
         "outputs":  payload.outputs,
     }
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"ok": True}
 
 
@@ -1786,7 +1808,7 @@ async def get_pii():
 
 
 @app.post("/api/pii")
-async def set_pii(payload: PIIPayload):
+async def set_pii(payload: PIIPayload, request: Request):
     cfg = _load_cfg()
     cfg["pii"] = {
         "consent_column": payload.consent_column,
@@ -1794,4 +1816,5 @@ async def set_pii(payload: PIIPayload):
         "redact":         payload.redact,
     }
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"ok": True}

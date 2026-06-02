@@ -5,6 +5,7 @@ Revises:
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = '0001'
@@ -56,7 +57,7 @@ def upgrade():
     sa.Column('org_id', sa.Uuid(), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=False),
     sa.Column('slug', sa.String(length=255), nullable=False),
-    sa.Column('config', sa.JSON(), nullable=False),
+    sa.Column('config', sa.JSON().with_variant(postgresql.JSONB(), 'postgresql'), nullable=False),
     sa.Column('config_version', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
