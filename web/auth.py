@@ -200,6 +200,12 @@ def register_auth(app) -> None:
     @app.get("/auth/callback")
     async def auth_callback(request: Request):
         claims = await exchange_token(request)
+        import asyncio
+        from web.db import session as _dbs, provision as _prov
+        def _do_provision():
+            with _dbs.SessionLocal() as db:
+                _prov.ensure_user(db, claims)
+        await asyncio.to_thread(_do_provision)
         resp = RedirectResponse("/", status_code=302)
         resp.set_cookie(SESSION_COOKIE, _build_session_cookie(claims),
                         httponly=True, secure=False, samesite="lax", path="/")

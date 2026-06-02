@@ -634,3 +634,13 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .pii-row__col      { font-family: var(--font-mono, monospace); font-size: 12.5px; }
 .pii-row__strategy { color: var(--ink-3); font-size: 11.5px; }
 .pii-row__decimals { color: var(--ink-3); font-size: 11.5px; }
+
+.project-menu {
+  position: absolute; top: 110%; right: 0; z-index: 50;
+  background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.12); min-width: 200px; padding: 4px;
+}
+.project-menu__item { padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.project-menu__item:hover { background: var(--hover, #f3f4f6); }
+.project-menu__item.active { font-weight: 600; }
+.project-menu__add { border-top: 1px solid var(--border, #e5e7eb); color: var(--accent, #2563eb); margin-top: 4px; }

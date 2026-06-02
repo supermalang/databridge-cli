@@ -1,5 +1,6 @@
 """Shared fixtures for kobo-reporter tests."""
 import sys
+import os as _os
 from copy import deepcopy
 from pathlib import Path
 import pytest
@@ -7,6 +8,20 @@ import pytest
 # Ensure project root is importable
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _app_database(tmp_path_factory):
+    """Session-wide SQLite app DB so the FastAPI app (and its lifespan) work in tests.
+    Real Postgres + Alembic are used only outside tests."""
+    db_path = tmp_path_factory.mktemp("appdb") / "app.db"
+    _os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+    _os.environ["DATABRIDGE_SKIP_MIGRATIONS"] = "1"
+    from web.db import session as dbs
+    dbs.reset_engine()
+    dbs.init_schema()
+    yield
+    dbs.reset_engine()
 
 
 @pytest.fixture(autouse=True)

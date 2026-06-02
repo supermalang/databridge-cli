@@ -1,10 +1,11 @@
 import asyncio, base64, io, json, os, sys, tempfile, zipfile
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Optional
 
 import aiofiles, yaml
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, UploadFile, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -12,7 +13,11 @@ from src.utils.config import load_config, write_config
 from src.data.transform import load_processed_data
 from src.data.profile import profile_dataset
 from src.reports import ask_engine
+from sqlalchemy.orm import Session
 from web import auth
+from web.db import bootstrap as db_bootstrap
+from web.db import session as db_session, repository as db_repo, provision as db_provision
+from web.db import bridge as db_bridge
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -25,7 +30,12 @@ DATA_DIR      = BASE_DIR / "data" / "processed"
 STATIC_DIR    = BASE_DIR / "frontend" / "dist"
 ASSETS_DIR    = STATIC_DIR / "assets"
 
-app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def _lifespan(app):
+    db_bootstrap.init_db()
+    yield
+
+app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None, lifespan=_lifespan)
 auth.register_auth(app)
 _last_status: Dict = {"command": None, "status": "idle", "finished_at": None}
 _proc: Optional[asyncio.subprocess.Process] = None
@@ -33,6 +43,37 @@ _running_command: Optional[str] = None  # single-flight: name of the in-flight r
 
 if ASSETS_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
+
+def _current_user(request: Request, db: Session):
+    claims = getattr(request.state, "user", None) or {}
+    sub = claims.get("sub")
+    user = db_repo.get_user_by_sub(db, sub) if sub else None
+    if user is None and sub:
+        user = db_provision.ensure_user(db, claims)
+    return user
+
+
+def _active_project(request: Request, db: Session):
+    user = _current_user(request, db)
+    if user is None or user.active_project_id is None:
+        return user, None
+    return user, db_repo.get_project_for_user(db, user, user.active_project_id)
+
+
+def _sync_active_project_from_file(request: Request) -> None:
+    """After an endpoint mutates config.yml directly, push the file's contents back into
+    the active project's DB row so the DB (source of truth) stays in sync and the next
+    materialize_config doesn't discard the edit. No-op if there's no active project."""
+    if not CONFIG_PATH.exists():
+        return
+    with db_session.SessionLocal() as db:
+        user, project = _active_project(request, db)
+        if project is None:
+            return
+        cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        db_repo.update_project_config(db, project, cfg)
+
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
@@ -54,25 +95,85 @@ async def health():
     return {"status": "ok"}
 
 @app.get("/api/config")
-async def get_config():
-    if not CONFIG_PATH.exists():
+def get_config(request: Request, db: Session = Depends(db_session.get_db)):
+    _user, project = _active_project(request, db)
+    if project is None:
         return {"content": "", "exists": False}
-    async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        content = await f.read()
-    return {"content": content, "exists": True}
+    content = yaml.safe_dump(project.config or {}, allow_unicode=True,
+                             default_flow_style=False, sort_keys=False)
+    return {"content": content, "exists": True, "version": project.config_version}
+
 
 class ConfigPayload(BaseModel):
     content: str
+    version: Optional[int] = None
+
 
 @app.post("/api/config")
-async def save_config(payload: ConfigPayload):
+def save_config(payload: ConfigPayload, request: Request, db: Session = Depends(db_session.get_db)):
     try:
-        yaml.safe_load(payload.content)
+        parsed = yaml.safe_load(payload.content) or {}
     except yaml.YAMLError as e:
         raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
-    async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        await f.write(payload.content)
-    return {"ok": True, "saved_at": datetime.now().isoformat()}
+    user, project = _active_project(request, db)
+    if project is None:
+        raise HTTPException(status_code=400, detail="No active project")
+    try:
+        db_repo.update_project_config(db, project, parsed, expected_version=getattr(payload, "version", None))
+    except db_repo.StaleConfigError:
+        raise HTTPException(status_code=409, detail="Config changed since you loaded it; reload and retry.")
+    db_bridge.materialize_config(project)
+    return {"ok": True, "saved_at": datetime.now().isoformat(), "version": project.config_version}
+
+
+class NewProjectPayload(BaseModel):
+    name: str
+    org_id: Optional[str] = None
+
+
+@app.get("/api/projects")
+def list_projects(request: Request, db: Session = Depends(db_session.get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        return {"projects": [], "active_id": None}
+    projects = db_repo.list_projects_for_user(db, user)
+    return {
+        "active_id": str(user.active_project_id) if user.active_project_id else None,
+        "projects": [{"id": str(p.id), "name": p.name, "slug": p.slug, "org_id": str(p.org_id)}
+                     for p in projects],
+    }
+
+
+@app.post("/api/projects")
+def create_project(payload: NewProjectPayload, request: Request, db: Session = Depends(db_session.get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    import uuid as _uuid
+    try:
+        org_id = _uuid.UUID(payload.org_id) if payload.org_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid org_id")
+    try:
+        p = db_repo.create_project(db, user=user, name=payload.name, org_id=org_id)
+    except db_repo.AccessError:
+        raise HTTPException(status_code=403, detail="Not a member of that org")
+    return {"id": str(p.id), "name": p.name, "slug": p.slug}
+
+
+@app.post("/api/projects/{project_id}/activate")
+def activate_project(project_id: str, request: Request, db: Session = Depends(db_session.get_db)):
+    import uuid as _uuid
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        db_repo.set_active_project(db, user, _uuid.UUID(project_id))
+    except (db_repo.AccessError, ValueError):
+        raise HTTPException(status_code=404, detail="Project not found")
+    db_bridge.mirror_active(db, user)
+    return {"ok": True, "active_id": project_id}
+
 
 ALLOWED_COMMANDS = {
     "fetch-questions":      [],
@@ -127,7 +228,7 @@ async def get_questions():
     return {"questions": cfg.get("questions", [])}
 
 @app.post("/api/questions")
-async def save_questions(payload: QuestionsPayload):
+async def save_questions(payload: QuestionsPayload, request: Request):
     if not CONFIG_PATH.exists():
         raise HTTPException(status_code=400, detail="config.yml not found")
     async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -136,6 +237,7 @@ async def save_questions(payload: QuestionsPayload):
     cfg["questions"] = payload.questions
     async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
         await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
+    _sync_active_project_from_file(request)
     return {"ok": True, "saved": len(payload.questions)}
 
 @app.post("/api/questions/suggest-hidden")
@@ -1015,7 +1117,7 @@ async def export_view_csv(payload: ViewPreviewPayload):
     )
 
 @app.post("/api/run/{command}")
-async def run_command(command: str, payload: RunPayload):
+async def run_command(command: str, payload: RunPayload, request: Request):
     global _running_command
     if command not in ALLOWED_COMMANDS:
         raise HTTPException(status_code=400, detail=f"Unknown command '{command}'")
@@ -1053,6 +1155,17 @@ async def run_command(command: str, payload: RunPayload):
         raise HTTPException(status_code=409,
             detail=f"A command is already running ('{_running_command}'). Stop it or wait for it to finish.")
     _running_command = command  # reserve synchronously (atomic: no await before return)
+    # Mirror the active project's config to config.yml for the CLI subprocess.
+    # If this fails we MUST release the lock — _stream's finally only runs once the
+    # generator starts, which won't happen if we raise before returning the response.
+    try:
+        with db_session.SessionLocal() as _db:
+            _user = _current_user(request, _db)
+            if _user is not None:
+                db_bridge.mirror_active(_db, _user)
+    except Exception:
+        _running_command = None
+        raise
     return StreamingResponse(
         _stream(command, cmd),
         media_type="text/event-stream",
@@ -1381,7 +1494,7 @@ async def get_active_template():
     return {"active": Path(tpl).name if tpl else None}
 
 @app.post("/api/templates/set-active/{filename}")
-async def set_active_template(filename: str):
+async def set_active_template(filename: str, request: Request):
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = TEMPLATES_DIR / filename
@@ -1397,6 +1510,7 @@ async def set_active_template(filename: str):
     cfg["report"]["template"] = f"templates/{filename}"
     async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
         await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
+    _sync_active_project_from_file(request)
     return {"ok": True, "template": filename}
 
 @app.get("/api/templates/preview/{filename}")
@@ -1454,7 +1568,7 @@ async def get_periods():
 
 
 @app.post("/api/periods/current")
-async def set_current_period(payload: PeriodLabelPayload):
+async def set_current_period(payload: PeriodLabelPayload, request: Request):
     from src.utils.periods import slugify
     cfg = _load_cfg()
     cfg.setdefault("periods", {})
@@ -1463,11 +1577,12 @@ async def set_current_period(payload: PeriodLabelPayload):
     if not any(e.get("label") == payload.label for e in registry):
         registry.append({"label": payload.label, "slug": slugify(payload.label)})
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"current": payload.label, "registry": cfg["periods"]["registry"]}
 
 
 @app.post("/api/periods/registry")
-async def add_registry_period(payload: PeriodLabelPayload):
+async def add_registry_period(payload: PeriodLabelPayload, request: Request):
     from src.utils.periods import slugify
     cfg = _load_cfg()
     cfg.setdefault("periods", {})
@@ -1475,16 +1590,18 @@ async def add_registry_period(payload: PeriodLabelPayload):
     if not any(e.get("label") == payload.label for e in registry):
         registry.append({"label": payload.label, "slug": slugify(payload.label)})
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"registry": registry}
 
 
 @app.delete("/api/periods/registry/{slug}")
-async def delete_registry_period(slug: str):
+async def delete_registry_period(slug: str, request: Request):
     cfg = _load_cfg()
     p = cfg.setdefault("periods", {})
     registry = p.get("registry", []) or []
     p["registry"] = [e for e in registry if e.get("slug") != slug]
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"registry": p["registry"]}
 
 
@@ -1615,7 +1732,7 @@ async def api_ask(payload: AskPayload):
 
 
 @app.post("/api/ask/save")
-async def api_ask_save(payload: AskSavePayload):
+async def api_ask_save(payload: AskSavePayload, request: Request):
     """Append a proposed chart recipe to config.charts."""
     recipe = payload.recipe
     if not isinstance(recipe, dict):
@@ -1623,6 +1740,7 @@ async def api_ask_save(payload: AskSavePayload):
     cfg = load_config(CONFIG_PATH)
     name = ask_engine.save_recipe(recipe, cfg, payload.kind)
     write_config(cfg, CONFIG_PATH)
+    _sync_active_project_from_file(request)
     return {"ok": True, "name": name}
 
 
@@ -1658,7 +1776,7 @@ async def get_framework():
 
 
 @app.post("/api/framework")
-async def set_framework(payload: FrameworkPayload):
+async def set_framework(payload: FrameworkPayload, request: Request):
     cfg = _load_cfg()
     cfg["framework"] = {
         "goal":     payload.goal,
@@ -1666,6 +1784,7 @@ async def set_framework(payload: FrameworkPayload):
         "outputs":  payload.outputs,
     }
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"ok": True}
 
 
@@ -1689,7 +1808,7 @@ async def get_pii():
 
 
 @app.post("/api/pii")
-async def set_pii(payload: PIIPayload):
+async def set_pii(payload: PIIPayload, request: Request):
     cfg = _load_cfg()
     cfg["pii"] = {
         "consent_column": payload.consent_column,
@@ -1697,4 +1816,5 @@ async def set_pii(payload: PIIPayload):
         "redact":         payload.redact,
     }
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"ok": True}
