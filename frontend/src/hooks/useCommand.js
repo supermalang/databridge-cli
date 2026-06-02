@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { handle401 } from '../lib/auth.js';
 
 // Streams logs from POST /api/run/<command> — the backend writes SSE-style frames
 // (event: log / status / done\\ndata: {...}\\n\\n) into the response body. We can't use
@@ -37,6 +38,7 @@ export function useCommand({ onLog, onStatus } = {}) {
         body: JSON.stringify(body),
       });
       if (!res.ok) {
+        if (handle401(res)) return;
         let detail = `Request failed (${res.status})`;
         try { detail = (await res.json()).detail || detail; } catch {}
         onLogRef.current?.(detail, 'error');

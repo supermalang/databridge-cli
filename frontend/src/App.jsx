@@ -12,6 +12,7 @@ import Templates from './pages/Templates.jsx';
 import BottomTerminal from './components/BottomTerminal.jsx';
 import { useToast } from './components/Toast.jsx';
 import { useCommand } from './hooks/useCommand.js';
+import { fetchMe } from './lib/auth.js';
 
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
@@ -77,6 +78,8 @@ export default function App() {
   const [termOpen, setTermOpen] = useState(false);
   const [logLines, setLogLines] = useState([]);
   const [formAlias, setFormAlias] = useState('');
+  const [me, setMe] = useState(null);
+  useEffect(() => { fetchMe().then(setMe); }, []);
 
   const nowTime = () => {
     const d = new Date();
@@ -173,7 +176,16 @@ export default function App() {
           <button className="iconbtn" title="Notifications">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2a4 4 0 0 0-4 4v3l-1.5 2h11L12 9V6a4 4 0 0 0-4-4z"/><path d="M6.5 13a1.5 1.5 0 0 0 3 0"/></svg>
           </button>
-          <button className="iconbtn iconbtn--avatar" title="Account">{USER.initials}</button>
+          {me && me.sub !== 'dev-local' ? (
+            <form method="POST" action="/auth/logout" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+              <span className="topbar-user" title={me.email}>{me.email}</span>
+              <button type="submit" className="iconbtn" title="Sign out">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 14H3V2h3"/><polyline points="10 11 13 8 10 5"/><line x1="13" y1="8" x2="6" y2="8"/></svg>
+              </button>
+            </form>
+          ) : (
+            <button className="iconbtn iconbtn--avatar" title={me?.email || 'Account'}>{USER.initials}</button>
+          )}
         </div>
       </header>
 
