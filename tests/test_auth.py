@@ -3,6 +3,13 @@ import pytest
 from web import auth
 
 
+@pytest.fixture(autouse=True)
+def _reset_oauth():
+    auth._oauth = None
+    yield
+    auth._oauth = None
+
+
 def test_session_codec_roundtrip():
     codec = auth.SessionCodec("a-very-secret-key")
     token = codec.encode({"sub": "u1", "email": "u1@x.io"})
@@ -178,7 +185,9 @@ def test_me_returns_401_without_session(monkeypatch):
 
 def test_logout_clears_cookie(monkeypatch):
     _enable(monkeypatch)
-    monkeypatch.setattr(auth, "end_session_url", lambda: "https://z.example/logout")
+    async def fake_end_session():
+        return "https://z.example/logout"
+    monkeypatch.setattr(auth, "end_session_url", fake_end_session)
     token = auth.session_codec().encode({
         "sub": "u1", "email": "u1@x.io", "name": "One",
         "sess_exp": time.time() + 3600, "access_exp": time.time() + 3600,

@@ -116,8 +116,8 @@ async def exchange_token(request) -> dict:
     }
 
 
-def end_session_url() -> str:
-    meta = _get_oauth().zitadel.load_server_metadata()
+async def end_session_url() -> str:
+    meta = await _get_oauth().zitadel.load_server_metadata()
     base = meta.get("end_session_endpoint", os.environ["OIDC_ISSUER"].rstrip("/") + "/oidc/v1/end_session")
     redir = os.environ.get("APP_BASE_URL", "http://localhost:8000").rstrip("/")
     return f"{base}?post_logout_redirect_uri={redir}"
@@ -134,7 +134,7 @@ def _build_session_cookie(claims: dict) -> str:
 
 
 def register_auth(app) -> None:
-    """Install the enforcement middleware (and, in a later task, the /auth routes)."""
+    """Install the enforcement middleware, /api/me, and (when configured) the /auth OIDC routes."""
     if auth_enabled():
         log.info("AUTH ENABLED — Zitadel OIDC (issuer=%s)", os.environ.get("OIDC_ISSUER"))
     else:
@@ -148,10 +148,16 @@ def register_auth(app) -> None:
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
         return await call_next(request)
 
-    if auth_enabled():
-        app.add_middleware(SessionMiddleware,
-                           secret_key=os.environ.get("SESSION_SECRET", "dev-insecure-secret"),
-                           same_site="lax", https_only=False)
+    @app.get("/api/me")
+    async def auth_me(request: Request):
+        return request.state.user
+
+    if not auth_enabled():
+        return
+
+    app.add_middleware(SessionMiddleware,
+                       secret_key=os.environ.get("SESSION_SECRET", "dev-insecure-secret"),
+                       same_site="lax", https_only=False)
 
     @app.get("/auth/login")
     async def auth_login(request: Request):
@@ -167,10 +173,6 @@ def register_auth(app) -> None:
 
     @app.post("/auth/logout")
     async def auth_logout(request: Request):
-        resp = RedirectResponse(end_session_url(), status_code=302)
+        resp = RedirectResponse(await end_session_url(), status_code=302)
         resp.delete_cookie(SESSION_COOKIE, path="/")
         return resp
-
-    @app.get("/api/me")
-    async def auth_me(request: Request):
-        return request.state.user
