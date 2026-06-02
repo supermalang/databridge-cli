@@ -12,6 +12,7 @@ from src.utils.config import load_config, write_config
 from src.data.transform import load_processed_data
 from src.data.profile import profile_dataset
 from src.reports import ask_engine
+from web import auth
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -25,6 +26,7 @@ STATIC_DIR    = BASE_DIR / "frontend" / "dist"
 ASSETS_DIR    = STATIC_DIR / "assets"
 
 app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None)
+auth.register_auth(app)
 _last_status: Dict = {"command": None, "status": "idle", "finished_at": None}
 _proc: Optional[asyncio.subprocess.Process] = None
 _running_command: Optional[str] = None  # single-flight: name of the in-flight run, else None

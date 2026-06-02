@@ -2,9 +2,11 @@
 import base64
 import hashlib
 import json
+import logging
 import os
 import time
 from cryptography.fernet import Fernet, InvalidToken
+from fastapi.responses import JSONResponse
 
 
 def _fernet_key(secret: str) -> bytes:
@@ -55,3 +57,32 @@ def current_user(cookie_value: str | None) -> dict | None:
     if not payload or payload.get("sess_exp", 0) < time.time():
         return None
     return _public_user(payload)
+
+
+log = logging.getLogger("databridge.auth")
+
+# Paths reachable without a session. Everything else under these prefixes is gated.
+_PROTECTED_PREFIXES = ("/api/", "/terminal")
+_WHITELIST = ("/auth/", "/api/health")
+
+
+def _needs_auth(path: str) -> bool:
+    if any(path.startswith(w) for w in _WHITELIST):
+        return False
+    return any(path.startswith(p) for p in _PROTECTED_PREFIXES)
+
+
+def register_auth(app) -> None:
+    """Install the enforcement middleware (and, in a later task, the /auth routes)."""
+    if auth_enabled():
+        log.info("AUTH ENABLED — Zitadel OIDC (issuer=%s)", os.environ.get("OIDC_ISSUER"))
+    else:
+        log.warning("AUTH DISABLED — no OIDC config; all requests run as dev user")
+
+    @app.middleware("http")
+    async def _auth_mw(request, call_next):
+        user = current_user(request.cookies.get(SESSION_COOKIE))
+        request.state.user = user
+        if user is None and _needs_auth(request.url.path):
+            return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+        return await call_next(request)

@@ -66,3 +66,65 @@ def test_current_user_rejects_expired_session(monkeypatch):
         "refresh_token": "rt",
     })
     assert auth.current_user(cookie_value=token) is None
+
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+
+def _app_with_auth():
+    app = FastAPI()
+
+    @app.get("/api/ping")
+    async def ping(): return {"ok": True}
+
+    @app.get("/api/health")
+    async def health(): return {"status": "ok"}
+
+    @app.get("/")
+    async def root(): return {"shell": True}
+
+    auth.register_auth(app)
+    return app
+
+
+def test_middleware_allows_all_when_disabled(monkeypatch):
+    monkeypatch.delenv("OIDC_ISSUER", raising=False)
+    client = TestClient(_app_with_auth())
+    assert client.get("/api/ping").status_code == 200
+
+
+def test_middleware_blocks_api_when_enabled_no_session(monkeypatch):
+    monkeypatch.setenv("OIDC_ISSUER", "https://z.example")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "cid")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("SESSION_SECRET", "s3cr3t")
+    client = TestClient(_app_with_auth())
+    r = client.get("/api/ping")
+    assert r.status_code == 401
+    assert r.json()["detail"] == "Not authenticated"
+
+
+def test_middleware_whitelists_health_and_shell(monkeypatch):
+    monkeypatch.setenv("OIDC_ISSUER", "https://z.example")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "cid")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("SESSION_SECRET", "s3cr3t")
+    client = TestClient(_app_with_auth())
+    assert client.get("/api/health").status_code == 200   # whitelisted
+    assert client.get("/").status_code == 200             # SPA shell loads freely
+
+
+def test_middleware_allows_api_with_valid_session(monkeypatch):
+    monkeypatch.setenv("OIDC_ISSUER", "https://z.example")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "cid")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("SESSION_SECRET", "s3cr3t")
+    token = auth.session_codec().encode({
+        "sub": "u1", "email": "u1@x.io", "name": "One",
+        "sess_exp": time.time() + 3600, "access_exp": time.time() + 3600,
+        "refresh_token": "rt",
+    })
+    client = TestClient(_app_with_auth())
+    client.cookies.set(auth.SESSION_COOKIE, token)
+    assert client.get("/api/ping").status_code == 200
