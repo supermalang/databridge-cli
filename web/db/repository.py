@@ -105,6 +105,11 @@ def create_project(db: Session, user: User, name: str, org_id=None, config: dict
 
 
 def update_project_config(db: Session, project: Project, config: dict, expected_version: Optional[int] = None) -> Project:
+    """Update a project's config (optimistic concurrency via expected_version).
+
+    PRECONDITION: callers MUST first obtain `project` via `get_project_for_user`
+    so the membership/tenant check is enforced — this function performs no access
+    check of its own (it takes a Project, not a user)."""
     if expected_version is not None and expected_version != project.config_version:
         raise StaleConfigError(f"expected {expected_version}, have {project.config_version}")
     project.config = config
