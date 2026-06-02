@@ -110,6 +110,53 @@ def save_config(payload: ConfigPayload, request: Request, db: Session = Depends(
     db_bridge.materialize_config(project)
     return {"ok": True, "saved_at": datetime.now().isoformat(), "version": project.config_version}
 
+
+class NewProjectPayload(BaseModel):
+    name: str
+    org_id: Optional[str] = None
+
+
+@app.get("/api/projects")
+def list_projects(request: Request, db: Session = Depends(db_session.get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        return {"projects": [], "active_id": None}
+    projects = db_repo.list_projects_for_user(db, user)
+    return {
+        "active_id": str(user.active_project_id) if user.active_project_id else None,
+        "projects": [{"id": str(p.id), "name": p.name, "slug": p.slug, "org_id": str(p.org_id)}
+                     for p in projects],
+    }
+
+
+@app.post("/api/projects")
+def create_project(payload: NewProjectPayload, request: Request, db: Session = Depends(db_session.get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    import uuid as _uuid
+    org_id = _uuid.UUID(payload.org_id) if payload.org_id else None
+    try:
+        p = db_repo.create_project(db, user=user, name=payload.name, org_id=org_id)
+    except db_repo.AccessError:
+        raise HTTPException(status_code=403, detail="Not a member of that org")
+    return {"id": str(p.id), "name": p.name, "slug": p.slug}
+
+
+@app.post("/api/projects/{project_id}/activate")
+def activate_project(project_id: str, request: Request, db: Session = Depends(db_session.get_db)):
+    import uuid as _uuid
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        db_repo.set_active_project(db, user, _uuid.UUID(project_id))
+    except (db_repo.AccessError, ValueError):
+        raise HTTPException(status_code=404, detail="Project not found")
+    db_bridge.mirror_active(db, user)
+    return {"ok": True, "active_id": project_id}
+
+
 ALLOWED_COMMANDS = {
     "fetch-questions":      [],
     "generate-template":    ["--context", "--summary-prompt"],
@@ -1051,7 +1098,7 @@ async def export_view_csv(payload: ViewPreviewPayload):
     )
 
 @app.post("/api/run/{command}")
-async def run_command(command: str, payload: RunPayload):
+async def run_command(command: str, payload: RunPayload, request: Request):
     global _running_command
     if command not in ALLOWED_COMMANDS:
         raise HTTPException(status_code=400, detail=f"Unknown command '{command}'")
@@ -1089,6 +1136,10 @@ async def run_command(command: str, payload: RunPayload):
         raise HTTPException(status_code=409,
             detail=f"A command is already running ('{_running_command}'). Stop it or wait for it to finish.")
     _running_command = command  # reserve synchronously (atomic: no await before return)
+    with db_session.SessionLocal() as _db:
+        _user = _current_user(request, _db)
+        if _user is not None:
+            db_bridge.mirror_active(_db, _user)
     return StreamingResponse(
         _stream(command, cmd),
         media_type="text/event-stream",
