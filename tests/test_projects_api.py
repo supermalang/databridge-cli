@@ -1,5 +1,18 @@
 import yaml
+import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def _isolated_base(tmp_path, monkeypatch):
+    """Activating a project pulls its workspace from Minio into BASE_DIR's
+    data/processed, reports, templates dirs (clearing top-level files first).
+    Redirect BASE_DIR to a temp dir so these tests never clear the real repo dirs."""
+    import web.main as wm
+    monkeypatch.setattr(wm, "BASE_DIR", tmp_path)
+    for sub in ("data/processed", "reports", "templates"):
+        (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+    return tmp_path
 
 
 def _client():

@@ -540,8 +540,23 @@ Migrations are **Alembic** (`alembic upgrade head`), run automatically by the Fa
 lifespan; tests run against SQLite (`DATABRIDGE_SKIP_MIGRATIONS=1` → `init_schema`).
 `/api/config` reads/writes the caller's **active project** (`users.active_project_id`); on save
 or project switch the config is mirrored to `config.yml` so the file-based CLI and the existing
-config-reading endpoints stay consistent (interim until Slice 3's per-job hydration). The
-repo's existing `config.yml` is imported once at startup as the first project.
+config-reading endpoints stay consistent. The repo's existing `config.yml` is imported once
+at startup as the first project.
+
+### Object storage & project workspace (web/storage/)
+Project **files** (data sessions, reports, templates) are stored durably per project in
+**Minio/S3** (`web/storage/`: `Storage` interface, `s3.py`/`local.py` backends, `storage_key`,
+lazy `factory.get_storage()`). The local `data/processed`/`reports`/`templates` dirs are a
+**materialized mirror of the active project** (`web/storage/workspace.py`): `pull_workspace`
+runs on project **activate** (clear local dirs → download the project's files from Minio), and
+`push_outputs` runs after a **successful run** (upload outputs back). `data/raw` and
+`data/processed/charts` are **not** synced (regenerable). The ~8 on-demand read endpoints +
+reports/templates/sessions listing/downloads read the local mirror unchanged. `S3_*` env is
+**required** — local Minio via
+`docker run --rm -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio12345 minio/minio server /data --console-address ":9001"`;
+tests use the local-fs backend (`STORAGE_BACKEND=local`). The mirror is process-wide, so it's
+correct only under the existing **single-flight** run lock — concurrent runs for *different*
+projects and true per-job isolation are deferred to a later slice (3c).
 
 ### env: variable resolution (src/utils/config.py)
 Config values starting with `env:` are resolved from environment at load time.

@@ -18,6 +18,7 @@ from web import auth
 from web.db import bootstrap as db_bootstrap
 from web.db import session as db_session, repository as db_repo, provision as db_provision
 from web.db import bridge as db_bridge
+from web.storage import workspace as storage_workspace
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -168,10 +169,15 @@ def activate_project(project_id: str, request: Request, db: Session = Depends(db
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        db_repo.set_active_project(db, user, _uuid.UUID(project_id))
+        pid = _uuid.UUID(project_id)
+        db_repo.set_active_project(db, user, pid)
     except (db_repo.AccessError, ValueError):
         raise HTTPException(status_code=404, detail="Project not found")
+    project = db_repo.get_project_for_user(db, user, pid)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
     db_bridge.mirror_active(db, user)
+    storage_workspace.pull_workspace(str(project.org_id), str(project.id), base=BASE_DIR)
     return {"ok": True, "active_id": project_id}
 
 
@@ -1158,21 +1164,23 @@ async def run_command(command: str, payload: RunPayload, request: Request):
     # Mirror the active project's config to config.yml for the CLI subprocess.
     # If this fails we MUST release the lock — _stream's finally only runs once the
     # generator starts, which won't happen if we raise before returning the response.
+    _ws_ids = None
     try:
         with db_session.SessionLocal() as _db:
-            _user = _current_user(request, _db)
-            if _user is not None:
+            _user, _project = _active_project(request, _db)
+            if _project is not None:
                 db_bridge.mirror_active(_db, _user)
+                _ws_ids = (str(_project.org_id), str(_project.id))
     except Exception:
         _running_command = None
         raise
     return StreamingResponse(
-        _stream(command, cmd),
+        _stream(command, cmd, _ws_ids),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
-async def _stream(command: str, cmd: list) -> AsyncGenerator[str, None]:
+async def _stream(command: str, cmd: list, ws_ids=None) -> AsyncGenerator[str, None]:
     global _last_status, _proc, _running_command
     _last_status = {"command": command, "status": "running", "finished_at": None}
     yield _sse("status", {"status": "running", "command": command})
@@ -1194,6 +1202,11 @@ async def _stream(command: str, cmd: list) -> AsyncGenerator[str, None]:
     finally:
         _proc = None
         _running_command = None
+    if status == "success" and ws_ids is not None:
+        try:
+            storage_workspace.push_outputs(ws_ids[0], ws_ids[1], base=BASE_DIR)
+        except Exception as e:   # CLI work already succeeded; a push failure must not crash
+            yield _sse("log", {"line": f"Warning: failed to persist outputs to storage: {e}", "level": "error"})
     _last_status = {"command": command, "status": status, "finished_at": datetime.now().isoformat()}
     yield _sse("status", {**_last_status})
     yield _sse("done", {})

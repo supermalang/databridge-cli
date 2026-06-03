@@ -60,7 +60,7 @@ def test_run_all_is_whitelisted_with_sample_and_period():
 
 def test_run_all_endpoint_builds_argv(monkeypatch):
     captured = {}
-    async def _fake_stream(command, cmd):
+    async def _fake_stream(command, cmd, ws_ids=None):
         captured["command"] = command
         captured["cmd"] = cmd
         if False:
@@ -83,7 +83,7 @@ def test_run_all_allows_auto_charts_flag():
 
 def test_run_all_endpoint_forwards_auto_charts(monkeypatch):
     captured = {}
-    async def _fake_stream(command, cmd):
+    async def _fake_stream(command, cmd, ws_ids=None):
         captured["cmd"] = cmd
         if False:
             yield ""

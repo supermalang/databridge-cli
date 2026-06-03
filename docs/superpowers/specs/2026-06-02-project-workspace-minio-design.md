@@ -142,7 +142,11 @@ def is_empty(org_id, project_id) -> bool
   DB write already committed) so a retry re-pulls. The local mirror may be partially cleared;
   a re-activate fully re-pulls.
 - `push_outputs` failure after a successful run → logged loudly; run status still reports the
-  CLI result; local outputs remain on disk and can be re-pushed on the next run/activate.
+  CLI result; local outputs remain on disk and are re-persisted on the next **successful run**
+  of that project. Caveat: `activate` pulls (clears local first) — it never pushes — so
+  switching away before re-running would discard the un-pushed outputs. Acceptable for the
+  single-user interim (a push failure requires a storage outage, the data is regenerable by
+  re-running, and the failure is logged); revisited with 3c.
 - Single-flight (Slice 1) still serializes runs, so the shared local dirs are never contended.
 - `Storage` `get_*` raise `KeyError` for missing keys (3a contract); `pull_workspace` lists
   then gets, so it never requests a missing key.
