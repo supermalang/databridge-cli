@@ -561,9 +561,16 @@ tests use the local-fs backend (`STORAGE_BACKEND=local`).
 (the `RUN_INPUTS` manifest) from Minio into the tempdir; the CLI runs with `cwd=<tempdir>`
 (absolute `make.py` path). On success, `_persist_run_outputs` pushes outputs to Minio, syncs a
 changed `config.yml` back to the DB, and refreshes the active `BASE_DIR` read-mirror; the tempdir
-is removed afterward. The read endpoints + the activate-pull still use the `BASE_DIR` mirror. Runs
-are still **single-flight** (one at a time) — per-project **concurrency** (per-run process/stream
-tracking, per-project locks) is the remaining slice (3c-ii).
+is removed afterward. The read endpoints + the activate-pull still use the `BASE_DIR` mirror.
+
+**Run concurrency:** runs are tracked by an in-memory `RunRegistry` (`web/runs.py`), not a global
+single-flight lock. **One run per project at a time** (a second run for a busy project → `409`);
+**different projects run concurrently** up to `MAX_CONCURRENT_RUNS` (env, default 4; over the cap →
+`429` + `Retry-After`). No-active-project runs serialize on a `"__base__"` key (shared `BASE_DIR`).
+Each run has a `run_id` (in the first SSE `status` event); `GET /api/status` lists active runs and
+`POST /api/stop/{run_id}` stops a specific one. **Reads remain process-wide:** concurrent users with
+different active projects share the one `BASE_DIR` read-mirror (best-effort, last-writer-wins) —
+durable Minio/DB data is always correct; true multi-user read isolation is out of scope.
 
 ### env: variable resolution (src/utils/config.py)
 Config values starting with `env:` are resolved from environment at load time.

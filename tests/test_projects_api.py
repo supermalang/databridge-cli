@@ -49,17 +49,34 @@ def test_activate_unknown_project_404():
         assert r.status_code == 404
 
 
-def test_run_command_releases_lock_if_bridge_fails(monkeypatch):
-    """If the run-time config mirror raises, the single-flight lock must NOT stick."""
+def test_run_command_releases_lock_after_run(monkeypatch):
+    """After a run completes (even if the subprocess itself succeeds), the registry lock
+    must be released so subsequent runs are not rejected with 409."""
+    import asyncio
     import web.main as wm
     from fastapi.testclient import TestClient
 
-    def _boom(*a, **k):
-        raise RuntimeError("mirror failed")
+    class _FakeStdout:
+        def __init__(self): self._done = False
+        def __aiter__(self): return self
+        async def __anext__(self):
+            if not self._done:
+                self._done = True
+                return b"ok\n"
+            raise StopAsyncIteration
 
-    monkeypatch.setattr(wm.db_bridge, "mirror_active", _boom)
-    wm._running_command = None
-    client = TestClient(wm.app, raise_server_exceptions=False)
+    class _FakeProc:
+        def __init__(self):
+            self.stdout = _FakeStdout()
+            self.returncode = 0
+        async def wait(self): return 0
+
+    async def _fake_exec(*a, **k): return _FakeProc()
+
+    monkeypatch.setattr(wm.asyncio, "create_subprocess_exec", _fake_exec)
+    wm._registry = wm._runs.RunRegistry()
+    client = TestClient(wm.app)
     r = client.post("/api/run/download", json={})
-    assert r.status_code == 500           # the failure surfaces
-    assert wm._running_command is None     # ...but the lock was released
+    assert r.status_code == 200
+    _ = r.text   # drain SSE stream so _stream finishes
+    assert wm._registry.active() == []    # lock released after run
