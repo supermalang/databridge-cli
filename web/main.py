@@ -1,4 +1,4 @@
-import asyncio, base64, io, json, os, sys, tempfile, zipfile
+import asyncio, base64, io, json, os, shutil, sys, tempfile, zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -1127,7 +1127,7 @@ async def run_command(command: str, payload: RunPayload, request: Request):
     global _running_command
     if command not in ALLOWED_COMMANDS:
         raise HTTPException(status_code=400, detail=f"Unknown command '{command}'")
-    cmd = [sys.executable, "src/data/make.py", command]
+    cmd = [sys.executable, str(BASE_DIR / "src" / "data" / "make.py"), command]
     if payload.sample and "--sample" in ALLOWED_COMMANDS[command]:
         cmd += ["--sample", str(payload.sample)]
     if payload.split_by and "--split-by" in ALLOWED_COMMANDS[command]:
@@ -1161,35 +1161,70 @@ async def run_command(command: str, payload: RunPayload, request: Request):
         raise HTTPException(status_code=409,
             detail=f"A command is already running ('{_running_command}'). Stop it or wait for it to finish.")
     _running_command = command  # reserve synchronously (atomic: no await before return)
-    # Mirror the active project's config to config.yml for the CLI subprocess.
+    # Capture the full run context (ids + config dict) for isolated tempdir execution.
     # If this fails we MUST release the lock — _stream's finally only runs once the
     # generator starts, which won't happen if we raise before returning the response.
-    _ws_ids = None
+    run_ctx = None
     try:
         with db_session.SessionLocal() as _db:
             _user, _project = _active_project(request, _db)
             if _project is not None:
                 db_bridge.mirror_active(_db, _user)
-                _ws_ids = (str(_project.org_id), str(_project.id))
+                run_ctx = (str(_project.org_id), str(_project.id), dict(_project.config or {}))
     except Exception:
         _running_command = None
         raise
     return StreamingResponse(
-        _stream(command, cmd, _ws_ids),
+        _stream(command, cmd, run_ctx),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
-async def _stream(command: str, cmd: list, ws_ids=None) -> AsyncGenerator[str, None]:
+def _persist_run_outputs(org_id: str, project_id: str, dest) -> None:
+    """After a successful tempdir run: push outputs to Minio, sync a changed config.yml
+    back to the DB, and refresh the active project's BASE_DIR read-mirror."""
+    import uuid as _uuid
+    storage_workspace.push_outputs(org_id, project_id, base=dest)
+    cfg_path = Path(dest) / "config.yml"
+    parsed = (yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}) if cfg_path.exists() else {}
+    with db_session.SessionLocal() as db:
+        project = db.get(db_repo.Project, _uuid.UUID(project_id))
+        if project is None:
+            return
+        if parsed and parsed != project.config:
+            db_repo.update_project_config(db, project, parsed)
+        db_bridge.materialize_config(project)                              # refresh BASE_DIR/config.yml
+        storage_workspace.pull_workspace(org_id, project_id, base=BASE_DIR)  # refresh read mirror
+
+
+async def _stream(command: str, cmd: list, run_ctx=None) -> AsyncGenerator[str, None]:
     global _last_status, _proc, _running_command
     _last_status = {"command": command, "status": "running", "finished_at": None}
     yield _sse("status", {"status": "running", "command": command})
+
+    work_dir = None
+    cwd = str(BASE_DIR)
+    if run_ctx is not None:
+        org_id, project_id, cfg = run_ctx
+        work_dir = tempfile.mkdtemp(prefix="dbrun_")
+        try:
+            storage_workspace.hydrate_run_dir(org_id, project_id, command, work_dir, cfg)
+        except Exception as e:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            _running_command = None
+            yield _sse("log", {"line": f"Error: failed to hydrate run workspace: {e}", "level": "error"})
+            _last_status = {"command": command, "status": "error", "finished_at": datetime.now().isoformat()}
+            yield _sse("status", {**_last_status})
+            yield _sse("done", {})
+            return
+        cwd = work_dir
+
     yield _sse("log", {"line": f"$ {' '.join(cmd)}", "level": "cmd"})
     env = {**os.environ, "PYTHONPATH": str(BASE_DIR), "PYTHONUNBUFFERED": "1"}
     try:
         _proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT, cwd=str(BASE_DIR), env=env,
+            stderr=asyncio.subprocess.STDOUT, cwd=cwd, env=env,
         )
         async for raw in _proc.stdout:
             line = raw.decode("utf-8", errors="replace").rstrip()
@@ -1202,11 +1237,15 @@ async def _stream(command: str, cmd: list, ws_ids=None) -> AsyncGenerator[str, N
     finally:
         _proc = None
         _running_command = None
-    if status == "success" and ws_ids is not None:
+
+    if status == "success" and run_ctx is not None:
         try:
-            storage_workspace.push_outputs(ws_ids[0], ws_ids[1], base=BASE_DIR)
-        except Exception as e:   # CLI work already succeeded; a push failure must not crash
+            _persist_run_outputs(run_ctx[0], run_ctx[1], work_dir)
+        except Exception as e:   # CLI work already succeeded; persistence failure must not crash
             yield _sse("log", {"line": f"Warning: failed to persist outputs to storage: {e}", "level": "error"})
+    if work_dir:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
     _last_status = {"command": command, "status": status, "finished_at": datetime.now().isoformat()}
     yield _sse("status", {**_last_status})
     yield _sse("done", {})

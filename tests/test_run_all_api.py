@@ -69,7 +69,7 @@ def test_run_all_endpoint_builds_argv(monkeypatch):
     client = TestClient(wm.app)
     resp = client.post("/api/run/run-all", json={"sample": 5, "period": "Q1 2026"})
     assert resp.status_code == 200
-    assert captured["cmd"] == [sys.executable, "src/data/make.py", "run-all", "--sample", "5", "--period", "Q1 2026"]
+    assert captured["cmd"] == [sys.executable, str(wm.BASE_DIR / "src" / "data" / "make.py"), "run-all", "--sample", "5", "--period", "Q1 2026"]
 
 
 def test_unknown_command_still_400():
