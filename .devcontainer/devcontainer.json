@@ -1,9 +1,8 @@
 {
   "name": "databridge-cli",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": "."
-  },
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/databridge-cli",
   "remoteUser": "vscode",
   "features": {
     "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
@@ -23,14 +22,28 @@
     "PYTHONUNBUFFERED": "1",
     "PLAYWRIGHT_BROWSERS_PATH": "/home/vscode/.cache/ms-playwright"
   },
-  "mounts": [
-    //"source=claude-config,target=/home/vscode/.claude,type=volume",
-    //"source=claude-skills,target=/home/vscode/.claude/skills,type=volume",
-    "source=npm-global,target=/home/vscode/.npm-global,type=volume",
-    "source=zsh-history,target=/home/vscode/.zsh_history,type=volume"
-  ],
-  "forwardPorts": [3846, 9323],
+  "forwardPorts": [8000, 51730, 9001, 5432, 9000, 3846, 9323],
   "portsAttributes": {
+    "8000": {
+      "label": "app (uvicorn)",
+      "onAutoForward": "notify"
+    },
+    "51730": {
+      "label": "vite (dev HMR)",
+      "onAutoForward": "silent"
+    },
+    "9001": {
+      "label": "Minio console",
+      "onAutoForward": "silent"
+    },
+    "5432": {
+      "label": "Postgres",
+      "onAutoForward": "silent"
+    },
+    "9000": {
+      "label": "Minio S3 API",
+      "onAutoForward": "silent"
+    },
     "3846": {
       "label": "vibe-annotations",
       "onAutoForward": "silent"
