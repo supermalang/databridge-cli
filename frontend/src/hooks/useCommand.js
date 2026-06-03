@@ -14,10 +14,12 @@ export function useCommand({ onLog, onStatus } = {}) {
   const onStatusRef = useRef(onStatus);
   onLogRef.current = onLog;
   onStatusRef.current = onStatus;
+  const runIdRef = useRef(null);
 
   const run = useCallback(async (command, opts = {}) => {
     if (running) return;
     setRunning(true);
+    runIdRef.current = null;
     setActiveCmd(command);
     onStatusRef.current?.({ command, status: 'running' });
 
@@ -67,6 +69,7 @@ export function useCommand({ onLog, onStatus } = {}) {
           if (ev === 'log') {
             onLogRef.current?.(payload.line, payload.level || 'info');
           } else if (ev === 'status') {
+            if (payload.run_id) runIdRef.current = payload.run_id;
             finalStatus = payload.status;
             onStatusRef.current?.({ command, ...payload });
           }
@@ -90,7 +93,9 @@ export function useCommand({ onLog, onStatus } = {}) {
   }, [running]);
 
   const stop = useCallback(async () => {
-    try { await fetch('/api/stop', { method: 'POST' }); } catch {}
+    const id = runIdRef.current;
+    const url = id ? `/api/stop/${id}` : '/api/stop';
+    try { await fetch(url, { method: 'POST' }); } catch {}
   }, []);
 
   return { run, stop, running, activeCmd };
