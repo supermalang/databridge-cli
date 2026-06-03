@@ -12,6 +12,18 @@ def _reset_running():
     wm._running_command = None
 
 
+@pytest.fixture(autouse=True)
+def _isolated_base(tmp_path, monkeypatch):
+    """A run resolves the (session-shared) active project and, on success, refreshes the
+    BASE_DIR read-mirror via pull_workspace — which clears BASE_DIR's data/processed,
+    reports, templates dirs. Redirect BASE_DIR to a temp dir so these run tests never
+    touch the real repo dirs (a project left active by another test file would otherwise
+    make a 'download' here clear the real templates/.gitkeep)."""
+    monkeypatch.setattr(wm, "BASE_DIR", tmp_path)
+    for sub in ("data/processed", "reports", "templates"):
+        (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+
+
 def test_run_rejected_409_when_busy():
     wm._running_command = "download"
     client = TestClient(wm.app)
