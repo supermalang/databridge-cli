@@ -83,7 +83,7 @@ def test_successful_run_pushes_outputs(isolated_base, monkeypatch):
         return _FakeProc()
 
     monkeypatch.setattr(wm.asyncio, "create_subprocess_exec", _fake_exec)
-    wm._running_command = None
+    wm._registry = wm._runs.RunRegistry()
 
     with _client() as c:
         pid = _make_project_with_report(c, "WS-RUN", "seed.docx")
@@ -127,7 +127,7 @@ def test_run_executes_in_tempdir_and_persists(isolated_base, monkeypatch):
         return _FakeProc()
 
     monkeypatch.setattr(wm.asyncio, "create_subprocess_exec", _fake_exec)
-    wm._running_command = None
+    wm._registry = wm._runs.RunRegistry()
 
     with _client() as c:
         pid = _make_project_with_report(c, "WS-ISO", "seed.docx")
@@ -150,7 +150,7 @@ def test_run_hydrate_failure_releases_lock(isolated_base, monkeypatch):
     import web.main as wm
     monkeypatch.setattr(wm.storage_workspace, "hydrate_run_dir",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("hydrate boom")))
-    wm._running_command = None
+    wm._registry = wm._runs.RunRegistry()
     with _client() as c:
         pid = _make_project_with_report(c, "WS-HYD", "seed.docx")
         c.post(f"/api/projects/{pid}/activate")
@@ -158,4 +158,4 @@ def test_run_hydrate_failure_releases_lock(isolated_base, monkeypatch):
         assert resp.status_code == 200
         body = resp.text
         assert "hydrate boom" in body or "error" in body
-        assert wm._running_command is None             # lock released
+        assert wm._registry.active() == []             # lock released

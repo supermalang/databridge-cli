@@ -15,6 +15,7 @@ from src.data.profile import profile_dataset
 from src.reports import ask_engine
 from sqlalchemy.orm import Session
 from web import auth
+from web import runs as _runs
 from web.db import bootstrap as db_bootstrap
 from web.db import session as db_session, repository as db_repo, provision as db_provision
 from web.db import bridge as db_bridge
@@ -38,9 +39,7 @@ async def _lifespan(app):
 
 app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None, lifespan=_lifespan)
 auth.register_auth(app)
-_last_status: Dict = {"command": None, "status": "idle", "finished_at": None}
-_proc: Optional[asyncio.subprocess.Process] = None
-_running_command: Optional[str] = None  # single-flight: name of the in-flight run, else None
+_registry = _runs.RunRegistry()
 
 if ASSETS_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
@@ -1124,7 +1123,6 @@ async def export_view_csv(payload: ViewPreviewPayload):
 
 @app.post("/api/run/{command}")
 async def run_command(command: str, payload: RunPayload, request: Request):
-    global _running_command
     if command not in ALLOWED_COMMANDS:
         raise HTTPException(status_code=400, detail=f"Unknown command '{command}'")
     cmd = [sys.executable, str(BASE_DIR / "src" / "data" / "make.py"), command]
@@ -1154,28 +1152,25 @@ async def run_command(command: str, payload: RunPayload, request: Request):
         cmd += ["--compare", payload.compare]
     if payload.auto_charts and "--auto-charts" in ALLOWED_COMMANDS[command]:
         cmd += ["--auto-charts"]
-    # Single-flight guard: reject concurrent runs (this tool is single-user/local).
-    # Check-and-set is synchronous with no await between them — that's intentional;
-    # inserting an await would break atomicity and re-introduce the race.
-    if _running_command is not None:
-        raise HTTPException(status_code=409,
-            detail=f"A command is already running ('{_running_command}'). Stop it or wait for it to finish.")
-    _running_command = command  # reserve synchronously (atomic: no await before return)
-    # Capture the full run context (ids + config dict) for isolated tempdir execution.
-    # If this fails we MUST release the lock — _stream's finally only runs once the
-    # generator starts, which won't happen if we raise before returning the response.
+    # Resolve the active project (no await — atomic with the registry reservation below).
     run_ctx = None
+    lock_key = "__base__"
+    with db_session.SessionLocal() as _db:
+        _user, _project = _active_project(request, _db)
+        if _project is not None:
+            run_ctx = (str(_project.org_id), str(_project.id), dict(_project.config or {}))
+            lock_key = str(_project.id)
     try:
-        with db_session.SessionLocal() as _db:
-            _user, _project = _active_project(request, _db)
-            if _project is not None:
-                db_bridge.mirror_active(_db, _user)
-                run_ctx = (str(_project.org_id), str(_project.id), dict(_project.config or {}))
-    except Exception:
-        _running_command = None
-        raise
+        run_id = _registry.start(command, lock_key)
+    except _runs.BusyError:
+        raise HTTPException(status_code=409,
+                            detail="A run is already in progress for this project.")
+    except _runs.CapError:
+        raise HTTPException(status_code=429,
+                            detail="Server is at run capacity; please retry shortly.",
+                            headers={"Retry-After": "2"})
     return StreamingResponse(
-        _stream(command, cmd, run_ctx),
+        _stream(run_id, command, cmd, run_ctx),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -1197,10 +1192,8 @@ def _persist_run_outputs(org_id: str, project_id: str, dest) -> None:
         storage_workspace.pull_workspace(org_id, project_id, base=BASE_DIR)  # refresh read mirror
 
 
-async def _stream(command: str, cmd: list, run_ctx=None) -> AsyncGenerator[str, None]:
-    global _last_status, _proc, _running_command
-    _last_status = {"command": command, "status": "running", "finished_at": None}
-    yield _sse("status", {"status": "running", "command": command})
+async def _stream(run_id: str, command: str, cmd: list, run_ctx=None) -> AsyncGenerator[str, None]:
+    yield _sse("status", {"status": "running", "command": command, "run_id": run_id})
 
     work_dir = None
     cwd = str(BASE_DIR)
@@ -1211,32 +1204,35 @@ async def _stream(command: str, cmd: list, run_ctx=None) -> AsyncGenerator[str, 
             storage_workspace.hydrate_run_dir(org_id, project_id, command, work_dir, cfg)
         except Exception as e:
             shutil.rmtree(work_dir, ignore_errors=True)
-            _running_command = None
+            _registry.set_status(run_id, "error")
+            _registry.finish(run_id)
             yield _sse("log", {"line": f"Error: failed to hydrate run workspace: {e}", "level": "error"})
-            _last_status = {"command": command, "status": "error", "finished_at": datetime.now().isoformat()}
-            yield _sse("status", {**_last_status})
+            yield _sse("status", {"command": command, "status": "error", "run_id": run_id,
+                                  "finished_at": datetime.now().isoformat()})
             yield _sse("done", {})
             return
         cwd = work_dir
 
     yield _sse("log", {"line": f"$ {' '.join(cmd)}", "level": "cmd"})
     env = {**os.environ, "PYTHONPATH": str(BASE_DIR), "PYTHONUNBUFFERED": "1"}
+    status = "error"
     try:
-        _proc = await asyncio.create_subprocess_exec(
+        proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT, cwd=cwd, env=env,
         )
-        async for raw in _proc.stdout:
+        _registry.attach_proc(run_id, proc)
+        async for raw in proc.stdout:
             line = raw.decode("utf-8", errors="replace").rstrip()
             yield _sse("log", {"line": line, "level": _classify(line)})
-        await _proc.wait()
-        status = "success" if _proc.returncode == 0 else "error"
+        await proc.wait()
+        status = "success" if proc.returncode == 0 else "error"
     except Exception as e:
         yield _sse("log", {"line": f"Error: {e}", "level": "error"})
         status = "error"
     finally:
-        _proc = None
-        _running_command = None
+        _registry.set_status(run_id, status)
+        _registry.finish(run_id)
 
     if status == "success" and run_ctx is not None:
         try:
@@ -1246,8 +1242,8 @@ async def _stream(command: str, cmd: list, run_ctx=None) -> AsyncGenerator[str, 
     if work_dir:
         shutil.rmtree(work_dir, ignore_errors=True)
 
-    _last_status = {"command": command, "status": status, "finished_at": datetime.now().isoformat()}
-    yield _sse("status", {**_last_status})
+    yield _sse("status", {"command": command, "status": status, "run_id": run_id,
+                          "finished_at": datetime.now().isoformat()})
     yield _sse("done", {})
 
 def _sse(event: str, data: dict) -> str:
@@ -1263,22 +1259,31 @@ def _classify(line: str) -> str:
 
 @app.get("/api/status")
 async def get_status():
-    return {**_last_status, "running": _running_command is not None}
+    active = _registry.active()
+    resp = {"running": len(active) > 0, "runs": [r.public() for r in active]}
+    last = _registry.last()
+    if last is not None:
+        lp = last.public()
+        resp.update({"command": lp["command"], "status": lp["status"], "finished_at": lp["finished_at"]})
+    return resp
+
+
+@app.post("/api/stop/{run_id}")
+async def stop_run(run_id: str):
+    if not await _registry.stop(run_id):
+        raise HTTPException(status_code=404, detail="No such active run")
+    return {"ok": True}
+
 
 @app.post("/api/stop")
 async def stop_command():
-    global _proc
-    if _proc is None:
+    active = _registry.active()
+    if len(active) == 1:
+        await _registry.stop(active[0].run_id)
+        return {"ok": True}
+    if not active:
         return {"ok": False, "detail": "no running process"}
-    try:
-        _proc.terminate()
-        try:
-            await asyncio.wait_for(_proc.wait(), timeout=2.0)
-        except asyncio.TimeoutError:
-            _proc.kill()
-    except ProcessLookupError:
-        pass
-    return {"ok": True}
+    raise HTTPException(status_code=400, detail="Multiple runs active; specify a run_id (/api/stop/{run_id}).")
 
 @app.get("/api/state")
 async def get_state():
