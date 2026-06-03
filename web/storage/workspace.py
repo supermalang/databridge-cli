@@ -5,6 +5,7 @@ from typing import Dict, List
 
 from web.storage.base import storage_key
 from web.storage.factory import get_storage
+from src.utils.config import write_config
 
 # category -> local dir (relative to base)
 CATEGORY_DIRS: Dict[str, str] = {
@@ -65,3 +66,39 @@ def is_empty(org_id: str, project_id: str) -> bool:
     store = get_storage()
     base_prefix = f"orgs/{org_id}/projects/{project_id}/"
     return len(store.list(base_prefix)) == 0
+
+
+# command -> input categories to hydrate into the run dir (config.yml is always written).
+RUN_INPUTS = {
+    "download": [],
+    "fetch-questions": [],
+    "push-prompts": [],
+    "generate-template": [],
+    "ai-generate-template": [],
+    "build-report": ["processed", "templates"],
+    "run-all": ["processed", "templates"],
+    "suggest-charts": ["processed"],
+    "suggest-views": ["processed"],
+    "suggest-summaries": ["processed"],
+    "suggest-tables": ["processed"],
+    "suggest-indicators": ["processed"],
+}
+_DEFAULT_INPUTS = ["processed", "templates"]   # safe superset for unknown commands
+
+
+def hydrate_run_dir(org_id: str, project_id: str, command: str, dest, cfg: dict) -> int:
+    """Materialize a run's isolated workspace: write dest/config.yml from cfg, then
+    download the command's input categories from Minio into dest. Returns #files pulled."""
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    write_config(cfg or {}, dest / "config.yml")
+    store = get_storage()
+    n = 0
+    for category in RUN_INPUTS.get(command, _DEFAULT_INPUTS):
+        d = dest / CATEGORY_DIRS[category]
+        d.mkdir(parents=True, exist_ok=True)
+        prefix = storage_key(org_id, project_id, category, "")
+        for key in store.list(prefix):
+            store.get_file(key, d / key[len(prefix):])
+            n += 1
+    return n

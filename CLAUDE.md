@@ -554,9 +554,16 @@ runs on project **activate** (clear local dirs → download the project's files 
 reports/templates/sessions listing/downloads read the local mirror unchanged. `S3_*` env is
 **required** — local Minio via
 `docker run --rm -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio12345 minio/minio server /data --console-address ":9001"`;
-tests use the local-fs backend (`STORAGE_BACKEND=local`). The mirror is process-wide, so it's
-correct only under the existing **single-flight** run lock — concurrent runs for *different*
-projects and true per-job isolation are deferred to a later slice (3c).
+tests use the local-fs backend (`STORAGE_BACKEND=local`).
+
+**Per-run isolation:** each `/api/run/{command}` executes in its own **temp directory**.
+`workspace.hydrate_run_dir` writes the project's config + pulls the command's input categories
+(the `RUN_INPUTS` manifest) from Minio into the tempdir; the CLI runs with `cwd=<tempdir>`
+(absolute `make.py` path). On success, `_persist_run_outputs` pushes outputs to Minio, syncs a
+changed `config.yml` back to the DB, and refreshes the active `BASE_DIR` read-mirror; the tempdir
+is removed afterward. The read endpoints + the activate-pull still use the `BASE_DIR` mirror. Runs
+are still **single-flight** (one at a time) — per-project **concurrency** (per-run process/stream
+tracking, per-project locks) is the remaining slice (3c-ii).
 
 ### env: variable resolution (src/utils/config.py)
 Config values starting with `env:` are resolved from environment at load time.
