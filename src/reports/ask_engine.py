@@ -157,20 +157,32 @@ _INDICATOR_STATS_BLOCK = (
 )
 
 
-def _parse_items(raw: str) -> List[Dict]:
-    """Parse {"items": [...]} from an LLM response, tolerating fences/prose."""
+def _loads_lenient(raw: str) -> Optional[Dict]:
+    """Parse a JSON object from an LLM response, tolerating ```json fences / prose.
+
+    Providers without enforced output schemas (e.g. Anthropic on the schema-less
+    ask_* prompts) often wrap their JSON in a fenced code block — a bare
+    json.loads then throws. Fall back to the first {...} span. Returns the dict,
+    or None if nothing parseable.
+    """
     import re
     try:
         data = json.loads(raw)
     except (ValueError, TypeError):
         m = re.search(r"\{.*\}", raw or "", re.DOTALL)
         if not m:
-            return []
+            return None
         try:
             data = json.loads(m.group(0))
         except (ValueError, TypeError):
-            return []
-    items = data.get("items") if isinstance(data, dict) else None
+            return None
+    return data if isinstance(data, dict) else None
+
+
+def _parse_items(raw: str) -> List[Dict]:
+    """Parse {"items": [...]} from an LLM response, tolerating fences/prose."""
+    data = _loads_lenient(raw)
+    items = data.get("items") if data else None
     return items if isinstance(items, list) else []
 
 
@@ -279,8 +291,8 @@ def ground_captions(items: List[Dict], ai_cfg: Dict) -> Dict[str, str]:
             json_mode=(provider != "anthropic"),
             output_schema=_config.get("output_schema"),
         )
-        data = json.loads(raw)
-        caps = data.get("captions", {}) if isinstance(data, dict) else {}
+        data = _loads_lenient(raw)
+        caps = data.get("captions", {}) if data else {}
     except Exception as e:  # noqa: BLE001
         log.warning(f"ask: ground_captions failed: {e}")
         caps = {}
@@ -434,18 +446,8 @@ def _propose_refinement(recipe: Dict, kind: str, instruction: str,
     except Exception as e:  # noqa: BLE001
         log.warning(f"ask: _propose_refinement failed: {e}")
         return None
-    import re
-    try:
-        data = json.loads(raw)
-    except (ValueError, TypeError):
-        m = re.search(r"\{.*\}", raw or "", re.DOTALL)
-        if not m:
-            return None
-        try:
-            data = json.loads(m.group(0))
-        except (ValueError, TypeError):
-            return None
-    if isinstance(data, dict) and isinstance(data.get("item"), dict):
+    data = _loads_lenient(raw)
+    if data and isinstance(data.get("item"), dict):
         return data["item"]
     return None
 

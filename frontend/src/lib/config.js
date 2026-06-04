@@ -1,4 +1,5 @@
 import yaml from 'js-yaml';
+import { handle401 } from './auth.js';
 
 // GET /api/config → parsed JS object. Returns {} if not found / unparseable.
 export async function loadConfig() {
@@ -22,6 +23,7 @@ export async function saveConfigPatch(mutator) {
     body,
   });
   if (!res.ok) {
+    if (handle401(res)) return;
     const data = await res.json().catch(() => ({}));
     throw new Error(data.detail || 'Save failed');
   }
@@ -36,6 +38,7 @@ export async function saveConfigText(content) {
     body: JSON.stringify({ content }),
   });
   if (!res.ok) {
+    if (handle401(res)) return;
     const data = await res.json().catch(() => ({}));
     throw new Error(data.detail || 'Save failed');
   }

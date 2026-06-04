@@ -3,9 +3,11 @@ import PageHeader from './PageHeader.jsx';
 import FileTable from '../components/FileTable.jsx';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
+import { usePerms } from '../lib/perms.js';
 
 export default function Reports() {
   const toast = useToast();
+  const { canEdit } = usePerms();
   const [reports, setReports] = useState(null);
   const [sessions, setSessions] = useState(null);
 
@@ -97,7 +99,7 @@ export default function Reports() {
                   <a href={`/api/reports/download/${encodeURIComponent(r.name)}`} download>
                     <button className="btn btn-primary btn-sm">↓ Download</button>
                   </a>
-                  <button className="btn btn-danger btn-sm" onClick={() => deleteReport(r.name)}>Delete</button>
+                  {canEdit && <button className="btn btn-danger btn-sm" onClick={() => deleteReport(r.name)}>Delete</button>}
                 </>
               )}
             />
@@ -130,7 +132,7 @@ export default function Reports() {
                   <a href={`/api/data/sessions/${encodeURIComponent(s.session_id)}/download`} download>
                     <button className="btn btn-primary btn-sm">↓ Download ZIP</button>
                   </a>
-                  <button className="btn btn-danger btn-sm" onClick={() => deleteSession(s.session_id)}>Delete</button>
+                  {canEdit && <button className="btn btn-danger btn-sm" onClick={() => deleteSession(s.session_id)}>Delete</button>}
                 </>
               )}
             />

@@ -17,6 +17,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': 'http://localhost:8000',
+      '/auth': 'http://localhost:8000',
       '/terminal': { target: 'http://localhost:8000', ws: true },
     },
   },

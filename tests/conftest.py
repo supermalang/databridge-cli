@@ -1,5 +1,6 @@
 """Shared fixtures for kobo-reporter tests."""
 import sys
+import os as _os
 from copy import deepcopy
 from pathlib import Path
 import pytest
@@ -7,6 +8,59 @@ import pytest
 # Ensure project root is importable
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _app_database(tmp_path_factory):
+    """Session-wide SQLite app DB so the FastAPI app (and its lifespan) work in tests.
+    Real Postgres + Alembic are used only outside tests."""
+    db_path = tmp_path_factory.mktemp("appdb") / "app.db"
+    _os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+    _os.environ["DATABRIDGE_SKIP_MIGRATIONS"] = "1"
+    from web.db import session as dbs
+    dbs.reset_engine()
+    dbs.init_schema()
+    yield
+    dbs.reset_engine()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _app_storage(tmp_path_factory):
+    """Session-wide local-filesystem Storage backend so get_storage() works in tests
+    (real use requires S3_*)."""
+    storage_dir = tmp_path_factory.mktemp("appstorage")
+    _os.environ["STORAGE_BACKEND"] = "local"
+    _os.environ["STORAGE_LOCAL_DIR"] = str(storage_dir)
+    from web.storage import factory
+    factory.reset_storage()
+    yield
+    factory.reset_storage()
+
+
+@pytest.fixture(autouse=True)
+def _auth_disabled_by_default():
+    """Tests run as the dev user (auth disabled) unless a test explicitly enables
+    auth via monkeypatch. Clear OIDC_* before each test because importing
+    src.data.make runs load_dotenv(), which can leak a developer's real .env OIDC
+    creds into the process and 401 every subsequent web-API test."""
+    for k in ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"):
+        _os.environ.pop(k, None)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_prompt_cache(tmp_path, monkeypatch):
+    """Point the Langfuse prompt cache at a throwaway dir for every test.
+
+    get_prompt() is cache-first: it reads ~/.cache/databridge/prompts before
+    falling back to Langfuse/seed. The developer's real cache can hold stale
+    Langfuse copies (e.g. a prompt fetched before its output_schema was synced),
+    which would silently leak into tests that expect the bundled seed — making
+    prompt-resolution tests pass or fail depending on local cache state.
+    Isolating CACHE_DIR keeps resolution deterministic across machines and runs.
+    """
+    from src.utils import lf_client
+    monkeypatch.setattr(lf_client, "CACHE_DIR", tmp_path / "prompt_cache")
 
 
 @pytest.fixture(scope="module")

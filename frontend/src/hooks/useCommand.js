@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { handle401 } from '../lib/auth.js';
 
 // Streams logs from POST /api/run/<command> — the backend writes SSE-style frames
 // (event: log / status / done\\ndata: {...}\\n\\n) into the response body. We can't use
@@ -13,10 +14,12 @@ export function useCommand({ onLog, onStatus } = {}) {
   const onStatusRef = useRef(onStatus);
   onLogRef.current = onLog;
   onStatusRef.current = onStatus;
+  const runIdRef = useRef(null);
 
   const run = useCallback(async (command, opts = {}) => {
     if (running) return;
     setRunning(true);
+    runIdRef.current = null;
     setActiveCmd(command);
     onStatusRef.current?.({ command, status: 'running' });
 
@@ -37,6 +40,7 @@ export function useCommand({ onLog, onStatus } = {}) {
         body: JSON.stringify(body),
       });
       if (!res.ok) {
+        if (handle401(res)) return;
         let detail = `Request failed (${res.status})`;
         try { detail = (await res.json()).detail || detail; } catch {}
         onLogRef.current?.(detail, 'error');
@@ -65,6 +69,7 @@ export function useCommand({ onLog, onStatus } = {}) {
           if (ev === 'log') {
             onLogRef.current?.(payload.line, payload.level || 'info');
           } else if (ev === 'status') {
+            if (payload.run_id) runIdRef.current = payload.run_id;
             finalStatus = payload.status;
             onStatusRef.current?.({ command, ...payload });
           }
@@ -88,7 +93,9 @@ export function useCommand({ onLog, onStatus } = {}) {
   }, [running]);
 
   const stop = useCallback(async () => {
-    try { await fetch('/api/stop', { method: 'POST' }); } catch {}
+    const id = runIdRef.current;
+    const url = id ? `/api/stop/${id}` : '/api/stop';
+    try { await fetch(url, { method: 'POST' }); } catch {}
   }, []);
 
   return { run, stop, running, activeCmd };

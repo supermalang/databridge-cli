@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
 import FileTable from '../components/FileTable.jsx';
 import { useToast } from '../components/Toast.jsx';
+import { usePerms } from '../lib/perms.js';
 
 export default function Templates() {
   const toast = useToast();
+  const { canAdmin } = usePerms();
   const fileInputRef = useRef(null);
   const [files, setFiles] = useState(null);
   const [active, setActive] = useState('');
@@ -62,15 +64,17 @@ export default function Templates() {
             <span>{files?.length ?? 0} on disk</span>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
               <button className="btn btn-ghost btn-sm" onClick={load}>↺ Refresh</button>
-              <label className="btn btn-primary btn-sm" style={{ cursor: 'pointer' }}>
-                ↑ Upload .docx
-                <input
-                  ref={fileInputRef}
-                  type="file" accept=".docx"
-                  style={{ display: 'none' }}
-                  onChange={upload}
-                />
-              </label>
+              {canAdmin && (
+                <label className="btn btn-primary btn-sm" style={{ cursor: 'pointer' }}>
+                  ↑ Upload .docx
+                  <input
+                    ref={fileInputRef}
+                    type="file" accept=".docx"
+                    style={{ display: 'none' }}
+                    onChange={upload}
+                  />
+                </label>
+              )}
             </div>
           </div>
 
@@ -97,13 +101,13 @@ export default function Templates() {
                 <>
                   {f.name === active ? (
                     <button className="btn btn-ghost btn-sm" disabled style={{ opacity: 0.5 }}>✓ Active</button>
-                  ) : (
+                  ) : canAdmin ? (
                     <button className="btn btn-ghost btn-sm" onClick={() => setActiveTemplate(f.name)}>Set as active</button>
-                  )}
+                  ) : null}
                   <a href={`/api/templates/download/${encodeURIComponent(f.name)}`} download>
                     <button className="btn btn-primary btn-sm">↓ Download</button>
                   </a>
-                  <button className="btn btn-danger btn-sm" onClick={() => deleteTemplate(f.name)}>Delete</button>
+                  {canAdmin && <button className="btn btn-danger btn-sm" onClick={() => deleteTemplate(f.name)}>Delete</button>}
                 </>
               )}
             />

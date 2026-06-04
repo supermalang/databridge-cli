@@ -14,9 +14,16 @@ fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 aiofiles>=23.2.1
-# Uncomment for database export:
-# sqlalchemy>=2.0.0
-# psycopg2-binary>=2.9.0
+# Auth — OIDC login gate (BFF + encrypted cookie session)
+authlib>=1.3.0
+cryptography>=42.0.0
+itsdangerous>=2.1.0
+# Database (app state + optional export):
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+alembic>=1.13.0
+# Object storage (Minio/S3)
+boto3>=1.34.0
 # pymysql>=1.1.0
 # supabase>=2.0.0
 # Uncomment for dot_map with OpenStreetMap basemap (basemap: true):

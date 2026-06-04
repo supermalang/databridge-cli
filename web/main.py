@@ -1,10 +1,11 @@
-import asyncio, base64, io, json, os, sys, tempfile, zipfile
+import asyncio, base64, io, json, os, shutil, sys, tempfile, zipfile
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Optional
 
 import aiofiles, yaml
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, UploadFile, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -12,6 +13,13 @@ from src.utils.config import load_config, write_config
 from src.data.transform import load_processed_data
 from src.data.profile import profile_dataset
 from src.reports import ask_engine
+from sqlalchemy.orm import Session
+from web import auth
+from web import runs as _runs
+from web.db import bootstrap as db_bootstrap
+from web.db import session as db_session, repository as db_repo, provision as db_provision
+from web.db import bridge as db_bridge
+from web.storage import workspace as storage_workspace
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -24,13 +32,74 @@ DATA_DIR      = BASE_DIR / "data" / "processed"
 STATIC_DIR    = BASE_DIR / "frontend" / "dist"
 ASSETS_DIR    = STATIC_DIR / "assets"
 
-app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None)
-_last_status: Dict = {"command": None, "status": "idle", "finished_at": None}
-_proc: Optional[asyncio.subprocess.Process] = None
-_running_command: Optional[str] = None  # single-flight: name of the in-flight run, else None
+@asynccontextmanager
+async def _lifespan(app):
+    db_bootstrap.init_db()
+    yield
+
+app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None, lifespan=_lifespan)
+auth.register_auth(app)
+_registry = _runs.RunRegistry()
 
 if ASSETS_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
+
+def _current_user(request: Request, db: Session):
+    claims = getattr(request.state, "user", None) or {}
+    sub = claims.get("sub")
+    user = db_repo.get_user_by_sub(db, sub) if sub else None
+    if user is None and sub:
+        user = db_provision.ensure_user(db, claims)
+    return user
+
+
+def _active_project(request: Request, db: Session):
+    user = _current_user(request, db)
+    if user is None or user.active_project_id is None:
+        return user, None
+    return user, db_repo.get_project_for_user(db, user, user.active_project_id)
+
+
+def _sync_active_project_from_file(request: Request) -> None:
+    """After an endpoint mutates config.yml directly, push the file's contents back into
+    the active project's DB row so the DB (source of truth) stays in sync and the next
+    materialize_config doesn't discard the edit. No-op if there's no active project."""
+    if not CONFIG_PATH.exists():
+        return
+    with db_session.SessionLocal() as db:
+        user, project = _active_project(request, db)
+        if project is None:
+            return
+        cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        db_repo.update_project_config(db, project, cfg)
+
+
+def require_role(request: Request, db: Session, minimum: str):
+    """Resolve the caller's ACTIVE project and assert their role >= `minimum`.
+    The BASE_DIR file mirror always reflects the active project, so endpoints that
+    operate on the mirror gate on the active project too. Returns (user, project, role).
+    Raises 400 if there's no active project, 403 if under-privileged.
+
+    In **dev mode** (auth disabled) there are no roles — a single dev user owns
+    everything — so gating is skipped and the caller is treated as superadmin."""
+    user, project = _active_project(request, db)
+    if not auth.auth_enabled():
+        return user, project, "superadmin"
+    if project is None:
+        raise HTTPException(status_code=400, detail="No active project")
+    role = db_repo.role_for(db, user, project)
+    if not db_repo.role_at_least(role, minimum):
+        raise HTTPException(status_code=403, detail=f"This action requires the '{minimum}' role")
+    return user, project, role
+
+
+def _require(request: Request, minimum: str):
+    """Convenience wrapper for endpoints that don't already hold a db session:
+    opens a short-lived session purely to enforce the role gate."""
+    with db_session.SessionLocal() as _db:
+        require_role(request, _db, minimum)
+
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
@@ -45,26 +114,254 @@ async def serve_ui():
         )
     return index.read_text(encoding="utf-8")
 
+@app.get("/api/health")
+async def health():
+    # Unauthenticated liveness probe (whitelisted by the auth middleware) for
+    # load balancers / container orchestration.
+    return {"status": "ok"}
+
 @app.get("/api/config")
-async def get_config():
-    if not CONFIG_PATH.exists():
+def get_config(request: Request, db: Session = Depends(db_session.get_db)):
+    _user, project = _active_project(request, db)
+    if project is None:
         return {"content": "", "exists": False}
-    async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        content = await f.read()
-    return {"content": content, "exists": True}
+    content = yaml.safe_dump(project.config or {}, allow_unicode=True,
+                             default_flow_style=False, sort_keys=False)
+    return {"content": content, "exists": True, "version": project.config_version}
+
 
 class ConfigPayload(BaseModel):
     content: str
+    version: Optional[int] = None
+
 
 @app.post("/api/config")
-async def save_config(payload: ConfigPayload):
+def save_config(payload: ConfigPayload, request: Request, db: Session = Depends(db_session.get_db)):
     try:
-        yaml.safe_load(payload.content)
+        parsed = yaml.safe_load(payload.content) or {}
     except yaml.YAMLError as e:
         raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
-    async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        await f.write(payload.content)
-    return {"ok": True, "saved_at": datetime.now().isoformat()}
+    user, project, _role = require_role(request, db, "editor")
+    try:
+        db_repo.update_project_config(db, project, parsed, expected_version=getattr(payload, "version", None))
+    except db_repo.StaleConfigError:
+        raise HTTPException(status_code=409, detail="Config changed since you loaded it; reload and retry.")
+    db_bridge.materialize_config(project)
+    return {"ok": True, "saved_at": datetime.now().isoformat(), "version": project.config_version}
+
+
+class NewProjectPayload(BaseModel):
+    name: str
+    org_id: Optional[str] = None
+
+
+@app.get("/api/projects")
+def list_projects(request: Request, db: Session = Depends(db_session.get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        return {"projects": [], "active_id": None}
+    projects = db_repo.list_projects_for_user(db, user)
+    return {
+        "active_id": str(user.active_project_id) if user.active_project_id else None,
+        "is_superadmin": bool(user.is_superadmin),
+        "projects": [{"id": str(p.id), "name": p.name, "slug": p.slug, "org_id": str(p.org_id),
+                      "role": db_repo.role_for(db, user, p),
+                      "is_owner": p.owner_id == user.id}
+                     for p in projects],
+    }
+
+
+@app.post("/api/projects")
+def create_project(payload: NewProjectPayload, request: Request, db: Session = Depends(db_session.get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    import uuid as _uuid
+    try:
+        org_id = _uuid.UUID(payload.org_id) if payload.org_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid org_id")
+    try:
+        p = db_repo.create_project(db, user=user, name=payload.name, org_id=org_id)
+    except db_repo.AccessError:
+        raise HTTPException(status_code=403, detail="Not a member of that org")
+    return {"id": str(p.id), "name": p.name, "slug": p.slug}
+
+
+@app.delete("/api/projects/{project_id}")
+def delete_project(project_id: str, request: Request, db: Session = Depends(db_session.get_db)):
+    import uuid as _uuid
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        pid = _uuid.UUID(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = db_repo.get_project_for_user(db, user, pid)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    role = db_repo.role_for(db, user, project)
+    if not db_repo.role_at_least(role, "admin"):
+        raise HTTPException(status_code=403, detail="Only an admin or the owner can delete a project")
+    org_id = str(project.org_id)
+    db_repo.delete_project(db, project)
+    # Best-effort object-storage cleanup; never block deletion on storage errors.
+    try:
+        storage_workspace.delete_project_storage(org_id, project_id)
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+@app.post("/api/projects/{project_id}/activate")
+def activate_project(project_id: str, request: Request, db: Session = Depends(db_session.get_db)):
+    import uuid as _uuid
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        pid = _uuid.UUID(project_id)
+        db_repo.set_active_project(db, user, pid)
+    except (db_repo.AccessError, ValueError):
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = db_repo.get_project_for_user(db, user, pid)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    db_bridge.mirror_active(db, user)
+    storage_workspace.pull_workspace(str(project.org_id), str(project.id), base=BASE_DIR)
+    return {"ok": True, "active_id": project_id}
+
+
+# ── Project members + invitations ───────────────────────────
+
+class InviteMemberPayload(BaseModel):
+    email: str
+    role: str = "viewer"
+
+
+class RoleChangePayload(BaseModel):
+    role: str
+
+
+class SuperadminPayload(BaseModel):
+    email: str
+    value: bool = True
+
+
+def _admin_project(request: Request, db: Session, project_id: str):
+    """Resolve a project the caller administers. Returns (user, project, role).
+    404 if not found/no access, 403 if the caller isn't admin/owner/superadmin."""
+    import uuid as _uuid
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        pid = _uuid.UUID(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = db_repo.get_project_for_user(db, user, pid)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    role = db_repo.role_for(db, user, project)
+    if not db_repo.role_at_least(role, "admin"):
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user, project, role
+
+
+@app.get("/api/projects/{project_id}/members")
+def list_project_members(project_id: str, request: Request, db: Session = Depends(db_session.get_db)):
+    # Any member can view the roster; only admins get the management controls (UI-gated).
+    import uuid as _uuid
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        project = db_repo.get_project_for_user(db, user, _uuid.UUID(project_id))
+    except ValueError:
+        project = None
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    my_role = db_repo.role_for(db, user, project)
+    return {
+        "my_role": my_role,
+        "members": db_repo.list_members(db, project),
+        "invitations": [{"email": i.email, "role": i.role, "status": i.status}
+                        for i in db_repo.list_invitations(db, project)],
+    }
+
+
+@app.post("/api/projects/{project_id}/members/invite")
+def invite_member(project_id: str, payload: InviteMemberPayload, request: Request,
+                  db: Session = Depends(db_session.get_db)):
+    actor, project, _role = _admin_project(request, db, project_id)
+    email = (payload.email or "").strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required")
+    if payload.role not in db_repo.ASSIGNABLE_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {payload.role}")
+
+    # Create the user in Zitadel (so a brand-new person can sign in) — best-effort.
+    from web import zitadel_admin
+    zitadel_status, zitadel_user_id = "skipped (not configured)", None
+    if zitadel_admin.enabled():
+        try:
+            res = zitadel_admin.ensure_invited_user(email, app_url=auth._env("APP_BASE_URL", ""))
+            zitadel_user_id, zitadel_status = res["zitadel_user_id"], res["status"]
+        except Exception as e:  # noqa: BLE001 — surface, don't abort the app-level invite
+            zitadel_status = f"error: {e}"
+
+    db_repo.get_or_create_invitation(db, project, email, payload.role, actor, zitadel_user_id)
+
+    # If they already have an app account, attach the membership immediately.
+    existing = db_repo.get_user_by_email(db, email)
+    attached = False
+    if existing is not None:
+        db_repo.consume_invitations_for(db, existing)
+        attached = True
+    return {"ok": True, "email": email, "role": payload.role,
+            "attached": attached, "zitadel": zitadel_status}
+
+
+@app.patch("/api/projects/{project_id}/members/{user_id}")
+def change_member_role(project_id: str, user_id: str, payload: RoleChangePayload,
+                       request: Request, db: Session = Depends(db_session.get_db)):
+    _actor, project, actor_role = _admin_project(request, db, project_id)
+    try:
+        db_repo.set_member_role(db, project, user_id, payload.role, actor_role)
+    except db_repo.AccessError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/projects/{project_id}/members/{user_id}")
+def remove_project_member(project_id: str, user_id: str, request: Request,
+                          db: Session = Depends(db_session.get_db)):
+    _actor, project, actor_role = _admin_project(request, db, project_id)
+    try:
+        db_repo.remove_member(db, project, user_id, actor_role)
+    except db_repo.AccessError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    return {"ok": True}
+
+
+@app.post("/api/admin/superadmins")
+def set_superadmin(payload: SuperadminPayload, request: Request,
+                   db: Session = Depends(db_session.get_db)):
+    actor = _current_user(request, db)
+    if actor is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if not actor.is_superadmin:
+        raise HTTPException(status_code=403, detail="Superadmin role required")
+    target = db_repo.get_user_by_email(db, (payload.email or "").strip().lower())
+    if target is None:
+        raise HTTPException(status_code=404, detail="No user with that email (they must log in once first)")
+    try:
+        db_repo.set_superadmin(db, actor, target, payload.value)
+    except db_repo.AccessError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    return {"ok": True, "email": target.email, "is_superadmin": target.is_superadmin}
+
 
 ALLOWED_COMMANDS = {
     "fetch-questions":      [],
@@ -119,7 +416,8 @@ async def get_questions():
     return {"questions": cfg.get("questions", [])}
 
 @app.post("/api/questions")
-async def save_questions(payload: QuestionsPayload):
+async def save_questions(payload: QuestionsPayload, request: Request):
+    _require(request, "editor")
     if not CONFIG_PATH.exists():
         raise HTTPException(status_code=400, detail="config.yml not found")
     async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -128,6 +426,7 @@ async def save_questions(payload: QuestionsPayload):
     cfg["questions"] = payload.questions
     async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
         await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
+    _sync_active_project_from_file(request)
     return {"ok": True, "saved": len(payload.questions)}
 
 @app.post("/api/questions/suggest-hidden")
@@ -1007,11 +1306,10 @@ async def export_view_csv(payload: ViewPreviewPayload):
     )
 
 @app.post("/api/run/{command}")
-async def run_command(command: str, payload: RunPayload):
-    global _running_command
+async def run_command(command: str, payload: RunPayload, request: Request):
     if command not in ALLOWED_COMMANDS:
         raise HTTPException(status_code=400, detail=f"Unknown command '{command}'")
-    cmd = [sys.executable, "src/data/make.py", command]
+    cmd = [sys.executable, str(BASE_DIR / "src" / "data" / "make.py"), command]
     if payload.sample and "--sample" in ALLOWED_COMMANDS[command]:
         cmd += ["--sample", str(payload.sample)]
     if payload.split_by and "--split-by" in ALLOWED_COMMANDS[command]:
@@ -1038,43 +1336,101 @@ async def run_command(command: str, payload: RunPayload):
         cmd += ["--compare", payload.compare]
     if payload.auto_charts and "--auto-charts" in ALLOWED_COMMANDS[command]:
         cmd += ["--auto-charts"]
-    # Single-flight guard: reject concurrent runs (this tool is single-user/local).
-    # Check-and-set is synchronous with no await between them — that's intentional;
-    # inserting an await would break atomicity and re-introduce the race.
-    if _running_command is not None:
+    # Resolve the active project (no await — atomic with the registry reservation below).
+    run_ctx = None
+    lock_key = "__base__"
+    with db_session.SessionLocal() as _db:
+        _user, _project = _active_project(request, _db)
+        if _project is not None:
+            if auth.auth_enabled() and not db_repo.role_at_least(db_repo.role_for(_db, _user, _project), "editor"):
+                raise HTTPException(status_code=403,
+                                    detail="Viewers cannot run the pipeline; an editor or admin role is required.")
+            run_ctx = (str(_project.org_id), str(_project.id), dict(_project.config or {}))
+            lock_key = str(_project.id)
+    try:
+        run_id = _registry.start(command, lock_key)
+    except _runs.BusyError:
         raise HTTPException(status_code=409,
-            detail=f"A command is already running ('{_running_command}'). Stop it or wait for it to finish.")
-    _running_command = command  # reserve synchronously (atomic: no await before return)
+                            detail="A run is already in progress for this project.")
+    except _runs.CapError:
+        raise HTTPException(status_code=429,
+                            detail="Server is at run capacity; please retry shortly.",
+                            headers={"Retry-After": "2"})
     return StreamingResponse(
-        _stream(command, cmd),
+        _stream(run_id, command, cmd, run_ctx),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
-async def _stream(command: str, cmd: list) -> AsyncGenerator[str, None]:
-    global _last_status, _proc, _running_command
-    _last_status = {"command": command, "status": "running", "finished_at": None}
-    yield _sse("status", {"status": "running", "command": command})
+def _persist_run_outputs(org_id: str, project_id: str, dest) -> None:
+    """After a successful tempdir run: push outputs to Minio, sync a changed config.yml
+    back to the DB, and refresh the active project's BASE_DIR read-mirror."""
+    import uuid as _uuid
+    storage_workspace.push_outputs(org_id, project_id, base=dest)
+    cfg_path = Path(dest) / "config.yml"
+    parsed = (yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}) if cfg_path.exists() else {}
+    with db_session.SessionLocal() as db:
+        project = db.get(db_repo.Project, _uuid.UUID(project_id))
+        if project is None:
+            return
+        if parsed and parsed != project.config:
+            db_repo.update_project_config(db, project, parsed)
+        db_bridge.materialize_config(project)                              # refresh BASE_DIR/config.yml
+        storage_workspace.pull_workspace(org_id, project_id, base=BASE_DIR)  # refresh read mirror
+
+
+async def _stream(run_id: str, command: str, cmd: list, run_ctx=None) -> AsyncGenerator[str, None]:
+    yield _sse("status", {"status": "running", "command": command, "run_id": run_id})
+
+    work_dir = None
+    cwd = str(BASE_DIR)
+    if run_ctx is not None:
+        org_id, project_id, cfg = run_ctx
+        work_dir = tempfile.mkdtemp(prefix="dbrun_")
+        try:
+            storage_workspace.hydrate_run_dir(org_id, project_id, command, work_dir, cfg)
+        except Exception as e:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            _registry.set_status(run_id, "error")
+            _registry.finish(run_id)
+            yield _sse("log", {"line": f"Error: failed to hydrate run workspace: {e}", "level": "error"})
+            yield _sse("status", {"command": command, "status": "error", "run_id": run_id,
+                                  "finished_at": datetime.now().isoformat()})
+            yield _sse("done", {})
+            return
+        cwd = work_dir
+
     yield _sse("log", {"line": f"$ {' '.join(cmd)}", "level": "cmd"})
     env = {**os.environ, "PYTHONPATH": str(BASE_DIR), "PYTHONUNBUFFERED": "1"}
+    status = "error"
     try:
-        _proc = await asyncio.create_subprocess_exec(
+        proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT, cwd=str(BASE_DIR), env=env,
+            stderr=asyncio.subprocess.STDOUT, cwd=cwd, env=env,
         )
-        async for raw in _proc.stdout:
+        _registry.attach_proc(run_id, proc)
+        async for raw in proc.stdout:
             line = raw.decode("utf-8", errors="replace").rstrip()
             yield _sse("log", {"line": line, "level": _classify(line)})
-        await _proc.wait()
-        status = "success" if _proc.returncode == 0 else "error"
+        await proc.wait()
+        status = "success" if proc.returncode == 0 else "error"
     except Exception as e:
         yield _sse("log", {"line": f"Error: {e}", "level": "error"})
         status = "error"
     finally:
-        _proc = None
-        _running_command = None
-    _last_status = {"command": command, "status": status, "finished_at": datetime.now().isoformat()}
-    yield _sse("status", {**_last_status})
+        _registry.set_status(run_id, status)
+        _registry.finish(run_id)
+
+    if status == "success" and run_ctx is not None:
+        try:
+            _persist_run_outputs(run_ctx[0], run_ctx[1], work_dir)
+        except Exception as e:   # CLI work already succeeded; persistence failure must not crash
+            yield _sse("log", {"line": f"Warning: failed to persist outputs to storage: {e}", "level": "error"})
+    if work_dir:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+    yield _sse("status", {"command": command, "status": status, "run_id": run_id,
+                          "finished_at": datetime.now().isoformat()})
     yield _sse("done", {})
 
 def _sse(event: str, data: dict) -> str:
@@ -1090,22 +1446,31 @@ def _classify(line: str) -> str:
 
 @app.get("/api/status")
 async def get_status():
-    return {**_last_status, "running": _running_command is not None}
+    active = _registry.active()
+    resp = {"running": len(active) > 0, "runs": [r.public() for r in active]}
+    last = _registry.last()
+    if last is not None:
+        lp = last.public()
+        resp.update({"command": lp["command"], "status": lp["status"], "finished_at": lp["finished_at"]})
+    return resp
+
+
+@app.post("/api/stop/{run_id}")
+async def stop_run(run_id: str):
+    if not await _registry.stop(run_id):
+        raise HTTPException(status_code=404, detail="No such active run")
+    return {"ok": True}
+
 
 @app.post("/api/stop")
 async def stop_command():
-    global _proc
-    if _proc is None:
+    active = _registry.active()
+    if len(active) == 1:
+        await _registry.stop(active[0].run_id)
+        return {"ok": True}
+    if not active:
         return {"ok": False, "detail": "no running process"}
-    try:
-        _proc.terminate()
-        try:
-            await asyncio.wait_for(_proc.wait(), timeout=2.0)
-        except asyncio.TimeoutError:
-            _proc.kill()
-    except ProcessLookupError:
-        pass
-    return {"ok": True}
+    raise HTTPException(status_code=400, detail="Multiple runs active; specify a run_id (/api/stop/{run_id}).")
 
 @app.get("/api/state")
 async def get_state():
@@ -1161,7 +1526,8 @@ async def download_report(filename: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 @app.delete("/api/reports/{filename}")
-async def delete_report(filename: str):
+async def delete_report(filename: str, request: Request):
+    _require(request, "editor")
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = REPORTS_DIR / filename
@@ -1236,7 +1602,8 @@ async def download_session_zip(session_id: str):
     )
 
 @app.delete("/api/data/sessions/{session_id}")
-async def delete_session_files(session_id: str):
+async def delete_session_files(session_id: str, request: Request):
+    _require(request, "editor")
     from src.data.transform import list_sessions
     from src.utils.config import load_config
     if "/" in session_id or ".." in session_id:
@@ -1308,7 +1675,8 @@ async def download_data_file(filename: str):
     return FileResponse(path=path, filename=filename, media_type=mime)
 
 @app.delete("/api/data/{filename}")
-async def delete_data_file(filename: str):
+async def delete_data_file(filename: str, request: Request):
+    _require(request, "editor")
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = DATA_DIR / filename
@@ -1339,7 +1707,8 @@ async def download_template(filename: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 @app.post("/api/templates/upload")
-async def upload_template(file: UploadFile):
+async def upload_template(file: UploadFile, request: Request):
+    _require(request, "admin")
     if not file.filename or not file.filename.endswith(".docx"):
         raise HTTPException(status_code=400, detail="Only .docx files are allowed")
     safe_name = Path(file.filename).name
@@ -1353,7 +1722,8 @@ async def upload_template(file: UploadFile):
     return {"ok": True, "name": safe_name, "size_kb": round(len(content)/1024,1)}
 
 @app.delete("/api/templates/{filename}")
-async def delete_template(filename: str):
+async def delete_template(filename: str, request: Request):
+    _require(request, "admin")
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = TEMPLATES_DIR / filename
@@ -1373,7 +1743,8 @@ async def get_active_template():
     return {"active": Path(tpl).name if tpl else None}
 
 @app.post("/api/templates/set-active/{filename}")
-async def set_active_template(filename: str):
+async def set_active_template(filename: str, request: Request):
+    _require(request, "admin")
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = TEMPLATES_DIR / filename
@@ -1389,6 +1760,7 @@ async def set_active_template(filename: str):
     cfg["report"]["template"] = f"templates/{filename}"
     async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
         await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
+    _sync_active_project_from_file(request)
     return {"ok": True, "template": filename}
 
 @app.get("/api/templates/preview/{filename}")
@@ -1446,7 +1818,8 @@ async def get_periods():
 
 
 @app.post("/api/periods/current")
-async def set_current_period(payload: PeriodLabelPayload):
+async def set_current_period(payload: PeriodLabelPayload, request: Request):
+    _require(request, "editor")
     from src.utils.periods import slugify
     cfg = _load_cfg()
     cfg.setdefault("periods", {})
@@ -1455,11 +1828,13 @@ async def set_current_period(payload: PeriodLabelPayload):
     if not any(e.get("label") == payload.label for e in registry):
         registry.append({"label": payload.label, "slug": slugify(payload.label)})
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"current": payload.label, "registry": cfg["periods"]["registry"]}
 
 
 @app.post("/api/periods/registry")
-async def add_registry_period(payload: PeriodLabelPayload):
+async def add_registry_period(payload: PeriodLabelPayload, request: Request):
+    _require(request, "editor")
     from src.utils.periods import slugify
     cfg = _load_cfg()
     cfg.setdefault("periods", {})
@@ -1467,16 +1842,19 @@ async def add_registry_period(payload: PeriodLabelPayload):
     if not any(e.get("label") == payload.label for e in registry):
         registry.append({"label": payload.label, "slug": slugify(payload.label)})
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"registry": registry}
 
 
 @app.delete("/api/periods/registry/{slug}")
-async def delete_registry_period(slug: str):
+async def delete_registry_period(slug: str, request: Request):
+    _require(request, "admin")
     cfg = _load_cfg()
     p = cfg.setdefault("periods", {})
     registry = p.get("registry", []) or []
     p["registry"] = [e for e in registry if e.get("slug") != slug]
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"registry": p["registry"]}
 
 
@@ -1607,14 +1985,16 @@ async def api_ask(payload: AskPayload):
 
 
 @app.post("/api/ask/save")
-async def api_ask_save(payload: AskSavePayload):
+async def api_ask_save(payload: AskSavePayload, request: Request):
     """Append a proposed chart recipe to config.charts."""
+    _require(request, "editor")
     recipe = payload.recipe
     if not isinstance(recipe, dict):
         return {"ok": False, "error": "missing recipe"}
     cfg = load_config(CONFIG_PATH)
     name = ask_engine.save_recipe(recipe, cfg, payload.kind)
     write_config(cfg, CONFIG_PATH)
+    _sync_active_project_from_file(request)
     return {"ok": True, "name": name}
 
 
@@ -1650,7 +2030,8 @@ async def get_framework():
 
 
 @app.post("/api/framework")
-async def set_framework(payload: FrameworkPayload):
+async def set_framework(payload: FrameworkPayload, request: Request):
+    _require(request, "editor")
     cfg = _load_cfg()
     cfg["framework"] = {
         "goal":     payload.goal,
@@ -1658,6 +2039,7 @@ async def set_framework(payload: FrameworkPayload):
         "outputs":  payload.outputs,
     }
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"ok": True}
 
 
@@ -1681,7 +2063,8 @@ async def get_pii():
 
 
 @app.post("/api/pii")
-async def set_pii(payload: PIIPayload):
+async def set_pii(payload: PIIPayload, request: Request):
+    _require(request, "editor")
     cfg = _load_cfg()
     cfg["pii"] = {
         "consent_column": payload.consent_column,
@@ -1689,4 +2072,5 @@ async def set_pii(payload: PIIPayload):
         "redact":         payload.redact,
     }
     _save_cfg(cfg)
+    _sync_active_project_from_file(request)
     return {"ok": True}

@@ -398,6 +398,10 @@ Prompts live in [Langfuse Cloud](https://cloud.langfuse.com) (or a self-hosted L
 | `template_generator` | [src/reports/ai_template_generator.py](src/reports/ai_template_generator.py) | JSON: layout spec |
 | `summary_suggester` | [src/reports/ai_summary_suggester.py](src/reports/ai_summary_suggester.py) | JSON: suggested summaries |
 | `view_suggester` | [src/reports/ai_view_suggester.py](src/reports/ai_view_suggester.py) | JSON: suggested views |
+| `table_suggester` | [src/reports/ai_table_suggester.py](src/reports/ai_table_suggester.py) | JSON: `{"tables": [...]}` |
+| `indicator_suggester` | [src/reports/ai_indicator_suggester.py](src/reports/ai_indicator_suggester.py) | JSON: `{"indicators": [...]}` |
+| `hidden_suggester` | [src/reports/ai_hidden_suggester.py](src/reports/ai_hidden_suggester.py) | JSON: `{"suggestions": [...]}` |
+| `pii_suggester` | [src/reports/ai_pii_suggester.py](src/reports/ai_pii_suggester.py) | JSON: `{"suggestions": [...]}` |
 | `classifier_discover` | [src/data/classifier.py](src/data/classifier.py) | JSON: discovered themes |
 | `classifier_classify` | [src/data/classifier.py](src/data/classifier.py) | JSON: per-row classifications |
 | `ask_propose` | `src/reports/ask_engine.py` | JSON: `{"items": [{"kind": ...}]}` |
@@ -447,7 +451,8 @@ Every LLM call is recorded as a Langfuse generation with cost, latency, and toke
 
 ### Output schemas (structured outputs)
 
-Seven of the eight prompts produce JSON and have an `output_schema` in their seed's `config`.
+Eleven of the fifteen prompts produce JSON and have an `output_schema` in their seed's `config`
+(all except `summaries`, `ask_propose`, `ask_caption`, and `ask_refine`).
 The schema travels with the prompt (stored in Langfuse's per-prompt `config` field) and
 is enforced at the LLM call:
 
@@ -522,6 +527,75 @@ ttyd separately — not required).
 ---
 
 ## Key implementation details
+
+### App database & project model (web/db/)
+App state (users ↔ orgs ↔ projects) lives in **Postgres** via SQLAlchemy 2.0 (`web/db/`:
+`models.py`, `session.py`, `repository.py`, `provision.py`, `bridge.py`, `bootstrap.py`).
+Each project's config is stored as a `jsonb` column (source of truth); every project/org
+query is **membership-scoped** so a user only sees their orgs' projects. Users + a personal
+org are auto-provisioned from the Zitadel identity on login (and for the dev user at startup).
+`DATABASE_URL` is **required** — e.g. a local Postgres via
+`docker run --rm -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=databridge -p 5432:5432 postgres:16`.
+Migrations are **Alembic** (`alembic upgrade head`), run automatically by the FastAPI startup
+lifespan; tests run against SQLite (`DATABRIDGE_SKIP_MIGRATIONS=1` → `init_schema`).
+`/api/config` reads/writes the caller's **active project** (`users.active_project_id`); on save
+or project switch the config is mirrored to `config.yml` so the file-based CLI and the existing
+config-reading endpoints stay consistent. The repo's existing `config.yml` is imported once
+at startup as the first project.
+
+### Per-project RBAC, invitations & superadmins (web/db/ + web/main.py + web/zitadel_admin.py)
+Access is **per-project**, not org-wide. `ProjectMembership(user_id, project_id, role)` is the
+authority (`role ∈ viewer|editor|admin`); each project has an `owner_id` (creator, an implicit
+admin), and `users.is_superadmin` is a global override. The rank is
+`viewer<editor<admin<superadmin` (`repository.ROLE_RANK` / `role_for` / `role_at_least`).
+`list_projects_for_user`/`get_project_for_user` consult ProjectMembership (superadmins see all).
+- **Gating:** `web/main.py:require_role(request, db, minimum)` (and the session-opening wrapper
+  `_require`) resolve the **active** project and 403 if under-rank. Applied to every mutating
+  endpoint: config/questions/periods(POST)/framework/pii/ask-save/run → **editor**; delete
+  reports/sessions/data → **editor**; delete templates/periods, upload/set-active template,
+  `DELETE /api/projects` → **admin**. Previews/suggest/AI-test stay ungated.
+- **Members:** `GET/POST /api/projects/{id}/members*`, `PATCH`/`DELETE .../members/{user_id}` —
+  admin-gated. Guards: a non-owner admin can't remove/demote the **owner** (`#6`); a superadmin
+  can't revoke **another** superadmin via `POST /api/admin/superadmins` (`#10`).
+- **Invitations:** `Invitation(project_id, email, role, status)`. An admin invite records a
+  pending row and (if `ZITADEL_API_TOKEN` is set) creates the user in Zitadel + emails them via
+  `web/zitadel_admin.py` (Management v2). `provision.ensure_user` calls
+  `repo.consume_invitations_for` on login → turns pending invites (matched by email) into
+  ProjectMemberships. Superadmins are bootstrapped from `SUPERADMIN_EMAILS` (env) at startup and
+  on first login.
+- **Frontend:** `GET /api/projects` returns each project's `role`/`is_owner` + `is_superadmin`;
+  `lib/perms.js` (`PermsProvider`/`usePerms` → `canEdit`/`canAdmin`) hides destructive controls
+  (server still enforces). `components/ProjectMembersModal.jsx` manages members; the project
+  switcher hosts the new-project **Modal**, "Manage members", and admin-only "Delete project".
+
+### Object storage & project workspace (web/storage/)
+Project **files** (data sessions, reports, templates) are stored durably per project in
+**Minio/S3** (`web/storage/`: `Storage` interface, `s3.py`/`local.py` backends, `storage_key`,
+lazy `factory.get_storage()`). The local `data/processed`/`reports`/`templates` dirs are a
+**materialized mirror of the active project** (`web/storage/workspace.py`): `pull_workspace`
+runs on project **activate** (clear local dirs → download the project's files from Minio), and
+`push_outputs` runs after a **successful run** (upload outputs back). `data/raw` and
+`data/processed/charts` are **not** synced (regenerable). The ~8 on-demand read endpoints +
+reports/templates/sessions listing/downloads read the local mirror unchanged. `S3_*` env is
+**required** — local Minio via
+`docker run --rm -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio12345 minio/minio server /data --console-address ":9001"`;
+tests use the local-fs backend (`STORAGE_BACKEND=local`).
+
+**Per-run isolation:** each `/api/run/{command}` executes in its own **temp directory**.
+`workspace.hydrate_run_dir` writes the project's config + pulls the command's input categories
+(the `RUN_INPUTS` manifest) from Minio into the tempdir; the CLI runs with `cwd=<tempdir>`
+(absolute `make.py` path). On success, `_persist_run_outputs` pushes outputs to Minio, syncs a
+changed `config.yml` back to the DB, and refreshes the active `BASE_DIR` read-mirror; the tempdir
+is removed afterward. The read endpoints + the activate-pull still use the `BASE_DIR` mirror.
+
+**Run concurrency:** runs are tracked by an in-memory `RunRegistry` (`web/runs.py`), not a global
+single-flight lock. **One run per project at a time** (a second run for a busy project → `409`);
+**different projects run concurrently** up to `MAX_CONCURRENT_RUNS` (env, default 4; over the cap →
+`429` + `Retry-After`). No-active-project runs serialize on a `"__base__"` key (shared `BASE_DIR`).
+Each run has a `run_id` (in the first SSE `status` event); `GET /api/status` lists active runs and
+`POST /api/stop/{run_id}` stops a specific one. **Reads remain process-wide:** concurrent users with
+different active projects share the one `BASE_DIR` read-mirror (best-effort, last-writer-wins) —
+durable Minio/DB data is always correct; true multi-user read isolation is out of scope.
 
 ### env: variable resolution (src/utils/config.py)
 Config values starting with `env:` are resolved from environment at load time.
