@@ -58,6 +58,8 @@ export default function Questions() {
   // Run the real fetch-questions command (Kobo/Ona API → config.yml), streaming logs
   // to the shared BottomTerminal. `run` resolves when the SSE stream finishes, so we
   // reload the (possibly rewritten) question list afterward regardless of outcome.
+  // The explicit load() is required: the global databridge:data-changed event only
+  // refreshes a tab when it next becomes active, not the one being viewed right now.
   const fetchFromForm = useCallback(async () => {
     await run('fetch-questions');
     await load();
