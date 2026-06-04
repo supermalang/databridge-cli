@@ -75,6 +75,32 @@ def _sync_active_project_from_file(request: Request) -> None:
         db_repo.update_project_config(db, project, cfg)
 
 
+def require_role(request: Request, db: Session, minimum: str):
+    """Resolve the caller's ACTIVE project and assert their role >= `minimum`.
+    The BASE_DIR file mirror always reflects the active project, so endpoints that
+    operate on the mirror gate on the active project too. Returns (user, project, role).
+    Raises 400 if there's no active project, 403 if under-privileged.
+
+    In **dev mode** (auth disabled) there are no roles — a single dev user owns
+    everything — so gating is skipped and the caller is treated as superadmin."""
+    user, project = _active_project(request, db)
+    if not auth.auth_enabled():
+        return user, project, "superadmin"
+    if project is None:
+        raise HTTPException(status_code=400, detail="No active project")
+    role = db_repo.role_for(db, user, project)
+    if not db_repo.role_at_least(role, minimum):
+        raise HTTPException(status_code=403, detail=f"This action requires the '{minimum}' role")
+    return user, project, role
+
+
+def _require(request: Request, minimum: str):
+    """Convenience wrapper for endpoints that don't already hold a db session:
+    opens a short-lived session purely to enforce the role gate."""
+    with db_session.SessionLocal() as _db:
+        require_role(request, _db, minimum)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     index = STATIC_DIR / "index.html"
@@ -115,9 +141,7 @@ def save_config(payload: ConfigPayload, request: Request, db: Session = Depends(
         parsed = yaml.safe_load(payload.content) or {}
     except yaml.YAMLError as e:
         raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
-    user, project = _active_project(request, db)
-    if project is None:
-        raise HTTPException(status_code=400, detail="No active project")
+    user, project, _role = require_role(request, db, "editor")
     try:
         db_repo.update_project_config(db, project, parsed, expected_version=getattr(payload, "version", None))
     except db_repo.StaleConfigError:
@@ -139,7 +163,10 @@ def list_projects(request: Request, db: Session = Depends(db_session.get_db)):
     projects = db_repo.list_projects_for_user(db, user)
     return {
         "active_id": str(user.active_project_id) if user.active_project_id else None,
-        "projects": [{"id": str(p.id), "name": p.name, "slug": p.slug, "org_id": str(p.org_id)}
+        "is_superadmin": bool(user.is_superadmin),
+        "projects": [{"id": str(p.id), "name": p.name, "slug": p.slug, "org_id": str(p.org_id),
+                      "role": db_repo.role_for(db, user, p),
+                      "is_owner": p.owner_id == user.id}
                      for p in projects],
     }
 
@@ -161,6 +188,32 @@ def create_project(payload: NewProjectPayload, request: Request, db: Session = D
     return {"id": str(p.id), "name": p.name, "slug": p.slug}
 
 
+@app.delete("/api/projects/{project_id}")
+def delete_project(project_id: str, request: Request, db: Session = Depends(db_session.get_db)):
+    import uuid as _uuid
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        pid = _uuid.UUID(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = db_repo.get_project_for_user(db, user, pid)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    role = db_repo.role_for(db, user, project)
+    if not db_repo.role_at_least(role, "admin"):
+        raise HTTPException(status_code=403, detail="Only an admin or the owner can delete a project")
+    org_id = str(project.org_id)
+    db_repo.delete_project(db, project)
+    # Best-effort object-storage cleanup; never block deletion on storage errors.
+    try:
+        storage_workspace.delete_project_storage(org_id, project_id)
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 @app.post("/api/projects/{project_id}/activate")
 def activate_project(project_id: str, request: Request, db: Session = Depends(db_session.get_db)):
     import uuid as _uuid
@@ -178,6 +231,136 @@ def activate_project(project_id: str, request: Request, db: Session = Depends(db
     db_bridge.mirror_active(db, user)
     storage_workspace.pull_workspace(str(project.org_id), str(project.id), base=BASE_DIR)
     return {"ok": True, "active_id": project_id}
+
+
+# ── Project members + invitations ───────────────────────────
+
+class InviteMemberPayload(BaseModel):
+    email: str
+    role: str = "viewer"
+
+
+class RoleChangePayload(BaseModel):
+    role: str
+
+
+class SuperadminPayload(BaseModel):
+    email: str
+    value: bool = True
+
+
+def _admin_project(request: Request, db: Session, project_id: str):
+    """Resolve a project the caller administers. Returns (user, project, role).
+    404 if not found/no access, 403 if the caller isn't admin/owner/superadmin."""
+    import uuid as _uuid
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        pid = _uuid.UUID(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = db_repo.get_project_for_user(db, user, pid)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    role = db_repo.role_for(db, user, project)
+    if not db_repo.role_at_least(role, "admin"):
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user, project, role
+
+
+@app.get("/api/projects/{project_id}/members")
+def list_project_members(project_id: str, request: Request, db: Session = Depends(db_session.get_db)):
+    # Any member can view the roster; only admins get the management controls (UI-gated).
+    import uuid as _uuid
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        project = db_repo.get_project_for_user(db, user, _uuid.UUID(project_id))
+    except ValueError:
+        project = None
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    my_role = db_repo.role_for(db, user, project)
+    return {
+        "my_role": my_role,
+        "members": db_repo.list_members(db, project),
+        "invitations": [{"email": i.email, "role": i.role, "status": i.status}
+                        for i in db_repo.list_invitations(db, project)],
+    }
+
+
+@app.post("/api/projects/{project_id}/members/invite")
+def invite_member(project_id: str, payload: InviteMemberPayload, request: Request,
+                  db: Session = Depends(db_session.get_db)):
+    actor, project, _role = _admin_project(request, db, project_id)
+    email = (payload.email or "").strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required")
+    if payload.role not in db_repo.ASSIGNABLE_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {payload.role}")
+
+    # Create the user in Zitadel (so a brand-new person can sign in) — best-effort.
+    from web import zitadel_admin
+    zitadel_status, zitadel_user_id = "skipped (not configured)", None
+    if zitadel_admin.enabled():
+        try:
+            res = zitadel_admin.ensure_invited_user(email, app_url=auth._env("APP_BASE_URL", ""))
+            zitadel_user_id, zitadel_status = res["zitadel_user_id"], res["status"]
+        except Exception as e:  # noqa: BLE001 — surface, don't abort the app-level invite
+            zitadel_status = f"error: {e}"
+
+    db_repo.get_or_create_invitation(db, project, email, payload.role, actor, zitadel_user_id)
+
+    # If they already have an app account, attach the membership immediately.
+    existing = db_repo.get_user_by_email(db, email)
+    attached = False
+    if existing is not None:
+        db_repo.consume_invitations_for(db, existing)
+        attached = True
+    return {"ok": True, "email": email, "role": payload.role,
+            "attached": attached, "zitadel": zitadel_status}
+
+
+@app.patch("/api/projects/{project_id}/members/{user_id}")
+def change_member_role(project_id: str, user_id: str, payload: RoleChangePayload,
+                       request: Request, db: Session = Depends(db_session.get_db)):
+    _actor, project, actor_role = _admin_project(request, db, project_id)
+    try:
+        db_repo.set_member_role(db, project, user_id, payload.role, actor_role)
+    except db_repo.AccessError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/projects/{project_id}/members/{user_id}")
+def remove_project_member(project_id: str, user_id: str, request: Request,
+                          db: Session = Depends(db_session.get_db)):
+    _actor, project, actor_role = _admin_project(request, db, project_id)
+    try:
+        db_repo.remove_member(db, project, user_id, actor_role)
+    except db_repo.AccessError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    return {"ok": True}
+
+
+@app.post("/api/admin/superadmins")
+def set_superadmin(payload: SuperadminPayload, request: Request,
+                   db: Session = Depends(db_session.get_db)):
+    actor = _current_user(request, db)
+    if actor is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if not actor.is_superadmin:
+        raise HTTPException(status_code=403, detail="Superadmin role required")
+    target = db_repo.get_user_by_email(db, (payload.email or "").strip().lower())
+    if target is None:
+        raise HTTPException(status_code=404, detail="No user with that email (they must log in once first)")
+    try:
+        db_repo.set_superadmin(db, actor, target, payload.value)
+    except db_repo.AccessError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    return {"ok": True, "email": target.email, "is_superadmin": target.is_superadmin}
 
 
 ALLOWED_COMMANDS = {
@@ -234,6 +417,7 @@ async def get_questions():
 
 @app.post("/api/questions")
 async def save_questions(payload: QuestionsPayload, request: Request):
+    _require(request, "editor")
     if not CONFIG_PATH.exists():
         raise HTTPException(status_code=400, detail="config.yml not found")
     async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -1158,6 +1342,9 @@ async def run_command(command: str, payload: RunPayload, request: Request):
     with db_session.SessionLocal() as _db:
         _user, _project = _active_project(request, _db)
         if _project is not None:
+            if auth.auth_enabled() and not db_repo.role_at_least(db_repo.role_for(_db, _user, _project), "editor"):
+                raise HTTPException(status_code=403,
+                                    detail="Viewers cannot run the pipeline; an editor or admin role is required.")
             run_ctx = (str(_project.org_id), str(_project.id), dict(_project.config or {}))
             lock_key = str(_project.id)
     try:
@@ -1339,7 +1526,8 @@ async def download_report(filename: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 @app.delete("/api/reports/{filename}")
-async def delete_report(filename: str):
+async def delete_report(filename: str, request: Request):
+    _require(request, "editor")
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = REPORTS_DIR / filename
@@ -1414,7 +1602,8 @@ async def download_session_zip(session_id: str):
     )
 
 @app.delete("/api/data/sessions/{session_id}")
-async def delete_session_files(session_id: str):
+async def delete_session_files(session_id: str, request: Request):
+    _require(request, "editor")
     from src.data.transform import list_sessions
     from src.utils.config import load_config
     if "/" in session_id or ".." in session_id:
@@ -1486,7 +1675,8 @@ async def download_data_file(filename: str):
     return FileResponse(path=path, filename=filename, media_type=mime)
 
 @app.delete("/api/data/{filename}")
-async def delete_data_file(filename: str):
+async def delete_data_file(filename: str, request: Request):
+    _require(request, "editor")
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = DATA_DIR / filename
@@ -1517,7 +1707,8 @@ async def download_template(filename: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 @app.post("/api/templates/upload")
-async def upload_template(file: UploadFile):
+async def upload_template(file: UploadFile, request: Request):
+    _require(request, "admin")
     if not file.filename or not file.filename.endswith(".docx"):
         raise HTTPException(status_code=400, detail="Only .docx files are allowed")
     safe_name = Path(file.filename).name
@@ -1531,7 +1722,8 @@ async def upload_template(file: UploadFile):
     return {"ok": True, "name": safe_name, "size_kb": round(len(content)/1024,1)}
 
 @app.delete("/api/templates/{filename}")
-async def delete_template(filename: str):
+async def delete_template(filename: str, request: Request):
+    _require(request, "admin")
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = TEMPLATES_DIR / filename
@@ -1552,6 +1744,7 @@ async def get_active_template():
 
 @app.post("/api/templates/set-active/{filename}")
 async def set_active_template(filename: str, request: Request):
+    _require(request, "admin")
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = TEMPLATES_DIR / filename
@@ -1626,6 +1819,7 @@ async def get_periods():
 
 @app.post("/api/periods/current")
 async def set_current_period(payload: PeriodLabelPayload, request: Request):
+    _require(request, "editor")
     from src.utils.periods import slugify
     cfg = _load_cfg()
     cfg.setdefault("periods", {})
@@ -1640,6 +1834,7 @@ async def set_current_period(payload: PeriodLabelPayload, request: Request):
 
 @app.post("/api/periods/registry")
 async def add_registry_period(payload: PeriodLabelPayload, request: Request):
+    _require(request, "editor")
     from src.utils.periods import slugify
     cfg = _load_cfg()
     cfg.setdefault("periods", {})
@@ -1653,6 +1848,7 @@ async def add_registry_period(payload: PeriodLabelPayload, request: Request):
 
 @app.delete("/api/periods/registry/{slug}")
 async def delete_registry_period(slug: str, request: Request):
+    _require(request, "admin")
     cfg = _load_cfg()
     p = cfg.setdefault("periods", {})
     registry = p.get("registry", []) or []
@@ -1791,6 +1987,7 @@ async def api_ask(payload: AskPayload):
 @app.post("/api/ask/save")
 async def api_ask_save(payload: AskSavePayload, request: Request):
     """Append a proposed chart recipe to config.charts."""
+    _require(request, "editor")
     recipe = payload.recipe
     if not isinstance(recipe, dict):
         return {"ok": False, "error": "missing recipe"}
@@ -1834,6 +2031,7 @@ async def get_framework():
 
 @app.post("/api/framework")
 async def set_framework(payload: FrameworkPayload, request: Request):
+    _require(request, "editor")
     cfg = _load_cfg()
     cfg["framework"] = {
         "goal":     payload.goal,
@@ -1866,6 +2064,7 @@ async def get_pii():
 
 @app.post("/api/pii")
 async def set_pii(payload: PIIPayload, request: Request):
+    _require(request, "editor")
     cfg = _load_cfg()
     cfg["pii"] = {
         "consent_column": payload.consent_column,

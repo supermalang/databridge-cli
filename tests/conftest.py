@@ -38,6 +38,17 @@ def _app_storage(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _auth_disabled_by_default():
+    """Tests run as the dev user (auth disabled) unless a test explicitly enables
+    auth via monkeypatch. Clear OIDC_* before each test because importing
+    src.data.make runs load_dotenv(), which can leak a developer's real .env OIDC
+    creds into the process and 401 every subsequent web-API test."""
+    for k in ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"):
+        _os.environ.pop(k, None)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_prompt_cache(tmp_path, monkeypatch):
     """Point the Langfuse prompt cache at a throwaway dir for every test.
 

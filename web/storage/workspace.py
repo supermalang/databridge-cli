@@ -32,6 +32,12 @@ def project_files(org_id: str, project_id: str, base=".") -> Dict[str, List[Path
     return {cat: _local_files(Path(base), cat) for cat in CATEGORY_DIRS}
 
 
+def delete_project_storage(org_id: str, project_id: str) -> None:
+    """Remove every durable object under a project's prefix (used when a project is
+    deleted). Best-effort: the prefix may not exist if the project never ran."""
+    get_storage().delete_prefix(f"orgs/{org_id}/projects/{project_id}/")
+
+
 def push_outputs(org_id: str, project_id: str, base=".") -> int:
     """Upload the local mirror dirs to Minio under the project prefix. Returns #files."""
     store = get_storage()

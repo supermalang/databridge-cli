@@ -46,10 +46,14 @@ def import_legacy_config(db: Session, owner: User, config_path: Path = CONFIG_PA
         return None
     cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     name = (cfg.get("report", {}) or {}).get("title") or (cfg.get("form", {}) or {}).get("alias") or "Imported project"
-    p = repo.Project(org_id=org_id, name=name, slug=LEGACY_SLUG, config=cfg, config_version=1)
+    p = repo.Project(org_id=org_id, owner_id=owner.id, name=name, slug=LEGACY_SLUG,
+                     config=cfg, config_version=1)
     db.add(p)
     db.commit()
     db.refresh(p)
+    # The importer is the owner + admin member (per-project RBAC authority).
+    db.add(repo.ProjectMembership(user_id=owner.id, project_id=p.id, role="admin"))
+    db.commit()
     if owner.active_project_id is None:
         owner.active_project_id = p.id
         db.commit()
@@ -72,8 +76,13 @@ def init_db() -> None:
     """Startup entry point: migrate, then ensure the dev user + legacy import when auth
     is disabled (dev). For real auth, provisioning happens at /auth/callback."""
     from web import auth
-    from web.db import provision
+    from web.db import provision, repository as repo
     run_migrations()
+    # Apply the SUPERADMIN_EMAILS bootstrap to any users that already exist.
+    emails = provision.superadmin_emails()
+    if emails:
+        with dbs.SessionLocal() as db:
+            repo.apply_superadmin_emails(db, emails)
     if not auth.auth_enabled():
         with dbs.SessionLocal() as db:
             dev = provision.ensure_dev_user(db)

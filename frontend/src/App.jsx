@@ -10,10 +10,14 @@ import Ask from './pages/Ask.jsx';
 import Reports from './pages/Reports.jsx';
 import Templates from './pages/Templates.jsx';
 import BottomTerminal from './components/BottomTerminal.jsx';
+import Modal from './components/Modal.jsx';
+import ProjectMembersModal from './components/ProjectMembersModal.jsx';
 import { useToast } from './components/Toast.jsx';
 import { useCommand } from './hooks/useCommand.js';
 import { fetchMe } from './lib/auth.js';
 import { listProjects, activateProject, createProject } from './lib/projects.js';
+import { deleteProject as apiDeleteProject } from './lib/members.js';
+import { PermsProvider } from './lib/perms.js';
 
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
@@ -83,13 +87,19 @@ export default function App() {
 
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [projMenuOpen, setProjMenuOpen] = useState(false);
-  useEffect(() => {
-    listProjects().then(({ projects, active_id }) => {
-      setProjects(projects); setActiveProjectId(active_id);
-    });
-  }, []);
+  const [newProjOpen, setNewProjOpen] = useState(false);
+  const [newProjName, setNewProjName] = useState('');
+  const [membersFor, setMembersFor] = useState(null);   // project being managed
+  const refreshProjects = async () => {
+    const { projects, active_id, is_superadmin } = await listProjects();
+    setProjects(projects); setActiveProjectId(active_id); setIsSuperadmin(!!is_superadmin);
+    return projects;
+  };
+  useEffect(() => { refreshProjects(); }, []);
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
+  const activeRole = activeProject?.role || (isSuperadmin ? 'superadmin' : null);
 
   const switchProject = async (id) => {
     await activateProject(id);
@@ -97,13 +107,26 @@ export default function App() {
     setProjMenuOpen(false);
     window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
   };
-  const addProject = async () => {
-    const name = window.prompt('New project name?');
+  const submitNewProject = async () => {
+    const name = newProjName.trim();
     if (!name) return;
-    const { id } = await createProject(name);
-    const { projects: updated } = await listProjects();
-    setProjects(updated);
-    await switchProject(id);
+    try {
+      const { id } = await createProject(name);
+      await refreshProjects();
+      setNewProjOpen(false); setNewProjName('');
+      await switchProject(id);
+      toast(`Project "${name}" created`, 'ok');
+    } catch (e) { toast(e.message || 'Create failed', 'err'); }
+  };
+  const removeProject = async (p) => {
+    if (!confirm(`Delete project "${p.name}"? This removes its data, reports and members.`)) return;
+    try {
+      await apiDeleteProject(p.id);
+      const updated = await refreshProjects();
+      setProjMenuOpen(false);
+      if (p.id === activeProjectId && updated[0]) await switchProject(updated[0].id);
+      toast(`Deleted "${p.name}"`, 'ok');
+    } catch (e) { toast(e.message || 'Delete failed', 'err'); }
   };
 
   const nowTime = () => {
@@ -206,9 +229,26 @@ export default function App() {
                        className={`project-menu__item ${p.id === activeProjectId ? 'active' : ''}`}
                        onClick={() => switchProject(p.id)}>
                     {p.name}
+                    {p.role && <span className="project-menu__role">{p.role}</span>}
                   </div>
                 ))}
-                <div className="project-menu__item project-menu__add" onClick={addProject}>+ New project</div>
+                <div className="project-menu__sep" />
+                {activeProject && (
+                  <div className="project-menu__item"
+                       onClick={() => { setMembersFor(activeProject); setProjMenuOpen(false); }}>
+                    Manage members…
+                  </div>
+                )}
+                {activeProject && (activeRole === 'admin' || activeRole === 'superadmin') && (
+                  <div className="project-menu__item project-menu__danger"
+                       onClick={() => removeProject(activeProject)}>
+                    Delete “{activeProject.name}”
+                  </div>
+                )}
+                <div className="project-menu__item project-menu__add"
+                     onClick={() => { setProjMenuOpen(false); setNewProjName(''); setNewProjOpen(true); }}>
+                  + New project
+                </div>
               </div>
             )}
           </div>
@@ -258,22 +298,24 @@ export default function App() {
         </nav>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
-        {panes
-          .filter(p => visited.has(p.key) || p.key === activeKey)
-          .map(p => (
-            <div
-              key={`${p.key}#${keyEpoch[p.key] ?? epoch}`}
-              className="tab-content"
-              style={{
-                flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
-                display: p.key === activeKey ? 'flex' : 'none',
-              }}
-            >
-              {p.render()}
-            </div>
-          ))}
-      </div>
+      <PermsProvider value={{ role: activeRole, isSuperadmin }}>
+        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
+          {panes
+            .filter(p => visited.has(p.key) || p.key === activeKey)
+            .map(p => (
+              <div
+                key={`${p.key}#${keyEpoch[p.key] ?? epoch}`}
+                className="tab-content"
+                style={{
+                  flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
+                  display: p.key === activeKey ? 'flex' : 'none',
+                }}
+              >
+                {p.render()}
+              </div>
+            ))}
+        </div>
+      </PermsProvider>
 
       <BottomTerminal
         project={formAlias || 'databridge'}
@@ -283,6 +325,23 @@ export default function App() {
         open={termOpen}
         setOpen={setTermOpen}
       />
+
+      {newProjOpen && (
+        <Modal title="New project" onClose={() => setNewProjOpen(false)}
+               onSave={submitNewProject} saveLabel="Create">
+          <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>
+            Project name
+          </label>
+          <input autoFocus type="text" value={newProjName}
+                 onChange={e => setNewProjName(e.target.value)}
+                 onKeyDown={e => { if (e.key === 'Enter') submitNewProject(); }}
+                 placeholder="e.g. Q3 Monitoring" style={{ width: '100%' }} />
+        </Modal>
+      )}
+
+      {membersFor && (
+        <ProjectMembersModal project={membersFor} onClose={() => { setMembersFor(null); refreshProjects(); }} />
+      )}
     </div>
   );
 }

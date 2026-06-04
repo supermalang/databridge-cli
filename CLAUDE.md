@@ -543,6 +543,31 @@ or project switch the config is mirrored to `config.yml` so the file-based CLI a
 config-reading endpoints stay consistent. The repo's existing `config.yml` is imported once
 at startup as the first project.
 
+### Per-project RBAC, invitations & superadmins (web/db/ + web/main.py + web/zitadel_admin.py)
+Access is **per-project**, not org-wide. `ProjectMembership(user_id, project_id, role)` is the
+authority (`role ∈ viewer|editor|admin`); each project has an `owner_id` (creator, an implicit
+admin), and `users.is_superadmin` is a global override. The rank is
+`viewer<editor<admin<superadmin` (`repository.ROLE_RANK` / `role_for` / `role_at_least`).
+`list_projects_for_user`/`get_project_for_user` consult ProjectMembership (superadmins see all).
+- **Gating:** `web/main.py:require_role(request, db, minimum)` (and the session-opening wrapper
+  `_require`) resolve the **active** project and 403 if under-rank. Applied to every mutating
+  endpoint: config/questions/periods(POST)/framework/pii/ask-save/run → **editor**; delete
+  reports/sessions/data → **editor**; delete templates/periods, upload/set-active template,
+  `DELETE /api/projects` → **admin**. Previews/suggest/AI-test stay ungated.
+- **Members:** `GET/POST /api/projects/{id}/members*`, `PATCH`/`DELETE .../members/{user_id}` —
+  admin-gated. Guards: a non-owner admin can't remove/demote the **owner** (`#6`); a superadmin
+  can't revoke **another** superadmin via `POST /api/admin/superadmins` (`#10`).
+- **Invitations:** `Invitation(project_id, email, role, status)`. An admin invite records a
+  pending row and (if `ZITADEL_API_TOKEN` is set) creates the user in Zitadel + emails them via
+  `web/zitadel_admin.py` (Management v2). `provision.ensure_user` calls
+  `repo.consume_invitations_for` on login → turns pending invites (matched by email) into
+  ProjectMemberships. Superadmins are bootstrapped from `SUPERADMIN_EMAILS` (env) at startup and
+  on first login.
+- **Frontend:** `GET /api/projects` returns each project's `role`/`is_owner` + `is_superadmin`;
+  `lib/perms.js` (`PermsProvider`/`usePerms` → `canEdit`/`canAdmin`) hides destructive controls
+  (server still enforces). `components/ProjectMembersModal.jsx` manages members; the project
+  switcher hosts the new-project **Modal**, "Manage members", and admin-only "Delete project".
+
 ### Object storage & project workspace (web/storage/)
 Project **files** (data sessions, reports, templates) are stored durably per project in
 **Minio/S3** (`web/storage/`: `Storage` interface, `s3.py`/`local.py` backends, `storage_key`,

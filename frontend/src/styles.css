@@ -644,3 +644,9 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .project-menu__item:hover { background: var(--hover, #f3f4f6); }
 .project-menu__item.active { font-weight: 600; }
 .project-menu__add { border-top: 1px solid var(--border, #e5e7eb); color: var(--accent, #2563eb); margin-top: 4px; }
+.project-menu__item { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.project-menu__role { font-size: 11px; color: var(--muted, #8A95A6); text-transform: uppercase; letter-spacing: .03em; }
+.project-menu__sep { height: 1px; background: var(--border, #e5e7eb); margin: 4px 0; }
+.project-menu__danger { color: var(--danger, #dc2626); }
+.members-table th { font-weight: 600; }
+.members-table select { padding: 4px 6px; border: 1px solid var(--border-2, #D6DBE3); border-radius: 6px; font-size: 12.5px; background: var(--surface, #fff); color: var(--ink, #0B1220); }
