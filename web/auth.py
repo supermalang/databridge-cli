@@ -37,8 +37,15 @@ DEV_USER = {"sub": "dev-local", "email": "dev@localhost", "name": "Local Dev"}
 SESSION_COOKIE = "db_session"
 
 
+def _env(key: str, default: str = "") -> str:
+    """Read an env var, stripping surrounding whitespace (incl. a stray CR from a
+    CRLF-edited .env). A trailing '\\r' on OIDC_ISSUER otherwise corrupts the
+    discovery URL and 500s the login redirect."""
+    return os.environ.get(key, default).strip()
+
+
 def auth_enabled() -> bool:
-    return all(os.environ.get(k) for k in ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"))
+    return all(_env(k) for k in ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"))
 
 
 def session_codec() -> SessionCodec:
@@ -115,9 +122,9 @@ def _get_oauth():
         _oauth = OAuth()
         _oauth.register(
             name="zitadel",
-            client_id=os.environ["OIDC_CLIENT_ID"],
-            client_secret=os.environ["OIDC_CLIENT_SECRET"],
-            server_metadata_url=os.environ["OIDC_ISSUER"].rstrip("/")
+            client_id=_env("OIDC_CLIENT_ID"),
+            client_secret=_env("OIDC_CLIENT_SECRET"),
+            server_metadata_url=_env("OIDC_ISSUER").rstrip("/")
             + "/.well-known/openid-configuration",
             client_kwargs={"scope": "openid email profile offline_access"},
         )
@@ -125,7 +132,7 @@ def _get_oauth():
 
 
 def _redirect_uri() -> str:
-    return os.environ.get("APP_BASE_URL", "http://localhost:8000").rstrip("/") + "/auth/callback"
+    return _env("APP_BASE_URL", "http://localhost:8000").rstrip("/") + "/auth/callback"
 
 
 async def build_login_redirect(request, redirect_uri):
@@ -148,8 +155,8 @@ async def exchange_token(request) -> dict:
 
 async def end_session_url() -> str:
     meta = await _get_oauth().zitadel.load_server_metadata()
-    base = meta.get("end_session_endpoint", os.environ["OIDC_ISSUER"].rstrip("/") + "/oidc/v1/end_session")
-    redir = os.environ.get("APP_BASE_URL", "http://localhost:8000").rstrip("/")
+    base = meta.get("end_session_endpoint", _env("OIDC_ISSUER").rstrip("/") + "/oidc/v1/end_session")
+    redir = _env("APP_BASE_URL", "http://localhost:8000").rstrip("/")
     return f"{base}?post_logout_redirect_uri={redir}"
 
 

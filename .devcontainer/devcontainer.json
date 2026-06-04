@@ -53,7 +53,7 @@
       "onAutoForward": "notify"
     }
   },
-  "postCreateCommand": "npm install -g --prefix=/home/vscode/.npm-global @anthropic-ai/claude-code @playwright/mcp vibe-annotations-server typescript tsx && npx --yes playwright install chromium --with-deps && claude plugin marketplace add https://github.com/obra/superpowers.git && claude plugin marketplace add anthropics/claude-plugins-official && claude plugin install superpowers@superpowers-dev && mkdir -p ~/.claude/skills && ([ -d ~/.claude/skills/superpowers ] || git clone --depth=1 https://github.com/obra/superpowers.git ~/.claude/skills/superpowers) && { [ -d \"$PWD/.claude/skills/impeccable\" ] && ln -sfn \"$PWD/.claude/skills/impeccable\" ~/.claude/skills/impeccable || true; }",
+  "postCreateCommand": "pip install -r requirements.txt && npm install -g --prefix=/home/vscode/.npm-global @anthropic-ai/claude-code @playwright/mcp vibe-annotations-server typescript tsx && npx --yes playwright install chromium --with-deps && claude plugin marketplace add https://github.com/obra/superpowers.git && claude plugin marketplace add anthropics/claude-plugins-official && claude plugin install superpowers@superpowers-dev && mkdir -p ~/.claude/skills && ([ -d ~/.claude/skills/superpowers ] || git clone --depth=1 https://github.com/obra/superpowers.git ~/.claude/skills/superpowers) && { [ -d \"$PWD/.claude/skills/impeccable\" ] && ln -sfn \"$PWD/.claude/skills/impeccable\" ~/.claude/skills/impeccable || true; }",
   "postStartCommand": "vibe-annotations-server start >/dev/null 2>&1 & printf '\\n\\xf0\\x9f\\x9a\\x80 Dev container ready\\n   claude                    \\xe2\\x86\\x92 start Claude Code\\n   pytest                    \\xe2\\x86\\x92 run tests\\n   (vibe-annotations on :3846)\\n\\n'",
   "customizations": {
     "vscode": {
@@ -64,6 +64,7 @@
         "ms-python.black-formatter",
         "charliermarsh.ruff",
         "ms-python.mypy-type-checker",
+        "ms-ossdata.vscode-pgsql",
         "ms-playwright.playwright",
         "esbenp.prettier-vscode",
         "eamodio.gitlens",
