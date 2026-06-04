@@ -18,6 +18,7 @@ import { fetchMe } from './lib/auth.js';
 import { listProjects, activateProject, createProject } from './lib/projects.js';
 import { deleteProject as apiDeleteProject } from './lib/members.js';
 import { PermsProvider } from './lib/perms.js';
+import { RunProvider } from './lib/run.js';
 
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
@@ -299,22 +300,24 @@ export default function App() {
       )}
 
       <PermsProvider value={{ role: activeRole, isSuperadmin }}>
-        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
-          {panes
-            .filter(p => visited.has(p.key) || p.key === activeKey)
-            .map(p => (
-              <div
-                key={`${p.key}#${keyEpoch[p.key] ?? epoch}`}
-                className="tab-content"
-                style={{
-                  flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
-                  display: p.key === activeKey ? 'flex' : 'none',
-                }}
-              >
-                {p.render()}
-              </div>
-            ))}
-        </div>
+        <RunProvider value={{ run, running, activeCmd }}>
+          <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
+            {panes
+              .filter(p => visited.has(p.key) || p.key === activeKey)
+              .map(p => (
+                <div
+                  key={`${p.key}#${keyEpoch[p.key] ?? epoch}`}
+                  className="tab-content"
+                  style={{
+                    flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
+                    display: p.key === activeKey ? 'flex' : 'none',
+                  }}
+                >
+                  {p.render()}
+                </div>
+              ))}
+          </div>
+        </RunProvider>
       </PermsProvider>
 
       <BottomTerminal
