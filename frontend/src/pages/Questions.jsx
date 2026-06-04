@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../components/Toast.jsx';
 import { loadConfig } from '../lib/config.js';
+import { useRun } from '../lib/run.js';
+import { usePerms } from '../lib/perms.js';
 import { isHidden, buildGroupTree } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
 import PageHeader from './PageHeader.jsx';
@@ -29,6 +31,8 @@ function buildTypeBreakdown(qs) {
 // ── component ────────────────────────────────────────────────────────────────
 export default function Questions() {
   const toast = useToast();
+  const { run, running, activeCmd } = useRun();
+  const { canEdit } = usePerms();
   const [questions, setQuestions] = useState(null);
   const [original,  setOriginal]  = useState({});          // { idx: {export_label, hidden} } at load
   const [search,    setSearch]    = useState('');
@@ -50,6 +54,14 @@ export default function Questions() {
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Run the real fetch-questions command (Kobo/Ona API → config.yml), streaming logs
+  // to the shared BottomTerminal. `run` resolves when the SSE stream finishes, so we
+  // reload the (possibly rewritten) question list afterward regardless of outcome.
+  const fetchFromForm = useCallback(async () => {
+    await run('fetch-questions');
+    await load();
+  }, [run, load]);
 
   // Set of column names used by charts / indicators / summaries (for the "used in charts" filter).
   const usedInCharts = useMemo(() => {
@@ -269,8 +281,17 @@ export default function Questions() {
   if (questions.length === 0) {
     return (
       <div className="page">
-        <Header total={0} groups={0} unsaved={0} onRefresh={load} onSave={save} />
-        <div className="src-card"><p className="empty-state">No questions yet — run <b>fetch-questions</b> from the Dashboard.</p></div>
+        <Header
+          total={0}
+          groups={0}
+          unsaved={0}
+          onFetch={fetchFromForm}
+          onSave={save}
+          fetching={running && activeCmd === 'fetch-questions'}
+          busy={running}
+          canEdit={canEdit}
+        />
+        <div className="src-card"><p className="empty-state">No questions yet — click <b>Fetch from form</b> above to pull the schema from your platform.</p></div>
       </div>
     );
   }
@@ -289,8 +310,11 @@ export default function Questions() {
         total={questions.length}
         groups={totalGroups}
         unsaved={dirtyIndices.size}
-        onRefresh={load}
+        onFetch={fetchFromForm}
         onSave={save}
+        fetching={running && activeCmd === 'fetch-questions'}
+        busy={running}
+        canEdit={canEdit}
       />
 
       <div className="q-toolbar">
@@ -341,7 +365,7 @@ export default function Questions() {
 }
 
 // ── Header band ──────────────────────────────────────────────────────────────
-function Header({ total, groups, unsaved, onRefresh, onSave }) {
+function Header({ total, groups, unsaved, onFetch, onSave, fetching, busy, canEdit }) {
   return (
     <PageHeader
       eyebrow={`Questions · ${total} fields · ${groups} groups`}
@@ -351,10 +375,12 @@ function Header({ total, groups, unsaved, onRefresh, onSave }) {
       actions={
         <>
           {unsaved > 0 && <span className="q-unsaved-pill">{unsaved} unsaved</span>}
-          <button className="btn" onClick={onRefresh}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><polyline points="2 4 2 8 6 8"/><path d="M3 11a6 6 0 1 0 1.4-7"/></svg>
-            Refresh from form
-          </button>
+          {canEdit && (
+            <button className="btn" onClick={onFetch} disabled={busy} title="Fetch the latest form schema from your Kobo/Ona platform (preserves your renames and hidden/PII flags)">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><polyline points="2 4 2 8 6 8"/><path d="M3 11a6 6 0 1 0 1.4-7"/></svg>
+              {fetching ? 'Fetching…' : 'Fetch from form'}
+            </button>
+          )}
           <button className="btn btn-primary" onClick={onSave} disabled={unsaved === 0}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
             Save changes
