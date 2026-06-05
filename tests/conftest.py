@@ -25,6 +25,25 @@ def _app_database(tmp_path_factory):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _seed_legacy_config(tmp_path_factory):
+    """Seed a minimal config.yml so the startup legacy-import provisions a project —
+    many web tests assume the dev user has an active project. Locally a developer's
+    config.yml is usually present; in CI it's gitignored/absent, so create one (and
+    remove only what we created)."""
+    import yaml as _yaml
+    from src.utils.config import CONFIG_PATH
+    created = not CONFIG_PATH.exists()
+    if created:
+        CONFIG_PATH.write_text(_yaml.safe_dump({
+            "api": {"platform": "kobo", "url": "https://example.test/api/v2", "token": "t"},
+            "form": {"uid": "TESTFORM", "alias": "test"},
+        }), encoding="utf-8")
+    yield
+    if created:
+        CONFIG_PATH.unlink(missing_ok=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _app_storage(tmp_path_factory):
     """Session-wide local-filesystem Storage backend so get_storage() works in tests
     (real use requires S3_*)."""
