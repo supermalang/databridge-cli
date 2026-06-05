@@ -27,13 +27,16 @@ def _pct(x: float) -> str:
 
 
 def _columns(cfg: Dict, df: pd.DataFrame) -> List[str]:
+    # Exclude hidden + PII columns so the overview matches Load/Analyze/Present.
+    from src.utils.config import excluded_column_names
+    excl = excluded_column_names(cfg)
     cols: List[str] = []
     for q in (cfg.get("questions") or []):
         col = q.get("export_label") or q.get("label") or q.get("kobo_key")
-        if col and col in df.columns and col not in cols:
+        if col and col not in excl and col in df.columns and col not in cols:
             cols.append(col)
     if not cols:
-        cols = [c for c in df.columns if not str(c).startswith("_")]
+        cols = [c for c in df.columns if not str(c).startswith("_") and c not in excl]
     return cols
 
 

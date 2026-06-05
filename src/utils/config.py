@@ -58,6 +58,41 @@ def llm_safe_column_names(cfg: Dict) -> set:
     return names
 
 
+def question_column_name(q: Dict):
+    """The DataFrame column name a question maps to: export_label → label → kobo_key."""
+    return q.get("export_label") or q.get("label") or q.get("kobo_key")
+
+
+def excluded_column_names(cfg: Dict) -> set:
+    """Resolved column names of questions that are effective-hidden OR PII-flagged.
+    These are dropped from the analytical/EDA views (profile, validate, data-quality)
+    so those stages match Load/Analyze/Present, which never surface hidden/PII data."""
+    names: set = set()
+    for q in cfg.get("questions", []) or []:
+        if is_effective_hidden(q) or is_pii(q):
+            col = question_column_name(q)
+            if col:
+                names.add(col)
+    return names
+
+
+def drop_excluded_columns(cfg: Dict, df, repeats):
+    """Return (df, repeats) with every hidden/PII column removed from the main table
+    and each repeat table. No-op when nothing is flagged. Linkage/computed columns
+    (not tied to a flagged question) are preserved."""
+    excl = excluded_column_names(cfg)
+    if not excl:
+        return df, repeats
+    def _drop(t):
+        if t is None:
+            return t
+        cols = [c for c in t.columns if c in excl]
+        return t.drop(columns=cols, errors="ignore") if cols else t
+    df = _drop(df)
+    repeats = {name: _drop(t) for name, t in (repeats or {}).items()}
+    return df, repeats
+
+
 def _resolve_env(cfg: Dict) -> Dict:
     def _walk(obj: Any) -> Any:
         if isinstance(obj, dict): return {k: _walk(v) for k, v in obj.items()}
