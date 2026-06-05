@@ -1,5 +1,5 @@
-# Production stack: app (FastAPI + built React) behind Caddy (auto-HTTPS), with
-# Postgres and Minio as siblings on the internal network. Only Caddy is published
+# Production stack: app (FastAPI + built React) behind Traefik (auto-HTTPS), with
+# Postgres and Minio as siblings on the internal network. Only Traefik is published
 # (80/443); db + minio stay internal. See docs/DEPLOY.md.
 #
 #   cp .env.prod.example .env && edit .env
@@ -28,6 +28,12 @@ services:
         condition: service_started
     expose:
       - "8000"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.app.rule=Host(`${APP_DOMAIN}`)
+      - traefik.http.routers.app.entrypoints=websecure
+      - traefik.http.routers.app.tls.certresolver=le
+      - traefik.http.services.app.loadbalancer.server.port=8000
 
   db:
     image: postgres:16
@@ -69,23 +75,34 @@ services:
       echo 'bucket ${S3_BUCKET} ready'"
     restart: "no"
 
-  caddy:
-    image: caddy:2
+  # Reverse proxy + automatic HTTPS (Let's Encrypt). Discovers the app via Docker
+  # labels; streams SSE (the run logs) without buffering by default.
+  traefik:
+    image: traefik:v3.1
     restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      # Redirect all HTTP → HTTPS.
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      # Let's Encrypt via TLS-ALPN challenge; cert stored in the named volume.
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.tlschallenge=true
     ports:
       - "80:80"
       - "443:443"
-    environment:
-      APP_DOMAIN: ${APP_DOMAIN}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      # Read-only Docker socket so Traefik can discover the app's labels.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
     depends_on:
       - app
 
 volumes:
   pgdata:
   miniodata:
-  caddy_data:
-  caddy_config:
+  traefik_letsencrypt:
