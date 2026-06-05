@@ -99,7 +99,9 @@ export default function Reports() {
                   <a href={`/api/reports/download/${encodeURIComponent(r.name)}`} download>
                     <button className="btn btn-primary btn-sm">↓ Download</button>
                   </a>
-                  {canEdit && <button className="btn btn-danger btn-sm" onClick={() => deleteReport(r.name)}>Delete</button>}
+                  <button className="btn btn-danger btn-sm" onClick={() => deleteReport(r.name)}
+                          disabled={!canEdit}
+                          title={canEdit ? '' : 'Viewer access — deleting requires an editor or admin role'}>Delete</button>
                 </>
               )}
             />
@@ -132,7 +134,9 @@ export default function Reports() {
                   <a href={`/api/data/sessions/${encodeURIComponent(s.session_id)}/download`} download>
                     <button className="btn btn-primary btn-sm">↓ Download ZIP</button>
                   </a>
-                  {canEdit && <button className="btn btn-danger btn-sm" onClick={() => deleteSession(s.session_id)}>Delete</button>}
+                  <button className="btn btn-danger btn-sm" onClick={() => deleteSession(s.session_id)}
+                          disabled={!canEdit}
+                          title={canEdit ? '' : 'Viewer access — deleting requires an editor or admin role'}>Delete</button>
                 </>
               )}
             />
