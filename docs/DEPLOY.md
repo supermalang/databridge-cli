@@ -6,7 +6,7 @@ recommended production topology is one small VM running Docker Compose:
 
 ```
             ┌──────────── your VM ────────────┐
- Internet ─▶│ Caddy (80/443, auto-HTTPS)      │
+ Internet ─▶│ Traefik (80/443, auto-HTTPS)    │
             │   └─▶ app (FastAPI + React)      │
             │         ├─▶ db    (Postgres)     │
             │         └─▶ minio (S3 storage)   │
@@ -14,11 +14,11 @@ recommended production topology is one small VM running Docker Compose:
             Auth: Zitadel Cloud (external OIDC)
 ```
 
-Only Caddy is exposed publicly; Postgres and Minio stay on the internal network.
+Only Traefik is exposed publicly; Postgres and Minio stay on the internal network.
 
 ## Prerequisites
 - A VM (1–2 vCPU / 2–4 GB RAM is plenty to start) with **Docker** + the **Compose plugin**.
-- A **domain** with a DNS `A`/`AAAA` record pointing at the VM (Caddy gets TLS certs for it).
+- A **domain** with a DNS `A`/`AAAA` record pointing at the VM (Traefik gets TLS certs for it).
 - A **Zitadel** application (Web / Code flow) — see the auth notes in `CLAUDE.md`.
 
 ## 1. Configure
@@ -26,7 +26,7 @@ Only Caddy is exposed publicly; Postgres and Minio stay on the internal network.
 git clone <repo> && cd databridge-cli
 cp .env.prod.example .env
 # edit .env — at minimum:
-#   APP_DOMAIN, APP_BASE_URL (https://APP_DOMAIN)
+#   APP_DOMAIN, APP_BASE_URL (https://APP_DOMAIN), ACME_EMAIL (for Let's Encrypt)
 #   OIDC_ISSUER / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET, SESSION_SECRET (openssl rand -hex 32)
 #   POSTGRES_PASSWORD, S3_ACCESS_KEY, S3_SECRET_KEY
 #   SUPERADMIN_EMAILS (your email, to become superadmin on first login)
@@ -45,7 +45,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 On startup the app runs **Alembic migrations** automatically and the `createbucket` job
 provisions the Minio bucket. Watch it come up:
 ```bash
-docker compose -f docker-compose.prod.yml logs -f app caddy
+docker compose -f docker-compose.prod.yml logs -f app traefik
 ```
 Then open `https://<APP_DOMAIN>` → you'll be redirected to Zitadel to sign in.
 
@@ -68,10 +68,14 @@ docker compose -f docker-compose.prod.yml exec db \
 - **Single instance only.** Do not scale `app` to multiple replicas — the in-memory run
   registry and the local mirror are not shared. Scale the VM up instead.
 - **HTTPS cookies** turn on automatically because `APP_BASE_URL` is `https://` (override
-  with `SESSION_COOKIE_SECURE=true|false`). Always terminate TLS (Caddy does this for you).
-- **SSE run logs** stream through Caddy thanks to `flush_interval -1` in `deploy/Caddyfile`.
-- **Local HTTP test** (no domain/cert): set `APP_DOMAIN=:80` and `APP_BASE_URL=http://localhost`
-  and hit the VM IP directly.
+  with `SESSION_COOKIE_SECURE=true|false`). Always terminate TLS (Traefik does this for you).
+- **SSE run logs** stream through Traefik unbuffered by default — no extra config needed.
+- **Traefik + Docker socket:** Traefik discovers the app via the read-only Docker socket it
+  mounts. The app is matched by the `traefik.*` labels in the compose file (router →
+  `Host(${APP_DOMAIN})`, service port 8000).
+- **Local HTTP test** (no domain/cert): Traefik routes by hostname, so point a hostname at
+  the VM (or add `127.0.0.1 app.localhost` to your hosts file) and set
+  `APP_DOMAIN=app.localhost`; for real certs you need a public domain.
 - **External managed services** instead of the bundled `db`/`minio`? Point `DATABASE_URL`
   and the `S3_*` vars at them and remove those services from the compose file (e.g. a managed
   Postgres + Cloudflare R2/Backblaze B2).
