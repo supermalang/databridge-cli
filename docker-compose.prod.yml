@@ -1,0 +1,91 @@
+# Production stack: app (FastAPI + built React) behind Caddy (auto-HTTPS), with
+# Postgres and Minio as siblings on the internal network. Only Caddy is published
+# (80/443); db + minio stay internal. See docs/DEPLOY.md.
+#
+#   cp .env.prod.example .env && edit .env
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Compose reads ./.env for ${VAR} interpolation below AND passes it to the app via
+# env_file, so one .env drives everything.
+name: databridge
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Point the app at the compose service hostnames (override any host in .env).
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD}@db:5432/databridge
+      S3_ENDPOINT_URL: http://minio:9000
+      STORAGE_BACKEND: s3
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    expose:
+      - "8000"
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: databridge
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d databridge"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - miniodata:/data
+
+  # One-shot: create the bucket, then exit.
+  createbucket:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY}; do
+        echo 'waiting for minio...'; sleep 2;
+      done &&
+      mc mb --ignore-existing local/${S3_BUCKET} &&
+      echo 'bucket ${S3_BUCKET} ready'"
+    restart: "no"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  miniodata:
+  caddy_data:
+  caddy_config:

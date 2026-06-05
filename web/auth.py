@@ -48,6 +48,18 @@ def auth_enabled() -> bool:
     return all(_env(k) for k in ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"))
 
 
+def _secure_cookies() -> bool:
+    """Mark session cookies Secure/HTTPS-only in production. Auto-on when APP_BASE_URL
+    is https:// (so dev over http://localhost still works), overridable via
+    SESSION_COOKIE_SECURE=true/false."""
+    override = _env("SESSION_COOKIE_SECURE").lower()
+    if override in ("1", "true", "yes"):
+        return True
+    if override in ("0", "false", "no"):
+        return False
+    return _env("APP_BASE_URL", "http://localhost:8000").lower().startswith("https://")
+
+
 def session_codec() -> SessionCodec:
     return SessionCodec(os.environ.get("SESSION_SECRET", "dev-insecure-secret"))
 
@@ -186,7 +198,7 @@ def register_auth(app) -> None:
         response = await call_next(request)
         if new_cookie:
             response.set_cookie(SESSION_COOKIE, new_cookie,
-                                httponly=True, secure=False, samesite="lax", path="/")
+                                httponly=True, secure=_secure_cookies(), samesite="lax", path="/")
         return response
 
     @app.get("/api/me")
@@ -198,7 +210,7 @@ def register_auth(app) -> None:
 
     app.add_middleware(SessionMiddleware,
                        secret_key=os.environ.get("SESSION_SECRET", "dev-insecure-secret"),
-                       same_site="lax", https_only=False)
+                       same_site="lax", https_only=_secure_cookies())
 
     @app.get("/auth/login")
     async def auth_login(request: Request):
@@ -215,7 +227,7 @@ def register_auth(app) -> None:
         await asyncio.to_thread(_do_provision)
         resp = RedirectResponse("/", status_code=302)
         resp.set_cookie(SESSION_COOKIE, _build_session_cookie(claims),
-                        httponly=True, secure=False, samesite="lax", path="/")
+                        httponly=True, secure=_secure_cookies(), samesite="lax", path="/")
         return resp
 
     @app.post("/auth/logout")
