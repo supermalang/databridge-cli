@@ -1,0 +1,3 @@
+# Test-only dependencies (pytest itself is pinned in requirements.txt).
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+responses>=0.25

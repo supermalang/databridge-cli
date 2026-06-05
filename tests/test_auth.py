@@ -37,6 +37,17 @@ def test_auth_disabled_when_no_oidc(monkeypatch):
     assert auth.auth_enabled() is False
 
 
+def test_secure_cookies_follow_app_base_url(monkeypatch):
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.setenv("APP_BASE_URL", "https://app.example.com")
+    assert auth._secure_cookies() is True       # https in prod → Secure cookies
+    monkeypatch.setenv("APP_BASE_URL", "http://localhost:8000")
+    assert auth._secure_cookies() is False      # http dev → not Secure
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("APP_BASE_URL", "https://app.example.com")
+    assert auth._secure_cookies() is False      # explicit override wins
+
+
 def test_auth_enabled_when_oidc_present(monkeypatch):
     monkeypatch.setenv("OIDC_ISSUER", "https://z.example")
     monkeypatch.setenv("OIDC_CLIENT_ID", "cid")

@@ -84,10 +84,10 @@ def require_role(request: Request, db: Session, minimum: str):
     In **dev mode** (auth disabled) there are no roles — a single dev user owns
     everything — so gating is skipped and the caller is treated as superadmin."""
     user, project = _active_project(request, db)
-    if not auth.auth_enabled():
-        return user, project, "superadmin"
     if project is None:
         raise HTTPException(status_code=400, detail="No active project")
+    if not auth.auth_enabled():
+        return user, project, "superadmin"   # dev mode: skip role gating, project still required
     role = db_repo.role_for(db, user, project)
     if not db_repo.role_at_least(role, minimum):
         raise HTTPException(status_code=403, detail=f"This action requires the '{minimum}' role")
