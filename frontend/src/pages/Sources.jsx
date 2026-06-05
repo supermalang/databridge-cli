@@ -4,6 +4,9 @@ import { useToast } from '../components/Toast.jsx';
 import { loadConfig, loadConfigText, saveConfigPatch, saveConfigText } from '../lib/config.js';
 import PeriodPicker from '../components/PeriodPicker.jsx';
 import PageHeader from './PageHeader.jsx';
+import { useRun } from '../lib/run.js';
+import { usePerms } from '../lib/perms.js';
+import { useAiStatus } from '../lib/aiStatus.js';
 
 const PLATFORMS = [
   { id: 'ona',  name: 'Ona',          tag: 'ona.io · self-hosted',         defaultUrl: 'https://api.ona.io/api/v1' },
@@ -177,6 +180,10 @@ export default function Sources({ section = 'setup' } = {}) {
 
 // ── Connection ───────────────────────────────────────────────────────────────
 function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConnection, lastCheck, questionCount }) {
+  const { run, running, activeCmd } = useRun();
+  const { canEdit } = usePerms();
+  const fetchQuestions = () => run('fetch-questions');
+  const downloadData = () => run('download');
   const onPick = (id) => {
     set('api.platform')(id);
     // also seed the URL if blank
@@ -279,14 +286,43 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
           )}
         </div>
       </div>
+
+      <div className="src-field">
+        <div className="src-field__label">Pull from platform
+          <div className="src-field__hint">Fetch the form schema, then download its submissions.</div>
+        </div>
+        <div className="inline-status" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-sm" onClick={fetchQuestions} disabled={running || !canEdit}
+                  title={canEdit ? 'Pull the latest form schema (preserves your renames + hidden/PII flags)'
+                                 : 'Viewer access — fetching questions requires an editor or admin role'}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><polyline points="2 4 2 8 6 8"/><path d="M3 11a6 6 0 1 0 1.4-7"/></svg>
+            {running && activeCmd === 'fetch-questions' ? 'Fetching…' : 'Fetch questions'}
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={downloadData} disabled={running || !canEdit}
+                  title={canEdit ? 'Download submissions for the configured questions (applies filters + PII gating)'
+                                 : 'Viewer access — downloading data requires an editor or admin role'}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
+            {running && activeCmd === 'download' ? 'Downloading…' : 'Download data'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
 // ── AI Narrative ─────────────────────────────────────────────────────────────
 function AINarrativeCard({ cfg, set }) {
+  const toast = useToast();
   const ai = cfg.ai || {};
   const maxTok = parseInt(ai.max_tokens, 10) || 1500;
+  const { configured, verified, testing, testAi } = useAiStatus();
+  const [testResult, setTestResult] = useState(null);
+  const onTestAi = async () => {
+    const r = await testAi(ai);
+    setTestResult(r);
+    toast(r.ok ? `AI connection OK${r.tokens_used ? ` · ${r.tokens_used} tokens` : ''}`
+               : `AI test failed: ${r.message}`, r.ok ? 'ok' : 'err');
+  };
 
   return (
     <div className="src-card">
@@ -335,6 +371,31 @@ function AINarrativeCard({ cfg, set }) {
           <input type="range" min="100" max="8000" step="100" value={maxTok} onChange={e => set('ai.max_tokens')(parseInt(e.target.value, 10))} />
           <span className="slider-row__value">{maxTok}</span>
           <span className="slider-row__limit">limit</span>
+        </div>
+      </div>
+
+      <div className="src-field">
+        <div className="src-field__label">Connection
+          <div className="src-field__hint">AI buttons stay locked until this passes. Save your changes, then test.</div>
+        </div>
+        <div className="inline-status" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary btn-sm" onClick={onTestAi} disabled={testing || !configured}
+                  title={configured ? 'Send a tiny probe to verify the provider + key work'
+                                    : 'Set a provider, model and API key first'}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="3 8 7 12 13 4"/></svg>
+            {testing ? 'Testing…' : 'Test AI connection'}
+          </button>
+          {verified ? (
+            <span className="inline-status__check" style={{ color: 'var(--green, #16a34a)' }}>✓ Verified — AI features unlocked</span>
+          ) : testResult && testResult.ok ? (
+            <span className="inline-status__check">✓ {testResult.message} · Save changes to unlock</span>
+          ) : testResult && !testResult.ok ? (
+            <span className="inline-status__check" style={{ color: 'var(--rose)' }}>✗ {testResult.message}</span>
+          ) : !configured ? (
+            <span className="inline-status__check" style={{ color: 'var(--muted)' }}>Add a provider + API key</span>
+          ) : (
+            <span className="inline-status__check" style={{ color: 'var(--muted)' }}>Not verified yet</span>
+          )}
         </div>
       </div>
     </div>

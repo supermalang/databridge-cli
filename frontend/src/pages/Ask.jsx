@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import PageHeader from './PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 
 export default function Ask() {
+  const { aiReady } = useAiStatus();
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -84,14 +86,21 @@ export default function Ask() {
         accent="data."
         sub="Ask a question in plain language — get charts computed from your data, with captions grounded in the actual numbers."
       />
+      {!aiReady && (
+        <div className="empty-state" style={{ padding: 12, marginBottom: 10, border: '1px solid var(--border)', borderRadius: 8 }}>
+          {AI_LOCK_TIP} to use Ask.
+        </div>
+      )}
       <form onSubmit={submit} style={{ display: 'flex', gap: 8 }}>
         <input
           value={question}
           onChange={e => setQuestion(e.target.value)}
+          disabled={!aiReady}
           placeholder="e.g. How many submissions by region?"
           style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line, #e5e7eb)' }}
         />
-        <button type="submit" disabled={loading} style={{ padding: '10px 18px', borderRadius: 8 }}>
+        <button type="submit" disabled={loading || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}
+                style={{ padding: '10px 18px', borderRadius: 8 }}>
           {loading ? 'Asking…' : 'Ask'}
         </button>
       </form>
