@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../components/Toast.jsx';
 import { loadConfig } from '../lib/config.js';
-import { useRun } from '../lib/run.js';
 import { usePerms } from '../lib/perms.js';
+import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 import { isHidden, buildGroupTree } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
+import Modal from '../components/Modal.jsx';
 import PageHeader from './PageHeader.jsx';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -31,13 +32,14 @@ function buildTypeBreakdown(qs) {
 // ── component ────────────────────────────────────────────────────────────────
 export default function Questions() {
   const toast = useToast();
-  const { run, running, activeCmd } = useRun();
   const { canEdit } = usePerms();
+  const { aiReady } = useAiStatus();
   const [questions, setQuestions] = useState(null);
   const [original,  setOriginal]  = useState({});          // { idx: {export_label, hidden} } at load
   const [search,    setSearch]    = useState('');
   const [filter,    setFilter]    = useState('all');       // all | renamed | used
   const [suggesting, setSuggesting] = useState(null);      // null | 'hidden' | 'pii'
+  const [reviewModal, setReviewModal] = useState(null);    // null | { kind, title, hint, noun, items:[{idx,name,label,checked}] }
   const [cfg, setCfg] = useState({});
 
   const snapshot = (list) =>
@@ -55,15 +57,9 @@ export default function Questions() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Run the real fetch-questions command (Kobo/Ona API → config.yml), streaming logs
-  // to the shared BottomTerminal. `run` resolves when the SSE stream finishes, so we
-  // reload the (possibly rewritten) question list afterward regardless of outcome.
-  // The explicit load() is required: the global databridge:data-changed event only
-  // refreshes a tab when it next becomes active, not the one being viewed right now.
-  const fetchFromForm = useCallback(async () => {
-    await run('fetch-questions');
-    await load();
-  }, [run, load]);
+  // Fetching the schema + downloading data now live on Extract → Connection. A
+  // successful run there fires databridge:data-changed, which refreshes this tab
+  // when it next becomes active.
 
   // Set of column names used by charts / indicators / summaries (for the "used in charts" filter).
   const usedInCharts = useMemo(() => {
@@ -104,6 +100,7 @@ export default function Questions() {
         if (!dirty && (q.export_label || '') === (q.label || '')) return;
       }
       if (filter === 'hidden' && !isHidden(q)) return;
+      if (filter === 'pii' && !q.pii) return;
       if (sLower) {
         const hay = [q.kobo_key, q.label, q.export_label].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(sLower)) return;
@@ -111,12 +108,14 @@ export default function Questions() {
       items.push({ q, idx: i });
     });
 
-    // In the "Hidden" view every row is hidden — render them as normal group
-    // rows (not tucked into a collapsed sub-section).
-    const bucketHidden = filter !== 'hidden';
+    // Only bucket into the collapsed Hidden / PII sub-sections in the all/renamed
+    // views. The Hidden and PII filter views already restrict to those rows, so
+    // they render as normal group rows.
+    const bucket = filter === 'all' || filter === 'renamed';
     return buildGroupTree(items, {
       getPath: ({ q }) => q.group,
-      getHidden: ({ q }) => (bucketHidden ? isHidden(q) : false),
+      getHidden: ({ q }) => (bucket ? isHidden(q) : false),
+      getPii: ({ q }) => (bucket ? !!q.pii : false),
     });
   }, [questions, filter, search, dirtyIndices]);
 
@@ -132,21 +131,23 @@ export default function Questions() {
     setQuestions(prev => prev.map((q, i) => (i === idx ? { ...q, pii: !q.pii } : q)));
   };
 
-  // Shared LLM-suggest runner for the two metadata-only assistants.
-  const runSuggest = async (kind, { endpoint, apply, emptyMsg, okMsg }) => {
+  // Both metadata-only assistants (hide-clutter, flag-PII) open a confirm modal: the
+  // AI's suggestions are pre-checked, the user can uncheck any, and only checked fields
+  // get the flag (`hidden` or `pii`) on Apply. Unchecked suggestions are explicitly NOT
+  // flagged. Nothing persists until "Save changes".
+  const openSuggestReview = async (kind, { endpoint, emptyMsg, title, hint, noun }) => {
     setSuggesting(kind);
     try {
       const res = await fetch(endpoint, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Request failed');
-      const suggestions = data.suggestions || [];
-      if (suggestions.length) {
-        const flag = new Set(suggestions);
-        setQuestions(prev => prev.map(q => (flag.has(q.kobo_key) ? apply(q) : q)));
-        toast(okMsg(suggestions.length), 'ok');
-      } else {
-        toast(data.message || emptyMsg, 'ok');
-      }
+      const flagged = new Set(data.suggestions || []);
+      if (!flagged.size) { toast(data.message || emptyMsg, 'ok'); return; }
+      const items = [];
+      questions.forEach((q, idx) => {
+        if (flagged.has(q.kobo_key)) items.push({ idx, name: bareName(q), label: q.label || colName(q), checked: true });
+      });
+      setReviewModal({ kind, title, hint, noun, items });
     } catch (e) {
       toast(String(e.message || e), 'err');
     } finally {
@@ -154,19 +155,34 @@ export default function Questions() {
     }
   };
 
-  const suggestHidden = () => runSuggest('hidden', {
+  const suggestHidden = () => openSuggestReview('hidden', {
     endpoint: '/api/questions/suggest-hidden',
-    apply: (q) => ({ ...q, hidden: true }),
     emptyMsg: 'Nothing to tidy — no extra clutter found',
-    okMsg: (n) => `Flagged ${n} field(s) to hide — review and Save`,
+    title: 'Auto-hide clutter',
+    hint: 'The AI flagged these fields as non-analytical clutter to hide. Uncheck any you want to keep — only checked fields are hidden.',
+    noun: 'field(s) to hide',
+  });
+  const suggestPII = () => openSuggestReview('pii', {
+    endpoint: '/api/questions/suggest-pii',
+    emptyMsg: 'No likely-PII fields detected',
+    title: 'Flag PII fields',
+    hint: "The AI flagged these fields as likely personal data. Uncheck any that shouldn't be treated as PII — only checked fields are marked.",
+    noun: 'field(s) as PII',
   });
 
-  const suggestPII = () => runSuggest('pii', {
-    endpoint: '/api/questions/suggest-pii',
-    apply: (q) => ({ ...q, pii: true }),
-    emptyMsg: 'No likely-PII fields detected',
-    okMsg: (n) => `Flagged ${n} field(s) as PII — review and Save`,
-  });
+  const toggleReviewItem = (idx) =>
+    setReviewModal(m => ({ ...m, items: m.items.map(it => (it.idx === idx ? { ...it, checked: !it.checked } : it)) }));
+  const setAllReview = (checked) =>
+    setReviewModal(m => ({ ...m, items: m.items.map(it => ({ ...it, checked })) }));
+  const applyReview = () => {
+    const { kind, items, noun } = reviewModal;
+    const flagKey = kind === 'hidden' ? 'hidden' : 'pii';
+    const decided = new Map(items.map(it => [it.idx, it.checked]));
+    setQuestions(prev => prev.map((q, i) => (decided.has(i) ? { ...q, [flagKey]: decided.get(i) } : q)));
+    const n = items.filter(it => it.checked).length;
+    setReviewModal(null);
+    toast(`Flagged ${n} ${noun} — review and Save`, 'ok');
+  };
 
   const save = async () => {
     try {
@@ -287,13 +303,10 @@ export default function Questions() {
           total={0}
           groups={0}
           unsaved={0}
-          onFetch={fetchFromForm}
           onSave={save}
-          fetching={running && activeCmd === 'fetch-questions'}
-          busy={running}
           canEdit={canEdit}
         />
-        <div className="src-card"><p className="empty-state">No questions yet — click <b>Fetch from form</b> above to pull the schema from your platform.</p></div>
+        <div className="src-card"><p className="empty-state">No questions yet — go to <b>Extract → Connection &amp; output</b> and click <b>Fetch questions</b> to pull the schema from your platform.</p></div>
       </div>
     );
   }
@@ -305,6 +318,7 @@ export default function Questions() {
     dirtyIndices.has(i) || ((q.export_label || '') !== '' && (q.export_label || '') !== (q.label || ''))
   ).length;
   const totalHidden = questions.filter(q => isHidden(q)).length;
+  const totalPii = questions.filter(q => !!q.pii).length;
 
   return (
     <div className="page">
@@ -312,10 +326,7 @@ export default function Questions() {
         total={questions.length}
         groups={totalGroups}
         unsaved={dirtyIndices.size}
-        onFetch={fetchFromForm}
         onSave={save}
-        fetching={running && activeCmd === 'fetch-questions'}
-        busy={running}
         canEdit={canEdit}
       />
 
@@ -333,11 +344,16 @@ export default function Questions() {
             <button className={`view-btn ${filter === 'hidden' ? 'active' : ''}`} onClick={() => setFilter('hidden')}>
               Hidden <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalHidden})</span>
             </button>
+            <button className={`view-btn ${filter === 'pii' ? 'active' : ''}`} onClick={() => setFilter('pii')}>
+              PII <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalPii})</span>
+            </button>
           </div>
-          <button className="ai-btn" onClick={suggestHidden} disabled={!!suggesting} title="Ask the AI to flag non-analytical clutter to hide (reads only field metadata)">
+          <button className="ai-btn" onClick={suggestHidden} disabled={!!suggesting || !aiReady}
+                  title={aiReady ? 'Ask the AI to flag non-analytical clutter to hide (reads only field metadata)' : AI_LOCK_TIP}>
             {suggesting === 'hidden' ? 'Asking AI…' : '✦ Auto-hide clutter'}
           </button>
-          <button className="ai-btn" onClick={suggestPII} disabled={!!suggesting} title="Ask the AI to flag fields that likely contain personal data (reads only field metadata)">
+          <button className="ai-btn" onClick={suggestPII} disabled={!!suggesting || !aiReady}
+                  title={aiReady ? 'Ask the AI to flag fields that likely contain personal data (reads only field metadata)' : AI_LOCK_TIP}>
             {suggesting === 'pii' ? 'Asking AI…' : '✦ Flag PII'}
           </button>
         </div>
@@ -356,18 +372,48 @@ export default function Questions() {
             tree={tree}
             renderVisible={renderRows}
             renderHidden={renderRows}
+            renderPii={renderRows}
             renderHeaderExtra={renderHeaderExtra}
           />
         ) : (
           <p className="empty-state" style={{ padding: 30 }}>No questions match your filter.</p>
         )}
       </div>
+
+      {reviewModal && (
+        <Modal title={reviewModal.title} onClose={() => setReviewModal(null)} onSave={applyReview} saveLabel="Apply">
+          <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
+            {reviewModal.hint} (Then <b>Save changes</b> to persist.)
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+              {reviewModal.items.filter(i => i.checked).length} of {reviewModal.items.length} selected
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setAllReview(true)}>Select all</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setAllReview(false)}>Select none</button>
+            </div>
+          </div>
+          <div style={{ maxHeight: 340, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+            {reviewModal.items.map(it => (
+              <label key={it.idx}
+                     style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+                              borderBottom: '1px solid var(--border)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={it.checked} onChange={() => toggleReviewItem(it.idx)} />
+                <span style={{ fontWeight: 600 }}>{it.name}</span>
+                {it.label && it.label !== it.name &&
+                  <span style={{ color: 'var(--muted)', fontSize: 13 }}>{it.label}</span>}
+              </label>
+            ))}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
 // ── Header band ──────────────────────────────────────────────────────────────
-function Header({ total, groups, unsaved, onFetch, onSave, fetching, busy, canEdit }) {
+function Header({ total, groups, unsaved, onSave, canEdit }) {
   return (
     <PageHeader
       eyebrow={`Questions · ${total} fields · ${groups} groups`}
@@ -377,13 +423,8 @@ function Header({ total, groups, unsaved, onFetch, onSave, fetching, busy, canEd
       actions={
         <>
           {unsaved > 0 && <span className="q-unsaved-pill">{unsaved} unsaved</span>}
-          {canEdit && (
-            <button className="btn" onClick={onFetch} disabled={busy} title="Fetch the latest form schema from your Kobo/Ona platform (preserves your renames and hidden/PII flags)">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><polyline points="2 4 2 8 6 8"/><path d="M3 11a6 6 0 1 0 1.4-7"/></svg>
-              {fetching ? 'Fetching…' : 'Fetch from form'}
-            </button>
-          )}
-          <button className="btn btn-primary" onClick={onSave} disabled={unsaved === 0}>
+          <button className="btn btn-primary" onClick={onSave} disabled={unsaved === 0 || !canEdit}
+                  title={canEdit ? '' : 'You have viewer access — editing questions requires an editor or admin role'}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
             Save changes
           </button>

@@ -64,17 +64,18 @@ export default function Templates() {
             <span>{files?.length ?? 0} on disk</span>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
               <button className="btn btn-ghost btn-sm" onClick={load}>↺ Refresh</button>
-              {canAdmin && (
-                <label className="btn btn-primary btn-sm" style={{ cursor: 'pointer' }}>
-                  ↑ Upload .docx
-                  <input
-                    ref={fileInputRef}
-                    type="file" accept=".docx"
-                    style={{ display: 'none' }}
-                    onChange={upload}
-                  />
-                </label>
-              )}
+              <label className="btn btn-primary btn-sm"
+                     style={{ cursor: canAdmin ? 'pointer' : 'not-allowed', opacity: canAdmin ? 1 : 0.5 }}
+                     title={canAdmin ? '' : 'Admin access required to upload templates'}>
+                ↑ Upload .docx
+                <input
+                  ref={fileInputRef}
+                  type="file" accept=".docx"
+                  disabled={!canAdmin}
+                  style={{ display: 'none' }}
+                  onChange={upload}
+                />
+              </label>
             </div>
           </div>
 
@@ -101,13 +102,17 @@ export default function Templates() {
                 <>
                   {f.name === active ? (
                     <button className="btn btn-ghost btn-sm" disabled style={{ opacity: 0.5 }}>✓ Active</button>
-                  ) : canAdmin ? (
-                    <button className="btn btn-ghost btn-sm" onClick={() => setActiveTemplate(f.name)}>Set as active</button>
-                  ) : null}
+                  ) : (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setActiveTemplate(f.name)}
+                            disabled={!canAdmin}
+                            title={canAdmin ? '' : 'Admin access required'}>Set as active</button>
+                  )}
                   <a href={`/api/templates/download/${encodeURIComponent(f.name)}`} download>
                     <button className="btn btn-primary btn-sm">↓ Download</button>
                   </a>
-                  {canAdmin && <button className="btn btn-danger btn-sm" onClick={() => deleteTemplate(f.name)}>Delete</button>}
+                  <button className="btn btn-danger btn-sm" onClick={() => deleteTemplate(f.name)}
+                          disabled={!canAdmin}
+                          title={canAdmin ? '' : 'Admin access required to delete templates'}>Delete</button>
                 </>
               )}
             />

@@ -5,6 +5,7 @@ import FrameworkPicker from '../components/FrameworkPicker.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useCommand } from '../hooks/useCommand.js';
 import { loadConfig, saveConfigPatch } from '../lib/config.js';
+import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 import PageHeader from './PageHeader.jsx';
 
 // ── chart type catalog ───────────────────────────────────────────────────────
@@ -709,6 +710,7 @@ function Header({ questionCount, counts, sections = ALL_SECTIONS, onSave }) {
 
 // ── Charts card ──────────────────────────────────────────────────────────────
 function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, onPreview, suggesting, toast }) {
+  const { aiReady } = useAiStatus();
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -717,7 +719,7 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, onPreview, sug
           <div className="comp-card__sub">Each chart → <code>{'{{ chart_<name> }}'}</code> token in Word template</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest} disabled={suggesting}>
+          <button className="ai-btn" onClick={onSuggest} disabled={suggesting || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}>
             {suggesting ? 'Asking AI…' : 'Suggest with AI'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add chart</button>
@@ -1042,6 +1044,7 @@ function FrameworkCard() {
 
 // ── Indicators card ──────────────────────────────────────────────────────────
 function IndicatorsCard({ indicators, onAdd, onEdit, onRemove, onSuggest, suggesting }) {
+  const { aiReady } = useAiStatus();
   const [latest, setLatest] = useState({}); // { [indicator.name]: { value, error } }
 
   useEffect(() => {
@@ -1080,7 +1083,7 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove, onSuggest, sugges
         </div>
         <div className="comp-card__head-actions">
           {onSuggest && (
-            <button className="ai-btn" onClick={onSuggest} disabled={suggesting}>
+            <button className="ai-btn" onClick={onSuggest} disabled={suggesting || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}>
               {suggesting ? 'Asking AI…' : 'Suggest with AI'}
             </button>
           )}
@@ -1144,6 +1147,7 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove, onSuggest, sugges
 // Tables are chart-like recipes rendered with the `table` chart type →
 // {{ table_<name> }} placeholders in the Word template.
 function TablesCard({ tables, onAdd, onEdit, onRemove, onSuggest, onPreview, suggesting }) {
+  const { aiReady } = useAiStatus();
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -1152,7 +1156,7 @@ function TablesCard({ tables, onAdd, onEdit, onRemove, onSuggest, onPreview, sug
           <div className="comp-card__sub">Tabular breakdowns → <code>{'{{ table_<name> }}'}</code> token in Word template</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest} disabled={suggesting}>
+          <button className="ai-btn" onClick={onSuggest} disabled={suggesting || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}>
             {suggesting ? 'Asking AI…' : 'Suggest with AI'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add table</button>
@@ -1195,6 +1199,7 @@ function TablesCard({ tables, onAdd, onEdit, onRemove, onSuggest, onPreview, sug
 
 // ── Summaries card ───────────────────────────────────────────────────────────
 function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesting, onPreview }) {
+  const { aiReady } = useAiStatus();
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -1203,7 +1208,7 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesti
           <div className="comp-card__sub">Text paragraphs → <code>{'{{ summary_<name> }}'}</code> placeholders. Composed by the AI narrative.</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest} disabled={suggesting}>
+          <button className="ai-btn" onClick={onSuggest} disabled={suggesting || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}>
             {suggesting ? 'Asking AI…' : 'Suggest with AI'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add summary</button>
@@ -1247,6 +1252,7 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesti
 
 // ── Views card ───────────────────────────────────────────────────────────────
 function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest, onPreview, suggesting }) {
+  const { aiReady } = useAiStatus();
   const [dims, setDims] = useState({}); // { [view.name]: { rows, cols, error } }
 
   useEffect(() => {
@@ -1283,7 +1289,7 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest, onPreview, sugge
           <div className="comp-card__sub">Virtual data tables — computed once, reused by charts, summaries, and indicators.</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest} disabled={suggesting}>
+          <button className="ai-btn" onClick={onSuggest} disabled={suggesting || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}>
             {suggesting ? 'Asking AI…' : 'Suggest with AI'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add view</button>

@@ -20,10 +20,11 @@ export function isHidden(q) {
 // Build a nested group tree from a flat list of items.
 //   getPath(item)   → slash-delimited group path string ("" / null → top level)
 //   getHidden(item) → boolean (item goes in the node's `hidden` bucket vs `visible`)
-// Returns an array of top-level nodes. Each node:
-//   { name, path, depth, visible: [item], hidden: [item], children: [node] }
-export function buildGroupTree(items, { getPath, getHidden }) {
-  const root = { name: '', path: '', depth: -1, visible: [], hidden: [], children: [], _kids: new Map() };
+//   getPii(item)    → optional boolean (non-hidden items go in the `pii` bucket)
+// Precedence: hidden > pii > visible. Returns an array of top-level nodes. Each node:
+//   { name, path, depth, visible: [item], hidden: [item], pii: [item], children: [node] }
+export function buildGroupTree(items, { getPath, getHidden, getPii }) {
+  const root = { name: '', path: '', depth: -1, visible: [], hidden: [], pii: [], children: [], _kids: new Map() };
   for (const item of items) {
     const raw = (getPath(item) || '').trim();
     const segments = raw ? raw.split('/').map(s => s.trim()).filter(Boolean) : [NO_GROUP];
@@ -33,29 +34,34 @@ export function buildGroupTree(items, { getPath, getHidden }) {
       acc.push(seg);
       let child = node._kids.get(seg);
       if (!child) {
-        child = { name: seg, path: acc.join('/'), depth: node.depth + 1, visible: [], hidden: [], children: [], _kids: new Map() };
+        child = { name: seg, path: acc.join('/'), depth: node.depth + 1, visible: [], hidden: [], pii: [], children: [], _kids: new Map() };
         node._kids.set(seg, child);
         node.children.push(child);
       }
       node = child;
     }
-    (getHidden(item) ? node.hidden : node.visible).push(item);
+    const bucket = (getHidden && getHidden(item)) ? 'hidden'
+                 : (getPii && getPii(item)) ? 'pii'
+                 : 'visible';
+    node[bucket].push(item);
   }
   const strip = (n) => { delete n._kids; n.children.forEach(strip); return n; };
   root.children.forEach(strip);
   return root.children;
 }
 
-// Recursive counts of visible/hidden items at a node and all its descendants.
+// Recursive counts of visible/hidden/pii items at a node and all its descendants.
 export function nodeCounts(node) {
   let visible = node.visible.length;
   let hidden = node.hidden.length;
+  let pii = (node.pii || []).length;
   for (const c of node.children) {
     const cc = nodeCounts(c);
     visible += cc.visible;
     hidden += cc.hidden;
+    pii += cc.pii;
   }
-  return { visible, hidden };
+  return { visible, hidden, pii };
 }
 
 // Map a data-column name back to its source question. Profile/Validate work off

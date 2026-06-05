@@ -402,6 +402,24 @@ class AITestPayload(BaseModel):
     model: str = "gpt-4o"
     base_url: Optional[str] = None
 
+
+# AI-connection verification: a successful /api/ai/test records the fingerprint of the
+# tested config here, and /api/ai/status reports whether the SAVED ai config matches a
+# verified one. Process-memory only (a server restart re-locks until re-tested); changing
+# any of provider/model/base_url/key invalidates it automatically.
+import hashlib as _hashlib
+_ai_verified: set = set()
+
+
+def _ai_fingerprint(provider: str, model: str, base_url, api_key: str) -> str:
+    """Stable fingerprint of an AI config, with env: keys resolved so changing the
+    underlying secret invalidates a prior verification."""
+    key = (api_key or "").strip()
+    if key.startswith("env:"):
+        key = os.environ.get(key[4:].strip(), "")
+    raw = "|".join([(provider or "openai").lower(), model or "", base_url or "", key])
+    return _hashlib.sha256(raw.encode()).hexdigest()
+
 class AISuggestPayload(BaseModel):
     kind: str          # "chart" | "indicator"
     prompt: str
@@ -523,7 +541,25 @@ async def test_ai(payload: AITestPayload):
         raise
     except Exception as e:
         result = {"ok": False, "tokens_used": None, "quota": None, "message": str(e)}
+    if result.get("ok"):
+        _ai_verified.add(_ai_fingerprint(payload.provider, payload.model, payload.base_url, payload.api_key))
     return result
+
+
+@app.get("/api/ai/status")
+def ai_status():
+    """Whether the SAVED ai config is configured and has passed /api/ai/test.
+    Drives the UI guard that locks AI buttons until the connection is verified."""
+    cfg = _load_cfg()
+    ai = cfg.get("ai", {}) or {}
+    provider = ai.get("provider", "openai")
+    model = ai.get("model", "")
+    base_url = ai.get("base_url")
+    raw_key = (ai.get("api_key", "") or "").strip()
+    resolved = os.environ.get(raw_key[4:].strip(), "") if raw_key.startswith("env:") else raw_key
+    configured = bool(provider and resolved)
+    verified = configured and _ai_fingerprint(provider, model, base_url, raw_key) in _ai_verified
+    return {"configured": configured, "verified": verified}
 
 def _build_suggest_prompts(kind: str, prompt: str, questions: list):
     col_parts = []
