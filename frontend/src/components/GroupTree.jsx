@@ -20,7 +20,7 @@ function Chevron() {
   );
 }
 
-export default function GroupTree({ tree, renderVisible, renderHidden, renderHeaderExtra, defaultOpenDepth = 0 }) {
+export default function GroupTree({ tree, renderVisible, renderHidden, renderPii, renderHeaderExtra, defaultOpenDepth = 0 }) {
   const [open, setOpen] = useState(() => {
     const s = new Set();
     const walk = (nodes) => nodes.forEach(n => { if (n.depth <= defaultOpenDepth) s.add(n.path); walk(n.children); });
@@ -28,6 +28,7 @@ export default function GroupTree({ tree, renderVisible, renderHidden, renderHea
     return s;
   });
   const [openHidden, setOpenHidden] = useState(() => new Set());
+  const [openPii, setOpenPii] = useState(() => new Set());
 
   const toggle = (setSet, key) => setSet(prev => {
     const next = new Set(prev);
@@ -39,6 +40,8 @@ export default function GroupTree({ tree, renderVisible, renderHidden, renderHea
     const counts = nodeCounts(node);
     const isOpen = open.has(node.path);
     const hiddenOpen = openHidden.has(node.path);
+    const piiOpen = openPii.has(node.path);
+    const pii = node.pii || [];
     return (
       <div className="gt-node" data-open={isOpen} data-depth={node.depth} key={node.path}>
         <div className="gt-node__head" onClick={() => toggle(setOpen, node.path)}>
@@ -46,6 +49,7 @@ export default function GroupTree({ tree, renderVisible, renderHidden, renderHea
           <span className="gt-node__name">{node.name}</span>
           <span className="gt-node__count">
             {counts.visible}{counts.hidden ? <span className="gt-node__hiddencount"> · {counts.hidden} hidden</span> : null}
+            {counts.pii ? <span className="gt-node__piicount"> · {counts.pii} PII</span> : null}
           </span>
           {renderHeaderExtra && <span className="gt-node__extra">{renderHeaderExtra(node)}</span>}
         </div>
@@ -53,6 +57,20 @@ export default function GroupTree({ tree, renderVisible, renderHidden, renderHea
           <div className="gt-node__body">
             {node.visible.length > 0 && renderVisible(node.visible, node)}
             {node.children.map(renderNode)}
+            {pii.length > 0 && (
+              <div className="gt-hidden gt-pii" data-open={piiOpen}>
+                <div className="gt-hidden__head" onClick={() => toggle(setOpenPii, node.path)}>
+                  <Chevron />
+                  <span>PII ({pii.length})</span>
+                  <span className="gt-hidden__hint">flagged personal data</span>
+                </div>
+                {piiOpen && (
+                  <div className="gt-hidden__body">
+                    {(renderPii || renderVisible)(pii, node)}
+                  </div>
+                )}
+              </div>
+            )}
             {node.hidden.length > 0 && (
               <div className="gt-hidden" data-open={hiddenOpen}>
                 <div className="gt-hidden__head" onClick={() => toggle(setOpenHidden, node.path)}>
