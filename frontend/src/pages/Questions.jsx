@@ -150,6 +150,9 @@ export default function Questions() {
       setReviewModal({ kind, title, hint, noun, items });
     } catch (e) {
       toast(String(e.message || e), 'err');
+      // The AI call failed (bad key, no credits, …) — the server re-locked the AI
+      // connection; refresh status so the AI buttons disable until re-tested.
+      window.dispatchEvent(new CustomEvent('databridge:ai-recheck'));
     } finally {
       setSuggesting(null);
     }

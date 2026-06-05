@@ -403,12 +403,12 @@ class AITestPayload(BaseModel):
     base_url: Optional[str] = None
 
 
-# AI-connection verification: a successful /api/ai/test records the fingerprint of the
-# tested config here, and /api/ai/status reports whether the SAVED ai config matches a
-# verified one. Process-memory only (a server restart re-locks until re-tested); changing
-# any of provider/model/base_url/key invalidates it automatically.
+# AI-connection verification, persisted per project in projects.ai_verified_fingerprint.
+# A successful /api/ai/test stores the tested config's fingerprint on the active project;
+# /api/ai/status reports verified when the SAVED config matches the stored fingerprint.
+# Changing provider/model/base_url/key changes the fingerprint (auto-relock), and an
+# AI-call failure clears it (POST /api/ai/invalidate / endpoint-side on failure).
 import hashlib as _hashlib
-_ai_verified: set = set()
 
 
 def _ai_fingerprint(provider: str, model: str, base_url, api_key: str) -> str:
@@ -419,6 +419,24 @@ def _ai_fingerprint(provider: str, model: str, base_url, api_key: str) -> str:
         key = os.environ.get(key[4:].strip(), "")
     raw = "|".join([(provider or "openai").lower(), model or "", base_url or "", key])
     return _hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _ai_fingerprint_for(ai: dict) -> str:
+    ai = ai or {}
+    return _ai_fingerprint(ai.get("provider", "openai"), ai.get("model", ""),
+                           ai.get("base_url"), ai.get("api_key", ""))
+
+
+def _invalidate_ai(request) -> None:
+    """Clear the active project's verified AI fingerprint — re-locks all AI buttons
+    until the connection is tested working again. Best-effort, never raises."""
+    try:
+        with db_session.SessionLocal() as _db:
+            _user, _project = _active_project(request, _db)
+            if _project is not None and _project.ai_verified_fingerprint is not None:
+                db_repo.set_ai_verified(_db, _project, None)
+    except Exception:  # noqa: BLE001 — invalidation must never break the caller
+        pass
 
 class AISuggestPayload(BaseModel):
     kind: str          # "chart" | "indicator"
@@ -448,7 +466,7 @@ async def save_questions(payload: QuestionsPayload, request: Request):
     return {"ok": True, "saved": len(payload.questions)}
 
 @app.post("/api/questions/suggest-hidden")
-async def suggest_hidden_questions():
+async def suggest_hidden_questions(request: Request):
     """Ask the configured AI provider which questions are non-analytical
     display-only fields that should be hidden by default.
 
@@ -463,11 +481,12 @@ async def suggest_hidden_questions():
         raise HTTPException(status_code=400, detail=str(e))
     try:
         return suggest_hidden(cfg)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 — an AI-call failure re-locks the AI buttons
+        _invalidate_ai(request)
         raise HTTPException(status_code=500, detail=f"suggest-hidden failed: {e}")
 
 @app.post("/api/questions/suggest-pii")
-async def suggest_pii_questions():
+async def suggest_pii_questions(request: Request):
     """Ask the configured AI provider which questions likely contain
     personally-identifiable information (PII).
 
@@ -482,11 +501,12 @@ async def suggest_pii_questions():
         raise HTTPException(status_code=400, detail=str(e))
     try:
         return suggest_pii(cfg)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 — an AI-call failure re-locks the AI buttons
+        _invalidate_ai(request)
         raise HTTPException(status_code=500, detail=f"suggest-pii failed: {e}")
 
 @app.post("/api/ai/test")
-async def test_ai(payload: AITestPayload):
+async def test_ai(payload: AITestPayload, request: Request):
     api_key = payload.api_key.strip()
     if api_key.startswith("env:"):
         api_key = os.environ.get(api_key[4:].strip(), "")
@@ -541,25 +561,40 @@ async def test_ai(payload: AITestPayload):
         raise
     except Exception as e:
         result = {"ok": False, "tokens_used": None, "quota": None, "message": str(e)}
-    if result.get("ok"):
-        _ai_verified.add(_ai_fingerprint(payload.provider, payload.model, payload.base_url, payload.api_key))
+    # Persist the verified fingerprint on the active project (survives restarts). On a
+    # failed probe, clear it so the AI buttons stay locked.
+    fp = _ai_fingerprint(payload.provider, payload.model, payload.base_url, payload.api_key)
+    with db_session.SessionLocal() as _db:
+        _user, _project = _active_project(request, _db)
+        if _project is not None:
+            db_repo.set_ai_verified(_db, _project, fp if result.get("ok") else None)
     return result
 
 
 @app.get("/api/ai/status")
-def ai_status():
-    """Whether the SAVED ai config is configured and has passed /api/ai/test.
-    Drives the UI guard that locks AI buttons until the connection is verified."""
-    cfg = _load_cfg()
-    ai = cfg.get("ai", {}) or {}
+def ai_status(request: Request):
+    """Whether the SAVED ai config is configured and has passed /api/ai/test for the
+    ACTIVE project. Verification is persisted per project (projects.ai_verified_fingerprint),
+    so it survives restarts and re-locks when the config changes or an AI call fails."""
+    with db_session.SessionLocal() as _db:
+        _user, _project = _active_project(request, _db)
+        ai = (_project.config or {}).get("ai", {}) if _project is not None else (_load_cfg().get("ai", {}) or {})
+        stored = _project.ai_verified_fingerprint if _project is not None else None
+    ai = ai or {}
     provider = ai.get("provider", "openai")
-    model = ai.get("model", "")
-    base_url = ai.get("base_url")
     raw_key = (ai.get("api_key", "") or "").strip()
     resolved = os.environ.get(raw_key[4:].strip(), "") if raw_key.startswith("env:") else raw_key
     configured = bool(provider and resolved)
-    verified = configured and _ai_fingerprint(provider, model, base_url, raw_key) in _ai_verified
+    verified = bool(configured and stored and stored == _ai_fingerprint_for(ai))
     return {"configured": configured, "verified": verified}
+
+
+@app.post("/api/ai/invalidate")
+def ai_invalidate(request: Request):
+    """Mark the active project's AI connection unverified (re-locks AI buttons until
+    re-tested). Called by the UI when an AI action fails against the provider."""
+    _invalidate_ai(request)
+    return {"ok": True}
 
 def _build_suggest_prompts(kind: str, prompt: str, questions: list):
     col_parts = []
@@ -695,7 +730,7 @@ def _build_suggest_prompts(kind: str, prompt: str, questions: list):
     return system, user
 
 @app.post("/api/ai/suggest")
-async def ai_suggest(payload: AISuggestPayload):
+async def ai_suggest(payload: AISuggestPayload, request: Request):
     if not CONFIG_PATH.exists():
         raise HTTPException(status_code=400, detail="config.yml not found")
     async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -756,7 +791,8 @@ async def ai_suggest(payload: AISuggestPayload):
         return {"ok": True, "result": result}
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — an AI-call failure re-locks the AI buttons
+        _invalidate_ai(request)
         raise HTTPException(status_code=500, detail=str(e))
 
 def _pick_preview_df(df, questions_needed, _questions_cfg=None):
@@ -2007,7 +2043,7 @@ class AskRefinePayload(BaseModel):
 
 
 @app.post("/api/ask")
-async def api_ask(payload: AskPayload):
+async def api_ask(payload: AskPayload, request: Request):
     """Answer a natural-language question with 1-3 locally-rendered, grounded charts."""
     question = (payload.question or "").strip()
     if not question:
@@ -2017,7 +2053,11 @@ async def api_ask(payload: AskPayload):
         df, repeats = load_processed_data(cfg)
     except FileNotFoundError:
         return {"proposals": [], "skipped": [], "message": "No data yet — run Download first."}
-    return ask_engine.ask(question, cfg, df, repeats)
+    try:
+        return ask_engine.ask(question, cfg, df, repeats)
+    except Exception as e:  # noqa: BLE001 — an AI-call failure re-locks the AI buttons
+        _invalidate_ai(request)
+        raise HTTPException(status_code=500, detail=f"ask failed: {e}")
 
 
 @app.post("/api/ask/save")
@@ -2035,7 +2075,7 @@ async def api_ask_save(payload: AskSavePayload, request: Request):
 
 
 @app.post("/api/ask/refine")
-async def api_ask_refine(payload: AskRefinePayload):
+async def api_ask_refine(payload: AskRefinePayload, request: Request):
     """Refine an existing Ask answer with a natural-language instruction."""
     instruction = (payload.instruction or "").strip()
     if not instruction:
@@ -2045,7 +2085,11 @@ async def api_ask_refine(payload: AskRefinePayload):
         df, repeats = load_processed_data(cfg)
     except FileNotFoundError:
         return {"proposal": None, "skipped": None, "message": "No data yet — run Download first."}
-    return ask_engine.refine_item(payload.recipe, payload.kind, instruction, cfg, df, repeats)
+    try:
+        return ask_engine.refine_item(payload.recipe, payload.kind, instruction, cfg, df, repeats)
+    except Exception as e:  # noqa: BLE001 — an AI-call failure re-locks the AI buttons
+        _invalidate_ai(request)
+        raise HTTPException(status_code=500, detail=f"refine failed: {e}")
 
 
 class FrameworkPayload(BaseModel):

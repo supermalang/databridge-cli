@@ -69,6 +69,7 @@ export default function Composition({ sections } = {}) {
   const secs = Array.isArray(sections) && sections.length ? sections : ALL_SECTIONS;
   const has = (k) => secs.includes(k);
   const toast = useToast();
+  const { markAiFailed } = useAiStatus();
   const [cfg,        setCfg]       = useState({});
   const [filters,    setFilters]   = useState([]);
   const [charts,     setCharts]    = useState([]);
@@ -114,6 +115,12 @@ export default function Composition({ sections } = {}) {
       setSuggesting(null);
       if (status === 'error') {
         const errLine = [...lines].reverse().find(l => /^[A-Z][A-Za-z]+(Error|Exception):/.test(l.trim()));
+        // If the failure looks like an AI/provider error (bad key, no credits, rate
+        // limit, …) re-lock the AI connection until it's tested working again.
+        const blob = (errLine || lines.map(l => l.line || l).join(' ')).toLowerCase();
+        if (/api[ _-]?key|authenticat|unauthorized|\b401\b|rate.?limit|\b429\b|quota|credit|insufficient|openai|anthropic|connection|timed? ?out/.test(blob)) {
+          markAiFailed();
+        }
         toast(errLine ? errLine.trim() : `${spec.label} suggestion failed (no error detail in logs)`, 'err');
         return;
       }
