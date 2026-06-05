@@ -164,6 +164,12 @@ def update_project_config(db: Session, project: Project, config: dict, expected_
     return project
 
 
+def set_ai_verified(db: Session, project: Project, fingerprint: Optional[str]) -> None:
+    """Persist (or clear, with None) the AI-config fingerprint verified for a project."""
+    project.ai_verified_fingerprint = fingerprint
+    db.commit()
+
+
 def set_active_project(db: Session, user: User, project_id) -> User:
     if get_project_for_user(db, user, project_id) is None:
         raise AccessError("not a member of the project's org")

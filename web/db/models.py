@@ -59,6 +59,10 @@ class Project(Base):
     slug: Mapped[str] = mapped_column(String(255), nullable=False)
     config: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
     config_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Fingerprint of the AI config last verified via /api/ai/test (provider+model+base_url+
+    # resolved key). The AI guard treats the project as "verified" when this matches the
+    # current saved config; an AI-call failure clears it, re-locking the AI buttons.
+    ai_verified_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 

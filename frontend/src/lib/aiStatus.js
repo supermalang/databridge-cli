@@ -27,9 +27,21 @@ export function AiStatusProvider({ children }) {
   useEffect(() => {
     refresh();
     // Saving config (or switching project) can change the AI config → re-evaluate.
+    // 'ai-recheck' fires after an AI action fails (the backend may have re-locked).
     const onChange = () => refresh();
     window.addEventListener('databridge:data-changed', onChange);
-    return () => window.removeEventListener('databridge:data-changed', onChange);
+    window.addEventListener('databridge:ai-recheck', onChange);
+    return () => {
+      window.removeEventListener('databridge:data-changed', onChange);
+      window.removeEventListener('databridge:ai-recheck', onChange);
+    };
+  }, [refresh]);
+
+  // Mark the AI connection failed (e.g. a suggest run errored against the provider):
+  // clear the saved verification server-side and re-read status, re-locking AI buttons.
+  const markAiFailed = useCallback(async () => {
+    try { await fetch('/api/ai/invalidate', { method: 'POST' }); } catch { /* ignore */ }
+    await refresh();
   }, [refresh]);
 
   // Run the real probe against the given (live) ai config. Always returns a
@@ -67,7 +79,7 @@ export function AiStatusProvider({ children }) {
     configured: state.configured,
     verified: state.verified,
     aiReady: !!(state.configured && state.verified),
-    testing, refresh, testAi,
+    testing, refresh, testAi, markAiFailed,
   };
   return createElement(AiStatusContext.Provider, { value }, children);
 }

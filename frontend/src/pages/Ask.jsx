@@ -23,10 +23,16 @@ export default function Ask() {
         body: JSON.stringify({ question }),
       });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) { setError(data.detail || `Request failed (${r.status})`); return; }
+      if (!r.ok) {
+        setError(data.detail || `Request failed (${r.status})`);
+        // AI call failed → server re-locked the connection; refresh the guard.
+        window.dispatchEvent(new CustomEvent('databridge:ai-recheck'));
+        return;
+      }
       setResult(data);
     } catch (err) {
       setError(err.message || 'Network error');
+      window.dispatchEvent(new CustomEvent('databridge:ai-recheck'));
     } finally {
       setLoading(false);
     }
