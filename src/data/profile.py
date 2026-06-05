@@ -108,7 +108,12 @@ def profile_table(df: pd.DataFrame, role_map: Dict[str, str]) -> Dict:
 def profile_dataset(cfg: Dict, main_df: pd.DataFrame,
                     repeat_tables: Optional[Dict[str, pd.DataFrame]]) -> Dict[str, Dict]:
     """Profile main + every base table. role_map is built once from cfg questions
-    (export_label -> category) and applied to every table's columns."""
+    (export_label -> category) and applied to every table's columns.
+
+    Hidden and PII columns are excluded so the profile matches Load/Analyze/Present
+    (which never surface them)."""
+    from src.utils.config import drop_excluded_columns
+    main_df, repeat_tables = drop_excluded_columns(cfg, main_df, repeat_tables)
     role_map: Dict[str, str] = {}
     for q in cfg.get("questions", []) or []:
         label = q.get("export_label") or q.get("label") or q.get("kobo_key")

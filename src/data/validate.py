@@ -223,6 +223,10 @@ def validate_dataset(cfg: Dict, df: pd.DataFrame, repeat_tables: Dict[str, pd.Da
     if df is None:
         df = pd.DataFrame()
 
+    # Exclude hidden + PII columns so validation matches Load/Analyze/Present.
+    from src.utils.config import drop_excluded_columns
+    df, repeat_tables = drop_excluded_columns(cfg, df, repeat_tables)
+
     findings: List[Dict] = []
     findings += compute_missingness(df)
     findings += find_numeric_outliers(df, questions)
