@@ -13,6 +13,7 @@ Each detector returns a list of "finding" dicts with this shape:
     }
 """
 from __future__ import annotations
+import re
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -160,24 +161,32 @@ def find_type_issues(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]:
     return findings
 
 
-# Regex-style word fragments that strongly suggest a column holds PII.
-# Match case-insensitive on the whole column name string.
+# Word fragments that suggest a column holds PII. Matched at WORD BOUNDARIES (the start
+# of a word/token), case-insensitive — NOT as raw substrings. So "lat" flags "Latitude"
+# and "gps_lat" but not "re·lat·ive"; "name" flags "Respondent name"/"user_name" but not
+# "filename"/"surname". An "_" in a pattern matches any separator (space, _ or -).
 _PII_PATTERNS = [
     "name", "phone", "tel", "mobile", "email", "address",
     "gps", "lat", "lon", "coord", "geo",
     "id_number", "national_id", "passport",
     "dob", "birth", "age_exact",
 ]
+# A token starts after start-of-string or any non-alphanumeric (space, _, -, /, …).
+# Using a lookbehind (rather than \b) so '_' counts as a separator — \b would treat
+# "user_name" as one word and miss the 'name' token.
+_PII_REGEX = re.compile(
+    r"(?<![a-zA-Z0-9])(" + "|".join(p.replace("_", r"[\s_-]+") for p in _PII_PATTERNS) + r")",
+    re.IGNORECASE,
+)
 
 
 def find_potential_pii(df: pd.DataFrame, questions: List[Dict]) -> List[Dict]:
-    """Suggest columns that LOOK like PII based on their column name."""
+    """Suggest columns whose NAME looks like PII (word-boundary match, not substring)."""
     if df is None or len(df) == 0:
         return []
     findings: List[Dict] = []
     for col in df.columns:
-        lower = str(col).lower()
-        if any(p in lower for p in _PII_PATTERNS):
+        if _PII_REGEX.search(str(col)):
             findings.append({
                 "severity": "info",
                 "column":   str(col),
