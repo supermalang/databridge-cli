@@ -71,12 +71,19 @@ export default function Sources({ section = 'setup' } = {}) {
       await saveConfigText(text);
       setOriginal(text);
       setYamlText(text);
+      // Re-check AI status: saving may make a just-tested config the saved one,
+      // which unlocks the AI buttons without a manual page refresh.
+      window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'sources' } }));
       toast('Saved ✓', 'ok');
     } catch (e) { toast(e.message, 'err'); }
   };
 
   const saveYaml = async () => {
-    try { await saveConfigText(yamlText); toast('Saved ✓', 'ok'); reload(); }
+    try {
+      await saveConfigText(yamlText);
+      window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'sources' } }));
+      toast('Saved ✓', 'ok'); reload();
+    }
     catch (e) { toast(e.message, 'err'); }
   };
 

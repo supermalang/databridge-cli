@@ -511,6 +511,7 @@ async def test_ai(payload: AITestPayload, request: Request):
     if api_key.startswith("env:"):
         api_key = os.environ.get(api_key[4:].strip(), "")
     if not api_key:
+        _invalidate_ai(request)   # a failed test must re-lock the AI buttons
         raise HTTPException(status_code=400, detail="API key not set or not resolved.")
     provider = payload.provider.lower()
     result = {"ok": False, "tokens_used": None, "quota": None, "message": ""}
@@ -558,6 +559,7 @@ async def test_ai(payload: AITestPayload, request: Request):
             result = {"ok": True, "tokens_used": used, "quota": quota_msg,
                       "message": f"Connection OK · {used} tokens used · {quota_msg}"}
     except HTTPException:
+        _invalidate_ai(request)   # a setup failure (e.g. missing provider package) re-locks too
         raise
     except Exception as e:
         result = {"ok": False, "tokens_used": None, "quota": None, "message": str(e)}

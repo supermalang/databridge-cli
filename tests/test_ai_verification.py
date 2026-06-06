@@ -53,6 +53,34 @@ def test_changing_ai_config_relocks(_isolated_base):
         assert c.get("/api/ai/status").json()["verified"] is False
 
 
+def test_ai_test_empty_key_relocks(_isolated_base):
+    """A failed /api/ai/test must re-lock even when the failure surfaces as an
+    HTTPException (here: the live key is empty → 400 raised before the probe).
+    Regression: the early raise used to bypass the verification-clearing block,
+    leaving a previously-verified project verified and the AI buttons enabled."""
+    with TestClient(wm.app) as c:
+        _set_project_ai(verified=True)
+        assert c.get("/api/ai/status").json()["verified"] is True
+        r = c.post("/api/ai/test", json={**AI, "api_key": ""})
+        assert r.status_code == 400
+        assert c.get("/api/ai/status").json()["verified"] is False
+
+
+def test_ai_test_missing_provider_package_relocks(_isolated_base, monkeypatch):
+    """A failed /api/ai/test via a missing provider package (HTTPException 400)
+    must also re-lock the active project."""
+    import sys
+    import types
+    # `from openai import OpenAI` raises ImportError → endpoint raises HTTPException(400).
+    monkeypatch.setitem(sys.modules, "openai", types.ModuleType("openai"))
+    with TestClient(wm.app) as c:
+        _set_project_ai(verified=True)
+        assert c.get("/api/ai/status").json()["verified"] is True
+        r = c.post("/api/ai/test", json=AI)
+        assert r.status_code == 400
+        assert c.get("/api/ai/status").json()["verified"] is False
+
+
 def test_failed_ai_suggest_relocks(_isolated_base, monkeypatch):
     monkeypatch.setattr(wm, "load_config", lambda *a, **k: {"ai": AI, "questions": []})
     import src.reports.ai_pii_suggester as pii_mod

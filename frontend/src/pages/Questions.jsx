@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../components/Toast.jsx';
 import { loadConfig } from '../lib/config.js';
 import { usePerms } from '../lib/perms.js';
@@ -16,6 +16,28 @@ function colName(q) {
 function bareName(q) {
   // The last segment of the kobo_key path — what shows in the NAME column.
   return (q.kobo_key || '').split('/').pop() || '';
+}
+
+// Deterministic name cleanup used to propose unique export labels for duplicates.
+// Derives from a field's unique kobo_key: drops a leading group_ prefix, trailing
+// XLSForm type affixes, and filler/stop words (FR + EN), e.g.
+//   group_permanence_de_la_fin_select → permanence_fin
+const _PREFIX_NOISE = new Set(['group', 'grp', 'section', 'sec', 'repeat', 'rpt', 'q', 'question']);
+const _TYPE_NOISE = new Set([
+  'select', 'one', 'multiple', 'sel', 'int', 'integer', 'number', 'num', 'decimal',
+  'dec', 'text', 'txt', 'note', 'calc', 'calculate', 'calculation', 'date', 'datetime',
+  'time', 'gps', 'geopoint', 'geo', 'geotrace', 'geoshape', 'bool', 'boolean', 'acknowledge',
+]);
+const _STOP = new Set([
+  'de', 'la', 'le', 'les', 'du', 'des', 'un', 'une', 'et', 'ou', 'au', 'aux', 'en',
+  'd', 'l', 'dans', 'avec', 'par', 'pour', 'sur', 'the', 'of', 'and', 'or', 'to', 'in', 'for', 'on',
+]);
+function cleanBase(raw) {
+  let toks = String(raw || '').split(/[^A-Za-z0-9À-ÿ]+/).filter(Boolean).map(t => t.toLowerCase());
+  while (toks.length && _PREFIX_NOISE.has(toks[0])) toks.shift();
+  while (toks.length && _TYPE_NOISE.has(toks[toks.length - 1])) toks.pop();
+  toks = toks.filter(t => !_STOP.has(t));
+  return toks.join('_');
 }
 
 // "5 select_one · 3 decimal · …"
@@ -42,6 +64,12 @@ export default function Questions() {
   const [suggesting, setSuggesting] = useState(null);      // null | 'hidden' | 'pii'
   const [reviewModal, setReviewModal] = useState(null);    // null | { kind, title, hint, noun, items:[{idx,name,label,checked}] }
   const [cfg, setCfg] = useState({});
+  // When a save is blocked by duplicate export labels we "reveal" just the
+  // offending rows: a frozen set of indices (stable membership so an input
+  // doesn't vanish mid-edit) + a bump signal that drives the scroll-into-view.
+  const [revealedDupIdx, setRevealedDupIdx] = useState(null);  // Set<idx> | null
+  const [dupScrollSignal, setDupScrollSignal] = useState(0);
+  const scrollElRef = useRef(null);
 
   const snapshot = (list) =>
     Object.fromEntries(list.map((q, i) => [i, { export_label: q.export_label || '', hidden: isHidden(q), pii: !!q.pii }]));
@@ -92,12 +120,91 @@ export default function Questions() {
 
   useUnsavedGuard(dirtyIndices.size > 0);
 
+  // Live duplicate-export-label detection among analyzed (non-hidden) questions.
+  // colName collisions make charts/exports reference an ambiguous column, so they
+  // block saving. Recomputed on every edit so highlights clear as the user fixes them.
+  const dupInfo = useMemo(() => {
+    const byCol = new Map();   // colName -> [idx, …]
+    (questions || []).forEach((q, i) => {
+      if (isHidden(q)) return;
+      const c = colName(q);
+      if (!c) return;
+      if (!byCol.has(c)) byCol.set(c, []);
+      byCol.get(c).push(i);
+    });
+    const indices = new Set();
+    const cols = [];
+    for (const [c, idxs] of byCol) {
+      if (idxs.length > 1) { cols.push(c); idxs.forEach(i => indices.add(i)); }
+    }
+    return { indices, cols };
+  }, [questions]);
+
+  // Count of revealed rows that are STILL duplicated (frozen membership, live state).
+  const unresolvedDupCount = useMemo(() =>
+    revealedDupIdx ? [...revealedDupIdx].filter(i => dupInfo.indices.has(i)).length : 0,
+    [revealedDupIdx, dupInfo]);
+
+  // Smallest revealed index → the row we scroll into view when the reveal opens.
+  const scrollTargetIdx = useMemo(() =>
+    revealedDupIdx && revealedDupIdx.size ? Math.min(...revealedDupIdx) : null,
+    [revealedDupIdx]);
+
+  // Scroll to the first offender once the revealed rows have rendered (the GroupTree
+  // remounts fully expanded on reveal, so the target row is mounted by commit time).
+  useEffect(() => {
+    if (!dupScrollSignal) return;
+    scrollElRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [dupScrollSignal]);
+
+  const exitReveal = useCallback(() => setRevealedDupIdx(null), []);
+
+  // Deterministic unique-name proposals for the revealed offenders. Each is the
+  // cleaned-up kobo_key, made unique against every other (non-revealed) export
+  // label and against the other proposals in this batch. Stable across edits
+  // (derived from the immutable kobo_key), so the pills don't shuffle while typing.
+  const proposals = useMemo(() => {
+    const map = new Map();
+    if (!revealedDupIdx || !questions) return map;
+    const taken = new Set();
+    questions.forEach((q, i) => { if (!revealedDupIdx.has(i)) { const c = colName(q); if (c) taken.add(c); } });
+    [...revealedDupIdx].sort((a, b) => a - b).forEach(i => {
+      const q = questions[i];
+      const base = cleanBase(bareName(q)) || cleanBase(q.kobo_key) || bareName(q).toLowerCase() || 'field';
+      let name = base, n = 1;
+      while (taken.has(name)) { n += 1; name = `${base}_${n}`; }
+      taken.add(name);
+      map.set(i, name);
+    });
+    return map;
+  }, [revealedDupIdx, questions]);
+
+  // Apply every proposal to the offenders that are still duplicated (leaves rows the
+  // user already fixed by hand untouched). Nothing persists until Save changes.
+  const acceptAllProposals = () => {
+    setQuestions(prev => prev.map((q, i) => {
+      if (revealedDupIdx?.has(i) && dupInfo.indices.has(i)) {
+        const p = proposals.get(i);
+        if (p && p !== (q.export_label || '')) return { ...q, export_label: p };
+      }
+      return q;
+    }));
+    toast('Applied suggested names — review and Save changes', 'ok');
+  };
+
   // Apply filter + search → list of { q, idx }, then build the nested group tree.
   const tree = useMemo(() => {
     if (!questions) return [];
     const sLower = search.trim().toLowerCase();
     const items = [];
     questions.forEach((q, i) => {
+      if (revealedDupIdx) {
+        // Reveal mode: show ONLY the frozen offenders (membership stays stable while
+        // editing so a row doesn't unmount the moment its label becomes unique).
+        if (!revealedDupIdx.has(i)) return;
+        items.push({ q, idx: i });
+        return;
+      }
       if (filter === 'renamed') {
         const dirty = dirtyIndices.has(i);
         if (!dirty && (q.export_label || '') === (q.label || '')) return;
@@ -113,14 +220,14 @@ export default function Questions() {
 
     // Only bucket into the collapsed Hidden / PII sub-sections in the all/renamed
     // views. The Hidden and PII filter views already restrict to those rows, so
-    // they render as normal group rows.
-    const bucket = filter === 'all' || filter === 'renamed';
+    // they render as normal group rows; the reveal view shows every offender plainly.
+    const bucket = !revealedDupIdx && (filter === 'all' || filter === 'renamed');
     return buildGroupTree(items, {
       getPath: ({ q }) => q.group,
       getHidden: ({ q }) => (bucket ? isHidden(q) : false),
       getPii: ({ q }) => (bucket ? !!q.pii : false),
     });
-  }, [questions, filter, search, dirtyIndices]);
+  }, [questions, filter, search, dirtyIndices, revealedDupIdx]);
 
   const setExportLabel = (idx, value) => {
     setQuestions(prev => prev.map((q, i) => (i === idx ? { ...q, export_label: value } : q)));
@@ -192,19 +299,16 @@ export default function Questions() {
 
   const save = async () => {
     // Guard against export_label collisions among analyzed (non-hidden) questions —
-    // duplicates make charts/exports reference an ambiguous column.
-    const byCol = new Map();
-    for (const q of (questions || [])) {
-      if (isHidden(q)) continue;
-      const c = colName(q);
-      if (!c) continue;
-      byCol.set(c, (byCol.get(c) || 0) + 1);
-    }
-    const dups = [...byCol.entries()].filter(([, n]) => n > 1).map(([c]) => c);
-    if (dups.length) {
-      toast(`Fix duplicate export labels before saving: ${dups.slice(0, 5).join(', ')}${dups.length > 5 ? '…' : ''}`, 'err');
+    // duplicates make charts/exports reference an ambiguous column. Reveal the
+    // offending rows (highlighted + scrolled into view) so the user can rename them.
+    if (dupInfo.indices.size) {
+      setSearch('');
+      setRevealedDupIdx(new Set(dupInfo.indices));
+      setDupScrollSignal(s => s + 1);
+      toast(`Fix duplicate export labels before saving: ${dupInfo.cols.slice(0, 5).join(', ')}${dupInfo.cols.length > 5 ? '…' : ''}`, 'err');
       return;
     }
+    setRevealedDupIdx(null);
     try {
       const res = await fetch('/api/questions', {
         method: 'POST',
@@ -238,8 +342,12 @@ export default function Questions() {
           const isUsed = usedInCharts.has(colName(q));
           const hidden = isHidden(q);
           const pii = !!q.pii;
+          const liveDup = dupInfo.indices.has(idx);
+          const isScrollTarget = idx === scrollTargetIdx;
           return (
-            <tr key={idx}>
+            <tr key={idx} id={`q-row-${idx}`}
+                ref={isScrollTarget ? scrollElRef : undefined}
+                className={liveDup ? 'q-row--dup' : undefined}>
               <td className="q-table__name">
                 {bareName(q)}
                 {pii && <span className="q-pii-badge" title="Flagged as PII — excluded from AI metadata">PII</span>}
@@ -252,11 +360,22 @@ export default function Questions() {
                 <input
                   className="q-export-input"
                   data-dirty={dirty}
+                  data-dup={liveDup || undefined}
+                  title={liveDup ? 'Duplicate export label — rename so it is unique' : undefined}
                   value={q.export_label || ''}
                   placeholder={q.label || q.kobo_key}
                   onChange={e => setExportLabel(idx, e.target.value)}
                   disabled={hidden}
                 />
+                {liveDup && proposals.get(idx) && proposals.get(idx) !== (q.export_label || '') && (
+                  <div className="q-proposal">
+                    <span className="q-proposal__old">{colName(q)}</span>
+                    <span className="q-proposal__arrow">→</span>
+                    <code className="q-proposal__new">{proposals.get(idx)}</code>
+                    <button type="button" className="q-proposal__use"
+                            onClick={() => setExportLabel(idx, proposals.get(idx))}>Use</button>
+                  </div>
+                )}
               </td>
               <td>
                 <div className="q-row-actions">
@@ -354,17 +473,17 @@ export default function Questions() {
         <div className="q-toolbar__left">
           <div className="q-search">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>
-            <input placeholder="Search by name or label..." value={search} onChange={e => setSearch(e.target.value)} />
+            <input placeholder="Search by name or label..." value={search} onChange={e => { setSearch(e.target.value); exitReveal(); }} />
           </div>
           <div className="config-view-toggle">
-            <button className={`view-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>All</button>
-            <button className={`view-btn ${filter === 'renamed' ? 'active' : ''}`} onClick={() => setFilter('renamed')}>
+            <button className={`view-btn ${filter === 'all' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('all'); exitReveal(); }}>All</button>
+            <button className={`view-btn ${filter === 'renamed' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('renamed'); exitReveal(); }}>
               Renamed <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalRenamed})</span>
             </button>
-            <button className={`view-btn ${filter === 'hidden' ? 'active' : ''}`} onClick={() => setFilter('hidden')}>
+            <button className={`view-btn ${filter === 'hidden' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('hidden'); exitReveal(); }}>
               Hidden <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalHidden})</span>
             </button>
-            <button className={`view-btn ${filter === 'pii' ? 'active' : ''}`} onClick={() => setFilter('pii')}>
+            <button className={`view-btn ${filter === 'pii' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('pii'); exitReveal(); }}>
               PII <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalPii})</span>
             </button>
           </div>
@@ -386,9 +505,33 @@ export default function Questions() {
         </div>
       </div>
 
+      {revealedDupIdx && (
+        <div className="dup-banner" role="alert">
+          <div className="dup-banner__text">
+            {unresolvedDupCount > 0 ? (
+              <>
+                <b>{unresolvedDupCount} field{unresolvedDupCount === 1 ? '' : 's'}</b> still share a duplicate export
+                label. Accept a suggested name (<b>Use</b> / <b>Accept all proposals</b>) or rename each manually,
+                then Save changes.
+              </>
+            ) : (
+              <>All duplicates resolved — click <b>Save changes</b> to continue.</>
+            )}
+          </div>
+          <div className="dup-banner__actions">
+            {unresolvedDupCount > 0 && (
+              <button className="btn btn-primary btn-sm" onClick={acceptAllProposals}>Accept all proposals</button>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={exitReveal}>Show all fields</button>
+          </div>
+        </div>
+      )}
+
       <div className="q-groups">
         {tree.length > 0 ? (
           <GroupTree
+            key={revealedDupIdx ? 'reveal' : 'normal'}
+            defaultOpenDepth={revealedDupIdx ? 99 : 0}
             tree={tree}
             renderVisible={renderRows}
             renderHidden={renderRows}
