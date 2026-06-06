@@ -20,6 +20,7 @@ import { listProjects, activateProject, createProject } from './lib/projects.js'
 import { deleteProject as apiDeleteProject } from './lib/members.js';
 import { PermsProvider } from './lib/perms.js';
 import { RunProvider } from './lib/run.js';
+import { DirtyProvider } from './lib/dirty.js';
 import { AiStatusProvider } from './lib/aiStatus.js';
 
 // Composition backs two stages with different card/section sets.
@@ -105,7 +106,17 @@ export default function App() {
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
   const activeRole = activeProject?.role || (isSuperadmin ? 'superadmin' : null);
 
+  // Project switch remounts the keep-alive panes (via the epoch bump below),
+  // which discards any in-progress edits — so confirm first if a page is dirty.
+  const dirtyRef = useRef(false);
   const switchProject = async (id) => {
+    if (id === activeProjectId) { setProjMenuOpen(false); return; }
+    if (dirtyRef.current && !await confirm({
+      title: 'Discard unsaved changes?',
+      message: 'You have unsaved edits on the current page. Switching projects will discard them.',
+      confirmLabel: 'Switch & discard',
+    })) { setProjMenuOpen(false); return; }
+    dirtyRef.current = false;
     await activateProject(id);
     setActiveProjectId(id);
     setProjMenuOpen(false);
@@ -315,6 +326,7 @@ export default function App() {
 
       <PermsProvider value={{ role: activeRole, isSuperadmin }}>
         <RunProvider value={{ run, running, activeCmd }}>
+         <DirtyProvider value={dirtyRef}>
           <AiStatusProvider>
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
               {panes
@@ -333,6 +345,7 @@ export default function App() {
                 ))}
             </div>
           </AiStatusProvider>
+         </DirtyProvider>
         </RunProvider>
       </PermsProvider>
 
