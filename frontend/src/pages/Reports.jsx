@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
 import FileTable from '../components/FileTable.jsx';
 import Modal from '../components/Modal.jsx';
+import { useConfirm } from '../components/ConfirmDialog.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { usePerms } from '../lib/perms.js';
 
 export default function Reports() {
   const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const { canEdit } = usePerms();
   const [reports, setReports] = useState(null);
   const [sessions, setSessions] = useState(null);
@@ -44,14 +46,14 @@ export default function Reports() {
   }, [showCompare]);
 
   const deleteReport = async (name) => {
-    if (!confirm(`Delete ${name}?`)) return;
+    if (!await confirm({ title: 'Delete report?', message: `“${name}” will be permanently deleted. This can’t be undone.` })) return;
     const res = await fetch(`/api/reports/${encodeURIComponent(name)}`, { method: 'DELETE' });
     toast(res.ok ? `Deleted ${name}` : 'Delete failed', res.ok ? 'ok' : 'err');
     loadReports();
   };
 
   const deleteSession = async (sid) => {
-    if (!confirm(`Delete all files from session ${sid}?`)) return;
+    if (!await confirm({ title: 'Delete data session?', message: `All files from session ${sid} will be permanently deleted. This can’t be undone.` })) return;
     const res = await fetch(`/api/data/sessions/${encodeURIComponent(sid)}`, { method: 'DELETE' });
     toast(res.ok ? `Deleted session ${sid}` : 'Delete failed', res.ok ? 'ok' : 'err');
     loadSessions();
@@ -186,6 +188,7 @@ export default function Reports() {
           </div>
         </Modal>
       )}
+      {confirmDialog}
     </div>
   );
 }

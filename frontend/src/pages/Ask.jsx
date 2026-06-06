@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import PageHeader from './PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import EmptyState from '../components/EmptyState.jsx';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
+
+const ASK_EXAMPLES = [
+  'How many submissions by region?',
+  'Show the age distribution',
+  'Average score by site',
+  'How did submissions change over time?',
+  'Which regions had the most responses?',
+];
 
 export default function Ask() {
   const { aiReady } = useAiStatus();
@@ -111,7 +120,27 @@ export default function Ask() {
         </button>
       </form>
 
-      {error && <div style={{ padding: 24, color: 'var(--danger, #b91c1c)' }}>{error}</div>}
+      {/* First-run guidance: what you can ask + one-click examples. */}
+      {!loading && !error && !result && (
+        <EmptyState
+          title="Ask anything about your data"
+          description="Counts, distributions, trends, comparisons and rankings all work. Each answer is computed from your downloaded data — charts and big-number indicators you can save with one click. (Needs an AI connection and a completed Download.)"
+          action={
+            <div className="ask-examples">
+              {ASK_EXAMPLES.map(ex => (
+                <button key={ex} type="button" className="ask-example"
+                        disabled={!aiReady}
+                        onClick={() => setQuestion(ex)}>{ex}</button>
+              ))}
+            </div>
+          }
+        />
+      )}
+
+      {error && (
+        <EmptyState tone="error" title="Couldn’t answer that"
+          description={error.includes('data') ? `${error} — if you haven’t downloaded submissions yet, run Download from the Dashboard first.` : error} />
+      )}
       {result?.message && !(result?.proposals?.length) && (
         <div style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)' }}>{result.message}</div>
       )}

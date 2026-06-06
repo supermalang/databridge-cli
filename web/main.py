@@ -571,6 +571,103 @@ async def test_ai(payload: AITestPayload, request: Request):
     return result
 
 
+class SourceTestPayload(BaseModel):
+    platform: str = "kobo"
+    url: str = ""
+    token: str = ""
+    form_uid: Optional[str] = ""
+
+
+_SCHEMA_GROUP_TYPES = {
+    "begin_group", "end_group", "begin_repeat", "end_repeat",
+    "begin group", "end group", "begin repeat", "end repeat",
+}
+
+
+def _count_schema_fields(schema: dict) -> int:
+    """Count answerable questions in a Kobo asset or Ona form schema.
+    Kobo: {"content": {"survey": [...]}}; Ona: {"children": [...]} (nested)."""
+    if not isinstance(schema, dict):
+        return 0
+    content = schema.get("content")
+    if isinstance(content, dict) and isinstance(content.get("survey"), list):
+        count = 0
+        for r in content["survey"]:
+            if not isinstance(r, dict):
+                continue
+            t = (r.get("type") or "").strip().lower()
+            if t and t not in _SCHEMA_GROUP_TYPES and r.get("name"):
+                count += 1
+        return count
+    if isinstance(schema.get("children"), list):
+        count = 0
+
+        def _walk(children):
+            nonlocal count
+            for ch in children:
+                if not isinstance(ch, dict):
+                    continue
+                if isinstance(ch.get("children"), list):
+                    _walk(ch["children"])
+                elif ch.get("name"):
+                    count += 1
+
+        _walk(schema["children"])
+        return count
+    return 0
+
+
+@app.post("/api/sources/test")
+def test_source(payload: SourceTestPayload):
+    """Live connectivity probe against the configured Kobo/Ona platform.
+    Resolves an env: token, then makes a REAL API call: with a form UID it fetches
+    that form's schema and counts its fields; without one it hits an auth-only
+    endpoint to verify the token. Returns {ok, message, fields, status}. Ungated
+    (a preview-style action), like /api/ai/test."""
+    import requests
+    from src.data.extract import get_client
+
+    token = (payload.token or "").strip()
+    if token.startswith("env:"):
+        token = os.environ.get(token[4:].strip(), "")
+    url = (payload.url or "").strip().rstrip("/")
+    if not url or not token:
+        return {"ok": False, "fields": None, "status": None,
+                "message": "API URL and token are both required."}
+    platform = (payload.platform or "kobo").lower()
+    if platform not in ("kobo", "ona"):
+        platform = "ona" if "ona" in url else "kobo"
+    form_uid = (payload.form_uid or "").strip()
+
+    try:
+        if form_uid:
+            cfg = {"api": {"platform": platform, "url": url, "token": token, "timeout": 15},
+                   "form": {"uid": form_uid}}
+            schema = get_client(cfg).get_form_schema()
+            fields = _count_schema_fields(schema)
+            return {"ok": True, "fields": fields, "status": 200,
+                    "message": f"Connected · {fields} field{'' if fields == 1 else 's'} in form"}
+        probe = f"{url}/assets/?limit=1" if platform == "kobo" else f"{url}/user.json"
+        resp = requests.get(probe, headers={"Authorization": f"Token {token}"}, timeout=15)
+        resp.raise_for_status()
+        return {"ok": True, "fields": None, "status": resp.status_code,
+                "message": "Connected · authentication OK (set a Form UID to count fields)"}
+    except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else None
+        if code in (401, 403):
+            msg = "Authentication failed — check your API token."
+        elif code == 404:
+            msg = "Not found — check the API URL" + (" and Form UID." if form_uid else ".")
+        else:
+            msg = f"Server returned HTTP {code}." if code else str(e)
+        return {"ok": False, "fields": None, "status": code, "message": msg}
+    except requests.RequestException as e:
+        return {"ok": False, "fields": None, "status": None,
+                "message": f"Could not reach the server — check the URL and your network. ({e})"}
+    except Exception as e:
+        return {"ok": False, "fields": None, "status": None, "message": str(e)}
+
+
 @app.get("/api/ai/status")
 def ai_status(request: Request):
     """Whether the SAVED ai config is configured and has passed /api/ai/test for the

@@ -11,6 +11,7 @@ import Reports from './pages/Reports.jsx';
 import Templates from './pages/Templates.jsx';
 import BottomTerminal from './components/BottomTerminal.jsx';
 import Modal from './components/Modal.jsx';
+import { useConfirm } from './components/ConfirmDialog.jsx';
 import ProjectMembersModal from './components/ProjectMembersModal.jsx';
 import { useToast } from './components/Toast.jsx';
 import { useCommand } from './hooks/useCommand.js';
@@ -81,6 +82,7 @@ export default function App() {
   // switches. The topbar terminal button and Home's button both toggle it via
   // the databridge:toggle-terminal event that BottomTerminal listens for.
   const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const [termOpen, setTermOpen] = useState(false);
   const [logLines, setLogLines] = useState([]);
   const [formAlias, setFormAlias] = useState('');
@@ -121,7 +123,11 @@ export default function App() {
     } catch (e) { toast(e.message || 'Create failed', 'err'); }
   };
   const removeProject = async (p) => {
-    if (!confirm(`Delete project "${p.name}"? This removes its data, reports and members.`)) return;
+    if (!await confirm({
+      title: 'Delete project?',
+      message: `“${p.name}” and all of its data, reports and members will be permanently deleted. This can’t be undone.`,
+      confirmLabel: 'Delete project',
+    })) return;
     try {
       await apiDeleteProject(p.id);
       const updated = await refreshProjects();
@@ -254,6 +260,13 @@ export default function App() {
               </div>
             )}
           </div>
+          {running && (
+            <button className="run-indicator" title={`Running ${activeCmd}… — click to view logs`}
+                    onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
+              <span className="status-dot running" />
+              <span className="run-indicator__label">Running {activeCmd}…</span>
+            </button>
+          )}
           <button className="iconbtn" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
           </button>
@@ -348,6 +361,7 @@ export default function App() {
       {membersFor && (
         <ProjectMembersModal project={membersFor} onClose={() => { setMembersFor(null); refreshProjects(); }} />
       )}
+      {confirmDialog}
     </div>
   );
 }

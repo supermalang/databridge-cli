@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Modal from './Modal.jsx';
+import { useConfirm } from './ConfirmDialog.jsx';
 import { useToast } from './Toast.jsx';
 import { roleAtLeast } from '../lib/perms.js';
 import { listMembers, inviteMember, changeMemberRole, removeMember } from '../lib/members.js';
@@ -10,6 +11,7 @@ const ROLES = ['viewer', 'editor', 'admin'];
 // Admins (and superadmins) see the controls; everyone else sees a read-only roster.
 export default function ProjectMembersModal({ project, onClose }) {
   const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const [data, setData] = useState(null);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('viewer');
@@ -48,12 +50,17 @@ export default function ProjectMembersModal({ project, onClose }) {
   };
 
   const remove = async (m) => {
-    if (!confirm(`Remove ${m.email || m.name} from ${project.name}?`)) return;
+    if (!await confirm({
+      title: 'Remove member?',
+      message: `${m.email || m.name} will lose access to “${project.name}”.`,
+      confirmLabel: 'Remove',
+    })) return;
     try { await removeMember(project.id, m.user_id); toast('Removed', 'ok'); await load(); }
     catch (e) { toast(e.message, 'err'); }
   };
 
   return (
+    <>
     <Modal title={`Members · ${project.name}`} onClose={onClose} width={560}>
       {!data ? <p style={{ color: 'var(--muted)' }}>Loading…</p> : (
         <>
@@ -123,5 +130,7 @@ export default function ProjectMembersModal({ project, onClose }) {
         </>
       )}
     </Modal>
+    {confirmDialog}
+    </>
   );
 }

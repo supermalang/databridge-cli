@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import yaml from 'js-yaml';
 import Modal from '../components/Modal.jsx';
+import { useConfirm } from '../components/ConfirmDialog.jsx';
 import FrameworkPicker from '../components/FrameworkPicker.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useCommand } from '../hooks/useCommand.js';
@@ -19,9 +20,48 @@ const CHART_TYPES = [
 const INDICATOR_STATS = ['count', 'sum', 'mean', 'median', 'min', 'max', 'mode', 'top', 'pct', 'completeness', 'outlier_rate', 'duplicate_rate'];
 const SUMMARY_STATS   = ['distribution', 'numeric', 'crosstab', 'trend', 'ai'];
 
+// What each chart type needs in its Columns field — shown as inline guidance so
+// users don't pick a type that can't render with their data.
+const CHART_REQS = {
+  bar: '1 categorical column', horizontal_bar: '1 categorical column (best for long labels)',
+  stacked_bar: '2 categorical columns: [x_axis, stack_by]', grouped_bar: '2 categorical columns: [category, group_by]',
+  pie: '1 categorical column', donut: '1 categorical column',
+  line: '1–2 columns: a date + a numeric', area: '1–2 columns: a date + a numeric',
+  histogram: '1 numeric column', scatter: '2 numeric columns',
+  box_plot: '1 categorical + 1 numeric column', heatmap: '2 categorical columns',
+  treemap: '1 categorical column', waterfall: '1 categorical column', funnel: '1 categorical column',
+  table: '1+ columns to tabulate', bullet_chart: '1 numeric column (set options.target)',
+  likert: '1 categorical column (a rating scale)', scorecard: '1+ columns (any type)',
+  pyramid: '2 columns: age_group + gender', dot_map: '2 columns: lat + lon',
+  period_bar: '1 numeric/categorical column (compared across periods)',
+  period_line: '1 numeric/categorical column (trended across periods)',
+};
+
 // ── tiny atoms ──────────────────────────────────────────────────────────────
 const csv = (a) => Array.isArray(a) ? a.join(', ') : '';
 const fromCsv = (s) => s.split(',').map(x => x.trim()).filter(Boolean);
+
+// Lightweight syntactic sanity check for a pandas .query() filter. Not a full
+// parser — catches the common mistakes (unbalanced quotes/parens, dangling
+// operators) before the user hits a preview/run failure. Returns null if OK.
+function validateFilterExpr(expr) {
+  const s = (expr || '').trim();
+  if (!s) return null;
+  let depth = 0, sq = false, dq = false;
+  for (const ch of s) {
+    if (ch === "'" && !dq) sq = !sq;
+    else if (ch === '"' && !sq) dq = !dq;
+    else if (!sq && !dq) {
+      if (ch === '(') depth++;
+      else if (ch === ')') { depth--; if (depth < 0) return 'Unbalanced parentheses — too many “)”.'; }
+    }
+  }
+  if (sq || dq) return 'Unbalanced quotes — close the string value.';
+  if (depth > 0) return 'Unbalanced parentheses — missing “)”.';
+  if (/(\b(and|or|not)\b|[<>=!]=?|[+\-*/])\s*$/i.test(s)) return 'Expression ends with an operator — add the right-hand side.';
+  if (/^\s*(and|or)\b/i.test(s)) return 'Expression starts with “and/or”.';
+  return null;
+}
 const fmtNum = (n) => typeof n === 'number' ? n.toLocaleString() : '—';
 
 // Tone class per chart type for the row icon background
@@ -69,6 +109,7 @@ export default function Composition({ sections } = {}) {
   const secs = Array.isArray(sections) && sections.length ? sections : ALL_SECTIONS;
   const has = (k) => secs.includes(k);
   const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const { markAiFailed } = useAiStatus();
   const [cfg,        setCfg]       = useState({});
   const [filters,    setFilters]   = useState([]);
@@ -379,14 +420,24 @@ export default function Composition({ sections } = {}) {
     setter(prev => (index === null ? [...prev, item] : prev.map((it, i) => i === index ? item : it)));
     closeEdit();
   };
-  const remove = (label, setter) => (i) => () => {
-    setter(prev => {
-      if (!confirm(`Delete ${label} "${prev[i]?.name || ''}"?`)) return prev;
-      return prev.filter((_, j) => j !== i);
-    });
+  const remove = (label, setter) => (i) => async () => {
+    if (!await confirm({
+      title: `Delete ${label}?`,
+      message: `This ${label} will be removed from the report. This can’t be undone (until you save you can reload to restore).`,
+    })) return;
+    setter(prev => prev.filter((_, j) => j !== i));
   };
 
   const questionCount = (cfg.questions || []).length;
+  // Available column names (export labels) for autocomplete in the editors.
+  const columnOptions = useMemo(() => {
+    const seen = new Set(); const out = [];
+    for (const q of (cfg.questions || [])) {
+      const c = q.export_label || q.label || q.kobo_key;
+      if (c && !seen.has(c)) { seen.add(c); out.push(c); }
+    }
+    return out;
+  }, [cfg.questions]);
 
   return (
     <div className="page">
@@ -476,19 +527,19 @@ export default function Composition({ sections } = {}) {
       </div>
 
       {editing?.kind === 'chart' && (
-        <ChartModal initial={editing.index !== null ? charts[editing.index] : null} onClose={closeEdit} onSave={(item) => upsert(setCharts)(item, editing.index)} />
+        <ChartModal initial={editing.index !== null ? charts[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setCharts)(item, editing.index)} />
       )}
       {editing?.kind === 'indicator' && (
-        <IndicatorModal initial={editing.index !== null ? indicators[editing.index] : null} onClose={closeEdit} onSave={(item) => upsert(setIndicators)(item, editing.index)} />
+        <IndicatorModal initial={editing.index !== null ? indicators[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setIndicators)(item, editing.index)} />
       )}
       {editing?.kind === 'summary' && (
-        <SummaryModal initial={editing.index !== null ? summaries[editing.index] : null} onClose={closeEdit} onSave={(item) => upsert(setSummaries)(item, editing.index)} />
+        <SummaryModal initial={editing.index !== null ? summaries[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setSummaries)(item, editing.index)} />
       )}
       {editing?.kind === 'view' && (
         <ViewModal initial={editing.index !== null ? views[editing.index] : null} onClose={closeEdit} onSave={(item) => upsert(setViews)(item, editing.index)} />
       )}
       {editing?.kind === 'table' && (
-        <TableModal initial={editing.index !== null ? tables[editing.index] : null} onClose={closeEdit} onSave={(item) => upsert(setTables)(item, editing.index)} />
+        <TableModal initial={editing.index !== null ? tables[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setTables)(item, editing.index)} />
       )}
 
       {suggestKind && (
@@ -672,6 +723,7 @@ export default function Composition({ sections } = {}) {
           </div>
         </Modal>
       )}
+      {confirmDialog}
     </div>
   );
 }
@@ -774,6 +826,7 @@ const PII_STRATEGIES = ['drop', 'hash', 'mask', 'generalize_geo', 'generalize_da
 
 function PIICard() {
   const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const [pii, setPii] = useState({ consent_column: '', consent_value: 'yes', redact: [] });
   const [columns, setColumns] = useState([]);
 
@@ -818,12 +871,13 @@ function PIICard() {
     save(next);
   };
 
-  const removeRule = (i) => {
-    if (!confirm('Remove this redaction rule?')) return;
+  const removeRule = async (i) => {
+    if (!await confirm({ title: 'Remove redaction rule?', message: 'This redaction rule will be removed.', confirmLabel: 'Remove' })) return;
     save({ ...pii, redact: pii.redact.filter((_, idx) => idx !== i) });
   };
 
   return (
+    <>
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
@@ -877,12 +931,15 @@ function PIICard() {
         ))}
       </div>
     </div>
+    {confirmDialog}
+    </>
   );
 }
 
 // ── Framework card ───────────────────────────────────────────────────────────
 function FrameworkCard() {
   const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const [fw, setFw] = useState({ goal: null, outcomes: [], outputs: [] });
   const [editing, setEditing] = useState(null);  // null | { level, index, draft }
 
@@ -931,8 +988,8 @@ function FrameworkCard() {
     save(next);
   };
 
-  const remove = (level, index) => {
-    if (!confirm('Delete this node?')) return;
+  const remove = async (level, index) => {
+    if (!await confirm({ title: 'Delete framework node?', message: 'This node will be removed from the results framework.' })) return;
     const next = { goal: fw.goal, outcomes: [...fw.outcomes], outputs: [...fw.outputs] };
     if (level === 'goal') {
       // Clear `parent` from outcomes that pointed to the deleted goal so the
@@ -960,6 +1017,7 @@ function FrameworkCard() {
   for (const op of (fw.outputs || [])) (outputsByOutcome[op.parent] ||= []).push(op);
 
   return (
+    <>
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
@@ -1046,6 +1104,8 @@ function FrameworkCard() {
         </Modal>
       )}
     </div>
+    {confirmDialog}
+    </>
   );
 }
 
@@ -1477,31 +1537,33 @@ function TipsCard() {
 // Modals (chart / indicator / summary / view) — same shape as the previous
 // Composition page; condensed here.
 // ─────────────────────────────────────────────────────────────────────────────
-function ChartModal({ initial, onClose, onSave }) {
+function ChartModal({ initial, columns = [], onClose, onSave }) {
   const [name, setName]       = useState(initial?.name || '');
   const [title, setTitle]     = useState(initial?.title || '');
   const [type, setType]       = useState(initial?.type || 'bar');
   const [cols, setCols]       = useState(csv(initial?.questions || []));
   const [optsY, setOptsY]     = useState(initial?.options ? yaml.dump(initial.options, { indent: 2, lineWidth: -1 }) : '');
+  const [err, setErr]         = useState('');
 
   const submit = () => {
-    if (!name.trim()) return alert('Name is required.');
+    if (!name.trim()) return setErr('Name is required.');
     const item = { name: name.trim(), title: title.trim(), type, questions: fromCsv(cols) };
     if (optsY.trim()) {
       try { const o = yaml.load(optsY); if (o && Object.keys(o).length) item.options = o; }
-      catch (e) { return alert('Options YAML invalid: ' + e.message); }
+      catch (e) { return setErr('Options YAML invalid: ' + e.message); }
     }
     onSave(item);
   };
   return (
     <Modal title={initial ? `Edit chart: ${initial.name}` : 'Add chart'} onClose={onClose} onSave={submit} width={560}>
+      <ModalError>{err}</ModalError>
       <ModalField label="Name"><input className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="satisfaction_overview" /></ModalField>
       <ModalField label="Title"><input className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Overall satisfaction" /></ModalField>
-      <ModalField label="Type">
+      <ModalField label="Type" hint={CHART_REQS[type] ? `Needs: ${CHART_REQS[type]}` : undefined}>
         <select className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
       </ModalField>
-      <ModalField label="Columns" hint="Comma-separated export_label values">
-        <input className="src-input" value={cols} onChange={e => setCols(e.target.value)} placeholder="Satisfaction" />
+      <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name">
+        <ColumnPicker value={cols} onChange={setCols} options={columns} placeholder="Search columns…" />
       </ModalField>
       <ModalField label="Options" hint="YAML, optional (e.g. top_n: 10)">
         <textarea value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
@@ -1510,7 +1572,7 @@ function ChartModal({ initial, onClose, onSave }) {
   );
 }
 
-function IndicatorModal({ initial, onClose, onSave }) {
+function IndicatorModal({ initial, columns = [], onClose, onSave }) {
   const [name, setName]         = useState(initial?.name || '');
   const [label, setLabel]       = useState(initial?.label || '');
   const [stat, setStat]         = useState(initial?.stat || 'count');
@@ -1522,8 +1584,9 @@ function IndicatorModal({ initial, onClose, onSave }) {
     Array.isArray(initial?.disaggregate_by) ? initial.disaggregate_by
       : (initial?.disaggregate_by ? [initial.disaggregate_by] : [])));
   const [primary, setPrimary] = useState(!!initial?.primary);
+  const [err, setErr] = useState('');
   const submit = () => {
-    if (!name.trim()) return alert('Name is required.');
+    if (!name.trim()) return setErr('Name is required.');
     const item = { name: name.trim(), stat };
     if (label.trim()) item.label = label.trim();
     if (question.trim()) item.question = question.trim();
@@ -1536,10 +1599,11 @@ function IndicatorModal({ initial, onClose, onSave }) {
   };
   return (
     <Modal title={initial ? `Edit indicator: ${initial.name}` : 'Add indicator'} onClose={onClose} onSave={submit}>
+      <ModalError>{err}</ModalError>
       <ModalField label="Name" hint="Becomes {{ ind_<name> }} in the template"><input className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="total_beneficiaries" /></ModalField>
       <ModalField label="Label"><input className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
       <ModalField label="Stat"><select className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{INDICATOR_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
-      <ModalField label="Column"><input className="src-input" value={question} onChange={e => setQuestion(e.target.value)} placeholder="Number of Students" /></ModalField>
+      <ModalField label="Column"><ColumnPicker value={question} onChange={setQuestion} options={columns} multi={false} placeholder="Number of Students" /></ModalField>
       <ModalField label="Format" hint="Python format string"><input className="src-input" value={format} onChange={e => setFormat(e.target.value)} placeholder="{:,.0f}" /></ModalField>
       <ModalField label="Compare to" hint="Optional. Set 'baseline' to compute delta + percent change from the baseline period.">
         <select className="src-input" value={compareTo} onChange={e => setCompareTo(e.target.value)}>
@@ -1550,8 +1614,8 @@ function IndicatorModal({ initial, onClose, onSave }) {
       <ModalField label="Framework link" hint="Optional. Pick a goal/outcome/output node to link this indicator to.">
         <FrameworkPicker value={frameworkRef} onChange={v => setFrameworkRef(v || '')} />
       </ModalField>
-      <ModalField label="Disaggregate by" hint="Optional. Comma-separated columns — computes the stat per group; adds {{ ind_<name>_breakdown }} + {{ ind_<name>_table }}.">
-        <input className="src-input" value={disagg} onChange={e => setDisagg(e.target.value)} placeholder="Region, Sex" />
+      <ModalField label="Disaggregate by" hint="Optional. Computes the stat per group; adds {{ ind_<name>_breakdown }} + {{ ind_<name>_table }}.">
+        <ColumnPicker value={disagg} onChange={setDisagg} options={columns} placeholder="Region, Sex" />
       </ModalField>
       <ModalField label="Primary" hint="Optional. Marks this as the framework node's headline indicator — drives the node's achievement % in the logframe.">
         <label className="run-opt" style={{ paddingTop: 6 }}>
@@ -1563,7 +1627,7 @@ function IndicatorModal({ initial, onClose, onSave }) {
   );
 }
 
-function SummaryModal({ initial, onClose, onSave }) {
+function SummaryModal({ initial, columns = [], onClose, onSave }) {
   const [name, setName]     = useState(initial?.name || '');
   const [label, setLabel]   = useState(initial?.label || '');
   const [stat, setStat]     = useState(initial?.stat || 'distribution');
@@ -1571,8 +1635,9 @@ function SummaryModal({ initial, onClose, onSave }) {
   const [prompt, setPrompt] = useState(initial?.prompt || '');
   const [freq, setFreq]     = useState(initial?.freq || '');
   const [topN, setTopN]     = useState(initial?.top_n ?? '');
+  const [err, setErr]       = useState('');
   const submit = () => {
-    if (!name.trim()) return alert('Name is required.');
+    if (!name.trim()) return setErr('Name is required.');
     const item = { name: name.trim(), stat };
     if (label.trim()) item.label = label.trim();
     const qs = fromCsv(cols); if (qs.length) item.questions = qs;
@@ -1583,10 +1648,11 @@ function SummaryModal({ initial, onClose, onSave }) {
   };
   return (
     <Modal title={initial ? `Edit summary: ${initial.name}` : 'Add summary'} onClose={onClose} onSave={submit} width={560}>
+      <ModalError>{err}</ModalError>
       <ModalField label="Name"><input className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
       <ModalField label="Label"><input className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
       <ModalField label="Stat"><select className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{SUMMARY_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
-      <ModalField label="Columns"><input className="src-input" value={cols} onChange={e => setCols(e.target.value)} /></ModalField>
+      <ModalField label="Columns"><ColumnPicker value={cols} onChange={setCols} options={columns} /></ModalField>
       {(stat === 'distribution' || stat === 'crosstab') && <ModalField label="Top N"><input className="src-input" type="number" value={topN} onChange={e => setTopN(e.target.value)} /></ModalField>}
       {stat === 'trend' && (
         <ModalField label="Frequency"><select className="src-input" value={freq} onChange={e => setFreq(e.target.value)}>{['', 'day', 'week', 'month', 'year'].map(f => <option key={f} value={f}>{f || '—'}</option>)}</select></ModalField>
@@ -1597,12 +1663,13 @@ function SummaryModal({ initial, onClose, onSave }) {
 }
 
 // Tables are chart recipes of type `table`. Minimal editor: name, title, columns.
-function TableModal({ initial, onClose, onSave }) {
+function TableModal({ initial, columns = [], onClose, onSave }) {
   const [name, setName]   = useState(initial?.name || '');
   const [title, setTitle] = useState(initial?.title || '');
   const [cols, setCols]   = useState(csv(initial?.questions || []));
+  const [err, setErr]     = useState('');
   const submit = () => {
-    if (!name.trim()) return alert('Name is required.');
+    if (!name.trim()) return setErr('Name is required.');
     const item = { name: name.trim(), title: title.trim(), type: 'table', questions: fromCsv(cols) };
     if (initial?.options) item.options = initial.options;
     if (initial?.source) item.source = initial.source;
@@ -1612,9 +1679,10 @@ function TableModal({ initial, onClose, onSave }) {
   };
   return (
     <Modal title={initial ? `Edit table: ${initial.name}` : 'Add table'} onClose={onClose} onSave={submit} width={560}>
+      <ModalError>{err}</ModalError>
       <ModalField label="Name" hint="Used as {{ table_<name> }} in the template"><input className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
       <ModalField label="Title"><input className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
-      <ModalField label="Columns" hint="Comma-separated column names (export labels)."><input className="src-input" value={cols} onChange={e => setCols(e.target.value)} /></ModalField>
+      <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name."><ColumnPicker value={cols} onChange={setCols} options={columns} /></ModalField>
     </Modal>
   );
 }
@@ -1627,8 +1695,11 @@ function ViewModal({ initial, onClose, onSave }) {
   const [groupBy, setGroupBy]         = useState(initial?.group_by || '');
   const [question, setQuestion]       = useState(initial?.question || '');
   const [agg, setAgg]                 = useState(initial?.agg || 'sum');
+  const [err, setErr]                 = useState('');
+  const filterErr = validateFilterExpr(filter);
   const submit = () => {
-    if (!name.trim() || !source.trim()) return alert('Name and source are required.');
+    if (!name.trim() || !source.trim()) return setErr('Name and source are required.');
+    if (filterErr) return setErr(`Filter: ${filterErr}`);
     const item = { name: name.trim(), source: source.trim() };
     const jp = fromCsv(joinParent); if (jp.length) item.join_parent = jp;
     if (filter.trim()) item.filter = filter.trim();
@@ -1640,10 +1711,15 @@ function ViewModal({ initial, onClose, onSave }) {
   };
   return (
     <Modal title={initial ? `Edit view: ${initial.name}` : 'Add view'} onClose={onClose} onSave={submit} width={560}>
+      <ModalError>{err}</ModalError>
       <ModalField label="Name"><input className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
       <ModalField label="Source"><input className="src-input" value={source} onChange={e => setSource(e.target.value)} /></ModalField>
       <ModalField label="Join parent"><input className="src-input" value={joinParent} onChange={e => setJoinParent(e.target.value)} /></ModalField>
-      <ModalField label="Filter"><input className="src-input" value={filter} onChange={e => setFilter(e.target.value)} /></ModalField>
+      <ModalField label="Filter" hint="pandas query syntax, e.g. Age > 18 and Region == 'North'">
+        <input className="src-input" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Age > 18 and Region == 'North'"
+               style={filterErr ? { borderColor: 'var(--rose)' } : undefined} />
+        {filterErr && <div style={{ color: 'var(--rose)', fontSize: 11.5, marginTop: 4 }}>{filterErr}</div>}
+      </ModalField>
       <ModalField label="Group by"><input className="src-input" value={groupBy} onChange={e => setGroupBy(e.target.value)} /></ModalField>
       {groupBy && (
         <>
@@ -1652,6 +1728,78 @@ function ViewModal({ initial, onClose, onSave }) {
         </>
       )}
     </Modal>
+  );
+}
+
+// Inline validation banner for modals (replaces window.alert()).
+function ModalError({ children }) {
+  if (!children) return null;
+  return (
+    <div role="alert" style={{ background: 'var(--rose-soft)', color: 'var(--rose)', borderRadius: 6, padding: '8px 12px', fontSize: 13, fontWeight: 500, marginBottom: 10 }}>
+      {children}
+    </div>
+  );
+}
+
+// Searchable column picker. `value` is a comma-separated string (multi) or a
+// single column name; `options` are known export labels. Free-text is allowed
+// (Enter adds the typed value) so repeat/derived columns still work.
+function ColumnPicker({ value, onChange, options = [], multi = true, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef(null);
+
+  const selected = multi ? fromCsv(value) : (value ? [value] : []);
+  const q = query.trim().toLowerCase();
+  const matches = options
+    .filter(o => !selected.includes(o) && (!q || o.toLowerCase().includes(q)))
+    .slice(0, 50);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const commit = (col) => {
+    const c = col.trim();
+    if (!c) return;
+    if (multi) { if (!selected.includes(c)) onChange([...selected, c].join(', ')); }
+    else { onChange(c); setOpen(false); }
+    setQuery('');
+  };
+  const removeChip = (col) => onChange(selected.filter(c => c !== col).join(', '));
+
+  return (
+    <div className="colpick" ref={wrapRef}>
+      <div className="colpick__control" onClick={() => setOpen(true)}>
+        {multi && selected.map(c => (
+          <span key={c} className="colpick__chip">
+            {c}
+            <button type="button" aria-label={`Remove ${c}`} onClick={(e) => { e.stopPropagation(); removeChip(c); }}>×</button>
+          </span>
+        ))}
+        <input
+          className="colpick__input"
+          value={multi ? query : (open ? query : (value || ''))}
+          placeholder={selected.length ? '' : (placeholder || 'Search columns…')}
+          onFocus={() => { setOpen(true); if (!multi) setQuery(value || ''); }}
+          onChange={e => { setQuery(e.target.value); if (!multi) onChange(e.target.value); setOpen(true); }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(multi ? query : query); }
+            else if (e.key === 'Backspace' && multi && !query && selected.length) removeChip(selected[selected.length - 1]);
+          }}
+        />
+      </div>
+      {open && matches.length > 0 && (
+        <ul className="colpick__menu" role="listbox">
+          {matches.map(o => (
+            <li key={o} role="option" aria-selected="false" onMouseDown={(e) => { e.preventDefault(); commit(o); }}>{o}</li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
