@@ -448,6 +448,21 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .q-export-input:disabled:hover{background:var(--bg-2)}
 .q-row-actions button:disabled{opacity:.35;cursor:not-allowed;pointer-events:none}
 .q-export-input:focus{border-color:var(--accent);background:var(--surface);box-shadow:0 0 0 3px var(--accent-soft)}
+/* Duplicate export-label highlight (Jump-to-offenders reveal) */
+.q-table tr.q-row--dup td{background:var(--rose-soft)}
+.q-table tr.q-row--dup:hover td{background:var(--rose-soft)}
+.q-export-input[data-dup]{border-color:var(--rose);background:#fff}
+.q-export-input[data-dup]:hover{background:#fff}
+.dup-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:10px 14px;background:var(--rose-soft);border:1px solid #FCA5A5;border-radius:10px;color:#7F1D1D;font-size:13px}
+.dup-banner__text{line-height:1.45}
+.dup-banner__actions{display:flex;gap:6px;flex-shrink:0}
+/* Suggested unique-name proposal under a duplicate's export-label input */
+.q-proposal{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:12px;color:var(--muted)}
+.q-proposal__old{text-decoration:line-through;opacity:.7;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.q-proposal__arrow{color:var(--ink-3,var(--muted))}
+.q-proposal__new{font-family:var(--font-mono);font-size:11.5px;color:var(--ink);background:var(--green-soft);padding:1px 6px;border-radius:5px}
+.q-proposal__use{padding:1px 8px;border:1px solid var(--border);background:var(--surface);color:var(--accent-2,var(--accent));border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer}
+.q-proposal__use:hover{background:var(--accent-soft)}
 .q-export-input[data-dirty="true"]{border-color:var(--warm);background:var(--warm-soft)}
 .q-row-actions{display:flex;gap:4px;justify-content:flex-end}
 .q-row-actions button{width:30px;height:30px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border-2);border-radius:7px;color:var(--ink-3);cursor:pointer}
@@ -483,6 +498,8 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 
 .ai-btn{display:inline-flex;align-items:center;gap:6px;padding:0 12px;height:28px;border:1px solid #FCE7B0;background:var(--warm-soft);color:var(--warm);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-sans);letter-spacing:-.005em}
 .ai-btn:hover{background:#FDE9B7}
+.ai-btn:disabled{opacity:.5;cursor:not-allowed}
+.ai-btn:disabled:hover{background:var(--warm-soft)}
 .ai-btn::before{content:"✦";font-size:13px;line-height:1}
 
 /* Row inside a comp card */
