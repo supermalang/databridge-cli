@@ -54,7 +54,12 @@ export default function Ask() {
         body: JSON.stringify({ recipe, kind }),
       });
       const data = await r.json().catch(() => ({}));
-      if (data.ok) setSaved(s => ({ ...s, [recipe.name]: true }));
+      if (data.ok) {
+        setSaved(s => ({ ...s, [recipe.name]: true }));
+        // The recipe is now in config.charts/indicators/tables — let the kept-alive
+        // Charts/Indicators/Tables (Composition) tab refresh so it shows up there.
+        window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'ask' } }));
+      }
     } catch { /* noop */ }
   }
 
