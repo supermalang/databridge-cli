@@ -3,6 +3,7 @@ import PageHeader from './PageHeader.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { isHidden, indexQuestionsByColumn, buildGroupTree } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
+import EmptyState from '../components/EmptyState.jsx';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const SEV_RANK = { error: 0, warning: 1, info: 2 };
@@ -117,6 +118,7 @@ export default function Validate() {
             <div className="validate-finding__bar" />
             <div>
               <div>
+                <span className="validate-finding__sev" data-severity={f.severity}>{f.severity}</span>
                 <span className="validate-finding__column">{f.column}</span>
                 <span className="validate-finding__kind">{f.kind}</span>
               </div>
@@ -166,11 +168,8 @@ export default function Validate() {
       />
       {loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 60 }}>Running validation…</div>}
       {error && (
-        <div style={{ padding: 24, color: 'var(--danger, #b91c1c)' }}>
-          <div style={{ fontWeight: 600 }}>Validation failed</div>
-          <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13, marginTop: 6 }}>{error}</div>
-          <div style={{ marginTop: 8, color: 'var(--ink-3)', fontSize: 12 }}>If no data is downloaded yet, run <strong>Download</strong> in the Dashboard first.</div>
-        </div>
+        <EmptyState tone="error" title="Validation failed"
+          description={`${error} — if you haven’t downloaded submissions yet, run Download from the Dashboard first.`} />
       )}
       {report && (
         <div>

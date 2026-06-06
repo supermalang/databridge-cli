@@ -3,7 +3,7 @@
   /* New design tokens — cool-toned data-platform palette */
   --bg:#F5F7FA;--bg-2:#EEF1F6;
   --surface:#FFFFFF;--surface-2:#FAFBFD;
-  --ink:#0B1220;--ink-2:#2A3447;--ink-3:#5A6473;--muted:#8A95A6;
+  --ink:#0B1220;--ink-2:#2A3447;--ink-3:#5A6473;--muted:#6B7686;
   --border:#E5E8ED;--border-2:#D6DBE3;--border-strong:#B6BFCD;
   --accent:#0F766E;--accent-2:#115E59;--accent-soft:#CCFBF1;--accent-ink:#134E4A;
   --green:#16A34A;--green-soft:#DCFCE7;
@@ -21,7 +21,7 @@
   --radius:8px;--shadow:var(--shadow-sm);
 }
 body{font-family:var(--font-sans);background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-feature-settings:"ss01","cv11"}
-.layout{display:flex;flex-direction:column;height:100vh}
+.layout{display:flex;flex-direction:column;height:100vh;height:100dvh}
 header{background:var(--accent);color:#fff;display:flex;align-items:center;padding:0 28px;gap:16px;border-bottom:1px solid var(--accent-2);height:56px;flex-shrink:0}
 .brand{display:flex;align-items:center;gap:10px}
 .brand-logo{display:none}
@@ -430,6 +430,10 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .q-table td{padding:14px 18px;border-bottom:1px solid var(--border);vertical-align:middle}
 .q-table tr:last-child td{border-bottom:0}
 .q-table tr:hover td{background:var(--bg-2)}
+/* Virtualize long question lists: the browser skips layout/paint for off-screen
+   rows. `contain-intrinsic-size` reserves each row's height so the scrollbar
+   stays accurate; `auto` remembers the real size after first render. */
+.q-table tbody tr{content-visibility:auto;contain-intrinsic-size:auto 50px}
 .q-table__name{font-family:var(--font-mono);font-size:12.5px;color:var(--ink);font-weight:500}
 .q-type-badge{display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;background:var(--bg-2);color:var(--ink-2);letter-spacing:.01em;font-family:var(--font-sans)}
 .q-type-badge[data-cat="categorical"]{background:var(--accent-soft);color:var(--accent)}
@@ -584,6 +588,10 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .validate-finding[data-severity="error"]   .validate-finding__bar { background: var(--danger, #b91c1c); }
 .validate-finding[data-severity="warning"] .validate-finding__bar { background: var(--warn,   #b45309); }
 .validate-finding[data-severity="info"]    .validate-finding__bar { background: var(--ink-3); }
+.validate-finding__sev { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; border-radius: 4px; margin-right: 8px; vertical-align: 1px; }
+.validate-finding[data-severity="error"]   .validate-finding__sev { background: var(--rose-soft); color: var(--rose); }
+.validate-finding[data-severity="warning"] .validate-finding__sev { background: var(--warm-soft); color: var(--gold); }
+.validate-finding[data-severity="info"]    .validate-finding__sev { background: var(--bg-2); color: var(--ink-3); }
 .validate-finding__column { font-family: var(--font-mono, monospace); font-weight: 600; font-size: 13px; }
 .validate-finding__kind   { color: var(--ink-3); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; margin-left: 8px; }
 .validate-finding__msg    { color: var(--ink-2); font-size: 13px; margin-top: 4px; line-height: 1.45; }
@@ -653,3 +661,70 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .project-menu__danger { color: var(--danger, #dc2626); }
 .members-table th { font-weight: 600; }
 .members-table select { padding: 4px 6px; border: 1px solid var(--border-2, #D6DBE3); border-radius: 6px; font-size: 12.5px; background: var(--surface, #fff); color: var(--ink, #0B1220); }
+
+/* ── Accessibility additions ─────────────────────────────────────────────── */
+/* Visible keyboard-focus ring on every interactive element. Mouse clicks don't
+   trigger :focus-visible, so this is keyboard-only and won't affect pointer UX. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+/* On accent-colored (header) surfaces, use a light ring for contrast. */
+header :focus-visible, .btn-primary:focus-visible { outline-color: #fff; }
+
+/* Screen-reader-only text: present for assistive tech, invisible on screen. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* Respect users who prefer reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+}
+
+/* ── Reusable empty / prerequisite state ─────────────────────────────────── */
+.empty-state-card { text-align: center; padding: 40px 28px; max-width: 520px; margin: 24px auto; }
+.empty-state-card__icon { color: var(--muted); margin-bottom: 12px; display: flex; justify-content: center; }
+.empty-state-card__icon svg { width: 32px; height: 32px; }
+.empty-state-card__title { font-size: 16px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; margin-bottom: 6px; }
+.empty-state-card__desc { font-size: 13.5px; color: var(--ink-3); line-height: 1.55; }
+.empty-state-card__action { margin-top: 16px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.empty-state-card[data-tone="error"] .empty-state-card__title { color: var(--rose); }
+
+/* Clickable example prompts (Ask tab) */
+.ask-examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
+.ask-example { border: 1px solid var(--border-2); background: var(--surface); color: var(--ink-2); border-radius: 999px; padding: 6px 14px; font-size: 12.5px; cursor: pointer; transition: border-color .12s, background .12s; }
+.ask-example:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+
+/* ── Responsive: keep the 9-tab nav usable on narrow screens ─────────────── */
+.tabs-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.tabs-bar .tab { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 720px) {
+  header { padding: 0 14px; gap: 10px; }
+  .topbar-user { display: none; }
+  .run-indicator__label { display: none; }
+  .run-indicator { padding: 0 9px; }
+}
+
+/* ── Global run-in-progress indicator (topbar, all tabs) ─────────────────── */
+.run-indicator { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12); color: #fff; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.run-indicator:hover { background: rgba(255,255,255,.2); }
+.run-indicator .status-dot { background: #fff; }
+.run-indicator__label { font-family: var(--font-mono); letter-spacing: .01em; }
+
+/* ── Searchable column picker (Composition editors) ──────────────────────── */
+.colpick { position: relative; }
+.colpick__control { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 36px; padding: 5px 8px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--surface); cursor: text; }
+.colpick__control:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.colpick__chip { display: inline-flex; align-items: center; gap: 5px; background: var(--accent-soft); color: var(--accent-ink); border-radius: 999px; padding: 2px 6px 2px 10px; font-size: 12.5px; }
+.colpick__chip button { background: none; border: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; opacity: .7; }
+.colpick__chip button:hover { opacity: 1; }
+.colpick__input { flex: 1; min-width: 80px; border: none; outline: none; background: transparent; font-size: 13px; color: var(--ink); font-family: var(--font-sans); padding: 2px 0; }
+.colpick__menu { position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); max-height: 220px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border-2); border-radius: 8px; box-shadow: var(--shadow-md); list-style: none; padding: 4px; margin: 0; }
+.colpick__menu li { padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; color: var(--ink-2); }
+.colpick__menu li:hover { background: var(--accent-soft); color: var(--accent-ink); }
+
+/* ── Database / Supabase credential fields (Sources › Output) ────────────── */
+.db-cred-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.db-cred { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.db-cred > span { font-size: 11px; color: var(--ink-3); font-weight: 500; letter-spacing: .01em; }
+.db-cred--wide { grid-column: 1 / -1; }
+@media (max-width: 560px) { .db-cred-grid { grid-template-columns: 1fr; } .db-cred--wide { grid-column: auto; } }

@@ -7,6 +7,7 @@ import { isHidden, buildGroupTree } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
 import Modal from '../components/Modal.jsx';
 import PageHeader from './PageHeader.jsx';
+import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function colName(q) {
@@ -88,6 +89,8 @@ export default function Questions() {
     });
     return s;
   }, [questions, original]);
+
+  useUnsavedGuard(dirtyIndices.size > 0);
 
   // Apply filter + search → list of { q, idx }, then build the nested group tree.
   const tree = useMemo(() => {
@@ -188,6 +191,20 @@ export default function Questions() {
   };
 
   const save = async () => {
+    // Guard against export_label collisions among analyzed (non-hidden) questions —
+    // duplicates make charts/exports reference an ambiguous column.
+    const byCol = new Map();
+    for (const q of (questions || [])) {
+      if (isHidden(q)) continue;
+      const c = colName(q);
+      if (!c) continue;
+      byCol.set(c, (byCol.get(c) || 0) + 1);
+    }
+    const dups = [...byCol.entries()].filter(([, n]) => n > 1).map(([c]) => c);
+    if (dups.length) {
+      toast(`Fix duplicate export labels before saving: ${dups.slice(0, 5).join(', ')}${dups.length > 5 ? '…' : ''}`, 'err');
+      return;
+    }
     try {
       const res = await fetch('/api/questions', {
         method: 'POST',

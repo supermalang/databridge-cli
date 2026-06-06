@@ -11,6 +11,7 @@ import Reports from './pages/Reports.jsx';
 import Templates from './pages/Templates.jsx';
 import BottomTerminal from './components/BottomTerminal.jsx';
 import Modal from './components/Modal.jsx';
+import { useConfirm } from './components/ConfirmDialog.jsx';
 import ProjectMembersModal from './components/ProjectMembersModal.jsx';
 import { useToast } from './components/Toast.jsx';
 import { useCommand } from './hooks/useCommand.js';
@@ -19,6 +20,7 @@ import { listProjects, activateProject, createProject } from './lib/projects.js'
 import { deleteProject as apiDeleteProject } from './lib/members.js';
 import { PermsProvider } from './lib/perms.js';
 import { RunProvider } from './lib/run.js';
+import { DirtyProvider } from './lib/dirty.js';
 import { AiStatusProvider } from './lib/aiStatus.js';
 
 // Composition backs two stages with different card/section sets.
@@ -81,6 +83,7 @@ export default function App() {
   // switches. The topbar terminal button and Home's button both toggle it via
   // the databridge:toggle-terminal event that BottomTerminal listens for.
   const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const [termOpen, setTermOpen] = useState(false);
   const [logLines, setLogLines] = useState([]);
   const [formAlias, setFormAlias] = useState('');
@@ -103,7 +106,17 @@ export default function App() {
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
   const activeRole = activeProject?.role || (isSuperadmin ? 'superadmin' : null);
 
+  // Project switch remounts the keep-alive panes (via the epoch bump below),
+  // which discards any in-progress edits — so confirm first if a page is dirty.
+  const dirtyRef = useRef(false);
   const switchProject = async (id) => {
+    if (id === activeProjectId) { setProjMenuOpen(false); return; }
+    if (dirtyRef.current && !await confirm({
+      title: 'Discard unsaved changes?',
+      message: 'You have unsaved edits on the current page. Switching projects will discard them.',
+      confirmLabel: 'Switch & discard',
+    })) { setProjMenuOpen(false); return; }
+    dirtyRef.current = false;
     await activateProject(id);
     setActiveProjectId(id);
     setProjMenuOpen(false);
@@ -121,7 +134,11 @@ export default function App() {
     } catch (e) { toast(e.message || 'Create failed', 'err'); }
   };
   const removeProject = async (p) => {
-    if (!confirm(`Delete project "${p.name}"? This removes its data, reports and members.`)) return;
+    if (!await confirm({
+      title: 'Delete project?',
+      message: `“${p.name}” and all of its data, reports and members will be permanently deleted. This can’t be undone.`,
+      confirmLabel: 'Delete project',
+    })) return;
     try {
       await apiDeleteProject(p.id);
       const updated = await refreshProjects();
@@ -254,6 +271,13 @@ export default function App() {
               </div>
             )}
           </div>
+          {running && (
+            <button className="run-indicator" title={`Running ${activeCmd}… — click to view logs`}
+                    onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
+              <span className="status-dot running" />
+              <span className="run-indicator__label">Running {activeCmd}…</span>
+            </button>
+          )}
           <button className="iconbtn" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
           </button>
@@ -302,6 +326,7 @@ export default function App() {
 
       <PermsProvider value={{ role: activeRole, isSuperadmin }}>
         <RunProvider value={{ run, running, activeCmd }}>
+         <DirtyProvider value={dirtyRef}>
           <AiStatusProvider>
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
               {panes
@@ -320,6 +345,7 @@ export default function App() {
                 ))}
             </div>
           </AiStatusProvider>
+         </DirtyProvider>
         </RunProvider>
       </PermsProvider>
 
@@ -348,6 +374,7 @@ export default function App() {
       {membersFor && (
         <ProjectMembersModal project={membersFor} onClose={() => { setMembersFor(null); refreshProjects(); }} />
       )}
+      {confirmDialog}
     </div>
   );
 }

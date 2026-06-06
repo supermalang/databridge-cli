@@ -7,6 +7,7 @@ import PageHeader from './PageHeader.jsx';
 import { useRun } from '../lib/run.js';
 import { usePerms } from '../lib/perms.js';
 import { useAiStatus } from '../lib/aiStatus.js';
+import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 
 const PLATFORMS = [
   { id: 'ona',  name: 'Ona',          tag: 'ona.io · self-hosted',         defaultUrl: 'https://api.ona.io/api/v1' },
@@ -48,6 +49,7 @@ export default function Sources({ section = 'setup' } = {}) {
   useEffect(() => { reload(); }, [reload]);
 
   const dirty = cfg && original && yaml.dump(cfg, { indent: 2, lineWidth: -1 }) !== original;
+  useUnsavedGuard(!!dirty);
 
   // ── mutators bind directly to the top-level cfg object ───────────────────
   const set = (path) => (value) => setCfg(prev => {
@@ -83,17 +85,31 @@ export default function Sources({ section = 'setup' } = {}) {
 
   const testConnection = async () => {
     setLastCheck({ status: 'pending' });
-    // No first-class platform-test endpoint exists — fire AI test as a stand-in
-    // for "can we reach a network", or just simulate. We'll show a fake-but-realistic
-    // result based on whether URL+token look plausible.
-    setTimeout(() => {
-      const ok = !!(cfg?.api?.url && cfg?.api?.token);
-      setLastCheck({
-        status: ok ? 'ok' : 'err',
-        time: new Date().toLocaleTimeString().slice(0, 5),
-        msg: ok ? `200 OK · ${questionCount || 0} fields visible` : 'URL or token missing',
+    try {
+      const resp = await fetch('/api/sources/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform,
+          url: cfg?.api?.url || '',
+          token: cfg?.api?.token || '',
+          form_uid: cfg?.form?.uid || '',
+        }),
       });
-    }, 500);
+      const r = await resp.json();
+      setLastCheck({
+        status: r.ok ? 'ok' : 'err',
+        time: new Date().toLocaleTimeString().slice(0, 5),
+        msg: r.message || (r.ok ? 'Connected' : 'Connection failed'),
+        fields: r.fields,
+      });
+    } catch (e) {
+      setLastCheck({
+        status: 'err',
+        time: new Date().toLocaleTimeString().slice(0, 5),
+        msg: `Request failed: ${e.message || e}`,
+      });
+    }
   };
 
   // ── early states ─────────────────────────────────────────────────────────
@@ -412,6 +428,10 @@ function OutputCard({ cfg, set, period, setPeriod }) {
   const reportFmt = (rep.template || '').endsWith('.docx') ? 'docx' : null;
   const activeFmt = reportFmt || exp.format || 'csv';
 
+  const db = exp.database || {};
+  const isSql = activeFmt === 'mysql' || activeFmt === 'postgres';
+  const isSupabase = activeFmt === 'supabase';
+
   const pickFmt = (id) => {
     if (id === 'docx') return; // .docx report stays as-is
     set('export.format')(id);
@@ -428,7 +448,9 @@ function OutputCard({ cfg, set, period, setPeriod }) {
       </div>
 
       <div className="src-field">
-        <div className="src-field__label">Formats</div>
+        <div className="src-field__label">Formats
+          <div className="src-field__hint">File formats (Word/CSV/XLSX/JSON) write locally. Database formats (MySQL/PostgreSQL/Supabase) write to a remote server and need credentials.</div>
+        </div>
         <div className="chip-tabs">
           {FORMATS.map(f => (
             <button key={f.id} className="chip-tab" data-active={activeFmt === f.id} onClick={() => pickFmt(f.id)}>
@@ -438,6 +460,65 @@ function OutputCard({ cfg, set, period, setPeriod }) {
           ))}
         </div>
       </div>
+
+      {(isSql || isSupabase) && (
+        <div className="src-field">
+          <div className="src-field__label">{isSupabase ? 'Supabase connection' : 'Database connection'}
+            <div className="src-field__hint">Written to <code>export.database</code>. Use the <code>env:</code> prefix to read secrets from environment variables.</div>
+          </div>
+          {isSql ? (
+            <div className="db-cred-grid">
+              <label className="db-cred">
+                <span>Host</span>
+                <input className="src-input src-input--mono" value={db.host || ''} placeholder="localhost" onChange={e => set('export.database.host')(e.target.value)} />
+              </label>
+              <label className="db-cred">
+                <span>Port</span>
+                <input className="src-input src-input--mono" type="number" value={db.port ?? ''} placeholder={activeFmt === 'postgres' ? '5432' : '3306'} onChange={e => set('export.database.port')(e.target.value ? parseInt(e.target.value, 10) : '')} />
+              </label>
+              <label className="db-cred">
+                <span>Database</span>
+                <input className="src-input src-input--mono" value={db.name || ''} placeholder="kobo_reports" onChange={e => set('export.database.name')(e.target.value)} />
+              </label>
+              <label className="db-cred">
+                <span>Table</span>
+                <input className="src-input src-input--mono" value={db.table || ''} placeholder="submissions" onChange={e => set('export.database.table')(e.target.value)} />
+              </label>
+              <label className="db-cred">
+                <span>User</span>
+                <input className="src-input src-input--mono" value={db.user || ''} placeholder="env:DB_USER" onChange={e => set('export.database.user')(e.target.value)} />
+              </label>
+              <label className="db-cred">
+                <span>Password</span>
+                <input className="src-input src-input--mono" type="password" value={db.password || ''} placeholder="env:DB_PASSWORD" onChange={e => set('export.database.password')(e.target.value)} />
+              </label>
+              <label className="db-cred db-cred--wide">
+                <span>On existing table</span>
+                <select className="src-input" value={db.if_exists || 'append'} onChange={e => set('export.database.if_exists')(e.target.value)}>
+                  <option value="append">append — add rows</option>
+                  <option value="replace">replace — drop &amp; recreate (deletes existing rows)</option>
+                  <option value="fail">fail — error if the table exists</option>
+                </select>
+              </label>
+            </div>
+          ) : (
+            <div className="db-cred-grid">
+              <label className="db-cred db-cred--wide">
+                <span>Project URL</span>
+                <input className="src-input src-input--mono" value={db.supabase_url || ''} placeholder="https://xxxx.supabase.co" onChange={e => set('export.database.supabase_url')(e.target.value)} />
+              </label>
+              <label className="db-cred db-cred--wide">
+                <span>Service-role key</span>
+                <input className="src-input src-input--mono" type="password" value={db.supabase_key || ''} placeholder="env:SUPABASE_KEY" onChange={e => set('export.database.supabase_key')(e.target.value)} />
+              </label>
+              <label className="db-cred db-cred--wide">
+                <span>Table</span>
+                <input className="src-input src-input--mono" value={db.table || ''} placeholder="submissions" onChange={e => set('export.database.table')(e.target.value)} />
+              </label>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="src-field">
         <div className="src-field__label">Report output dir</div>
@@ -492,7 +573,6 @@ function OutputCard({ cfg, set, period, setPeriod }) {
 // ── Right rail: Project ──────────────────────────────────────────────────────
 function ProjectRailCard({ cfg }) {
   const platform = cfg.api?.platform || (cfg.api?.url?.includes('ona') ? 'Ona' : 'Kobo');
-  const now = new Date().toLocaleTimeString().slice(0, 5);
   return (
     <div className="rail-card">
       <div className="rail-card__title">Project
@@ -501,8 +581,6 @@ function ProjectRailCard({ cfg }) {
       <div className="rail-row"><span className="rail-row__label">Form alias</span><span className="rail-row__value">{cfg.form?.alias || '—'}</span></div>
       <div className="rail-row"><span className="rail-row__label">Form UID</span><span className="rail-row__value">{cfg.form?.uid || '—'}</span></div>
       <div className="rail-row"><span className="rail-row__label">Platform</span><span className="rail-row__value">{platform[0].toUpperCase() + platform.slice(1)}</span></div>
-      <div className="rail-row"><span className="rail-row__label">Last fetch</span><span className="rail-row__value">Today, {now}</span></div>
-      <div className="rail-row"><span className="rail-row__label">Last build</span><span className="rail-row__value">Today, {now}</span></div>
       <div className="rail-divider" />
       <button className="rail-action"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><polyline points="2 4 2 8 6 8"/><path d="M3 11a6 6 0 1 0 1.4-7"/></svg>Refresh questions</button>
       <button className="rail-action"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>Open project folder</button>
@@ -513,30 +591,37 @@ function ProjectRailCard({ cfg }) {
 
 // ── Right rail: Validation ───────────────────────────────────────────────────
 function ValidationRailCard({ cfg, questionCount, lastCheck }) {
+  const hostFromUrl = (cfg.api?.url || '').replace(/^https?:\/\//, '');
+  const chartCount = (cfg.charts || []).length;
   const checks = [
+    // Connection — only "reachable" once a live test has actually passed.
     {
-      tone: lastCheck?.status === 'err' ? 'rose' : 'ok',
-      label: lastCheck?.status === 'err' ? 'Connection unreachable' : 'Connection reachable',
-      sub: lastCheck?.status === 'ok' ? lastCheck.msg : (cfg.api?.url || '').replace(/^https?:\/\//, ''),
+      tone: lastCheck?.status === 'ok' ? 'ok' : lastCheck?.status === 'err' ? 'rose' : 'warn',
+      label: lastCheck?.status === 'ok' ? 'Connection reachable'
+           : lastCheck?.status === 'err' ? 'Connection failed'
+           : 'Connection not tested',
+      sub: lastCheck?.status === 'ok' ? lastCheck.msg
+         : lastCheck?.status === 'err' ? lastCheck.msg
+         : (hostFromUrl ? `${hostFromUrl} — click Test connection` : 'Set an API URL + token'),
     },
+    // Questions — questionCount comes from the saved config (/api/questions).
     {
-      tone: 'ok',
-      label: `${questionCount} questions parsed`,
-      sub: '11 groups · 4 repeats',
+      tone: questionCount > 0 ? 'ok' : 'warn',
+      label: questionCount > 0 ? `${questionCount} questions configured` : 'No questions yet',
+      sub: questionCount > 0 ? 'from saved config' : 'run Fetch questions to populate',
     },
+    // Template presence (we don't validate its contents here).
     {
       tone: cfg.report?.template ? 'ok' : 'warn',
-      label: cfg.report?.template ? 'Template syntactically valid' : 'No template configured',
-      sub: cfg.report?.template ? `${(cfg.charts || []).length} chart slots resolved` : '—',
+      label: cfg.report?.template ? 'Template configured' : 'No template configured',
+      sub: cfg.report?.template
+        ? `${chartCount} chart${chartCount === 1 ? '' : 's'} configured`
+        : 'generate-template will create one',
     },
-    {
-      tone: 'warn',
-      label: '12 rows missing region_code',
-      sub: 'see logs/skipped_2026Q1.csv',
-    },
+    // AI — reflects saved config only (verification lives on the AI card).
     {
       tone: cfg.ai?.api_key ? 'ok' : 'warn',
-      label: cfg.ai?.api_key ? 'AI Narrative reachable' : 'AI key not set',
+      label: cfg.ai?.api_key ? 'AI key set' : 'AI key not set',
       sub: cfg.ai?.model ? `${cfg.ai.model} · ${cfg.ai.provider || 'openai'}` : 'unconfigured',
     },
   ];

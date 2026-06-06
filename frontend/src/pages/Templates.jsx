@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
 import FileTable from '../components/FileTable.jsx';
+import { useConfirm } from '../components/ConfirmDialog.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { usePerms } from '../lib/perms.js';
 
 export default function Templates() {
   const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const { canAdmin } = usePerms();
   const fileInputRef = useRef(null);
   const [files, setFiles] = useState(null);
@@ -43,7 +45,7 @@ export default function Templates() {
   };
 
   const deleteTemplate = async (name) => {
-    if (!confirm(`Delete ${name}?`)) return;
+    if (!await confirm({ title: 'Delete template?', message: `“${name}” will be permanently deleted. This can’t be undone.` })) return;
     const res = await fetch(`/api/templates/${encodeURIComponent(name)}`, { method: 'DELETE' });
     toast(res.ok ? `Deleted ${name}` : 'Delete failed', res.ok ? 'ok' : 'err');
     load();
@@ -119,6 +121,7 @@ export default function Templates() {
           )}
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }

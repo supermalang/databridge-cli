@@ -3,6 +3,7 @@ import PageHeader from './PageHeader.jsx';
 import { isHidden, indexQuestionsByColumn, buildGroupTree, GROUP_LABELS } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
 import TableTree from '../components/TableTree.jsx';
+import EmptyState from '../components/EmptyState.jsx';
 
 // Data-quality threshold bands (merged from the former Validate DQ overview).
 // completeness: higher is better; outlier/duplicate rates: lower is better.
@@ -163,16 +164,14 @@ export default function Profile() {
       />
       {loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 60 }}>Profiling…</div>}
       {error && (
-        <div style={{ padding: 24, color: 'var(--danger, #b91c1c)' }}>
-          <div style={{ fontWeight: 600 }}>Profiling failed</div>
-          <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13, marginTop: 6 }}>{error}</div>
-          <div style={{ marginTop: 8, color: 'var(--ink-3)', fontSize: 12 }}>If no data is downloaded yet, run <strong>Download</strong> in the Dashboard first.</div>
-        </div>
+        <EmptyState tone="error" title="Profiling failed"
+          description={`${error} — if you haven’t downloaded submissions yet, run Download from the Dashboard first.`} />
       )}
-      {profiles && profiles.length === 0 && (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>
-          {message || 'No data to profile. Run Download first.'}
-        </div>
+      {!loading && !error && profiles && profiles.length === 0 && (
+        <EmptyState
+          title="Nothing to profile yet"
+          description={message || 'The data profile is built from your downloaded submissions. Run Download from the Dashboard, then come back here to inspect every table.'}
+        />
       )}
       {profiles && profiles.length > 0 && (
         <div>

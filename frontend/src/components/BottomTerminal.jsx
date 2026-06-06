@@ -78,8 +78,17 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
 
   return (
     <div className="bottom-term" data-open={open ? 'true' : 'false'}>
-      <div className="bottom-term__bar" onClick={() => setOpen(!open)}>
+      <div
+        className="bottom-term__bar"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        aria-label={`Terminal — ${cmd ? `running ${cmd}` : 'idle'}. ${open ? 'Collapse' : 'Expand'}.`}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open); } }}
+      >
         <span className="dot" style={{ background: cmd ? 'var(--warm)' : 'var(--green)' }} />
+        <span className="sr-only">{cmd ? 'Running' : 'Idle'}</span>
         <span className="bottom-term__bar-title">terminal</span>
         <span className="bottom-term__bar-sep">·</span>
         <span>{project}</span>
@@ -143,7 +152,7 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
           </ul>
         </aside>
 
-        <div className="bottom-term__main" ref={bodyRef}>
+        <div className="bottom-term__main" ref={bodyRef} role="log" aria-live="polite" aria-label="Pipeline execution log">
           {session === 'shell' ? (
             <iframe className="bottom-term__shell" src="/terminal/" title="ttyd terminal" />
           ) : filtered.length === 0 ? (
