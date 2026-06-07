@@ -224,7 +224,6 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 .bottom-term__main .log__lvl[data-lvl="SUCCESS"] {color:#74D49D}
 .bottom-term__main .log__lvl[data-lvl="WARNING"] {color:#E8C374}
 .bottom-term__main .log__msg{color:#E6EAF2;white-space:pre-wrap;word-break:break-all}
-.bottom-term__shell{flex:1;border:0;width:100%;height:100%;background:var(--slate-dark)}
 
 /* lift content above the bottom bar so nothing hides under it */
 .app, .layout{padding-bottom:42px}
