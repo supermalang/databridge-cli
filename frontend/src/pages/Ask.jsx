@@ -131,7 +131,7 @@ export default function Ask() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Ask"
+        eyebrow="Step 4 of 5 · Ask"
         title="Ask your"
         accent="data."
         sub="Ask a question in plain language — get charts computed from your data, with captions grounded in the actual numbers."

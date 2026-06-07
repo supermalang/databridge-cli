@@ -54,7 +54,7 @@ export default function Templates() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Settings · Templates"
+        eyebrow="Step 5 of 5 · Templates"
         title="Word"
         accent="templates."
         sub="Manage the .docx templates used by build-report. Each placeholder ({{ chart_x }}, {{ ind_y }}) gets filled at render time."

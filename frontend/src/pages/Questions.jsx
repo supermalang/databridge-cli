@@ -8,6 +8,8 @@ import GroupTree from '../components/GroupTree.jsx';
 import Modal from '../components/Modal.jsx';
 import PageHeader from './PageHeader.jsx';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
+import { useRun } from '../lib/run.js';
+import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function colName(q) {
@@ -57,6 +59,7 @@ export default function Questions() {
   const toast = useToast();
   const { canEdit } = usePerms();
   const { aiReady } = useAiStatus();
+  const { run } = useRun();
   const [questions, setQuestions] = useState(null);
   const [original,  setOriginal]  = useState({});          // { idx: {export_label, hidden} } at load
   const [search,    setSearch]    = useState('');
@@ -469,6 +472,32 @@ export default function Questions() {
         canEdit={canEdit}
       />
 
+      <RailLayout rail={
+        <>
+          <StatusCard checks={[
+            { tone: questions.length > 0 ? 'ok' : 'warn',
+              label: `${questions.length} fields configured`, sub: `${totalGroups} groups` },
+            { tone: dupInfo.indices.size > 0 ? 'rose' : 'ok',
+              label: dupInfo.indices.size > 0 ? `${dupInfo.cols.length} duplicate labels` : 'No duplicate labels',
+              sub: dupInfo.indices.size > 0 ? 'fix before saving' : 'export labels are unique' },
+            { tone: totalUsedInCharts > 0 ? 'ok' : 'warn',
+              label: `${totalUsedInCharts} used in charts`, sub: `${totalBoundInd} bound to indicators` },
+            { tone: 'ok',
+              label: `${totalPii} PII-flagged`, sub: `${totalHidden} hidden from report` },
+          ]} />
+          <QuickActionsCard actions={[
+            { icon: RailIcons.refresh, label: 'Fetch questions', onClick: () => run('fetch-questions'),
+              disabled: !canEdit, title: canEdit ? 'Re-fetch the form schema (preserves your edits)' : 'Editor access required' },
+            { icon: RailIcons.sparkle, label: 'Auto-hide clutter', onClick: suggestHidden,
+              disabled: !!suggesting || !aiReady, title: aiReady ? 'Ask the AI to flag non-analytical fields' : AI_LOCK_TIP },
+            { icon: RailIcons.shield, label: 'Flag PII', onClick: suggestPII,
+              disabled: !!suggesting || !aiReady, title: aiReady ? 'Ask the AI to flag personal-data fields' : AI_LOCK_TIP },
+            { icon: RailIcons.save, label: 'Save changes', onClick: save,
+              disabled: dirtyIndices.size === 0 || !canEdit, title: canEdit ? '' : 'Editor access required' },
+          ]} />
+        </>
+      }>
+
       <div className="q-toolbar">
         <div className="q-toolbar__left">
           <div className="q-search">
@@ -543,6 +572,8 @@ export default function Questions() {
         )}
       </div>
 
+      </RailLayout>
+
       {reviewModal && (
         <Modal title={reviewModal.title} onClose={() => setReviewModal(null)} onSave={applyReview} saveLabel="Apply">
           <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
@@ -579,7 +610,7 @@ export default function Questions() {
 function Header({ total, groups, unsaved, onSave, canEdit }) {
   return (
     <PageHeader
-      eyebrow={`Questions · ${total} fields · ${groups} groups`}
+      eyebrow={`Step 2 of 5 · Questions · ${total} fields · ${groups} groups`}
       title="Rename what shows up"
       accent="in the report."
       sub="Each row is a survey question. Edit the Export label to change how that column appears in charts, indicators, and Word placeholders — no YAML required."

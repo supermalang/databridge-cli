@@ -1,6 +1,3 @@
-import { useState } from 'react';
-import { usePerms } from '../lib/perms.js';
-
 // The five ordered workflow stages. Each card deep-links into its stage (and a
 // specific sub-page). `navigate(stageId, subId)` is provided by App.
 const STAGE_CARDS = [
@@ -40,10 +37,7 @@ const STAGE_CARDS = [
 // tab). Home triggers pipeline runs through the hoisted `run`/`running`/
 // `activeCmd` props and toggles the shared terminal via the same event the
 // topbar button uses.
-export default function Home({ navigate, run, running, activeCmd }) {
-  const [autoCharts, setAutoCharts] = useState(false);
-  const { canEdit } = usePerms();
-
+export default function Home({ navigate }) {
   const toggleTerminal = () => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'));
 
   const go = (stageId, subId) => (e) => { e?.stopPropagation?.(); navigate(stageId, subId); };
@@ -59,20 +53,9 @@ export default function Home({ navigate, run, running, activeCmd }) {
           </div>
         </div>
         <div className="home-head__actions">
-          <label className="run-opt" title="If no charts are configured, auto-create a starter set from your questions">
-            <input type="checkbox" checked={autoCharts} onChange={(e) => setAutoCharts(e.target.checked)} disabled={running} />
-            Auto-create charts
-          </label>
           <button className="btn" onClick={toggleTerminal}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
             Terminal
-          </button>
-          <button className="btn btn-primary"
-                  onClick={() => run('run-all', { auto_charts: autoCharts })}
-                  disabled={running || !canEdit}
-                  title={canEdit ? '' : 'Viewers cannot run the pipeline'}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><polygon points="4 3 13 8 4 13"/></svg>
-            {running && activeCmd === 'run-all' ? 'Running…' : 'Run pipeline'}
           </button>
         </div>
       </div>

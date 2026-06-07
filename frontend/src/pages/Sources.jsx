@@ -8,11 +8,48 @@ import { useRun } from '../lib/run.js';
 import { usePerms } from '../lib/perms.js';
 import { useAiStatus } from '../lib/aiStatus.js';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
+import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 
 const PLATFORMS = [
   { id: 'ona',  name: 'Ona / INFORM', tag: 'ona.io · UNICEF INFORM',        defaultUrl: 'https://api.ona.io/api/v1' },
   { id: 'kobo', name: 'Kobo Toolbox', tag: 'kobotoolbox.org · KPI',         defaultUrl: 'https://kf.kobotoolbox.org/api/v2' },
 ];
+
+// AI provider presets. Every entry maps to one of the two backends the CLI
+// understands (`backend`: openai | anthropic) — the OpenAI-compatible ones just
+// differ by base URL + suggested models. A "Custom…" model escape always stays
+// available, so stale model lists never block anyone.
+const AI_PROVIDERS = [
+  { id: 'openai',     name: 'OpenAI',            backend: 'openai',    baseUrl: '',
+    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'o3', 'o4-mini'] },
+  { id: 'anthropic',  name: 'Anthropic',         backend: 'anthropic', baseUrl: '',
+    models: ['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'] },
+  { id: 'gemini',     name: 'Google Gemini',     backend: 'openai',    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'] },
+  { id: 'openrouter', name: 'OpenRouter',        backend: 'openai',    baseUrl: 'https://openrouter.ai/api/v1',
+    models: ['anthropic/claude-sonnet-4-6', 'openai/gpt-4o', 'google/gemini-2.5-pro', 'meta-llama/llama-3.3-70b-instruct', 'deepseek/deepseek-chat'] },
+  { id: 'groq',       name: 'Groq',              backend: 'openai',    baseUrl: 'https://api.groq.com/openai/v1',
+    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'] },
+  { id: 'deepseek',   name: 'DeepSeek',          backend: 'openai',    baseUrl: 'https://api.deepseek.com/v1',
+    models: ['deepseek-chat', 'deepseek-reasoner'] },
+  { id: 'mistral',    name: 'Mistral',           backend: 'openai',    baseUrl: 'https://api.mistral.ai/v1',
+    models: ['mistral-large-latest', 'mistral-small-latest'] },
+  { id: 'ollama',     name: 'Ollama (local)',    backend: 'openai',    baseUrl: 'http://localhost:11434/v1',
+    models: ['llama3.1', 'llama3.2', 'qwen2.5', 'mistral'] },
+  { id: 'custom',     name: 'Custom (OpenAI-compatible)', backend: 'openai', baseUrl: '', models: [] },
+];
+
+const _normUrl = (u) => (u || '').trim().replace(/\/+$/, '');
+
+// Map a stored config (provider + base_url) back to a preset id for the dropdown.
+function detectAiPreset(ai) {
+  const backend = (ai.provider || 'openai').toLowerCase();
+  if (backend === 'anthropic') return 'anthropic';
+  const base = _normUrl(ai.base_url);
+  if (!base) return 'openai';
+  const hit = AI_PROVIDERS.find(p => p.backend === 'openai' && p.baseUrl && _normUrl(p.baseUrl) === base);
+  return hit ? hit.id : 'custom';
+}
 
 const FORMATS = [
   { id: 'docx',     label: 'Word', sub: 'docx' },
@@ -126,7 +163,7 @@ export default function Sources({ section = 'setup' } = {}) {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Step 1 of 4 · Configure sources"
+        eyebrow="Step 1 of 5 · Configure sources"
         title="Connect your data"
         accent="source."
         sub="Choose a platform, point at the right form, and pick the voice the AI uses when it writes narrative blocks."
@@ -136,10 +173,6 @@ export default function Sources({ section = 'setup' } = {}) {
               <button className={`view-btn ${view === 'form' ? 'active' : ''}`} onClick={() => setView('form')}>↻ Form</button>
               <button className={`view-btn ${view === 'yaml' ? 'active' : ''}`} onClick={() => setView('yaml')}>{'{ } YAML'}</button>
             </div>
-            <button className="btn" onClick={reload}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="4" width="9" height="9" rx="1.5"/><path d="M2 11V3a1 1 0 0 1 1-1h8"/></svg>
-              Duplicate
-            </button>
             <button className="btn btn-primary" onClick={view === 'yaml' ? saveYaml : saveAll} disabled={view === 'form' && !dirty}>
               Save changes
             </button>
@@ -163,41 +196,44 @@ export default function Sources({ section = 'setup' } = {}) {
           />
         </div>
       ) : section === 'ai' ? (
-        <div className="src-grid">
-          <div className="src-col">
-            <AINarrativeCard cfg={cfg} set={set} />
-          </div>
-          <aside className="src-col">
-            <div className="rail">
-              <ValidationRailCard cfg={cfg} questionCount={questionCount} lastCheck={lastCheck} />
-              <TipsRailCard />
-            </div>
-          </aside>
-        </div>
+        <RailLayout rail={<ExtractRail cfg={cfg} questionCount={questionCount} lastCheck={lastCheck} testConnection={testConnection} />}>
+          <AINarrativeCard cfg={cfg} set={set} />
+        </RailLayout>
       ) : (
-        <div className="src-grid">
-          {/* ── main column ── */}
-          <div className="src-col">
-            <ConnectionCard
-              cfg={cfg} set={set} platform={platform}
-              showToken={showToken} setShowToken={setShowToken}
-              testConnection={testConnection} lastCheck={lastCheck}
-              questionCount={questionCount}
-            />
-            <OutputCard cfg={cfg} set={set} period={period} setPeriod={setPeriod} />
-          </div>
-
-          {/* ── right rail ── */}
-          <aside className="src-col">
-            <div className="rail">
-              <ProjectRailCard cfg={cfg} />
-              <ValidationRailCard cfg={cfg} questionCount={questionCount} lastCheck={lastCheck} />
-              <TipsRailCard />
-            </div>
-          </aside>
-        </div>
+        <RailLayout rail={<ExtractRail cfg={cfg} questionCount={questionCount} lastCheck={lastCheck} testConnection={testConnection} />}>
+          <ConnectionCard
+            cfg={cfg} set={set} platform={platform}
+            showToken={showToken} setShowToken={setShowToken}
+            testConnection={testConnection} lastCheck={lastCheck}
+            questionCount={questionCount}
+          />
+          <OutputCard cfg={cfg} set={set} period={period} setPeriod={setPeriod} />
+        </RailLayout>
       )}
     </div>
+  );
+}
+
+// ── Right rail (Extract): Project info · Status · Quick actions · Tips ─────────
+function ExtractRail({ cfg, questionCount, lastCheck, testConnection }) {
+  const { run } = useRun();
+  const { canEdit } = usePerms();
+  const editTip = canEdit ? '' : 'Editor access required';
+  const actions = [
+    { icon: RailIcons.refresh, label: 'Refresh questions', onClick: () => run('fetch-questions'),
+      disabled: !canEdit, title: canEdit ? 'Re-fetch the form schema from the platform' : editTip },
+    { icon: RailIcons.plug, label: 'Test connection', onClick: testConnection,
+      title: 'Check the API URL, token and form UID' },
+    { icon: RailIcons.download, label: 'Download data', onClick: () => run('download'),
+      disabled: !canEdit, title: canEdit ? 'Download submissions to a data session' : editTip },
+  ];
+  return (
+    <>
+      <ProjectRailCard cfg={cfg} />
+      <StatusCard checks={sourceChecks(cfg, questionCount, lastCheck)} />
+      <QuickActionsCard actions={actions} />
+      <TipsRailCard />
+    </>
   );
 }
 
@@ -216,6 +252,34 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
     if (cfg.api?.token) {
       try { await navigator.clipboard.writeText(cfg.api.token); } catch {}
     }
+  };
+
+  // ── token visibility ─────────────────────────────────────────────────────
+  // A saved secret is never re-displayed: the field shows a static mask until
+  // the user explicitly chooses to replace it. An env: reference is not secret,
+  // so we show its variable name plainly. While entering a new token the field
+  // is a password input the user can optionally reveal.
+  const [editingToken, setEditingToken] = useState(false);
+  const [prevToken, setPrevToken] = useState('');
+  const savedToken = cfg.api?.token || '';
+  const isEnvToken = savedToken.startsWith('env:');
+  const tokenInputMode = editingToken || !savedToken;
+
+  // A successful save clears edit mode → the secret collapses back to its mask.
+  useEffect(() => {
+    const onSaved = () => { setEditingToken(false); setShowToken(false); };
+    window.addEventListener('databridge:data-changed', onSaved);
+    return () => window.removeEventListener('databridge:data-changed', onSaved);
+  }, [setShowToken]);
+
+  const beginReplaceSecret = () => {
+    setPrevToken(savedToken); set('api.token')(''); setShowToken(false); setEditingToken(true);
+  };
+  const beginEditEnv = () => {
+    setPrevToken(savedToken); setShowToken(true); setEditingToken(true);
+  };
+  const cancelTokenEdit = () => {
+    set('api.token')(prevToken); setEditingToken(false); setShowToken(false);
   };
   return (
     <div className="src-card">
@@ -259,24 +323,45 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
 
       <div className="src-field">
         <div className="src-field__label">API Token
-          <div className="src-field__hint">Stored encrypted at rest. Used as <code>Bearer</code> header.</div>
+          <div className="src-field__hint">Stored encrypted at rest and hidden once saved. Use <code>env:VARNAME</code> to read it from an environment variable instead.</div>
         </div>
-        <div className="token-field">
-          <input
-            type={showToken ? 'text' : 'password'}
-            value={cfg.api?.token || ''}
-            placeholder="env:KOBO_TOKEN"
-            onChange={e => set('api.token')(e.target.value)}
-          />
-          <button title={showToken ? 'Hide' : 'Show'} onClick={() => setShowToken(s => !s)}>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/>
-            </svg>
-          </button>
-          <button title="Copy" onClick={copyToken}>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h7"/></svg>
-          </button>
-        </div>
+
+        {tokenInputMode ? (
+          <>
+            <div className="token-field">
+              <input
+                type={showToken ? 'text' : 'password'}
+                value={cfg.api?.token || ''}
+                placeholder="paste token or env:KOBO_TOKEN"
+                autoComplete="off"
+                onChange={e => set('api.token')(e.target.value)}
+              />
+              <button title={showToken ? 'Hide' : 'Show'} onClick={() => setShowToken(s => !s)}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/>
+                </svg>
+              </button>
+              <button title="Copy" onClick={copyToken}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h7"/></svg>
+              </button>
+            </div>
+            {editingToken && (
+              <button className="btn btn-sm token-cancel" onClick={cancelTokenEdit}>Cancel</button>
+            )}
+          </>
+        ) : isEnvToken ? (
+          <div className="token-saved">
+            <code className="token-saved__env">{savedToken}</code>
+            <span className="token-saved__tag">env var</span>
+            <button className="btn btn-sm" onClick={beginEditEnv}>Edit</button>
+          </div>
+        ) : (
+          <div className="token-saved">
+            <span className="token-saved__mask">••••••••••••</span>
+            <span className="token-saved__tag">saved</span>
+            <button className="btn btn-sm" onClick={beginReplaceSecret}>Replace</button>
+          </div>
+        )}
       </div>
 
       <div className="src-field">
@@ -340,6 +425,47 @@ function AINarrativeCard({ cfg, set }) {
   const maxTok = parseInt(ai.max_tokens, 10) || 1500;
   const { configured, verified, testing, testAi } = useAiStatus();
   const [testResult, setTestResult] = useState(null);
+
+  // ── key visibility ───────────────────────────────────────────────────────
+  // Same rules as the platform token: a saved secret is never re-displayed
+  // (static mask + Replace), an env: reference shows its variable name, and a
+  // new key is typed into a password input that can be optionally revealed.
+  const [showKey, setShowKey] = useState(false);
+  const [editingKey, setEditingKey] = useState(false);
+  const [prevKey, setPrevKey] = useState('');
+  const savedKey = ai.api_key || '';
+  const isEnvKey = savedKey.startsWith('env:');
+  const keyInputMode = editingKey || !savedKey;
+  useEffect(() => {
+    const onSaved = () => { setEditingKey(false); setShowKey(false); };
+    window.addEventListener('databridge:data-changed', onSaved);
+    return () => window.removeEventListener('databridge:data-changed', onSaved);
+  }, []);
+  // ── provider preset + model dropdown ─────────────────────────────────────
+  const preset = detectAiPreset(ai);
+  const presetDef = AI_PROVIDERS.find(p => p.id === preset) || AI_PROVIDERS[0];
+  const modelList = presetDef.models;
+  const isOpenAiBacked = presetDef.backend === 'openai';
+  const model = ai.model || '';
+  const [customModel, setCustomModel] = useState(false);
+  const showCustomModel = customModel || modelList.length === 0 || (model !== '' && !modelList.includes(model));
+  const onPresetChange = (id) => {
+    const def = AI_PROVIDERS.find(p => p.id === id) || AI_PROVIDERS[0];
+    set('ai.provider')(def.backend);
+    if (id !== 'custom') set('ai.base_url')(def.baseUrl);   // custom keeps whatever URL is there
+    setCustomModel(id === 'custom');
+    set('ai.model')(def.models[0] || '');
+  };
+  const onModelSelect = (v) => {
+    if (v === '__custom__') { setCustomModel(true); set('ai.model')(''); }
+    else { setCustomModel(false); set('ai.model')(v); }
+  };
+
+  const beginReplaceKey = () => { setPrevKey(savedKey); set('ai.api_key')(''); setShowKey(false); setEditingKey(true); };
+  const beginEditEnvKey = () => { setPrevKey(savedKey); setShowKey(true); setEditingKey(true); };
+  const cancelKeyEdit = () => { set('ai.api_key')(prevKey); setEditingKey(false); setShowKey(false); };
+  const copyKey = async () => { if (ai.api_key) { try { await navigator.clipboard.writeText(ai.api_key); } catch {} } };
+
   const onTestAi = async () => {
     const r = await testAi(ai);
     setTestResult(r);
@@ -362,25 +488,84 @@ function AINarrativeCard({ cfg, set }) {
       </div>
 
       <div className="src-field">
-        <div className="src-field__label">Provider</div>
-        <select className="src-input" value={ai.provider || 'openai'} onChange={e => set('ai.provider')(e.target.value)}>
-          <option value="openai">OpenAI-compatible</option>
-          <option value="anthropic">Anthropic</option>
+        <div className="src-field__label">Provider
+          <div className="src-field__hint">OpenAI-compatible providers (Gemini, OpenRouter, Groq, DeepSeek…) auto-fill the right Base URL.</div>
+        </div>
+        <select className="src-input" value={preset} onChange={e => onPresetChange(e.target.value)}>
+          {AI_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
       <div className="src-field">
         <div className="src-field__label">Model</div>
-        <input className="src-input src-input--mono" value={ai.model || ''} placeholder="gpt-4o" onChange={e => set('ai.model')(e.target.value)} />
+        <div className="src-field__stack">
+        <select
+          className="src-input src-input--mono"
+          value={showCustomModel ? '__custom__' : model}
+          onChange={e => onModelSelect(e.target.value)}
+        >
+          {!showCustomModel && model === '' && <option value="" disabled>Select a model…</option>}
+          {modelList.map(m => <option key={m} value={m}>{m}</option>)}
+          <option value="__custom__">Custom…</option>
+        </select>
+        {showCustomModel && (
+          <input
+            className="src-input src-input--mono"
+            style={{ marginTop: 6 }}
+            value={model}
+            placeholder={presetDef.id === 'anthropic' ? 'claude-…' : 'model id (e.g. llama-3.3-70b-versatile)'}
+            onChange={e => set('ai.model')(e.target.value)}
+          />
+        )}
+        </div>
       </div>
       <div className="src-field">
         <div className="src-field__label">API key
-          <div className="src-field__hint">Use <code>env:</code> prefix to read from an environment variable.</div>
+          <div className="src-field__hint">Hidden once saved. Use <code>env:VARNAME</code> to read from an environment variable.</div>
         </div>
-        <input className="src-input src-input--mono" value={ai.api_key || ''} placeholder="env:OPENAI_API_KEY" onChange={e => set('ai.api_key')(e.target.value)} />
+        {keyInputMode ? (
+          <>
+            <div className="token-field">
+              <input
+                type={showKey ? 'text' : 'password'}
+                value={ai.api_key || ''}
+                placeholder="paste key or env:OPENAI_API_KEY"
+                autoComplete="off"
+                onChange={e => set('ai.api_key')(e.target.value)}
+              />
+              <button title={showKey ? 'Hide' : 'Show'} onClick={() => setShowKey(s => !s)}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/>
+                </svg>
+              </button>
+              <button title="Copy" onClick={copyKey}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h7"/></svg>
+              </button>
+            </div>
+            {editingKey && (
+              <button className="btn btn-sm token-cancel" onClick={cancelKeyEdit}>Cancel</button>
+            )}
+          </>
+        ) : isEnvKey ? (
+          <div className="token-saved">
+            <code className="token-saved__env">{savedKey}</code>
+            <span className="token-saved__tag">env var</span>
+            <button className="btn btn-sm" onClick={beginEditEnvKey}>Edit</button>
+          </div>
+        ) : (
+          <div className="token-saved">
+            <span className="token-saved__mask">••••••••••••</span>
+            <span className="token-saved__tag">saved</span>
+            <button className="btn btn-sm" onClick={beginReplaceKey}>Replace</button>
+          </div>
+        )}
       </div>
-      {ai.provider !== 'anthropic' && (
+      {isOpenAiBacked && (
         <div className="src-field">
-          <div className="src-field__label">Base URL</div>
+          <div className="src-field__label">Base URL
+            {preset !== 'openai' && preset !== 'custom' && (
+              <div className="src-field__hint">Auto-filled for {presetDef.name}. Edit only if your endpoint differs.</div>
+            )}
+          </div>
           <input className="src-input src-input--mono" value={ai.base_url || ''} placeholder="https://api.openai.com/v1" onChange={e => set('ai.base_url')(e.target.value)} />
         </div>
       )}
@@ -588,19 +773,15 @@ function ProjectRailCard({ cfg }) {
       <div className="rail-row"><span className="rail-row__label">Form alias</span><span className="rail-row__value">{cfg.form?.alias || '—'}</span></div>
       <div className="rail-row"><span className="rail-row__label">Form UID</span><span className="rail-row__value">{cfg.form?.uid || '—'}</span></div>
       <div className="rail-row"><span className="rail-row__label">Platform</span><span className="rail-row__value">{platform[0].toUpperCase() + platform.slice(1)}</span></div>
-      <div className="rail-divider" />
-      <button className="rail-action"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><polyline points="2 4 2 8 6 8"/><path d="M3 11a6 6 0 1 0 1.4-7"/></svg>Refresh questions</button>
-      <button className="rail-action"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>Open project folder</button>
-      <button className="rail-action"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h7"/></svg>Duplicate project</button>
     </div>
   );
 }
 
-// ── Right rail: Validation ───────────────────────────────────────────────────
-function ValidationRailCard({ cfg, questionCount, lastCheck }) {
+// Build the readiness checks shown in the Extract Status card.
+function sourceChecks(cfg, questionCount, lastCheck) {
   const hostFromUrl = (cfg.api?.url || '').replace(/^https?:\/\//, '');
   const chartCount = (cfg.charts || []).length;
-  const checks = [
+  return [
     // Connection — only "reachable" once a live test has actually passed.
     {
       tone: lastCheck?.status === 'ok' ? 'ok' : lastCheck?.status === 'err' ? 'rose' : 'warn',
@@ -632,33 +813,6 @@ function ValidationRailCard({ cfg, questionCount, lastCheck }) {
       sub: cfg.ai?.model ? `${cfg.ai.model} · ${cfg.ai.provider || 'openai'}` : 'unconfigured',
     },
   ];
-
-  return (
-    <div className="rail-card">
-      <div className="rail-card__title">Validation
-        <span className="tag tag--green" style={{ fontSize: 9.5 }}>{checks.filter(c => c.tone === 'ok').length}/{checks.length}</span>
-      </div>
-      <div className="check-list">
-        {checks.map((c, i) => (
-          <div key={i} className="check-list__item">
-            <span className="check-list__icon" data-tone={c.tone}>
-              {c.tone === 'ok' ? (
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 8 7 12 13 4"/></svg>
-              ) : c.tone === 'warn' ? (
-                <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="11" r="1"/><rect x="7" y="3" width="2" height="6" rx="1"/></svg>
-              ) : (
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
-              )}
-            </span>
-            <div className="check-list__main">
-              <div className="check-list__label">{c.label}</div>
-              <div className="check-list__sub">{c.sub}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 // ── Right rail: Tips ────────────────────────────────────────────────────────

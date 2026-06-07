@@ -157,7 +157,7 @@ export default function Profile() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Data profile"
+        eyebrow="Step 2 of 5 · Data profile"
         title="Understand your"
         accent="tables."
         sub="A read-only snapshot of every base table, arranged as a tree of accordions. Open a table to inspect its columns — completeness, outlier and duplicate rates (color-coded), distinct counts, ranges and outliers."

@@ -8,6 +8,7 @@ import { useCommand } from '../hooks/useCommand.js';
 import { loadConfig, saveConfigPatch } from '../lib/config.js';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 import PageHeader from './PageHeader.jsx';
+import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 
 // ── chart type catalog ───────────────────────────────────────────────────────
 const CHART_TYPES = [
@@ -429,6 +430,7 @@ export default function Composition({ sections } = {}) {
   };
 
   const questionCount = (cfg.questions || []).length;
+  const viewsOnly = has('views') && !has('charts');
   // Available column names (export labels) for autocomplete in the editors.
   const columnOptions = useMemo(() => {
     const seen = new Set(); const out = [];
@@ -447,8 +449,17 @@ export default function Composition({ sections } = {}) {
         sections={secs}
         onSave={saveAll}
       />
-      <div className="comp-grid">
-        <div className="comp-col">
+      <RailLayout rail={
+        <CompositionRail
+          secs={secs}
+          counts={{ charts: charts.length, indicators: indicators.length, tables: tables.length, summaries: summaries.length, views: views.length }}
+          onAdd={() => openEdit(viewsOnly ? 'view' : 'chart', null)}
+          onSuggest={() => openSuggestModal(viewsOnly ? 'view' : 'chart')}
+          onSave={saveAll}
+          showChartHelp={has('charts')}
+        />
+      }>
+        <>
           {has('charts') && (
             <ChartsCard
               charts={charts}
@@ -513,17 +524,8 @@ export default function Composition({ sections } = {}) {
             />
           )}
           {has('framework') && <FrameworkCard />}
-        </div>
-        {has('charts') && (
-          <aside className="comp-col">
-            <div className="comp-rail">
-              <TokenAnatomy />
-              <ChartLibrary />
-              <TipsCard />
-            </div>
-          </aside>
-        )}
-      </div>
+        </>
+      </RailLayout>
 
       {editing?.kind === 'chart' && (
         <ChartModal initial={editing.index !== null ? charts[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setCharts)(item, editing.index)} />
@@ -727,6 +729,34 @@ export default function Composition({ sections } = {}) {
   );
 }
 
+// ── Right rail: Status · Quick actions · (chart reference when relevant) ──────
+const SECTION_LABELS = { charts: 'charts', indicators: 'indicators', tables: 'tables', summaries: 'summaries', views: 'views' };
+
+function CompositionRail({ secs, counts, onAdd, onSuggest, onSave, showChartHelp }) {
+  const viewsOnly = secs.includes('views') && !secs.includes('charts');
+  const checks = Object.keys(SECTION_LABELS)
+    .filter(k => secs.includes(k))
+    .map(k => ({
+      tone: counts[k] > 0 ? 'ok' : 'warn',
+      label: `${counts[k]} ${SECTION_LABELS[k]}`,
+      sub: counts[k] > 0 ? 'configured' : `none yet — add one`,
+    }));
+  const noun = viewsOnly ? 'view' : 'chart';
+  return (
+    <>
+      {checks.length > 0 && <StatusCard checks={checks} />}
+      <QuickActionsCard actions={[
+        { icon: RailIcons.sparkle, label: `Add ${noun}`, onClick: onAdd, title: `Add a ${noun} manually` },
+        { icon: RailIcons.sparkle, label: 'AI suggest', onClick: onSuggest, title: `Let AI propose ${noun}s from your questions` },
+        { icon: RailIcons.save, label: 'Save changes', onClick: onSave, title: '' },
+      ]} />
+      {showChartHelp && <TokenAnatomy />}
+      {showChartHelp && <ChartLibrary />}
+      {showChartHelp && <TipsCard />}
+    </>
+  );
+}
+
 // ── Header band ──────────────────────────────────────────────────────────────
 function Header({ questionCount, counts, sections = ALL_SECTIONS, onSave }) {
   const has = (k) => sections.includes(k);
@@ -740,7 +770,7 @@ function Header({ questionCount, counts, sections = ALL_SECTIONS, onSave }) {
   ].filter(Boolean);
   return (
     <PageHeader
-      eyebrow={viewsOnly ? 'Model · Derived views' : 'Analyze · Compose'}
+      eyebrow={viewsOnly ? 'Step 3 of 5 · Derived views' : 'Step 4 of 5 · Compose'}
       title={viewsOnly ? 'Build your' : 'Shape your'}
       accent={viewsOnly ? 'views.' : 'composition.'}
       sub={viewsOnly

@@ -231,10 +231,12 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 
 /* ─────────── Sources page ─────────── */
 
-.src-grid{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start}
-@media (max-width:1100px){.src-grid{grid-template-columns:1fr}}
-
-.src-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+/* Generic main-column + sticky right-rail layout shared by every page that has
+   a rail (Extract, Questions, Validate, Composition, Reports) — see Rail.jsx. */
+.rail-layout{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start}
+@media (max-width:1100px){.rail-layout{grid-template-columns:1fr}}
+.rail-layout__main{display:flex;flex-direction:column;gap:16px;min-width:0}
+.rail-layout__aside{min-width:0}
 .src-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-sm);padding:20px 22px;display:flex;flex-direction:column;gap:14px}
 .src-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:2px}
 .src-card__title{font-size:15.5px;font-weight:700;letter-spacing:-.01em;color:var(--ink);line-height:1.2}
@@ -247,6 +249,7 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 .src-field__label{font-size:13px;font-weight:600;color:var(--ink);padding-top:8px}
 .src-field__hint{font-size:11.5px;color:var(--ink-3);margin-top:4px;font-weight:400;line-height:1.45}
 .src-field__hint code{font-family:var(--font-mono);font-size:11px;background:var(--bg-2);padding:1px 5px;border-radius:4px}
+.src-field__stack{display:flex;flex-direction:column;min-width:0}
 .src-input{width:100%;height:36px;padding:0 12px;background:var(--surface);border:1px solid var(--border-2);border-radius:8px;font-size:13.5px;color:var(--ink);outline:0;transition:border-color .12s,box-shadow .12s;font-family:var(--font-sans)}
 .src-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .src-input--mono{font-family:var(--font-mono);font-size:12.5px}
@@ -270,6 +273,11 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .token-field button{width:28px;height:28px;background:transparent;border:0;color:var(--ink-3);cursor:pointer;border-radius:6px;display:grid;place-items:center}
 .token-field button:hover{background:var(--bg-2);color:var(--ink)}
 .token-field button svg{width:14px;height:14px}
+.token-saved{display:flex;align-items:center;gap:10px;height:36px;padding:0 6px 0 12px;background:var(--surface);border:1px solid var(--border-2);border-radius:8px}
+.token-saved__mask{flex:1;font-family:var(--font-mono);font-size:14px;color:var(--ink-3);letter-spacing:3px}
+.token-saved__env{flex:1;font-family:var(--font-mono);font-size:12.5px;color:var(--ink)}
+.token-saved__tag{font-size:10.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em}
+.token-cancel{margin-top:6px}
 
 /* Inline status row (Test connection · last check) */
 .inline-status{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -483,11 +491,6 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 
 /* ─────────── Composition page ─────────── */
 
-.comp-grid{display:grid;grid-template-columns:1fr 280px;gap:18px;align-items:start}
-@media (max-width:1100px){.comp-grid{grid-template-columns:1fr}}
-
-.comp-col{display:flex;flex-direction:column;gap:14px;min-width:0}
-
 .comp-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-sm);overflow:hidden}
 .comp-card__head{display:flex;align-items:flex-start;gap:16px;padding:16px 20px 14px;border-bottom:1px solid var(--border)}
 .comp-card__head-text{flex:1;min-width:0}
@@ -561,7 +564,6 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .tpl-row__size{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-3);text-align:right}
 
 /* ── Right rail cards ── */
-.comp-rail{display:flex;flex-direction:column;gap:12px;position:sticky;top:84px}
 .token-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-sm);padding:14px 16px;display:flex;flex-direction:column;gap:10px}
 .token-card__title{font-size:13px;font-weight:700;color:var(--ink);letter-spacing:-.005em}
 .token-card__sub{font-size:11.5px;color:var(--ink-3);line-height:1.5;margin-top:-2px}

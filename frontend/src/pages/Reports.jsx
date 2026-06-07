@@ -5,11 +5,14 @@ import Modal from '../components/Modal.jsx';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { usePerms } from '../lib/perms.js';
+import { useRun } from '../lib/run.js';
+import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 
 export default function Reports() {
   const toast = useToast();
   const { confirm, confirmDialog } = useConfirm();
   const { canEdit } = usePerms();
+  const { run } = useRun();
   const [reports, setReports] = useState(null);
   const [sessions, setSessions] = useState(null);
 
@@ -62,11 +65,33 @@ export default function Reports() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Step 04 · Reports"
+        eyebrow="Step 5 of 5 · Reports"
         title="Browse"
         accent="generated reports."
         sub="Word reports rendered by build-report appear here. Download individual files or grab everything as a zip."
       />
+      <RailLayout rail={
+        <>
+          <StatusCard checks={[
+            { tone: reports?.length ? 'ok' : 'warn',
+              label: `${reports?.length || 0} report${reports?.length === 1 ? '' : 's'} generated`,
+              sub: reports?.length ? 'ready to download' : 'run build-report to create one' },
+            { tone: sessions?.length ? 'ok' : 'warn',
+              label: `${sessions?.length || 0} data session${sessions?.length === 1 ? '' : 's'}`,
+              sub: sessions?.length ? 'available to build from' : 'run download first' },
+          ]} />
+          <QuickActionsCard actions={[
+            { icon: RailIcons.doc, label: 'Build report', onClick: () => run('build-report'),
+              disabled: !canEdit, title: canEdit ? 'Render a Word report from the latest data' : 'Editor access required' },
+            { icon: RailIcons.play, label: 'Run pipeline', onClick: () => run('run-all'),
+              disabled: !canEdit, title: canEdit ? 'Download → template → build-report' : 'Editor access required' },
+            { icon: RailIcons.copy, label: 'Compare periods', onClick: () => { setSelected([]); setShowCompare(true); },
+              title: 'Build a comparison report across periods' },
+            { icon: RailIcons.refresh, label: 'Refresh', onClick: () => { loadReports(); loadSessions(); },
+              title: 'Reload the file lists' },
+          ]} />
+        </>
+      }>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
         {/* ─── Reports ─── */}
@@ -145,6 +170,7 @@ export default function Reports() {
           )}
         </div>
       </div>
+      </RailLayout>
 
       {/* ─── Compare modal ─── */}
       {showCompare && (
