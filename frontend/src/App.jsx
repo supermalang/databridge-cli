@@ -32,8 +32,8 @@ const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'framew
 const STAGES = [
   { id: 'home', label: 'Home', home: true },
   { id: 'extract', label: 'Extract', subs: [
-    { id: 'connection', label: 'Connection & output', render: () => <Sources section="setup" /> },
-    { id: 'ai',         label: 'AI configuration',     render: () => <Sources section="ai" /> },
+    { id: 'connection', label: 'Connection',       render: () => <Sources section="setup" /> },
+    { id: 'ai',         label: 'AI configuration',  render: () => <Sources section="ai" /> },
   ] },
   { id: 'transform', label: 'Transform', subs: [
     { id: 'questions', label: 'Questions', render: () => <Questions /> },
@@ -47,7 +47,8 @@ const STAGES = [
     { id: 'ask',         label: 'Ask',                  render: () => <Ask /> },
     { id: 'composition', label: 'Charts & indicators', render: () => <Composition sections={ANALYZE_SECTIONS} /> },
   ] },
-  { id: 'present', label: 'Present', subs: [
+  { id: 'present', label: 'Deliver', subs: [
+    { id: 'output',    label: 'Output',    render: () => <Sources section="output" /> },
     { id: 'templates', label: 'Templates', render: () => <Templates /> },
     { id: 'reports',   label: 'Reports',   render: () => <Reports /> },
   ] },
@@ -153,14 +154,49 @@ export default function App() {
     return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
   };
 
+  // The command whose log lines are currently streaming. Each line is tagged
+  // with it so the terminal can attribute lines to a pipeline stage. Kept in a
+  // ref because onLog's closure would otherwise see a stale value.
+  const LOG_CAP = 1500;
+  const runningCmdRef = useRef(null);
   const { run, running, activeCmd } = useCommand({
-    onLog: (line, level) => setLogLines(prev => [...prev, { line, level, time: nowTime() }]),
+    onLog: (line, level) => setLogLines(prev =>
+      [...prev, { line, level, time: nowTime(), command: runningCmdRef.current }].slice(-LOG_CAP)),
     onStatus: ({ command, status }) => {
-      if (status === 'running') { setLogLines([]); setTermOpen(true); }
+      if (status === 'running') {
+        // Accumulate across runs — don't wipe. Insert a separator so each run is
+        // visually distinct in the (now persistent) buffer.
+        runningCmdRef.current = command;
+        setLogLines(prev =>
+          [...prev, { line: `running ${command}`, level: 'cmd', time: nowTime(), command }].slice(-LOG_CAP));
+        setTermOpen(true);
+      }
+      if (status === 'success' || status === 'error') runningCmdRef.current = null;
       if (status === 'success') toast(`${command} done ✓`, 'ok');
       if (status === 'error')   toast(`${command} failed`, 'err');
     },
   });
+
+  // Persist the log buffer per project so it survives navigation AND reload.
+  // Hydrate when the active project becomes known or changes; mirror back
+  // (debounced) on every change.
+  const logKey = activeProjectId ? `databridge:termlog:${activeProjectId}` : null;
+  const hydratedKeyRef = useRef(null);
+  useEffect(() => {
+    if (!logKey || hydratedKeyRef.current === logKey) return;
+    hydratedKeyRef.current = logKey;
+    try {
+      const saved = JSON.parse(localStorage.getItem(logKey) || '[]');
+      setLogLines(Array.isArray(saved) ? saved : []);
+    } catch { setLogLines([]); }
+  }, [logKey]);
+  useEffect(() => {
+    if (!logKey) return;
+    const t = setTimeout(() => {
+      try { localStorage.setItem(logKey, JSON.stringify(logLines)); } catch { /* quota */ }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [logLines, logKey]);
 
   useEffect(() => {
     (async () => {
@@ -353,7 +389,6 @@ export default function App() {
         project={formAlias || 'databridge'}
         cmd={activeCmd}
         lines={logLines}
-        onClear={() => setLogLines([])}
         open={termOpen}
         setOpen={setTermOpen}
       />

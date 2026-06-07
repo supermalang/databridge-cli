@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { isHidden, indexQuestionsByColumn, buildGroupTree } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import { useRun } from '../lib/run.js';
+import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const SEV_RANK = { error: 0, warning: 1, info: 2 };
@@ -14,6 +16,7 @@ export default function Validate() {
   const [questions, setQuestions] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { run } = useRun();
 
   const loadQuestions = async () => {
     try {
@@ -23,25 +26,24 @@ export default function Validate() {
     } catch { /* ignore */ }
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true); setError(null);
-      try {
-        const vr = await fetch('/api/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        const data = await vr.json().catch(() => ({}));
-        if (cancelled) return;
-        if (!vr.ok) { setError(data.detail || `Request failed (${vr.status})`); return; }
-        setReport(data);
-      } catch (e) {
-        if (!cancelled) setError(e.message || 'Network error');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    loadQuestions();
-    return () => { cancelled = true; };
+  const runValidation = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const vr = await fetch('/api/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await vr.json().catch(() => ({}));
+      if (!vr.ok) { setError(data.detail || `Request failed (${vr.status})`); return; }
+      setReport(data);
+    } catch (e) {
+      setError(e.message || 'Network error');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    runValidation();
+    loadQuestions();
+  }, [runValidation]);
 
   // Robust column → question match: exact, then normalized (case/punctuation-
   // insensitive) so findings reliably resolve to their group + question.
@@ -161,11 +163,34 @@ export default function Validate() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Step 03 · Validate"
+        eyebrow="Step 2 of 5 · Validate"
         title="Check your"
         accent="data."
         sub="Scan the downloaded submissions for missingness, duplicates, outliers, and type problems. Hide a column or flag it as PII to resolve a finding."
       />
+      <RailLayout rail={
+        <>
+          <StatusCard checks={[
+            { tone: report ? 'ok' : 'warn',
+              label: report ? `${report.n_rows.toLocaleString()} rows scanned` : 'Not validated yet',
+              sub: report ? `${report.n_columns} columns` : 'run a scan to see findings' },
+            { tone: counts.error > 0 ? 'rose' : 'ok',
+              label: `${counts.error} error${counts.error === 1 ? '' : 's'}`,
+              sub: counts.error > 0 ? 'must fix' : 'no blocking issues' },
+            { tone: counts.warning > 0 ? 'warn' : 'ok',
+              label: `${counts.warning} warning${counts.warning === 1 ? '' : 's'}`,
+              sub: counts.warning > 0 ? 'review recommended' : 'nothing flagged' },
+            { tone: 'ok',
+              label: `${counts.info} note${counts.info === 1 ? '' : 's'}`, sub: 'informational' },
+          ]} />
+          <QuickActionsCard actions={[
+            { icon: RailIcons.refresh, label: 'Re-run validation', onClick: runValidation,
+              disabled: loading, title: 'Re-scan the downloaded data' },
+            { icon: RailIcons.download, label: 'Download data', onClick: () => run('download'),
+              title: 'Download fresh submissions to validate' },
+          ]} />
+        </>
+      }>
       {loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 60 }}>Running validation…</div>}
       {error && (
         <EmptyState tone="error" title="Validation failed"
@@ -173,12 +198,6 @@ export default function Validate() {
       )}
       {report && (
         <div>
-          <div style={{ color: 'var(--ink-3)', fontSize: 13, marginBottom: 16 }}>
-            Scanned {report.n_rows.toLocaleString()} rows · {report.n_columns} columns ·
-            <span style={{ marginLeft: 8, color: 'var(--danger, #b91c1c)' }}>{counts.error} errors</span> ·
-            <span style={{ marginLeft: 8, color: 'var(--warn, #b45309)' }}>{counts.warning} warnings</span> ·
-            <span style={{ marginLeft: 8 }}>{counts.info} notes</span>
-          </div>
           {visibleChecks.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>No issues found on visible columns — your data looks clean.</div>
           ) : (
@@ -186,6 +205,7 @@ export default function Validate() {
           )}
         </div>
       )}
+      </RailLayout>
     </div>
   );
 }

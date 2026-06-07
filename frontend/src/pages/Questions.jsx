@@ -8,6 +8,8 @@ import GroupTree from '../components/GroupTree.jsx';
 import Modal from '../components/Modal.jsx';
 import PageHeader from './PageHeader.jsx';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
+import { useRun } from '../lib/run.js';
+import { RailLayout, RailToolbar, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function colName(q) {
@@ -57,6 +59,7 @@ export default function Questions() {
   const toast = useToast();
   const { canEdit } = usePerms();
   const { aiReady } = useAiStatus();
+  const { run } = useRun();
   const [questions, setQuestions] = useState(null);
   const [original,  setOriginal]  = useState({});          // { idx: {export_label, hidden} } at load
   const [search,    setSearch]    = useState('');
@@ -438,13 +441,7 @@ export default function Questions() {
   if (questions.length === 0) {
     return (
       <div className="page">
-        <Header
-          total={0}
-          groups={0}
-          unsaved={0}
-          onSave={save}
-          canEdit={canEdit}
-        />
+        <Header total={0} groups={0} />
         <div className="src-card"><p className="empty-state">No questions yet — go to <b>Extract → Connection &amp; output</b> and click <b>Fetch questions</b> to pull the schema from your platform.</p></div>
       </div>
     );
@@ -459,18 +456,10 @@ export default function Questions() {
   const totalHidden = questions.filter(q => isHidden(q)).length;
   const totalPii = questions.filter(q => !!q.pii).length;
 
-  return (
-    <div className="page">
-      <Header
-        total={questions.length}
-        groups={totalGroups}
-        unsaved={dirtyIndices.size}
-        onSave={save}
-        canEdit={canEdit}
-      />
-
-      <div className="q-toolbar">
-        <div className="q-toolbar__left">
+  const toolbar = (
+    <RailToolbar
+      left={
+        <>
           <div className="q-search">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>
             <input placeholder="Search by name or label..." value={search} onChange={e => { setSearch(e.target.value); exitReveal(); }} />
@@ -487,23 +476,48 @@ export default function Questions() {
               PII <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalPii})</span>
             </button>
           </div>
-          <button className="ai-btn" onClick={suggestHidden} disabled={!!suggesting || !aiReady}
-                  title={aiReady ? 'Ask the AI to flag non-analytical clutter to hide (reads only field metadata)' : AI_LOCK_TIP}>
-            {suggesting === 'hidden' ? 'Asking AI…' : '✦ Auto-hide clutter'}
+        </>
+      }
+      right={
+        <>
+          {dirtyIndices.size > 0 && <span className="q-unsaved-pill">{dirtyIndices.size} unsaved</span>}
+          <button className="btn btn-primary" onClick={save} disabled={dirtyIndices.size === 0 || !canEdit}
+                  title={canEdit ? '' : 'You have viewer access — editing questions requires an editor or admin role'}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
+            Save changes
           </button>
-          <button className="ai-btn" onClick={suggestPII} disabled={!!suggesting || !aiReady}
-                  title={aiReady ? 'Ask the AI to flag fields that likely contain personal data (reads only field metadata)' : AI_LOCK_TIP}>
-            {suggesting === 'pii' ? 'Asking AI…' : '✦ Flag PII'}
-          </button>
-        </div>
-        <div className="q-stats">
-          <span><b>{questions.length}</b> fields</span>
-          <span>·</span>
-          <span><b>{totalUsedInCharts}</b> used in charts</span>
-          <span>·</span>
-          <span><b>{totalBoundInd}</b> bound to indicators</span>
-        </div>
-      </div>
+        </>
+      }
+    />
+  );
+
+  return (
+    <div className="page">
+      <Header total={questions.length} groups={totalGroups} />
+
+      <RailLayout toolbar={toolbar} rail={
+        <>
+          <StatusCard checks={[
+            { tone: questions.length > 0 ? 'ok' : 'warn',
+              label: `${questions.length} fields configured`, sub: `${totalGroups} groups` },
+            { tone: dupInfo.indices.size > 0 ? 'rose' : 'ok',
+              label: dupInfo.indices.size > 0 ? `${dupInfo.cols.length} duplicate labels` : 'No duplicate labels',
+              sub: dupInfo.indices.size > 0 ? 'fix before saving' : 'export labels are unique' },
+            { tone: totalUsedInCharts > 0 ? 'ok' : 'warn',
+              label: `${totalUsedInCharts} used in charts`, sub: `${totalBoundInd} bound to indicators` },
+            { tone: 'ok',
+              label: `${totalPii} PII-flagged`, sub: `${totalHidden} hidden from report` },
+          ]} />
+          <QuickActionsCard actions={[
+            { icon: RailIcons.refresh, label: 'Fetch questions', onClick: () => run('fetch-questions'),
+              disabled: !canEdit, title: canEdit ? 'Re-fetch the form schema (preserves your edits)' : 'Editor access required' },
+            { icon: RailIcons.sparkle, label: 'Auto-hide clutter', onClick: suggestHidden,
+              disabled: !!suggesting || !aiReady, title: aiReady ? 'Ask the AI to flag non-analytical fields' : AI_LOCK_TIP },
+            { icon: RailIcons.shield, label: 'Flag PII', onClick: suggestPII,
+              disabled: !!suggesting || !aiReady, title: aiReady ? 'Ask the AI to flag personal-data fields' : AI_LOCK_TIP },
+          ]} />
+        </>
+      }>
 
       {revealedDupIdx && (
         <div className="dup-banner" role="alert">
@@ -543,6 +557,8 @@ export default function Questions() {
         )}
       </div>
 
+      </RailLayout>
+
       {reviewModal && (
         <Modal title={reviewModal.title} onClose={() => setReviewModal(null)} onSave={applyReview} saveLabel="Apply">
           <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
@@ -576,23 +592,14 @@ export default function Questions() {
 }
 
 // ── Header band ──────────────────────────────────────────────────────────────
-function Header({ total, groups, unsaved, onSave, canEdit }) {
+// Save lives in the RailLayout toolbar row (next to search + filters), not here.
+function Header({ total, groups }) {
   return (
     <PageHeader
-      eyebrow={`Questions · ${total} fields · ${groups} groups`}
+      eyebrow={`Step 2 of 5 · Questions · ${total} fields · ${groups} groups`}
       title="Rename what shows up"
       accent="in the report."
       sub="Each row is a survey question. Edit the Export label to change how that column appears in charts, indicators, and Word placeholders — no YAML required."
-      actions={
-        <>
-          {unsaved > 0 && <span className="q-unsaved-pill">{unsaved} unsaved</span>}
-          <button className="btn btn-primary" onClick={onSave} disabled={unsaved === 0 || !canEdit}
-                  title={canEdit ? '' : 'You have viewer access — editing questions requires an editor or admin role'}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
-            Save changes
-          </button>
-        </>
-      }
     />
   );
 }

@@ -2,21 +2,33 @@ import { useEffect, useRef, useState } from 'react';
 
 const LEVELS = ['info', 'ok', 'warn', 'error'];
 
-// Sessions mirror the app's workflow: a "Pipeline" parent with the five ordered
-// stages as children (fetch.questions nests under Transform, the stage it
-// belongs to). These are navigation labels over the shared run log — selecting
-// one highlights it; the log buffer itself is shared (the pipeline emits a
-// single stream, not per-stage streams). `shell` is the only session that
-// swaps content, to the ttyd iframe.
+// Sessions mirror the app's pipeline: a "Pipeline" parent (shows every line)
+// over the same five ordered stages as the top nav (App.jsx STAGES). Selecting a
+// stage filters the shared run log to the lines produced by that stage's
+// commands; "Pipeline" shows them all. Stages with no /api/run command today
+// (Model, Analyze) are kept for parity with the workflow and show an empty state.
 const PIPELINE_TREE = [
-  { id: 'pipeline',        label: 'Pipeline',        depth: 0, parent: true },
-  { id: 'extract',         label: 'Extract',         depth: 1 },
-  { id: 'transform',       label: 'Transform',       depth: 1 },
-  { id: 'fetch.questions', label: 'fetch.questions', depth: 2 },
-  { id: 'model',           label: 'Model',           depth: 1 },
-  { id: 'analyze',         label: 'Analyze',         depth: 1 },
-  { id: 'present',         label: 'Present',         depth: 1 },
+  { id: 'pipeline',  label: 'Pipeline',  depth: 0, parent: true },
+  { id: 'extract',   label: 'Extract',   depth: 1 },
+  { id: 'transform', label: 'Transform', depth: 1 },
+  { id: 'model',     label: 'Model',     depth: 1 },
+  { id: 'analyze',   label: 'Analyze',   depth: 1 },
+  { id: 'present',   label: 'Deliver',   depth: 1 },
 ];
+
+// Maps a run command (from the SSE stream) to the pipeline stage it belongs to.
+// Unmapped commands (e.g. run-all, which spans every stage) are only visible
+// under the "Pipeline" parent.
+const COMMAND_STAGE = {
+  'download':          'extract',
+  'fetch-questions':   'transform',
+  'generate-template': 'present',
+  'build-report':      'present',
+};
+
+function stageOf(command) {
+  return COMMAND_STAGE[command] || null;
+}
 
 // Map a raw log-line level (cmd|info|success|warning|error from useCommand) to the
 // short label rendered as a colored badge in the terminal view.
@@ -48,10 +60,9 @@ function nowTime() {
 // Props:
 //   project    project alias shown in the bar
 //   cmd        currently-running command (or null)
-//   lines      array of { line, level, time? }
-//   onClear    optional callback for the trash icon
+//   lines      array of { line, level, time?, command? }
 //   open, setOpen  hoisted state so the topbar terminal icon can toggle it
-export default function BottomTerminal({ project = 'databridge', cmd, lines = [], onClear, open, setOpen }) {
+export default function BottomTerminal({ project = 'databridge', cmd, lines = [], open, setOpen }) {
   const [session, setSession] = useState('pipeline');
   const [filters, setFilters] = useState(() => new Set(LEVELS));
   const bodyRef = useRef(null);
@@ -74,7 +85,8 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
     return next;
   });
 
-  const filtered = (lines || []).filter(l => filters.has(lvlGroup(l.level)));
+  const byStage = (l) => session === 'pipeline' || stageOf(l.command) === session;
+  const filtered = (lines || []).filter(l => filters.has(lvlGroup(l.level)) && byStage(l));
 
   return (
     <div className="bottom-term" data-open={open ? 'true' : 'false'}>
@@ -92,22 +104,11 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
         <span className="bottom-term__bar-title">terminal</span>
         <span className="bottom-term__bar-sep">·</span>
         <span>{project}</span>
-        <span className="bottom-term__bar-sep">·</span>
-        <span>ttyd</span>
         {cmd && <>
           <span className="bottom-term__bar-sep">·</span>
           <span className="bottom-term__bar-cmd">databridge run --{cmd}</span>
         </>}
         <div className="bottom-term__bar-actions" onClick={(e) => e.stopPropagation()}>
-          <button title="Clear log" onClick={onClear}>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 4h10M6 4V2.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5V4M4.5 4l.5 9a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 .5-.5l.5-9"/></svg>
-          </button>
-          <button title="Split" onClick={() => setOpen(true)}>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><line x1="8" y1="3" x2="8" y2="13"/></svg>
-          </button>
-          <button title="Settings">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg>
-          </button>
           <button title={open ? 'Close' : 'Open'} onClick={() => setOpen(!open)}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               {open ? <><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></>
@@ -135,9 +136,6 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
                 />{s.label}
               </li>
             ))}
-            <li data-active={session === 'shell'} onClick={() => setSession('shell')}>
-              <span className="dot" />shell (ttyd)
-            </li>
           </ul>
           <div className="bottom-term__side-label">Filter</div>
           <ul>
@@ -153,9 +151,7 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
         </aside>
 
         <div className="bottom-term__main" ref={bodyRef} role="log" aria-live="polite" aria-label="Pipeline execution log">
-          {session === 'shell' ? (
-            <iframe className="bottom-term__shell" src="/terminal/" title="ttyd terminal" />
-          ) : filtered.length === 0 ? (
+          {filtered.length === 0 ? (
             <div style={{ color: '#5a6473', fontStyle: 'italic' }}>Awaiting log lines…</div>
           ) : (
             filtered.map((l, i) => (

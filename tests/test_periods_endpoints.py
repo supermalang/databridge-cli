@@ -54,6 +54,28 @@ def test_post_registry_appends_new_period(tmp_periods_workspace, api_client):
     assert "Q3 2026" in labels
 
 
+def test_date_range_nulls_without_data(tmp_periods_workspace, api_client):
+    r = api_client.get("/api/periods/date-range")
+    assert r.status_code == 200
+    assert r.json() == {"min_year": None, "max_year": None}
+
+
+def test_date_range_reports_min_max_year_from_data(tmp_periods_workspace, api_client):
+    import pandas as pd
+    out = tmp_periods_workspace / "data" / "processed"
+    out.mkdir(parents=True)
+    # Latest plain download with submission times spanning 2023 → 2025.
+    pd.DataFrame({
+        "_id": [1, 2, 3],
+        "_submission_time": ["2023-04-01T10:00:00", "2024-06-15T08:30:00", "2025-02-20T12:00:00"],
+        "Age": [10, 20, 30],
+    }).to_csv(out / "p_data_20260101_120000.csv", index=False)
+
+    r = api_client.get("/api/periods/date-range")
+    assert r.status_code == 200
+    assert r.json() == {"min_year": 2023, "max_year": 2025}
+
+
 def test_delete_registry_removes_period(tmp_periods_workspace, api_client):
     r = api_client.delete("/api/periods/registry/q2_2026")
     assert r.status_code == 200

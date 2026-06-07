@@ -271,14 +271,23 @@ ai:
   max_tokens: 1500
 
 # Optional — multi-period support. When absent, single-period mode applies.
+# A registry entry has two flavors, distinguished by whether it carries dates:
+#   • date-range (has started/ended) — set from the Deliver→Output "Reporting
+#     period" control (Year/Quarter/Month or a custom range). ONE plain download
+#     is sliced at report time: build-report keeps only rows whose
+#     `_submission_time` falls in [started, ended] (see filter_to_period in
+#     src/data/transform.py). Files are NOT slug-separated.
+#   • label-only (no started/ended) — legacy per-period downloads, where each
+#     period writes slug-prefixed files `{alias}_{slug}_data_*` and build-report
+#     --period loads just that period's files.
 periods:
   current:  "Q2 2026"                    # active period
   baseline: "Q1 2026"                    # canonical comparison anchor
   registry:
     - label: "Q1 2026"
       slug:  "q1_2026"                   # filesystem-safe; auto-derived from label
-      started: 2026-01-01                # optional
-      ended:   2026-03-31                # optional
+      started: 2026-01-01                # set ⇒ date-range period (filters by _submission_time)
+      ended:   2026-03-31
     - label: "Q2 2026"
       slug:  "q2_2026"
 
