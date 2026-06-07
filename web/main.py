@@ -20,6 +20,7 @@ from web.db import bootstrap as db_bootstrap
 from web.db import session as db_session, repository as db_repo, provision as db_provision
 from web.db import bridge as db_bridge
 from web.storage import workspace as storage_workspace
+from web.netguard import validate_public_url, SSRFError
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -153,6 +154,36 @@ def save_config(payload: ConfigPayload, request: Request, db: Session = Depends(
 class NewProjectPayload(BaseModel):
     name: str
     org_id: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[list] = None
+    language: Optional[str] = None
+    color: Optional[str] = None
+    icon: Optional[str] = None
+
+
+class ProjectPatchPayload(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[list] = None
+    language: Optional[str] = None
+    color: Optional[str] = None
+    icon: Optional[str] = None
+
+
+_META_KEYS = ("description", "tags", "language", "color", "icon")
+
+
+def _project_dict(db, user, p):
+    meta = p.meta or {}
+    return {"id": str(p.id), "name": p.name, "slug": p.slug, "org_id": str(p.org_id),
+            "role": db_repo.role_for(db, user, p),
+            "is_owner": p.owner_id == user.id,
+            "is_archived": p.archived_at is not None,
+            "description": meta.get("description", ""),
+            "tags": meta.get("tags", []),
+            "language": meta.get("language", ""),
+            "color": meta.get("color", ""),
+            "icon": meta.get("icon", "")}
 
 
 @app.get("/api/projects")
@@ -164,10 +195,7 @@ def list_projects(request: Request, db: Session = Depends(db_session.get_db)):
     return {
         "active_id": str(user.active_project_id) if user.active_project_id else None,
         "is_superadmin": bool(user.is_superadmin),
-        "projects": [{"id": str(p.id), "name": p.name, "slug": p.slug, "org_id": str(p.org_id),
-                      "role": db_repo.role_for(db, user, p),
-                      "is_owner": p.owner_id == user.id}
-                     for p in projects],
+        "projects": [_project_dict(db, user, p) for p in projects],
     }
 
 
@@ -181,11 +209,66 @@ def create_project(payload: NewProjectPayload, request: Request, db: Session = D
         org_id = _uuid.UUID(payload.org_id) if payload.org_id else None
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid org_id")
+    meta = {k: getattr(payload, k) for k in _META_KEYS if getattr(payload, k) is not None}
     try:
-        p = db_repo.create_project(db, user=user, name=payload.name, org_id=org_id)
+        p = db_repo.create_project(db, user=user, name=payload.name, org_id=org_id, meta=meta)
     except db_repo.AccessError:
         raise HTTPException(status_code=403, detail="Not a member of that org")
     return {"id": str(p.id), "name": p.name, "slug": p.slug}
+
+
+@app.patch("/api/projects/{project_id}")
+def patch_project(project_id: str, payload: ProjectPatchPayload, request: Request,
+                  db: Session = Depends(db_session.get_db)):
+    _user, project, _role = _admin_project(request, db, project_id)
+    meta = {k: getattr(payload, k) for k in _META_KEYS if getattr(payload, k) is not None}
+    db_repo.update_project(db, project, name=payload.name, meta=meta or None)
+    return {"ok": True}
+
+
+@app.post("/api/projects/{project_id}/archive")
+def archive_project_endpoint(project_id: str, request: Request,
+                             db: Session = Depends(db_session.get_db)):
+    _user, project, _role = _admin_project(request, db, project_id)
+    db_repo.archive_project(db, project, True)
+    return {"ok": True}
+
+
+@app.post("/api/projects/{project_id}/unarchive")
+def unarchive_project_endpoint(project_id: str, request: Request,
+                               db: Session = Depends(db_session.get_db)):
+    _user, project, _role = _admin_project(request, db, project_id)
+    db_repo.archive_project(db, project, False)
+    return {"ok": True}
+
+
+class ProfilePatchPayload(BaseModel):
+    given_name: str = ""
+    family_name: str = ""
+
+
+@app.patch("/api/me")
+def patch_me(payload: ProfilePatchPayload, request: Request,
+             db: Session = Depends(db_session.get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    given = (payload.given_name or "").strip()
+    family = (payload.family_name or "").strip()
+    full = " ".join(p for p in (given, family) if p) or user.name
+    user.name = full
+    db.commit()
+    db.refresh(user)
+    # Propagate to Zitadel when configured and this is a real Zitadel user.
+    from web import zitadel_admin
+    z_status = "skipped"
+    if zitadel_admin.enabled() and user.zitadel_sub and user.zitadel_sub != "dev-local":
+        try:
+            zitadel_admin.update_human_user(user.zitadel_sub, given, family)
+            z_status = "updated"
+        except Exception as e:  # noqa: BLE001 — surface, don't fail the local save
+            z_status = f"error: {e}"
+    return {"sub": user.zitadel_sub, "email": user.email, "name": user.name, "zitadel": z_status}
 
 
 @app.delete("/api/projects/{project_id}")
@@ -536,6 +619,11 @@ async def test_ai(payload: AITestPayload, request: Request):
                 raise HTTPException(status_code=400, detail="openai package not installed. Run: pip install openai>=1.0.0")
             kwargs = {"api_key": api_key}
             if payload.base_url:
+                try:
+                    validate_public_url(payload.base_url)
+                except SSRFError as e:
+                    _invalidate_ai(request)
+                    raise HTTPException(status_code=400, detail=f"base_url not allowed: {e}")
                 kwargs["base_url"] = payload.base_url
             client = OpenAI(**kwargs)
             resp = client.chat.completions.create(
@@ -636,6 +724,11 @@ def test_source(payload: SourceTestPayload):
     if not url or not token:
         return {"ok": False, "fields": None, "status": None,
                 "message": "API URL and token are both required."}
+    try:
+        validate_public_url(url)
+    except SSRFError as e:
+        return {"ok": False, "fields": None, "status": None,
+                "message": f"This URL is not allowed: {e}"}
     platform = (payload.platform or "kobo").lower()
     if platform not in ("kobo", "ona"):
         platform = "ona" if "ona" in url else "kobo"

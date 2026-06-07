@@ -203,7 +203,20 @@ def register_auth(app) -> None:
 
     @app.get("/api/me")
     async def auth_me(request: Request):
-        return request.state.user
+        claims = request.state.user
+        if not claims:
+            return claims
+        sub = claims.get("sub")
+        if sub:
+            try:
+                from web.db import session as _dbs, repository as _repo
+                with _dbs.SessionLocal() as db:
+                    u = _repo.get_user_by_sub(db, sub)
+                    if u and u.name:
+                        return {**claims, "name": u.name, "email": u.email or claims.get("email", "")}
+            except Exception:  # noqa: BLE001 — fall back to raw claims
+                pass
+        return claims
 
     if not auth_enabled():
         return

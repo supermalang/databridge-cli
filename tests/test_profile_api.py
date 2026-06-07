@@ -1,6 +1,15 @@
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 import web.main as wm
+
+
+@pytest.fixture
+def _isolated_base(tmp_path, monkeypatch):
+    monkeypatch.setattr(wm, "BASE_DIR", tmp_path)
+    for sub in ("data/processed", "reports", "templates"):
+        (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+    return tmp_path
 
 
 def test_profile_endpoint_returns_per_table_profiles(monkeypatch):
@@ -33,3 +42,12 @@ def test_profile_endpoint_no_data(monkeypatch):
     client = TestClient(wm.app)
     body = client.get("/api/profile").json()
     assert body["profiles"] == [] and "message" in body
+
+
+def test_patch_me_updates_db_name_when_zitadel_disabled(_isolated_base):
+    with TestClient(wm.app) as c:
+        r = c.patch("/api/me", json={"given_name": "Ada", "family_name": "Lovelace"})
+        assert r.status_code == 200
+        assert r.json()["name"] == "Ada Lovelace"
+        # /api/me reflects the updated name on the next read
+        assert c.get("/api/me").json()["name"] == "Ada Lovelace"
