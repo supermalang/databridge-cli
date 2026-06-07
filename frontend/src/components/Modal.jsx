@@ -16,6 +16,14 @@ export default function Modal({ title, onClose, onSave, saveLabel = 'Save', dang
   const dialogRef = useRef(null);
   const titleId = useRef(`modal-title-${Math.random().toString(36).slice(2)}`);
 
+  // Keep the latest onClose in a ref so the focus-trap effect can run ONCE on
+  // mount. Depending the effect on [onClose] re-ran it on every parent render
+  // (callers pass a fresh inline onClose each render), and each re-run moved
+  // focus to the first focusable element — stealing focus from inputs inside
+  // the modal after every keystroke.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
+
   useEffect(() => {
     const token = {};
     modalStack.push(token);
@@ -32,7 +40,7 @@ export default function Modal({ title, onClose, onSave, saveLabel = 'Save', dang
 
     const onKey = (e) => {
       if (!isTop()) return;   // only the topmost modal handles keys
-      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key === 'Escape') { onCloseRef.current(); return; }
       if (e.key !== 'Tab' || !node) return;
       const items = Array.from(node.querySelectorAll(FOCUSABLE));
       if (items.length === 0) { e.preventDefault(); return; }
@@ -49,7 +57,7 @@ export default function Modal({ title, onClose, onSave, saveLabel = 'Save', dang
       if (modalStack.length === 0) document.body.style.overflow = prevOverflow;
       if (prevFocus && typeof prevFocus.focus === 'function') prevFocus.focus();
     };
-  }, [onClose]);
+  }, []);   // mount once — see onCloseRef above (re-running stole input focus)
 
   return (
     <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -67,12 +75,14 @@ export default function Modal({ title, onClose, onSave, saveLabel = 'Save', dang
           <button onClick={onClose} aria-label="Close dialog">✕</button>
         </div>
         <div className="modal-body">{children}</div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '12px 20px 16px', borderTop: '1px solid var(--border)' }}>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-          {onSave && (
+        {/* Footer only when there's a save action — Cancel pairs with Save (discard
+            vs commit). Dismiss-only modals would just duplicate the ✕, so omit it. */}
+        {onSave && (
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '12px 20px 16px', borderTop: '1px solid var(--border)' }}>
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
             <button className={`btn btn-sm ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onSave}>{saveLabel}</button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
