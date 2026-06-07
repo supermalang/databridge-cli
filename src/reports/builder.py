@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 from docx.shared import Inches
 from docxtpl import DocxTemplate, InlineImage
+from jinja2.sandbox import SandboxedEnvironment
 from src.data.transform import load_processed_data, apply_local_scope, aggregate_repeat, join_repeat_to_main, apply_computed_columns, build_views
 from src.reports.charts import generate_chart, CHART_DIR
 from src.reports.indicators import compute_indicators
@@ -15,6 +16,19 @@ from src.reports.logframe import build_logframe
 from src.reports.data_quality import build_data_quality
 
 log = logging.getLogger(__name__)
+
+
+def sandboxed_jinja_env() -> SandboxedEnvironment:
+    """Jinja2 environment used to render Word templates.
+
+    Templates are user-uploaded (.docx via the web UI), so their content is
+    untrusted. A SandboxedEnvironment blocks access to dunder/internal attributes
+    (``__class__``, ``__globals__`` …) and unsafe callables, neutralising the
+    SSTI gadget chains that would otherwise turn template rendering into remote
+    code execution, while still allowing the legitimate ``{{ var }}`` / ``{% for %}``
+    constructs the report templates rely on.
+    """
+    return SandboxedEnvironment()
 
 
 def _pick_df(
@@ -215,7 +229,7 @@ class ReportBuilder:
             **self._generate_charts(tpl, df, repeat_tables),
             **self._generate_tables(tpl, df, repeat_tables),
         }
-        tpl.render(context)
+        tpl.render(context, jinja_env=sandboxed_jinja_env())
         out_dir = Path(self.report_cfg.get("output_dir","reports"))
         out_dir.mkdir(parents=True, exist_ok=True)
         alias = self.cfg.get("form",{}).get("alias","form")

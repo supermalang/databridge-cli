@@ -102,6 +102,20 @@ def _require(request: Request, minimum: str):
         require_role(request, _db, minimum)
 
 
+def _require_view(request: Request):
+    """Gate read/download endpoints that serve the shared BASE_DIR mirror.
+
+    These have no per-request project argument — they read whatever is mirrored
+    for the active project. When auth is enabled we require at least a 'viewer'
+    role on the caller's active project, so a user who is a member of nothing (or
+    of a different project) can't read another tenant's mirrored reports/data.
+    In dev mode (auth disabled) there is a single user who owns everything, so we
+    allow the read without requiring an active project to be set."""
+    if not auth.auth_enabled():
+        return
+    _require(request, "viewer")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     index = STATIC_DIR / "index.html"
@@ -1770,7 +1784,8 @@ async def get_state():
     return {"has_questions": has_questions, "has_data": has_data, "has_templates": has_templates, "has_ai": has_ai}
 
 @app.get("/api/reports")
-async def list_reports():
+async def list_reports(request: Request):
+    _require_view(request)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     files = []
     for f in sorted(REPORTS_DIR.glob("*.docx"), key=lambda x: x.stat().st_mtime, reverse=True):
@@ -1780,7 +1795,8 @@ async def list_reports():
     return {"files": files}
 
 @app.get("/api/reports/download/{filename}")
-async def download_report(filename: str):
+async def download_report(filename: str, request: Request):
+    _require_view(request)
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = REPORTS_DIR / filename
@@ -1801,7 +1817,8 @@ async def delete_report(filename: str, request: Request):
     return {"ok": True}
 
 @app.get("/api/reports/download-zip")
-async def download_reports_zip():
+async def download_reports_zip(request: Request):
+    _require_view(request)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     docx_files = list(REPORTS_DIR.glob("*.docx"))
     if not docx_files:
@@ -1819,7 +1836,8 @@ async def download_reports_zip():
 
 # ── Data files ──────────────────────────────────────────────
 @app.get("/api/data")
-async def list_data_files():
+async def list_data_files(request: Request):
+    _require_view(request)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     files = []
     for f in sorted(DATA_DIR.glob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
@@ -1830,7 +1848,8 @@ async def list_data_files():
     return {"files": files}
 
 @app.get("/api/data/sessions")
-async def list_data_sessions():
+async def list_data_sessions(request: Request):
+    _require_view(request)
     from src.data.transform import list_sessions
     from src.utils.config import load_config
     if not CONFIG_PATH.exists():
@@ -1840,7 +1859,8 @@ async def list_data_sessions():
     return {"sessions": sessions}
 
 @app.get("/api/data/sessions/{session_id}/download")
-async def download_session_zip(session_id: str):
+async def download_session_zip(session_id: str, request: Request):
+    _require_view(request)
     from src.data.transform import list_sessions
     from src.utils.config import load_config
     if "/" in session_id or ".." in session_id:
@@ -1928,7 +1948,8 @@ async def debug_raw_columns():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/data/download/{filename}")
-async def download_data_file(filename: str):
+async def download_data_file(filename: str, request: Request):
+    _require_view(request)
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = DATA_DIR / filename
@@ -1951,7 +1972,8 @@ async def delete_data_file(filename: str, request: Request):
 
 # ── Templates ──────────────────────────────────────────────
 @app.get("/api/templates")
-async def list_templates():
+async def list_templates(request: Request):
+    _require_view(request)
     TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
     files = []
     for f in sorted(TEMPLATES_DIR.glob("*.docx"), key=lambda x: x.stat().st_mtime, reverse=True):
@@ -1961,7 +1983,8 @@ async def list_templates():
     return {"files": files}
 
 @app.get("/api/templates/download/{filename}")
-async def download_template(filename: str):
+async def download_template(filename: str, request: Request):
+    _require_view(request)
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = TEMPLATES_DIR / filename
@@ -2124,8 +2147,9 @@ async def delete_registry_period(slug: str, request: Request):
 
 # ── Validation ──────────────────────────────────────────────
 @app.post("/api/validate")
-async def validate():
+async def validate(request: Request):
     """Run all validation detectors against the latest downloaded data."""
+    _require_view(request)
     # Prefer cwd-relative config.yml so the endpoint composes with tests that
     # chdir into a temp workspace; fall back to the project's CONFIG_PATH.
     config_path = Path("config.yml") if Path("config.yml").exists() else CONFIG_PATH
@@ -2150,7 +2174,7 @@ async def validate():
 
 
 @app.get("/api/base-tables")
-async def base_tables():
+async def base_tables(request: Request):
     """Catalog of the flattened base tables for the latest download session.
 
     Returns row counts, data columns, linkage columns, and the parent table for
@@ -2160,6 +2184,7 @@ async def base_tables():
     match). Unrelated tables that happen to share a name prefix could be
     mis-parented; this is acceptable until explicit parent metadata is surfaced.
     """
+    _require_view(request)
     cfg = load_config(CONFIG_PATH)
     try:
         df, repeats = load_processed_data(cfg)
@@ -2191,9 +2216,10 @@ async def base_tables():
 
 
 @app.get("/api/profile")
-async def data_profile():
+async def data_profile(request: Request):
     """Structured EDA profile of every base table for the latest download
     session (row counts, per-column stats, correlations, duplicates). Read-only."""
+    _require_view(request)
     cfg = load_config(CONFIG_PATH)
     try:
         df, repeats = load_processed_data(cfg)
@@ -2204,10 +2230,11 @@ async def data_profile():
 
 
 @app.get("/api/data-quality")
-async def data_quality_overview():
+async def data_quality_overview(request: Request):
     """Per-column completeness / outlier-rate / duplicate-rate per base table (main
     table in `rows`, each non-empty repeat table in `tables`) for the latest download
     session, post-PII-redaction. Read-only. Mirrors the report's {{ data_quality }} section."""
+    _require_view(request)
     from src.reports.data_quality import compute_data_quality
     from src.utils.pii import apply_pii
     cfg = load_config(CONFIG_PATH)

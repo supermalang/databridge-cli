@@ -1,11 +1,13 @@
 """Bridge a project's files (Minio, durable) <-> the local working dirs (a materialized
 mirror of the ACTIVE project). Uses the 3a Storage abstraction; keys via storage_key."""
+import copy
 from pathlib import Path
 from typing import Dict, List
 
 from web.storage.base import storage_key
 from web.storage.factory import get_storage
 from src.utils.config import write_config
+from src.utils.periods import slugify
 
 # category -> local dir (relative to base)
 CATEGORY_DIRS: Dict[str, str] = {
@@ -92,12 +94,36 @@ RUN_INPUTS = {
 _DEFAULT_INPUTS = ["processed", "templates"]   # safe superset for unknown commands
 
 
+def sanitize_run_config(cfg: dict) -> dict:
+    """Return a copy of *cfg* with output locations constrained to the run sandbox.
+
+    Project config is user-editable, but a web run executes in an isolated tempdir
+    whose outputs are pushed back to durable storage from the fixed CATEGORY_DIRS.
+    An attacker-set ``export.output_dir`` / ``report.output_dir`` (absolute path or
+    ``../`` traversal) would write outside that sandbox, and a traversal
+    ``form.alias`` would escape via the filename prefix. We pin the output dirs to
+    their canonical relative locations (which the push-back step requires anyway)
+    and reduce the alias to a filesystem-safe slug. The input dict is not mutated.
+    """
+    cfg = copy.deepcopy(cfg or {})
+    export = cfg.get("export")
+    if isinstance(export, dict):
+        export["output_dir"] = CATEGORY_DIRS["processed"]
+    report = cfg.get("report")
+    if isinstance(report, dict):
+        report["output_dir"] = CATEGORY_DIRS["reports"]
+    form = cfg.get("form")
+    if isinstance(form, dict) and form.get("alias"):
+        form["alias"] = slugify(str(form["alias"])) or "form"
+    return cfg
+
+
 def hydrate_run_dir(org_id: str, project_id: str, command: str, dest, cfg: dict) -> int:
     """Materialize a run's isolated workspace: write dest/config.yml from cfg, then
     download the command's input categories from Minio into dest. Returns #files pulled."""
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
-    write_config(cfg or {}, dest / "config.yml")
+    write_config(sanitize_run_config(cfg or {}), dest / "config.yml")
     store = get_storage()
     n = 0
     for category in RUN_INPUTS.get(command, _DEFAULT_INPUTS):
