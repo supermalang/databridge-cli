@@ -12,12 +12,12 @@ const ICONS = ['📊', '🩺', '🌍', '🎓', '🚰', '🌱', '🏥', '📦'];
 // Full-screen create/edit project form. `mode` is 'create' or an existing project
 // object (edit). Calls onDone(projectId|null) when finished/closed; onChanged() to
 // ask the parent to refresh its project list.
-export default function ProjectForm({ mode, canAdmin, onDone, onChanged }) {
+export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChanged }) {
   const toast = useToast();
   const { confirm, confirmDialog } = useConfirm();
   const editing = mode !== 'create';
   const [proj, setProj] = useState(editing ? mode : null);   // becomes set after create
-  const [tab, setTab] = useState('details');
+  const [tab, setTab] = useState(initialTab || 'details');
 
   const init = editing ? mode : {};
   const [name, setName] = useState(init.name || '');

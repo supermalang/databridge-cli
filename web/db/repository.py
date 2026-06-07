@@ -332,15 +332,6 @@ def list_invitations(db: Session, project: Project, status: str = "pending") -> 
         .order_by(Invitation.created_at)))
 
 
-def revoke_invitation(db: Session, project: Project, email: str) -> None:
-    email = (email or "").strip().lower()
-    db.query(Invitation).filter(
-        Invitation.project_id == project.id, Invitation.email == email,
-        Invitation.status == "pending").update({Invitation.status: "revoked"},
-                                               synchronize_session=False)
-    db.commit()
-
-
 def consume_invitations_for(db: Session, user: User) -> int:
     """On login: turn the user's pending invites (matched by email) into
     ProjectMemberships. Returns how many were accepted. Idempotent."""

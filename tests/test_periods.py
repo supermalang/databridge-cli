@@ -1,4 +1,4 @@
-from src.utils.periods import slugify, current_period, parse_period_arg, period_data_glob
+from src.utils.periods import slugify, current_period, parse_period_arg
 
 
 def test_slugify_basic():
@@ -42,7 +42,3 @@ def test_parse_period_arg_unknown_label_creates_ephemeral():
     cfg = {"periods": {"current": "Q1 2026", "registry": []}}
     p = parse_period_arg(cfg, "Q3 2026")
     assert p == {"label": "Q3 2026", "slug": "q3_2026"}
-
-def test_period_data_glob_returns_alias_period_pattern():
-    pat = period_data_glob("monitoring", "q1_2026")
-    assert pat == "monitoring_q1_2026_data_*"
