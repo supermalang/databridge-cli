@@ -13,6 +13,36 @@ create_engine = None  # set on first use
 
 VALID_IF_EXISTS = ("fail", "replace", "append")
 
+# Tokens that turn a pandas .query() expression from a data filter into a code
+# execution primitive. `@` is the local/global resolver — it reaches the calling
+# frame's variables (e.g. `@pd`) and from there any imported module, enabling RCE.
+# `__` reaches dunder attributes (`__class__`, `__globals__`) used in gadget
+# chains. Filter strings come from user-editable config, so they are untrusted.
+_UNSAFE_QUERY_TOKENS = ("@", "__")
+
+
+def safe_query(df: pd.DataFrame, expr: str) -> pd.DataFrame:
+    """Run ``df.query(expr)`` after rejecting expressions that could execute code.
+
+    Filter expressions originate from config.yml (user-editable via the web UI),
+    so they must be treated as untrusted input. We reject the `@` resolver and
+    dunder access — without these there is no path from a query expression to a
+    Python object that can run commands. We also pass empty resolver dicts so the
+    `@` resolver has nothing to bind even if a check were ever bypassed.
+
+    Raises ValueError on a rejected or invalid expression.
+    """
+    if not isinstance(expr, str):
+        raise ValueError(f"filter expression must be a string, got {type(expr).__name__}")
+    for token in _UNSAFE_QUERY_TOKENS:
+        if token in expr:
+            raise ValueError(
+                f"filter expression contains disallowed token '{token}': {expr!r}"
+            )
+    # local_dict/global_dict={} neutralise the frame-capture resolver as defence
+    # in depth; column/index names still resolve via the DataFrame's own resolvers.
+    return df.query(expr, local_dict={}, global_dict={})
+
 
 def _repeat_path(q: Dict) -> str:
     """Return the full slash-path to the repeat array for a question.
@@ -248,7 +278,7 @@ def apply_filters(
     original = len(df)
     for condition in filters:
         try:
-            df = df.query(condition)
+            df = safe_query(df, condition)
             log.info(f"  Filter '{condition}' → {len(df)} rows")
         except Exception as e:
             msg = f"Filter '{condition}' failed: {e}"
@@ -392,7 +422,7 @@ def build_views(
             filter_expr = v.get("filter")
             if filter_expr:
                 try:
-                    df = df.query(filter_expr)
+                    df = safe_query(df, filter_expr)
                 except Exception as e:
                     _fail(f"View '{name}': filter '{filter_expr}' failed: {e} — skipped")
                     continue
@@ -682,7 +712,7 @@ def apply_local_scope(
 
     if filter_expr:
         try:
-            target = target.query(filter_expr)
+            target = safe_query(target, filter_expr)
             log.debug(f"Local filter '{filter_expr}' → {len(target)} rows")
         except Exception as e:
             log.warning(f"Local filter '{filter_expr}' failed: {e} — skipped")

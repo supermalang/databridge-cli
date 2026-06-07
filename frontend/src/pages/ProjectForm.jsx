@@ -1,0 +1,163 @@
+import { useState } from 'react';
+import { useConfirm } from '../components/ConfirmDialog.jsx';
+import { useToast } from '../components/Toast.jsx';
+import ProjectMembersPanel from '../components/ProjectMembersPanel.jsx';
+import { createProject, updateProject, archiveProject } from '../lib/projects.js';
+import { deleteProject as apiDeleteProject } from '../lib/members.js';
+
+const LANGS = ['English', 'French', 'Spanish', 'Portuguese', 'Arabic'];
+const COLORS = ['#0EA5E9', '#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#14B8A6', '#64748B'];
+const ICONS = ['📊', '🩺', '🌍', '🎓', '🚰', '🌱', '🏥', '📦'];
+
+// Full-screen create/edit project form. `mode` is 'create' or an existing project
+// object (edit). Calls onDone(projectId|null) when finished/closed; onChanged() to
+// ask the parent to refresh its project list.
+export default function ProjectForm({ mode, canAdmin, onDone, onChanged }) {
+  const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
+  const editing = mode !== 'create';
+  const [proj, setProj] = useState(editing ? mode : null);   // becomes set after create
+  const [tab, setTab] = useState('details');
+
+  const init = editing ? mode : {};
+  const [name, setName] = useState(init.name || '');
+  const [description, setDescription] = useState(init.description || '');
+  const [tagsText, setTagsText] = useState((init.tags || []).join(', '));
+  const [language, setLanguage] = useState(init.language || 'English');
+  const [color, setColor] = useState(init.color || COLORS[0]);
+  const [icon, setIcon] = useState(init.icon || ICONS[0]);
+  const [busy, setBusy] = useState(false);
+
+  const tags = () => tagsText.split(',').map(t => t.trim()).filter(Boolean);
+  const payload = () => ({ name: name.trim(), description, tags: tags(), language, color, icon });
+
+  const submit = async () => {
+    if (!name.trim()) { toast('Name is required', 'err'); return; }
+    setBusy(true);
+    try {
+      if (!proj) {
+        const created = await createProject(payload());
+        setProj({ ...created, ...payload() });
+        onChanged?.();
+        toast(`Project “${name}” created`, 'ok');
+        setTab('members');   // create-first, then invite
+      } else {
+        await updateProject(proj.id, payload());
+        onChanged?.();
+        toast('Saved', 'ok');
+      }
+    } catch (e) { toast(e.message || 'Save failed', 'err'); }
+    finally { setBusy(false); }
+  };
+
+  const doArchive = async (archived) => {
+    if (!await confirm({
+      title: archived ? 'Archive project?' : 'Restore project?',
+      message: archived
+        ? `“${proj.name}” will be hidden from the active list. You can restore it later.`
+        : `“${proj.name}” will be active again.`,
+      confirmLabel: archived ? 'Archive' : 'Restore',
+    })) return;
+    try { await archiveProject(proj.id, archived); onChanged?.(); toast(archived ? 'Archived' : 'Restored', 'ok'); onDone?.(proj.id); }
+    catch (e) { toast(e.message || 'Failed', 'err'); }
+  };
+
+  const doDelete = async () => {
+    if (!await confirm({
+      title: 'Delete project?',
+      message: `“${proj.name}” and all of its data, reports and members will be permanently deleted. This can’t be undone.`,
+      confirmLabel: 'Delete project',
+    })) return;
+    try { await apiDeleteProject(proj.id); onChanged?.(); toast(`Deleted “${proj.name}”`, 'ok'); onDone?.(null); }
+    catch (e) { toast(e.message || 'Delete failed', 'err'); }
+  };
+
+  const membersDisabled = !proj;   // create mode before first save
+
+  return (
+    <div className="project-form">
+      <div className="project-form__bar">
+        <button className="btn btn-sm" onClick={() => onDone?.(proj?.id || null)}>← Back</button>
+        <h2 className="project-form__title">
+          {editing ? `Project settings · ${proj?.name}` : 'New project'}
+        </h2>
+      </div>
+
+      <div className="project-form__tabs">
+        <button className={`pf-tab ${tab === 'details' ? 'active' : ''}`} onClick={() => setTab('details')}>Details</button>
+        <button className={`pf-tab ${tab === 'members' ? 'active' : ''} ${membersDisabled ? 'disabled' : ''}`}
+                onClick={() => !membersDisabled && setTab('members')}
+                title={membersDisabled ? 'Create the project first' : ''}>Members</button>
+        {editing && canAdmin && (
+          <button className={`pf-tab ${tab === 'danger' ? 'active' : ''}`} onClick={() => setTab('danger')}>Danger zone</button>
+        )}
+      </div>
+
+      <div className="project-form__body">
+        {tab === 'details' && (
+          <div className="pf-panel">
+            <div className="profile-field"><label>Name *</label>
+              <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Q3 Monitoring" /></div>
+            <div className="profile-field"><label>Description</label>
+              <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)}
+                        placeholder="What is this project about?" /></div>
+            <div className="profile-field"><label>Tags</label>
+              <input value={tagsText} onChange={e => setTagsText(e.target.value)} placeholder="comma, separated, tags" /></div>
+            <div className="profile-field"><label>Default language</label>
+              <select value={language} onChange={e => setLanguage(e.target.value)}>
+                {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
+              </select></div>
+            <div className="profile-field"><label>Color</label>
+              <div className="pf-swatches">
+                {COLORS.map(c => (
+                  <button key={c} type="button" className={`pf-swatch ${color === c ? 'sel' : ''}`}
+                          style={{ background: c }} onClick={() => setColor(c)} />
+                ))}
+              </div></div>
+            <div className="profile-field"><label>Icon</label>
+              <div className="pf-icons">
+                {ICONS.map(ic => (
+                  <button key={ic} type="button" className={`pf-icon ${icon === ic ? 'sel' : ''}`}
+                          onClick={() => setIcon(ic)}>{ic}</button>
+                ))}
+              </div></div>
+            <div className="pf-actions">
+              <button className="btn btn-primary" disabled={busy} onClick={submit}>
+                {busy ? 'Saving…' : (proj ? 'Save' : 'Create')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {tab === 'members' && proj && (
+          <div className="pf-panel"><ProjectMembersPanel project={proj} /></div>
+        )}
+
+        {tab === 'danger' && editing && canAdmin && (
+          <div className="pf-panel">
+            <div className="pf-danger">
+              <div>
+                <div className="pf-danger__title">{proj.is_archived ? 'Restore project' : 'Archive project'}</div>
+                <div className="pf-danger__desc">
+                  {proj.is_archived ? 'Make this project active again.'
+                                    : 'Hide from the active list. Recoverable later.'}
+                </div>
+              </div>
+              <button className="btn" onClick={() => doArchive(!proj.is_archived)}>
+                {proj.is_archived ? 'Restore' : 'Archive'}
+              </button>
+            </div>
+            <div className="pf-danger">
+              <div>
+                <div className="pf-danger__title">Delete project</div>
+                <div className="pf-danger__desc">Permanently delete this project and all its data.</div>
+              </div>
+              <button className="btn btn-danger" onClick={doDelete}>Delete</button>
+            </div>
+          </div>
+        )}
+      </div>
+      {confirmDialog}
+    </div>
+  );
+}

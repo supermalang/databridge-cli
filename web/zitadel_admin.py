@@ -59,6 +59,16 @@ def create_human_user(email: str, name: str = "") -> str:
     return (r.json() or {}).get("userId", "")
 
 
+def update_human_user(user_id: str, given: str, family: str) -> None:
+    """Update a human user's profile name (givenName/familyName) via Management v2.
+    Raises ZitadelAdminError on API failure."""
+    body = {"profile": {"givenName": given or ".", "familyName": family or "."}}
+    r = httpx.put(f"{_base()}/v2/users/human/{user_id}",
+                  headers=_headers(), timeout=15.0, json=body)
+    if r.status_code >= 400:
+        raise ZitadelAdminError(f"profile update failed ({r.status_code}): {r.text}")
+
+
 def send_invite(user_id: str, app_url: str = "") -> None:
     """Email the user an invite code so they can set a password and sign in."""
     body = {}

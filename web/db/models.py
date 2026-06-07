@@ -63,6 +63,12 @@ class Project(Base):
     # resolved key). The AI guard treats the project as "verified" when this matches the
     # current saved config; an AI-call failure clears it, re-locking the AI buttons.
     ai_verified_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Project metadata edited in the project form: description, tags (list[str]),
+    # language, color, icon. Kept separate from `config` (which mirrors config.yml).
+    meta: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+    # Soft-archive timestamp; NULL ⇒ active. Archived projects are hidden from the
+    # default switcher view but recoverable.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 

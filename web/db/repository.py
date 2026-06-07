@@ -129,7 +129,8 @@ def _unique_project_slug(db: Session, org_id, base: str) -> str:
     return slug
 
 
-def create_project(db: Session, user: User, name: str, org_id=None, config: dict = None) -> Project:
+def create_project(db: Session, user: User, name: str, org_id=None, config: dict = None,
+                   meta: dict = None) -> Project:
     if org_id is None:
         ids = _user_org_ids(db, user)
         if not ids:
@@ -139,7 +140,7 @@ def create_project(db: Session, user: User, name: str, org_id=None, config: dict
         raise AccessError("not a member of target org")
     p = Project(org_id=org_id, owner_id=user.id, name=name,
                 slug=_unique_project_slug(db, org_id, name),
-                config=config or {}, config_version=1)
+                config=config or {}, meta=meta or {}, config_version=1)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -147,6 +148,32 @@ def create_project(db: Session, user: User, name: str, org_id=None, config: dict
     db.add(ProjectMembership(user_id=user.id, project_id=p.id, role="admin"))
     db.commit()
     return p
+
+
+def update_project(db: Session, project: Project, *, name: str = None, meta: dict = None) -> Project:
+    """Partial update of a project's name and/or metadata. `meta` keys are MERGED
+    into the existing meta (pass an explicit value to overwrite a single key).
+
+    PRECONDITION: callers MUST first obtain `project` via `get_project_for_user`
+    and check the caller's role — this function performs no access check."""
+    if name is not None:
+        project.name = name
+    if meta is not None:
+        merged = dict(project.meta or {})
+        merged.update(meta)
+        project.meta = merged
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def archive_project(db: Session, project: Project, archived: bool) -> Project:
+    """Soft-archive (set archived_at) or restore (clear it). No access check —
+    caller must gate."""
+    project.archived_at = datetime.now(timezone.utc) if archived else None
+    db.commit()
+    db.refresh(project)
+    return project
 
 
 def update_project_config(db: Session, project: Project, config: dict, expected_version: Optional[int] = None) -> Project:

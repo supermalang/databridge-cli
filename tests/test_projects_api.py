@@ -80,3 +80,44 @@ def test_run_command_releases_lock_after_run(monkeypatch):
     assert r.status_code == 200
     _ = r.text   # drain SSE stream so _stream finishes
     assert wm._registry.active() == []    # lock released after run
+
+
+def test_create_project_with_metadata_and_patch():
+    with _client() as c:
+        r = c.post("/api/projects", json={
+            "name": "Meta", "description": "desc", "tags": ["health"],
+            "language": "French", "color": "#0EA5E9", "icon": "🩺"})
+        assert r.status_code == 200
+        pid = r.json()["id"]
+        proj = [p for p in c.get("/api/projects").json()["projects"] if p["id"] == pid][0]
+        assert proj["description"] == "desc"
+        assert proj["tags"] == ["health"]
+        assert proj["language"] == "French"
+        assert proj["color"] == "#0EA5E9"
+        assert proj["icon"] == "🩺"
+        assert proj["is_archived"] is False
+
+        # PATCH name + a meta field
+        r2 = c.patch(f"/api/projects/{pid}", json={"name": "Meta2", "description": "d2"})
+        assert r2.status_code == 200
+        proj2 = [p for p in c.get("/api/projects").json()["projects"] if p["id"] == pid][0]
+        assert proj2["name"] == "Meta2" and proj2["description"] == "d2"
+        assert proj2["tags"] == ["health"]   # untouched meta key preserved
+
+
+def test_archive_and_unarchive_endpoints():
+    with _client() as c:
+        pid = c.post("/api/projects", json={"name": "Arch"}).json()["id"]
+        assert c.post(f"/api/projects/{pid}/archive").status_code == 200
+        proj = [p for p in c.get("/api/projects").json()["projects"] if p["id"] == pid][0]
+        assert proj["is_archived"] is True
+        assert c.post(f"/api/projects/{pid}/unarchive").status_code == 200
+        proj = [p for p in c.get("/api/projects").json()["projects"] if p["id"] == pid][0]
+        assert proj["is_archived"] is False
+
+
+def test_patch_unknown_project_404():
+    import uuid
+    with _client() as c:
+        r = c.patch(f"/api/projects/{uuid.uuid4()}", json={"name": "x"})
+        assert r.status_code == 404

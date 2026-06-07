@@ -175,7 +175,8 @@ def _resolve_source(ind: Dict, main_df: pd.DataFrame, repeat_tables: Dict) -> pd
 
     if filter_expr:
         try:
-            df = df.query(filter_expr)
+            from src.data.transform import safe_query
+            df = safe_query(df, filter_expr)
         except Exception as e:
             log.warning(f"Indicator filter '{filter_expr}' failed: {e} — skipped")
 

@@ -20,6 +20,7 @@ from web.db import bootstrap as db_bootstrap
 from web.db import session as db_session, repository as db_repo, provision as db_provision
 from web.db import bridge as db_bridge
 from web.storage import workspace as storage_workspace
+from web.netguard import validate_public_url, SSRFError
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
 CONFIG_PATH   = BASE_DIR / "config.yml"
@@ -101,6 +102,20 @@ def _require(request: Request, minimum: str):
         require_role(request, _db, minimum)
 
 
+def _require_view(request: Request):
+    """Gate read/download endpoints that serve the shared BASE_DIR mirror.
+
+    These have no per-request project argument — they read whatever is mirrored
+    for the active project. When auth is enabled we require at least a 'viewer'
+    role on the caller's active project, so a user who is a member of nothing (or
+    of a different project) can't read another tenant's mirrored reports/data.
+    In dev mode (auth disabled) there is a single user who owns everything, so we
+    allow the read without requiring an active project to be set."""
+    if not auth.auth_enabled():
+        return
+    _require(request, "viewer")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     index = STATIC_DIR / "index.html"
@@ -153,6 +168,36 @@ def save_config(payload: ConfigPayload, request: Request, db: Session = Depends(
 class NewProjectPayload(BaseModel):
     name: str
     org_id: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[list] = None
+    language: Optional[str] = None
+    color: Optional[str] = None
+    icon: Optional[str] = None
+
+
+class ProjectPatchPayload(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[list] = None
+    language: Optional[str] = None
+    color: Optional[str] = None
+    icon: Optional[str] = None
+
+
+_META_KEYS = ("description", "tags", "language", "color", "icon")
+
+
+def _project_dict(db, user, p):
+    meta = p.meta or {}
+    return {"id": str(p.id), "name": p.name, "slug": p.slug, "org_id": str(p.org_id),
+            "role": db_repo.role_for(db, user, p),
+            "is_owner": p.owner_id == user.id,
+            "is_archived": p.archived_at is not None,
+            "description": meta.get("description", ""),
+            "tags": meta.get("tags", []),
+            "language": meta.get("language", ""),
+            "color": meta.get("color", ""),
+            "icon": meta.get("icon", "")}
 
 
 @app.get("/api/projects")
@@ -164,10 +209,7 @@ def list_projects(request: Request, db: Session = Depends(db_session.get_db)):
     return {
         "active_id": str(user.active_project_id) if user.active_project_id else None,
         "is_superadmin": bool(user.is_superadmin),
-        "projects": [{"id": str(p.id), "name": p.name, "slug": p.slug, "org_id": str(p.org_id),
-                      "role": db_repo.role_for(db, user, p),
-                      "is_owner": p.owner_id == user.id}
-                     for p in projects],
+        "projects": [_project_dict(db, user, p) for p in projects],
     }
 
 
@@ -181,11 +223,66 @@ def create_project(payload: NewProjectPayload, request: Request, db: Session = D
         org_id = _uuid.UUID(payload.org_id) if payload.org_id else None
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid org_id")
+    meta = {k: getattr(payload, k) for k in _META_KEYS if getattr(payload, k) is not None}
     try:
-        p = db_repo.create_project(db, user=user, name=payload.name, org_id=org_id)
+        p = db_repo.create_project(db, user=user, name=payload.name, org_id=org_id, meta=meta)
     except db_repo.AccessError:
         raise HTTPException(status_code=403, detail="Not a member of that org")
     return {"id": str(p.id), "name": p.name, "slug": p.slug}
+
+
+@app.patch("/api/projects/{project_id}")
+def patch_project(project_id: str, payload: ProjectPatchPayload, request: Request,
+                  db: Session = Depends(db_session.get_db)):
+    _user, project, _role = _admin_project(request, db, project_id)
+    meta = {k: getattr(payload, k) for k in _META_KEYS if getattr(payload, k) is not None}
+    db_repo.update_project(db, project, name=payload.name, meta=meta or None)
+    return {"ok": True}
+
+
+@app.post("/api/projects/{project_id}/archive")
+def archive_project_endpoint(project_id: str, request: Request,
+                             db: Session = Depends(db_session.get_db)):
+    _user, project, _role = _admin_project(request, db, project_id)
+    db_repo.archive_project(db, project, True)
+    return {"ok": True}
+
+
+@app.post("/api/projects/{project_id}/unarchive")
+def unarchive_project_endpoint(project_id: str, request: Request,
+                               db: Session = Depends(db_session.get_db)):
+    _user, project, _role = _admin_project(request, db, project_id)
+    db_repo.archive_project(db, project, False)
+    return {"ok": True}
+
+
+class ProfilePatchPayload(BaseModel):
+    given_name: str = ""
+    family_name: str = ""
+
+
+@app.patch("/api/me")
+def patch_me(payload: ProfilePatchPayload, request: Request,
+             db: Session = Depends(db_session.get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    given = (payload.given_name or "").strip()
+    family = (payload.family_name or "").strip()
+    full = " ".join(p for p in (given, family) if p) or user.name
+    user.name = full
+    db.commit()
+    db.refresh(user)
+    # Propagate to Zitadel when configured and this is a real Zitadel user.
+    from web import zitadel_admin
+    z_status = "skipped"
+    if zitadel_admin.enabled() and user.zitadel_sub and user.zitadel_sub != "dev-local":
+        try:
+            zitadel_admin.update_human_user(user.zitadel_sub, given, family)
+            z_status = "updated"
+        except Exception as e:  # noqa: BLE001 — surface, don't fail the local save
+            z_status = f"error: {e}"
+    return {"sub": user.zitadel_sub, "email": user.email, "name": user.name, "zitadel": z_status}
 
 
 @app.delete("/api/projects/{project_id}")
@@ -536,6 +633,11 @@ async def test_ai(payload: AITestPayload, request: Request):
                 raise HTTPException(status_code=400, detail="openai package not installed. Run: pip install openai>=1.0.0")
             kwargs = {"api_key": api_key}
             if payload.base_url:
+                try:
+                    validate_public_url(payload.base_url)
+                except SSRFError as e:
+                    _invalidate_ai(request)
+                    raise HTTPException(status_code=400, detail=f"base_url not allowed: {e}")
                 kwargs["base_url"] = payload.base_url
             client = OpenAI(**kwargs)
             resp = client.chat.completions.create(
@@ -636,6 +738,11 @@ def test_source(payload: SourceTestPayload):
     if not url or not token:
         return {"ok": False, "fields": None, "status": None,
                 "message": "API URL and token are both required."}
+    try:
+        validate_public_url(url)
+    except SSRFError as e:
+        return {"ok": False, "fields": None, "status": None,
+                "message": f"This URL is not allowed: {e}"}
     platform = (payload.platform or "kobo").lower()
     if platform not in ("kobo", "ona"):
         platform = "ona" if "ona" in url else "kobo"
@@ -1677,7 +1784,8 @@ async def get_state():
     return {"has_questions": has_questions, "has_data": has_data, "has_templates": has_templates, "has_ai": has_ai}
 
 @app.get("/api/reports")
-async def list_reports():
+async def list_reports(request: Request):
+    _require_view(request)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     files = []
     for f in sorted(REPORTS_DIR.glob("*.docx"), key=lambda x: x.stat().st_mtime, reverse=True):
@@ -1687,7 +1795,8 @@ async def list_reports():
     return {"files": files}
 
 @app.get("/api/reports/download/{filename}")
-async def download_report(filename: str):
+async def download_report(filename: str, request: Request):
+    _require_view(request)
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = REPORTS_DIR / filename
@@ -1708,7 +1817,8 @@ async def delete_report(filename: str, request: Request):
     return {"ok": True}
 
 @app.get("/api/reports/download-zip")
-async def download_reports_zip():
+async def download_reports_zip(request: Request):
+    _require_view(request)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     docx_files = list(REPORTS_DIR.glob("*.docx"))
     if not docx_files:
@@ -1726,7 +1836,8 @@ async def download_reports_zip():
 
 # ── Data files ──────────────────────────────────────────────
 @app.get("/api/data")
-async def list_data_files():
+async def list_data_files(request: Request):
+    _require_view(request)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     files = []
     for f in sorted(DATA_DIR.glob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
@@ -1737,7 +1848,8 @@ async def list_data_files():
     return {"files": files}
 
 @app.get("/api/data/sessions")
-async def list_data_sessions():
+async def list_data_sessions(request: Request):
+    _require_view(request)
     from src.data.transform import list_sessions
     from src.utils.config import load_config
     if not CONFIG_PATH.exists():
@@ -1747,7 +1859,8 @@ async def list_data_sessions():
     return {"sessions": sessions}
 
 @app.get("/api/data/sessions/{session_id}/download")
-async def download_session_zip(session_id: str):
+async def download_session_zip(session_id: str, request: Request):
+    _require_view(request)
     from src.data.transform import list_sessions
     from src.utils.config import load_config
     if "/" in session_id or ".." in session_id:
@@ -1835,7 +1948,8 @@ async def debug_raw_columns():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/data/download/{filename}")
-async def download_data_file(filename: str):
+async def download_data_file(filename: str, request: Request):
+    _require_view(request)
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = DATA_DIR / filename
@@ -1858,7 +1972,8 @@ async def delete_data_file(filename: str, request: Request):
 
 # ── Templates ──────────────────────────────────────────────
 @app.get("/api/templates")
-async def list_templates():
+async def list_templates(request: Request):
+    _require_view(request)
     TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
     files = []
     for f in sorted(TEMPLATES_DIR.glob("*.docx"), key=lambda x: x.stat().st_mtime, reverse=True):
@@ -1868,7 +1983,8 @@ async def list_templates():
     return {"files": files}
 
 @app.get("/api/templates/download/{filename}")
-async def download_template(filename: str):
+async def download_template(filename: str, request: Request):
+    _require_view(request)
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = TEMPLATES_DIR / filename
@@ -2031,8 +2147,9 @@ async def delete_registry_period(slug: str, request: Request):
 
 # ── Validation ──────────────────────────────────────────────
 @app.post("/api/validate")
-async def validate():
+async def validate(request: Request):
     """Run all validation detectors against the latest downloaded data."""
+    _require_view(request)
     # Prefer cwd-relative config.yml so the endpoint composes with tests that
     # chdir into a temp workspace; fall back to the project's CONFIG_PATH.
     config_path = Path("config.yml") if Path("config.yml").exists() else CONFIG_PATH
@@ -2057,7 +2174,7 @@ async def validate():
 
 
 @app.get("/api/base-tables")
-async def base_tables():
+async def base_tables(request: Request):
     """Catalog of the flattened base tables for the latest download session.
 
     Returns row counts, data columns, linkage columns, and the parent table for
@@ -2067,6 +2184,7 @@ async def base_tables():
     match). Unrelated tables that happen to share a name prefix could be
     mis-parented; this is acceptable until explicit parent metadata is surfaced.
     """
+    _require_view(request)
     cfg = load_config(CONFIG_PATH)
     try:
         df, repeats = load_processed_data(cfg)
@@ -2098,9 +2216,10 @@ async def base_tables():
 
 
 @app.get("/api/profile")
-async def data_profile():
+async def data_profile(request: Request):
     """Structured EDA profile of every base table for the latest download
     session (row counts, per-column stats, correlations, duplicates). Read-only."""
+    _require_view(request)
     cfg = load_config(CONFIG_PATH)
     try:
         df, repeats = load_processed_data(cfg)
@@ -2111,10 +2230,11 @@ async def data_profile():
 
 
 @app.get("/api/data-quality")
-async def data_quality_overview():
+async def data_quality_overview(request: Request):
     """Per-column completeness / outlier-rate / duplicate-rate per base table (main
     table in `rows`, each non-empty repeat table in `tables`) for the latest download
     session, post-PII-redaction. Read-only. Mirrors the report's {{ data_quality }} section."""
+    _require_view(request)
     from src.reports.data_quality import compute_data_quality
     from src.utils.pii import apply_pii
     cfg = load_config(CONFIG_PATH)
