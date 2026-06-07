@@ -22,3 +22,18 @@ export async function fetchMe() {
     return null;
   }
 }
+
+// Update the signed-in user's profile (name). Propagates to Zitadel server-side
+// when configured. Returns the updated user dict.
+export async function updateProfile({ given_name, family_name }) {
+  const res = await fetch('/api/me', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ given_name, family_name }),
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d.detail || 'Profile update failed');
+  }
+  return res.json();
+}
