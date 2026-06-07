@@ -103,7 +103,7 @@ function ChartIcon({ type }) {
 // ── component ────────────────────────────────────────────────────────────────
 // `sections` selects which cards render + which config keys this instance saves,
 // so the same component backs both the Load (views) and Analyze (charts/etc) tabs.
-const ALL_SECTIONS = ['charts', 'pii', 'framework', 'indicators', 'tables', 'summaries', 'views', 'templates'];
+const ALL_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'views', 'templates', 'framework'];
 
 export default function Composition({ sections } = {}) {
   const secs = Array.isArray(sections) && sections.length ? sections : ALL_SECTIONS;
@@ -461,8 +461,6 @@ export default function Composition({ sections } = {}) {
               toast={toast}
             />
           )}
-          {has('pii') && <PIICard />}
-          {has('framework') && <FrameworkCard />}
           {has('indicators') && (
             <IndicatorsCard
               indicators={indicators}
@@ -514,6 +512,7 @@ export default function Composition({ sections } = {}) {
               toast={toast}
             />
           )}
+          {has('framework') && <FrameworkCard />}
         </div>
         {has('charts') && (
           <aside className="comp-col">
@@ -818,121 +817,6 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, onPreview, sug
         ))}
       </div>
     </div>
-  );
-}
-
-// ── PII card ─────────────────────────────────────────────────────────────────
-const PII_STRATEGIES = ['drop', 'hash', 'mask', 'generalize_geo', 'generalize_date'];
-
-function PIICard() {
-  const toast = useToast();
-  const { confirm, confirmDialog } = useConfirm();
-  const [pii, setPii] = useState({ consent_column: '', consent_value: 'yes', redact: [] });
-  const [columns, setColumns] = useState([]);
-
-  const reload = async () => {
-    try {
-      const p = await (await fetch('/api/pii')).json();
-      setPii({
-        consent_column: p.consent_column || '',
-        consent_value:  p.consent_value  || 'yes',
-        redact:         p.redact         || [],
-      });
-    } catch { /* ignore */ }
-    try {
-      const q = await (await fetch('/api/questions')).json();
-      setColumns((q.questions || []).map(qq => qq.export_label || qq.label || qq.kobo_key).filter(Boolean));
-    } catch { setColumns([]); }
-  };
-
-  useEffect(() => { reload(); }, []);
-
-  const save = async (next) => {
-    try {
-      const r = await fetch('/api/pii', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      });
-      if (r.ok) { setPii(next); toast('Privacy settings saved', 'ok'); }
-      else { toast('Save failed', 'err'); }
-    } catch (e) { toast(e.message, 'err'); }
-  };
-
-  const addRule = () => {
-    const used = new Set(pii.redact.map(r => r.column));
-    const candidate = columns.find(c => !used.has(c)) || '';
-    if (!candidate) { toast('No more columns to add', 'err'); return; }
-    save({ ...pii, redact: [...pii.redact, { column: candidate, strategy: 'mask' }] });
-  };
-
-  const updateRule = (i, patch) => {
-    const next = { ...pii, redact: pii.redact.map((r, idx) => idx === i ? { ...r, ...patch } : r) };
-    save(next);
-  };
-
-  const removeRule = async (i) => {
-    if (!await confirm({ title: 'Remove redaction rule?', message: 'This redaction rule will be removed.', confirmLabel: 'Remove' })) return;
-    save({ ...pii, redact: pii.redact.filter((_, idx) => idx !== i) });
-  };
-
-  return (
-    <>
-    <div className="comp-card">
-      <div className="comp-card__head">
-        <div className="comp-card__head-text">
-          <div className="comp-card__title">Privacy &amp; consent (PII)</div>
-          <div className="comp-card__sub">Redact PII columns and gate on consent. Applied at report/preview render time.</div>
-        </div>
-        <div className="comp-card__head-actions">
-          <button className="btn btn-ghost btn-sm" onClick={addRule}>+ Redaction rule</button>
-        </div>
-      </div>
-      <div className="comp-card__body">
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-            Consent column:
-            <select className="src-input" value={pii.consent_column} onChange={e => save({ ...pii, consent_column: e.target.value })}>
-              <option value="">(none — no consent gating)</option>
-              {columns.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </label>
-          {pii.consent_column && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-              Consent value:
-              <input className="src-input" value={pii.consent_value} onChange={e => save({ ...pii, consent_value: e.target.value })} style={{ width: 100 }} />
-            </label>
-          )}
-        </div>
-        {pii.redact.length === 0 && (
-          <p className="empty-state" style={{ padding: 20 }}>No redaction rules. Click + Redaction rule to add one.</p>
-        )}
-        {pii.redact.map((rule, i) => (
-          <div key={i} className="pii-row">
-            <select className="src-input pii-row__col" value={rule.column} onChange={e => updateRule(i, { column: e.target.value })}>
-              {columns.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select className="src-input pii-row__strategy" value={rule.strategy} onChange={e => updateRule(i, { strategy: e.target.value })}>
-              {PII_STRATEGIES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            {rule.strategy === 'generalize_geo' ? (
-              <input
-                className="src-input pii-row__decimals"
-                type="number" min="0" max="6"
-                value={rule.decimals ?? 2}
-                onChange={e => updateRule(i, { decimals: Number(e.target.value) || 0 })}
-                title="Decimal places (lower = more privacy)"
-              />
-            ) : <span />}
-            <span>
-              <button className="icon-btn" title="Delete rule" onClick={() => removeRule(i)}>×</button>
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-    {confirmDialog}
-    </>
   );
 }
 
