@@ -2126,6 +2126,28 @@ async def data_quality_overview():
     return compute_data_quality(cfg, df, repeats)
 
 
+@app.get("/api/periods/date-range")
+async def periods_date_range():
+    """Min/max submission year in the latest download (UNFILTERED), used to bound
+    the Output-tab year picker so it offers only the data's actual span. Returns
+    nulls when there's no data or no captured `_submission_time`."""
+    import pandas as pd
+    cfg = _load_cfg()
+    # Strip periods so loading neither date-filters nor slug-prefixes — we want
+    # the full span of the latest plain download.
+    cfg_unfiltered = {**cfg, "periods": {}}
+    try:
+        df, _ = load_processed_data(cfg_unfiltered)
+    except FileNotFoundError:
+        return {"min_year": None, "max_year": None}
+    if "_submission_time" not in df.columns:
+        return {"min_year": None, "max_year": None}
+    ts = pd.to_datetime(df["_submission_time"], errors="coerce").dropna()
+    if ts.empty:
+        return {"min_year": None, "max_year": None}
+    return {"min_year": int(ts.dt.year.min()), "max_year": int(ts.dt.year.max())}
+
+
 class AskPayload(BaseModel):
     question: str = ""
 

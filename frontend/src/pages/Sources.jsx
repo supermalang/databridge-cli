@@ -817,6 +817,16 @@ function PeriodRangeField({ cfg, set }) {
   const [start, setStart]     = useState(mode === 'custom' ? (cur.started || '') : '');
   const [end, setEnd]         = useState(mode === 'custom' ? (cur.ended || '') : '');
 
+  // Bound the year picker to the data's actual submission span (oldest year and
+  // after) instead of an arbitrary fixed window.
+  const [yrRange, setYrRange] = useState({ min: null, max: null });
+  useEffect(() => {
+    (async () => {
+      try { setYrRange(await (await fetch('/api/periods/date-range')).json()); }
+      catch { /* keep fallback */ }
+    })();
+  }, []);
+
   // Compute {label, started, ended} for the current selection.
   const resolve = () => {
     if (mode === 'year') {
@@ -847,7 +857,11 @@ function PeriodRangeField({ cfg, set }) {
   };
 
   const preview = resolve();
-  const yearOpts = []; for (let y = thisYear + 1; y >= thisYear - 8; y--) yearOpts.push(y);
+  // Year options: oldest data year → newest (or this year if data is newer/absent).
+  // Falls back to a small recent window when there's no downloaded data.
+  const upperYear = Math.max(yrRange.max || thisYear, thisYear);
+  const lowerYear = yrRange.min || (thisYear - 4);
+  const yearOpts = []; for (let y = upperYear; y >= Math.min(lowerYear, upperYear); y--) yearOpts.push(y);
 
   return (
     <div className="src-field">
@@ -855,47 +869,49 @@ function PeriodRangeField({ cfg, set }) {
         <div className="src-field__hint">Reports include only submissions whose date falls in this window.</div>
       </div>
 
-      <div className="chip-tabs" style={{ marginBottom: 10, width: 'fit-content' }}>
-        {['year', 'quarter', 'month', 'custom'].map(m => (
-          <button key={m} className="chip-tab" data-active={mode === m} onClick={() => setMode(m)}>
-            {m === 'custom' ? 'Custom range' : m[0].toUpperCase() + m.slice(1)}
-          </button>
-        ))}
-      </div>
+      <div>
+        <div className="chip-tabs" style={{ marginBottom: 10, width: 'fit-content' }}>
+          {['year', 'quarter', 'month', 'custom'].map(m => (
+            <button key={m} className="chip-tab" data-active={mode === m} onClick={() => setMode(m)}>
+              {m === 'custom' ? 'Custom range' : m[0].toUpperCase() + m.slice(1)}
+            </button>
+          ))}
+        </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        {mode !== 'custom' && (
-          <select className="src-input" style={{ width: 110 }} value={year} onChange={e => setYear(+e.target.value)}>
-            {yearOpts.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-        )}
-        {mode === 'quarter' && (
-          <select className="src-input" style={{ width: 120 }} value={quarter} onChange={e => setQuarter(+e.target.value)}>
-            {[1, 2, 3, 4].map(q => <option key={q} value={q}>Q{q}</option>)}
-          </select>
-        )}
-        {mode === 'month' && (
-          <select className="src-input" style={{ width: 120 }} value={month} onChange={e => setMonth(+e.target.value)}>
-            {MONTHS.map((mn, i) => <option key={mn} value={i + 1}>{mn}</option>)}
-          </select>
-        )}
-        {mode === 'custom' && (
-          <>
-            <input type="date" className="src-input" value={start} onChange={e => setStart(e.target.value)} />
-            <span style={{ color: 'var(--ink-3)' }}>→</span>
-            <input type="date" className="src-input" value={end} onChange={e => setEnd(e.target.value)} />
-          </>
-        )}
-        <button className="btn btn-sm" onClick={apply} disabled={!preview.label}>Set period</button>
-      </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {mode !== 'custom' && (
+            <select className="src-input" style={{ width: 110 }} value={year} onChange={e => setYear(+e.target.value)}>
+              {yearOpts.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          )}
+          {mode === 'quarter' && (
+            <select className="src-input" style={{ width: 120 }} value={quarter} onChange={e => setQuarter(+e.target.value)}>
+              {[1, 2, 3, 4].map(q => <option key={q} value={q}>Q{q}</option>)}
+            </select>
+          )}
+          {mode === 'month' && (
+            <select className="src-input" style={{ width: 120 }} value={month} onChange={e => setMonth(+e.target.value)}>
+              {MONTHS.map((mn, i) => <option key={mn} value={i + 1}>{mn}</option>)}
+            </select>
+          )}
+          {mode === 'custom' && (
+            <>
+              <input type="date" className="src-input" style={{ width: 160 }} value={start} onChange={e => setStart(e.target.value)} />
+              <span style={{ color: 'var(--ink-3)' }}>→</span>
+              <input type="date" className="src-input" style={{ width: 160 }} value={end} onChange={e => setEnd(e.target.value)} />
+            </>
+          )}
+          <button className="btn btn-sm" onClick={apply} disabled={!preview.label}>Set period</button>
+        </div>
 
-      <div className="src-field__hint" style={{ marginTop: 8 }}>
-        {curLabel
-          ? <>Active: <b>{curLabel}</b>{cur.started ? ` · ${cur.started} → ${cur.ended}` : ''}</>
-          : 'No period set — reports include all submissions.'}
-        {preview.label && preview.label !== curLabel && (
-          <> · pending: <b>{preview.label}</b> ({preview.started} → {preview.ended}) — click Set period, then Save.</>
-        )}
+        <div className="src-field__hint" style={{ marginTop: 8 }}>
+          {curLabel
+            ? <>Active: <b>{curLabel}</b>{cur.started ? ` · ${cur.started} → ${cur.ended}` : ''}</>
+            : 'No period set — reports include all submissions.'}
+          {preview.label && preview.label !== curLabel && (
+            <> · pending: <b>{preview.label}</b> ({preview.started} → {preview.ended}) — click Set period, then Save.</>
+          )}
+        </div>
       </div>
     </div>
   );
