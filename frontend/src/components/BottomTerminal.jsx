@@ -13,7 +13,7 @@ const PIPELINE_TREE = [
   { id: 'extract',         label: 'Extract',         depth: 1 },
   { id: 'transform',       label: 'Transform',       depth: 1 },
   { id: 'fetch.questions', label: 'fetch.questions', depth: 2 },
-  { id: 'load',            label: 'Load',            depth: 1 },
+  { id: 'model',           label: 'Model',           depth: 1 },
   { id: 'analyze',         label: 'Analyze',         depth: 1 },
   { id: 'present',         label: 'Present',         depth: 1 },
 ];

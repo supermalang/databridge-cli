@@ -741,7 +741,7 @@ function Header({ questionCount, counts, sections = ALL_SECTIONS, onSave }) {
   ].filter(Boolean);
   return (
     <PageHeader
-      eyebrow={viewsOnly ? 'Load · Derived views' : 'Analyze · Compose'}
+      eyebrow={viewsOnly ? 'Model · Derived views' : 'Analyze · Compose'}
       title={viewsOnly ? 'Build your' : 'Shape your'}
       accent={viewsOnly ? 'views.' : 'composition.'}
       sub={viewsOnly
