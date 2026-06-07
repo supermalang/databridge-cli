@@ -40,7 +40,7 @@ const STAGES = [
     { id: 'profile',   label: 'Profile',   render: () => <Profile /> },
     { id: 'validate',  label: 'Validate',  render: () => <Validate /> },
   ] },
-  { id: 'load', label: 'Load', subs: [
+  { id: 'model', label: 'Model', subs: [
     { id: 'views', label: 'Views', render: () => <Composition sections={VIEWS_SECTIONS} /> },
   ] },
   { id: 'analyze', label: 'Analyze', subs: [
