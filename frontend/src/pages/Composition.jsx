@@ -430,7 +430,6 @@ export default function Composition({ sections } = {}) {
   };
 
   const questionCount = (cfg.questions || []).length;
-  const viewsOnly = has('views') && !has('charts');
   // Available column names (export labels) for autocomplete in the editors.
   const columnOptions = useMemo(() => {
     const seen = new Set(); const out = [];
@@ -445,7 +444,6 @@ export default function Composition({ sections } = {}) {
     <div className="page">
       <Header
         questionCount={questionCount}
-        counts={{ charts: charts.length, indicators: indicators.length, tables: tables.length, summaries: summaries.length, views: views.length }}
         sections={secs}
         onSave={saveAll}
       />
@@ -453,9 +451,8 @@ export default function Composition({ sections } = {}) {
         <CompositionRail
           secs={secs}
           counts={{ charts: charts.length, indicators: indicators.length, tables: tables.length, summaries: summaries.length, views: views.length }}
-          onAdd={() => openEdit(viewsOnly ? 'view' : 'chart', null)}
-          onSuggest={() => openSuggestModal(viewsOnly ? 'view' : 'chart')}
-          onSave={saveAll}
+          onSuggestKind={(k) => openSuggestModal(k)}
+          suggesting={suggesting}
           showChartHelp={has('charts')}
         />
       }>
@@ -466,9 +463,7 @@ export default function Composition({ sections } = {}) {
               onAdd={() => openEdit('chart', null)}
               onEdit={(i) => openEdit('chart', i)}
               onRemove={remove('chart', setCharts)}
-              onSuggest={() => openSuggestModal('chart')}
               onPreview={openChartPreview}
-              suggesting={suggesting === 'chart'}
               toast={toast}
             />
           )}
@@ -478,8 +473,6 @@ export default function Composition({ sections } = {}) {
               onAdd={() => openEdit('indicator', null)}
               onEdit={(i) => openEdit('indicator', i)}
               onRemove={remove('indicator', setIndicators)}
-              onSuggest={() => openSuggestModal('indicator')}
-              suggesting={suggesting === 'indicator'}
             />
           )}
           {has('tables') && (
@@ -488,9 +481,7 @@ export default function Composition({ sections } = {}) {
               onAdd={() => openEdit('table', null)}
               onEdit={(i) => openEdit('table', i)}
               onRemove={remove('table', setTables)}
-              onSuggest={() => openSuggestModal('table')}
               onPreview={openTablePreview}
-              suggesting={suggesting === 'table'}
             />
           )}
           {has('summaries') && (
@@ -499,9 +490,7 @@ export default function Composition({ sections } = {}) {
               onAdd={() => openEdit('summary', null)}
               onEdit={(i) => openEdit('summary', i)}
               onRemove={remove('summary', setSummaries)}
-              onSuggest={() => openSuggestModal('summary')}
               onPreview={openSummaryPreview}
-              suggesting={suggesting === 'summary'}
             />
           )}
           {has('views') && (
@@ -510,9 +499,7 @@ export default function Composition({ sections } = {}) {
               onAdd={() => openEdit('view', null)}
               onEdit={(i) => openEdit('view', i)}
               onRemove={remove('view', setViews)}
-              onSuggest={() => openSuggestModal('view')}
               onPreview={openViewPreview}
-              suggesting={suggesting === 'view'}
             />
           )}
           {has('templates') && (
@@ -732,24 +719,25 @@ export default function Composition({ sections } = {}) {
 // ── Right rail: Status · Quick actions · (chart reference when relevant) ──────
 const SECTION_LABELS = { charts: 'charts', indicators: 'indicators', tables: 'tables', summaries: 'summaries', views: 'views' };
 
-function CompositionRail({ secs, counts, onAdd, onSuggest, onSave, showChartHelp }) {
-  const viewsOnly = secs.includes('views') && !secs.includes('charts');
-  const checks = Object.keys(SECTION_LABELS)
-    .filter(k => secs.includes(k))
-    .map(k => ({
-      tone: counts[k] > 0 ? 'ok' : 'warn',
-      label: `${counts[k]} ${SECTION_LABELS[k]}`,
-      sub: counts[k] > 0 ? 'configured' : `none yet — add one`,
-    }));
-  const noun = viewsOnly ? 'view' : 'chart';
+function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHelp }) {
+  const { aiReady } = useAiStatus();
+  const enabled = Object.keys(SECTION_LABELS).filter(k => secs.includes(k));
+  const checks = enabled.map(k => ({
+    tone: counts[k] > 0 ? 'ok' : 'warn',
+    label: `${counts[k]} ${SECTION_LABELS[k]}`,
+    sub: counts[k] > 0 ? 'configured' : 'none yet — add one',
+  }));
+  const aiActions = enabled.map(k => ({
+    icon: RailIcons.sparkle,
+    label: `Suggest ${SECTION_LABELS[k]}`,
+    onClick: () => onSuggestKind(k),
+    disabled: !!suggesting || !aiReady,
+    title: aiReady ? `Let AI propose ${SECTION_LABELS[k]} from your questions` : AI_LOCK_TIP,
+  }));
   return (
     <>
       {checks.length > 0 && <StatusCard checks={checks} />}
-      <QuickActionsCard actions={[
-        { icon: RailIcons.sparkle, label: `Add ${noun}`, onClick: onAdd, title: `Add a ${noun} manually` },
-        { icon: RailIcons.sparkle, label: 'AI suggest', onClick: onSuggest, title: `Let AI propose ${noun}s from your questions` },
-        { icon: RailIcons.save, label: 'Save changes', onClick: onSave, title: '' },
-      ]} />
+      <QuickActionsCard actions={aiActions} />
       {showChartHelp && <TokenAnatomy />}
       {showChartHelp && <ChartLibrary />}
       {showChartHelp && <TipsCard />}
@@ -758,16 +746,9 @@ function CompositionRail({ secs, counts, onAdd, onSuggest, onSave, showChartHelp
 }
 
 // ── Header band ──────────────────────────────────────────────────────────────
-function Header({ questionCount, counts, sections = ALL_SECTIONS, onSave }) {
+function Header({ questionCount, sections = ALL_SECTIONS, onSave }) {
   const has = (k) => sections.includes(k);
   const viewsOnly = has('views') && !has('charts');
-  const countItems = [
-    has('charts')     && `${counts.charts} charts`,
-    has('indicators') && `${counts.indicators} indicators`,
-    has('tables')     && `${counts.tables} tables`,
-    has('summaries')  && `${counts.summaries} summaries`,
-    has('views')      && `${counts.views} views`,
-  ].filter(Boolean);
   return (
     <PageHeader
       eyebrow={viewsOnly ? 'Step 3 of 5 · Derived views' : 'Step 4 of 5 · Compose'}
@@ -777,28 +758,17 @@ function Header({ questionCount, counts, sections = ALL_SECTIONS, onSave }) {
         ? 'Virtual data tables — computed once and reused by charts, summaries, and indicators downstream.'
         : <>Define what shows up in the report — charts, indicators, summaries, and the framework. Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
       actions={
-        <>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', color: 'var(--ink-3)', fontSize: 12.5, marginRight: 12 }}>
-            {countItems.map((c, i) => (
-              <Fragment key={c}>
-                {i > 0 && <span>·</span>}
-                <span>{c}</span>
-              </Fragment>
-            ))}
-          </div>
-          <button className="btn btn-primary" onClick={onSave}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
-            Save changes
-          </button>
-        </>
+        <button className="btn btn-primary" onClick={onSave}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
+          Save changes
+        </button>
       }
     />
   );
 }
 
 // ── Charts card ──────────────────────────────────────────────────────────────
-function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, onPreview, suggesting, toast }) {
-  const { aiReady } = useAiStatus();
+function ChartsCard({ charts, onAdd, onEdit, onRemove, onPreview, toast }) {
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -807,9 +777,6 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onSuggest, onPreview, sug
           <div className="comp-card__sub">Each chart → <code>{'{{ chart_<name> }}'}</code> token in Word template</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest} disabled={suggesting || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}>
-            {suggesting ? 'Asking AI…' : 'Suggest with AI'}
-          </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add chart</button>
         </div>
       </div>
@@ -1024,8 +991,7 @@ function FrameworkCard() {
 }
 
 // ── Indicators card ──────────────────────────────────────────────────────────
-function IndicatorsCard({ indicators, onAdd, onEdit, onRemove, onSuggest, suggesting }) {
-  const { aiReady } = useAiStatus();
+function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
   const [latest, setLatest] = useState({}); // { [indicator.name]: { value, error } }
 
   useEffect(() => {
@@ -1063,11 +1029,6 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove, onSuggest, sugges
           <div className="comp-card__sub">Text/number values → <code>{'{{ ind_<name> }}'}</code> placeholders in template</div>
         </div>
         <div className="comp-card__head-actions">
-          {onSuggest && (
-            <button className="ai-btn" onClick={onSuggest} disabled={suggesting || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}>
-              {suggesting ? 'Asking AI…' : 'Suggest with AI'}
-            </button>
-          )}
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add indicator</button>
         </div>
       </div>
@@ -1127,8 +1088,7 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove, onSuggest, sugges
 // ── Tables card ──────────────────────────────────────────────────────────────
 // Tables are chart-like recipes rendered with the `table` chart type →
 // {{ table_<name> }} placeholders in the Word template.
-function TablesCard({ tables, onAdd, onEdit, onRemove, onSuggest, onPreview, suggesting }) {
-  const { aiReady } = useAiStatus();
+function TablesCard({ tables, onAdd, onEdit, onRemove, onPreview }) {
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -1137,9 +1097,6 @@ function TablesCard({ tables, onAdd, onEdit, onRemove, onSuggest, onPreview, sug
           <div className="comp-card__sub">Tabular breakdowns → <code>{'{{ table_<name> }}'}</code> token in Word template</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest} disabled={suggesting || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}>
-            {suggesting ? 'Asking AI…' : 'Suggest with AI'}
-          </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add table</button>
         </div>
       </div>
@@ -1179,8 +1136,7 @@ function TablesCard({ tables, onAdd, onEdit, onRemove, onSuggest, onPreview, sug
 }
 
 // ── Summaries card ───────────────────────────────────────────────────────────
-function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesting, onPreview }) {
-  const { aiReady } = useAiStatus();
+function SummariesCard({ summaries, onAdd, onEdit, onRemove, onPreview }) {
   return (
     <div className="comp-card">
       <div className="comp-card__head">
@@ -1189,9 +1145,6 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesti
           <div className="comp-card__sub">Text paragraphs → <code>{'{{ summary_<name> }}'}</code> placeholders. Composed by the AI narrative.</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest} disabled={suggesting || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}>
-            {suggesting ? 'Asking AI…' : 'Suggest with AI'}
-          </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add summary</button>
         </div>
       </div>
@@ -1232,8 +1185,7 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onSuggest, suggesti
 }
 
 // ── Views card ───────────────────────────────────────────────────────────────
-function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest, onPreview, suggesting }) {
-  const { aiReady } = useAiStatus();
+function ViewsCard({ views, onAdd, onEdit, onRemove, onPreview }) {
   const [dims, setDims] = useState({}); // { [view.name]: { rows, cols, error } }
 
   useEffect(() => {
@@ -1270,9 +1222,6 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onSuggest, onPreview, sugge
           <div className="comp-card__sub">Virtual data tables — computed once, reused by charts, summaries, and indicators.</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="ai-btn" onClick={onSuggest} disabled={suggesting || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}>
-            {suggesting ? 'Asking AI…' : 'Suggest with AI'}
-          </button>
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add view</button>
         </div>
       </div>

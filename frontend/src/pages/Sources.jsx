@@ -229,7 +229,6 @@ function ExtractRail({ cfg, questionCount, lastCheck, testConnection }) {
   ];
   return (
     <>
-      <ProjectRailCard cfg={cfg} />
       <StatusCard checks={sourceChecks(cfg, questionCount, lastCheck)} />
       <QuickActionsCard actions={actions} />
       <TipsRailCard />
@@ -758,21 +757,6 @@ function OutputCard({ cfg, set, period, setPeriod }) {
           <div className="src-field__hint" style={{ marginTop: 6 }}>Active: {period || 'none set'}</div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Right rail: Project ──────────────────────────────────────────────────────
-function ProjectRailCard({ cfg }) {
-  const platform = cfg.api?.platform || (cfg.api?.url?.includes('ona') ? 'Ona' : 'Kobo');
-  return (
-    <div className="rail-card">
-      <div className="rail-card__title">Project
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><line x1="8" y1="5" x2="8" y2="8"/><line x1="8" y1="11" x2="8" y2="11.5"/></svg>
-      </div>
-      <div className="rail-row"><span className="rail-row__label">Form alias</span><span className="rail-row__value">{cfg.form?.alias || '—'}</span></div>
-      <div className="rail-row"><span className="rail-row__label">Form UID</span><span className="rail-row__value">{cfg.form?.uid || '—'}</span></div>
-      <div className="rail-row"><span className="rail-row__label">Platform</span><span className="rail-row__value">{platform[0].toUpperCase() + platform.slice(1)}</span></div>
     </div>
   );
 }

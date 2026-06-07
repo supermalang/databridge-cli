@@ -198,12 +198,6 @@ export default function Validate() {
       )}
       {report && (
         <div>
-          <div style={{ color: 'var(--ink-3)', fontSize: 13, marginBottom: 16 }}>
-            Scanned {report.n_rows.toLocaleString()} rows · {report.n_columns} columns ·
-            <span style={{ marginLeft: 8, color: 'var(--danger, #b91c1c)' }}>{counts.error} errors</span> ·
-            <span style={{ marginLeft: 8, color: 'var(--warn, #b45309)' }}>{counts.warning} warnings</span> ·
-            <span style={{ marginLeft: 8 }}>{counts.info} notes</span>
-          </div>
           {visibleChecks.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>No issues found on visible columns — your data looks clean.</div>
           ) : (

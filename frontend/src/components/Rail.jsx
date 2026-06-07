@@ -1,19 +1,36 @@
 // Shared right-rail toolkit used across data-heavy pages (Extract, Questions,
 // Validate, Composition, Reports). One layout + two standard cards (Status,
 // Quick actions) so every page's rail looks and behaves the same. Page-specific
-// cards (Project info, Tips, reference panels) are passed in as extra children.
+// cards (Tips, reference panels) are passed in as extra children.
 
 // ── Layout: main column + sticky 320px aside ─────────────────────────────────
 // Pass `rail` to get the two-column grid; omit it and children render full-width.
-export function RailLayout({ children, rail }) {
-  if (!rail) return <>{children}</>;
+// Pass `toolbar` to get a full-width controls row (search/filters + Save) that
+// spans both columns above the content — this keeps the rail top aligned with
+// the main content instead of with the toolbar. Use RailToolbar to fill it.
+export function RailLayout({ children, rail, toolbar }) {
+  if (!rail) {
+    return <>{toolbar && <div className="rail-toolbar">{toolbar}</div>}{children}</>;
+  }
   return (
     <div className="rail-layout">
+      {toolbar && <div className="rail-layout__toolbar rail-toolbar">{toolbar}</div>}
       <div className="rail-layout__main">{children}</div>
       <aside className="rail-layout__aside">
         <div className="rail">{rail}</div>
       </aside>
     </div>
+  );
+}
+
+// Standard toolbar content: `left` controls (search, filters) pinned left and
+// `right` controls (Save / primary actions) pinned right, on the same row.
+export function RailToolbar({ left, right }) {
+  return (
+    <>
+      <div className="rail-toolbar__left">{left}</div>
+      {right && <div className="rail-toolbar__right">{right}</div>}
+    </>
   );
 }
 

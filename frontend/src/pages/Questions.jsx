@@ -9,7 +9,7 @@ import Modal from '../components/Modal.jsx';
 import PageHeader from './PageHeader.jsx';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { useRun } from '../lib/run.js';
-import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
+import { RailLayout, RailToolbar, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function colName(q) {
@@ -441,13 +441,7 @@ export default function Questions() {
   if (questions.length === 0) {
     return (
       <div className="page">
-        <Header
-          total={0}
-          groups={0}
-          unsaved={0}
-          onSave={save}
-          canEdit={canEdit}
-        />
+        <Header total={0} groups={0} />
         <div className="src-card"><p className="empty-state">No questions yet — go to <b>Extract → Connection &amp; output</b> and click <b>Fetch questions</b> to pull the schema from your platform.</p></div>
       </div>
     );
@@ -462,17 +456,46 @@ export default function Questions() {
   const totalHidden = questions.filter(q => isHidden(q)).length;
   const totalPii = questions.filter(q => !!q.pii).length;
 
+  const toolbar = (
+    <RailToolbar
+      left={
+        <>
+          <div className="q-search">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>
+            <input placeholder="Search by name or label..." value={search} onChange={e => { setSearch(e.target.value); exitReveal(); }} />
+          </div>
+          <div className="config-view-toggle">
+            <button className={`view-btn ${filter === 'all' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('all'); exitReveal(); }}>All</button>
+            <button className={`view-btn ${filter === 'renamed' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('renamed'); exitReveal(); }}>
+              Renamed <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalRenamed})</span>
+            </button>
+            <button className={`view-btn ${filter === 'hidden' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('hidden'); exitReveal(); }}>
+              Hidden <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalHidden})</span>
+            </button>
+            <button className={`view-btn ${filter === 'pii' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('pii'); exitReveal(); }}>
+              PII <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalPii})</span>
+            </button>
+          </div>
+        </>
+      }
+      right={
+        <>
+          {dirtyIndices.size > 0 && <span className="q-unsaved-pill">{dirtyIndices.size} unsaved</span>}
+          <button className="btn btn-primary" onClick={save} disabled={dirtyIndices.size === 0 || !canEdit}
+                  title={canEdit ? '' : 'You have viewer access — editing questions requires an editor or admin role'}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
+            Save changes
+          </button>
+        </>
+      }
+    />
+  );
+
   return (
     <div className="page">
-      <Header
-        total={questions.length}
-        groups={totalGroups}
-        unsaved={dirtyIndices.size}
-        onSave={save}
-        canEdit={canEdit}
-      />
+      <Header total={questions.length} groups={totalGroups} />
 
-      <RailLayout rail={
+      <RailLayout toolbar={toolbar} rail={
         <>
           <StatusCard checks={[
             { tone: questions.length > 0 ? 'ok' : 'warn',
@@ -492,47 +515,9 @@ export default function Questions() {
               disabled: !!suggesting || !aiReady, title: aiReady ? 'Ask the AI to flag non-analytical fields' : AI_LOCK_TIP },
             { icon: RailIcons.shield, label: 'Flag PII', onClick: suggestPII,
               disabled: !!suggesting || !aiReady, title: aiReady ? 'Ask the AI to flag personal-data fields' : AI_LOCK_TIP },
-            { icon: RailIcons.save, label: 'Save changes', onClick: save,
-              disabled: dirtyIndices.size === 0 || !canEdit, title: canEdit ? '' : 'Editor access required' },
           ]} />
         </>
       }>
-
-      <div className="q-toolbar">
-        <div className="q-toolbar__left">
-          <div className="q-search">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>
-            <input placeholder="Search by name or label..." value={search} onChange={e => { setSearch(e.target.value); exitReveal(); }} />
-          </div>
-          <div className="config-view-toggle">
-            <button className={`view-btn ${filter === 'all' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('all'); exitReveal(); }}>All</button>
-            <button className={`view-btn ${filter === 'renamed' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('renamed'); exitReveal(); }}>
-              Renamed <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalRenamed})</span>
-            </button>
-            <button className={`view-btn ${filter === 'hidden' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('hidden'); exitReveal(); }}>
-              Hidden <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalHidden})</span>
-            </button>
-            <button className={`view-btn ${filter === 'pii' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('pii'); exitReveal(); }}>
-              PII <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalPii})</span>
-            </button>
-          </div>
-          <button className="ai-btn" onClick={suggestHidden} disabled={!!suggesting || !aiReady}
-                  title={aiReady ? 'Ask the AI to flag non-analytical clutter to hide (reads only field metadata)' : AI_LOCK_TIP}>
-            {suggesting === 'hidden' ? 'Asking AI…' : '✦ Auto-hide clutter'}
-          </button>
-          <button className="ai-btn" onClick={suggestPII} disabled={!!suggesting || !aiReady}
-                  title={aiReady ? 'Ask the AI to flag fields that likely contain personal data (reads only field metadata)' : AI_LOCK_TIP}>
-            {suggesting === 'pii' ? 'Asking AI…' : '✦ Flag PII'}
-          </button>
-        </div>
-        <div className="q-stats">
-          <span><b>{questions.length}</b> fields</span>
-          <span>·</span>
-          <span><b>{totalUsedInCharts}</b> used in charts</span>
-          <span>·</span>
-          <span><b>{totalBoundInd}</b> bound to indicators</span>
-        </div>
-      </div>
 
       {revealedDupIdx && (
         <div className="dup-banner" role="alert">
@@ -607,23 +592,14 @@ export default function Questions() {
 }
 
 // ── Header band ──────────────────────────────────────────────────────────────
-function Header({ total, groups, unsaved, onSave, canEdit }) {
+// Save lives in the RailLayout toolbar row (next to search + filters), not here.
+function Header({ total, groups }) {
   return (
     <PageHeader
       eyebrow={`Step 2 of 5 · Questions · ${total} fields · ${groups} groups`}
       title="Rename what shows up"
       accent="in the report."
       sub="Each row is a survey question. Edit the Export label to change how that column appears in charts, indicators, and Word placeholders — no YAML required."
-      actions={
-        <>
-          {unsaved > 0 && <span className="q-unsaved-pill">{unsaved} unsaved</span>}
-          <button className="btn btn-primary" onClick={onSave} disabled={unsaved === 0 || !canEdit}
-                  title={canEdit ? '' : 'You have viewer access — editing questions requires an editor or admin role'}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
-            Save changes
-          </button>
-        </>
-      }
     />
   );
 }
