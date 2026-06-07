@@ -429,6 +429,26 @@ _ASK_REFINE: ChatMessages = [
     )},
 ]
 
+_ASK_EXAMPLES: ChatMessages = [
+    {"role": "system", "content": (
+        "You help a user start exploring their survey dataset on an 'Ask your data' "
+        "page. Given the survey's columns (each with a label and a category), suggest "
+        "exactly 5 short, natural-language questions the user could click to ask. "
+        "Make them VARIED — include a count, a distribution, an average/comparison "
+        "across a group, a ranking, and (ONLY if a date column exists) a trend over "
+        "time. Each question must reference REAL columns by their label as written in "
+        "the list. Phrase each as a user would type it, under ~10 words, no trailing "
+        "explanation. Do NOT reference columns that are not in the list.\n\n"
+        'Return ONLY JSON: {"questions": ["...", "...", "...", "...", "..."]} — '
+        "no markdown, no commentary."
+    )},
+    {"role": "user", "content": (
+        "Form: {{form_alias}}\n\n"
+        "Columns (label — category):\n{{columns_block}}\n\n"
+        "Suggest 5 starter questions. Return JSON only."
+    )},
+]
+
 _HIDDEN_SUGGESTER: ChatMessages = [
     {"role": "system", "content": (
         "You are a survey data analyst. You are given a PRE-FILTERED list of survey "
@@ -862,6 +882,18 @@ _NARRATOR_OUTPUT_SCHEMA = {
     },
 }
 
+_ASK_EXAMPLES_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["questions"],
+    "properties": {
+        "questions": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+}
+
 SeedPrompt = Dict[str, Any]   # {"messages": ChatMessages, "config": Dict[str, Any]}
 
 SEED_PROMPTS: Dict[str, SeedPrompt] = {
@@ -891,4 +923,6 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
     "ask_propose": {"messages": _ASK_PROPOSE, "config": {}},
     "ask_caption": {"messages": _ASK_CAPTION, "config": {}},
     "ask_refine":  {"messages": _ASK_REFINE,  "config": {}},
+    "ask_examples": {"messages": _ASK_EXAMPLES,
+                     "config": {"output_schema": _ASK_EXAMPLES_OUTPUT_SCHEMA}},
 }

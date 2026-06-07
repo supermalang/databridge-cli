@@ -2159,6 +2159,39 @@ async def api_ask(payload: AskPayload, request: Request):
         raise HTTPException(status_code=500, detail=f"ask failed: {e}")
 
 
+# Starter-question cache, keyed by (column signature + ai fingerprint). Avoids an
+# LLM call on every Ask-tab mount; invalidated automatically when the schema or the
+# AI config changes (different key). AI failures that fall back to schema are NOT
+# cached, so a transient error retries on the next load.
+_ask_examples_cache: dict = {}
+
+
+@app.get("/api/ask/examples")
+def api_ask_examples():
+    """Starter questions for the Ask tab: AI-generated from the question schema when
+    an AI connection is configured, else deterministic from the schema. Always 200s
+    with {"examples": [...], "source": "ai"|"schema"|"none"}; never re-locks AI."""
+    from src.reports import ai_ask_examples as aae
+    try:
+        cfg = load_config(CONFIG_PATH)
+    except (FileNotFoundError, ValueError):
+        return {"examples": [], "source": "none"}
+    qs = [(q.get("export_label") or q.get("label") or q.get("kobo_key") or "",
+           q.get("category") or "") for q in (cfg.get("questions") or [])]
+    sig = _hashlib.sha256(
+        (repr(qs) + "|" + _ai_fingerprint_for(cfg.get("ai") or {})).encode()
+    ).hexdigest()
+    cached = _ask_examples_cache.get(sig)
+    if cached:
+        return cached
+    result = aae.suggest_examples(cfg)
+    # Cache AI successes and genuine schema results; skip caching an AI failure that
+    # fell back to schema so it can retry.
+    if result.get("source") == "ai" or not aae.ai_available(cfg):
+        _ask_examples_cache[sig] = result
+    return result
+
+
 @app.post("/api/ask/save")
 async def api_ask_save(payload: AskSavePayload, request: Request):
     """Append a proposed chart recipe to config.charts."""

@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from './PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 
+// Generic fallback shown instantly; replaced on mount by data-aware examples from
+// /api/ask/examples (AI-generated when available, else derived from the schema).
 const ASK_EXAMPLES = [
   'How many submissions by region?',
   'Show the age distribution',
@@ -11,6 +13,15 @@ const ASK_EXAMPLES = [
   'How did submissions change over time?',
   'Which regions had the most responses?',
 ];
+
+// Session-scoped cache so revisiting/remounting the Ask tab reuses the already-
+// fetched examples (no refetch, no static→AI flash). The backend caches the LLM
+// call itself; this just skips the round-trip. Cleared on data-changed (project
+// switch / config save) so a schema change re-fetches fresh examples next mount.
+let _examplesCache = null;
+if (typeof window !== 'undefined') {
+  window.addEventListener('databridge:data-changed', () => { _examplesCache = null; });
+}
 
 export default function Ask() {
   const { aiReady } = useAiStatus();
@@ -21,6 +32,25 @@ export default function Ask() {
   const [saved, setSaved] = useState({});
   const [refineInputs, setRefineInputs] = useState({});   // index -> instruction text
   const [refining, setRefining] = useState({});           // index -> bool
+  const [examples, setExamples] = useState(_examplesCache || ASK_EXAMPLES);
+
+  // Pull data-aware starter questions on mount (AI when available, else schema).
+  // Reuse the session cache if present; otherwise fetch and cache. Falls back
+  // silently to the static list if the request fails.
+  useEffect(() => {
+    if (_examplesCache) return;   // already shown via the initial state
+    let alive = true;
+    fetch('/api/ask/examples')
+      .then(r => r.json())
+      .then(d => {
+        if (Array.isArray(d.examples) && d.examples.length) {
+          _examplesCache = d.examples;
+          if (alive) setExamples(d.examples);
+        }
+      })
+      .catch(() => { /* keep static fallback */ });
+    return () => { alive = false; };
+  }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -132,7 +162,7 @@ export default function Ask() {
           description="Counts, distributions, trends, comparisons and rankings all work. Each answer is computed from your downloaded data — charts and big-number indicators you can save with one click. (Needs an AI connection and a completed Download.)"
           action={
             <div className="ask-examples">
-              {ASK_EXAMPLES.map(ex => (
+              {examples.map(ex => (
                 <button key={ex} type="button" className="ask-example"
                         disabled={!aiReady}
                         onClick={() => setQuestion(ex)}>{ex}</button>

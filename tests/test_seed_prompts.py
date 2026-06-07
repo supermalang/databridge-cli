@@ -5,7 +5,7 @@ EXPECTED_NAMES = {
     "narrator", "summaries", "chart_suggester", "template_generator",
     "summary_suggester", "view_suggester", "table_suggester", "indicator_suggester",
     "classifier_discover", "classifier_classify",
-    "ask_propose", "ask_caption", "ask_refine",
+    "ask_propose", "ask_caption", "ask_refine", "ask_examples",
     "hidden_suggester", "pii_suggester",
 }
 

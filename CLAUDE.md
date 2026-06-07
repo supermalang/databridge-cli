@@ -407,6 +407,7 @@ Prompts live in [Langfuse Cloud](https://cloud.langfuse.com) (or a self-hosted L
 | `ask_propose` | `src/reports/ask_engine.py` | JSON: `{"items": [{"kind": ...}]}` |
 | `ask_caption` | `src/reports/ask_engine.py` | JSON: `{"captions": {...}}` |
 | `ask_refine` | `src/reports/ask_engine.py` | JSON: `{"item": {"kind": ...}}` |
+| `ask_examples` | [src/reports/ai_ask_examples.py](src/reports/ai_ask_examples.py) | JSON: `{"questions": [...]}` |
 
 ### Setup
 
@@ -451,7 +452,7 @@ Every LLM call is recorded as a Langfuse generation with cost, latency, and toke
 
 ### Output schemas (structured outputs)
 
-Eleven of the fifteen prompts produce JSON and have an `output_schema` in their seed's `config`
+Twelve of the sixteen prompts produce JSON and have an `output_schema` in their seed's `config`
 (all except `summaries`, `ask_propose`, `ask_caption`, and `ask_refine`).
 The schema travels with the prompt (stored in Langfuse's per-prompt `config` field) and
 is enforced at the LLM call:
