@@ -10,7 +10,7 @@ import { useAiStatus } from '../lib/aiStatus.js';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 
 const PLATFORMS = [
-  { id: 'ona',  name: 'Ona',          tag: 'ona.io · self-hosted',         defaultUrl: 'https://api.ona.io/api/v1' },
+  { id: 'ona',  name: 'Ona / INFORM', tag: 'ona.io · UNICEF INFORM',        defaultUrl: 'https://api.ona.io/api/v1' },
   { id: 'kobo', name: 'Kobo Toolbox', tag: 'kobotoolbox.org · KPI',         defaultUrl: 'https://kf.kobotoolbox.org/api/v2' },
 ];
 
@@ -229,7 +229,7 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
       <div className="src-field">
         <div className="src-field__label">
           Platform
-          <div className="src-field__hint">Switch between Kobo Toolbox and Ona — fields adapt to match.</div>
+          <div className="src-field__hint">Switch between Kobo Toolbox and Ona / INFORM — fields adapt to match.</div>
         </div>
         <div className="platform-pick">
           {PLATFORMS.map(p => (
@@ -281,7 +281,7 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
 
       <div className="src-field">
         <div className="src-field__label">Form UID
-          <div className="src-field__hint">Identifier from {platform === 'ona' ? 'Ona' : 'Kobo'}.</div>
+          <div className="src-field__hint">Identifier from {platform === 'ona' ? 'Ona / INFORM' : 'Kobo'}.</div>
         </div>
         <input className="src-input src-input--mono" value={cfg.form?.uid || ''} placeholder="aAbBcCdDeEfFgGhH" onChange={e => set('form.uid')(e.target.value)} />
       </div>
