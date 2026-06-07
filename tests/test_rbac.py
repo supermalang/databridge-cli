@@ -163,3 +163,40 @@ def test_members_endpoint_lists_owner(_isolated_base):
         body = r.json()
         assert body["my_role"] == "admin"
         assert any(m["is_owner"] for m in body["members"])
+
+
+# --- project metadata + archive (repository level) --------------------------
+
+def test_update_project_sets_name_and_merges_meta():
+    with dbs.SessionLocal() as db:
+        owner = _mk_user(db, f"o-{uuid.uuid4()}@x.test")
+        proj = _mk_project(db, owner)
+        repo.update_project(db, proj, name="Renamed", meta={"description": "d", "tags": ["a"]})
+        assert proj.name == "Renamed"
+        assert proj.meta == {"description": "d", "tags": ["a"]}
+        # partial update merges, doesn't clobber existing keys
+        repo.update_project(db, proj, meta={"language": "French"})
+        assert proj.meta == {"description": "d", "tags": ["a"], "language": "French"}
+        assert proj.name == "Renamed"
+
+
+def test_archive_and_unarchive_project():
+    with dbs.SessionLocal() as db:
+        owner = _mk_user(db, f"o-{uuid.uuid4()}@x.test")
+        proj = _mk_project(db, owner)
+        assert proj.archived_at is None
+        repo.archive_project(db, proj, True)
+        assert proj.archived_at is not None
+        repo.archive_project(db, proj, False)
+        assert proj.archived_at is None
+
+
+def test_create_project_stores_meta():
+    with dbs.SessionLocal() as db:
+        owner = _mk_user(db, f"o-{uuid.uuid4()}@x.test")
+        org = repo.create_org(db, name=f"m-org-{uuid.uuid4().hex[:6]}",
+                              slug=f"m-org-{uuid.uuid4().hex[:6]}", owner=owner)
+        repo.add_membership(db, user=owner, org=org, role="owner")
+        proj = repo.create_project(db, user=owner, name="Meta", org_id=org.id,
+                                   meta={"color": "#0EA5E9"})
+        assert proj.meta == {"color": "#0EA5E9"}
