@@ -309,6 +309,8 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .chip-tab{padding:6px 12px;border-radius:7px;font-size:12.5px;font-weight:500;color:var(--ink-2);background:transparent;border:0;cursor:pointer;font-family:var(--font-sans);display:inline-flex;align-items:center;gap:6px;letter-spacing:-.005em}
 .chip-tab:hover{color:var(--ink)}
 .chip-tab[data-active="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 0 rgba(20,24,28,.05),0 1px 3px rgba(20,24,28,.06);font-weight:600}
+.chip-tab:disabled{opacity:.45;cursor:not-allowed}
+.chip-tab:disabled:hover{color:var(--ink-2)}
 .chip-tab__sub{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-3);font-weight:500}
 
 /* Right-rail cards */

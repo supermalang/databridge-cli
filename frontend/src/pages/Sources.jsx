@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import yaml from 'js-yaml';
 import { useToast } from '../components/Toast.jsx';
 import { loadConfig, loadConfigText, saveConfigPatch, saveConfigText } from '../lib/config.js';
-import PeriodPicker from '../components/PeriodPicker.jsx';
 import PageHeader from './PageHeader.jsx';
 import { useRun } from '../lib/run.js';
 import { usePerms } from '../lib/perms.js';
@@ -51,14 +50,15 @@ function detectAiPreset(ai) {
   return hit ? hit.id : 'custom';
 }
 
+// CSV + XLSX ship today (they set the format of the data files shown on the
+// Reports tab); JSON + database exports are on the roadmap (see ROADMAP.md) and
+// render as disabled "soon" chips.
 const FORMATS = [
-  { id: 'docx',     label: 'Word', sub: 'docx' },
   { id: 'csv',      label: 'CSV',  sub: 'flat' },
   { id: 'xlsx',     label: 'XLSX', sub: 'sheets' },
-  { id: 'json',     label: 'JSON', sub: 'array' },
-  { id: 'mysql',    label: 'MySQL' },
-  { id: 'postgres', label: 'PostgreSQL' },
-  { id: 'supabase', label: 'Supabase' },
+  { id: 'json',     label: 'JSON', sub: 'array', soon: true },
+  { id: 'mysql',    label: 'MySQL',              soon: true },
+  { id: 'postgres', label: 'PostgreSQL',         soon: true },
 ];
 
 export default function Sources({ section = 'setup' } = {}) {
@@ -70,7 +70,6 @@ export default function Sources({ section = 'setup' } = {}) {
   const [showToken,setShowToken]= useState(false);
   const [questionCount, setQuestionCount] = useState(0);
   const [lastCheck, setLastCheck] = useState(null);
-  const [period, setPeriod] = useState(null);
 
   const reload = useCallback(async () => {
     const c = await loadConfig();
@@ -160,13 +159,20 @@ export default function Sources({ section = 'setup' } = {}) {
   if (cfg === null) return <div className="page"><p className="empty-state">Loading config…</p></div>;
 
   // ── render ───────────────────────────────────────────────────────────────
+  // The "output" section lives under the Deliver stage; setup + ai are Extract.
+  const header = section === 'output'
+    ? { eyebrow: 'Step 5 of 5 · Output', title: 'Choose your', accent: 'output.',
+        sub: 'Pick the export formats and destinations, decide where reports are written, and set the active period.' }
+    : { eyebrow: 'Step 1 of 5 · Configure sources', title: 'Connect your data', accent: 'source.',
+        sub: 'Choose a platform, point at the right form, and pick the voice the AI uses when it writes narrative blocks.' };
+
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Step 1 of 5 · Configure sources"
-        title="Connect your data"
-        accent="source."
-        sub="Choose a platform, point at the right form, and pick the voice the AI uses when it writes narrative blocks."
+        eyebrow={header.eyebrow}
+        title={header.title}
+        accent={header.accent}
+        sub={header.sub}
         actions={
           <>
             <div className="config-view-toggle">
@@ -195,6 +201,10 @@ export default function Sources({ section = 'setup' } = {}) {
             }}
           />
         </div>
+      ) : section === 'output' ? (
+        <RailLayout rail={<OutputRail cfg={cfg} />}>
+          <OutputCard cfg={cfg} set={set} />
+        </RailLayout>
       ) : section === 'ai' ? (
         <RailLayout rail={<ExtractRail cfg={cfg} questionCount={questionCount} lastCheck={lastCheck} testConnection={testConnection} />}>
           <AINarrativeCard cfg={cfg} set={set} />
@@ -207,14 +217,13 @@ export default function Sources({ section = 'setup' } = {}) {
             testConnection={testConnection} lastCheck={lastCheck}
             questionCount={questionCount}
           />
-          <OutputCard cfg={cfg} set={set} period={period} setPeriod={setPeriod} />
         </RailLayout>
       )}
     </div>
   );
 }
 
-// ── Right rail (Extract): Project info · Status · Quick actions · Tips ─────────
+// ── Right rail (Extract): Status · Quick actions · Tips ───────────────────────
 function ExtractRail({ cfg, questionCount, lastCheck, testConnection }) {
   const { run } = useRun();
   const { canEdit } = usePerms();
@@ -232,6 +241,43 @@ function ExtractRail({ cfg, questionCount, lastCheck, testConnection }) {
       <StatusCard checks={sourceChecks(cfg, questionCount, lastCheck)} />
       <QuickActionsCard actions={actions} />
       <TipsRailCard />
+    </>
+  );
+}
+
+// ── Right rail (Deliver → Output): Status · Quick actions ─────────────────────
+function OutputRail({ cfg }) {
+  const { run } = useRun();
+  const { canEdit } = usePerms();
+  const period = cfg.periods?.current || '';
+  const editTip = canEdit ? '' : 'Editor access required';
+  const exp = cfg.export || {};
+  const fmt = exp.format || 'csv';
+  const db = exp.database || {};
+  const isSql = fmt === 'mysql' || fmt === 'postgres';
+  const dbReady = isSql ? !!(db.host && db.name) : true;
+  const checks = [
+    { tone: 'ok', label: `Export format: ${fmt.toUpperCase()}`,
+      sub: isSql ? 'writes to a database' : 'data files on the Reports tab' },
+    isSql
+      ? { tone: dbReady ? 'ok' : 'warn',
+          label: dbReady ? 'Destination configured' : 'Destination incomplete',
+          sub: dbReady ? 'database credentials set' : 'add connection credentials' }
+      : { tone: 'ok', label: 'Local output', sub: 'reports/ folder' },
+    { tone: period ? 'ok' : 'warn',
+      label: period ? `Period: ${period}` : 'No reporting period',
+      sub: period ? 'reports filter to this window' : 'all submissions included' },
+  ];
+  const actions = [
+    { icon: RailIcons.download, label: 'Download data', onClick: () => run('download'),
+      disabled: !canEdit, title: canEdit ? 'Download + export submissions to the chosen destination' : editTip },
+    { icon: RailIcons.doc, label: 'Build report', onClick: () => run('build-report'),
+      disabled: !canEdit, title: canEdit ? 'Render a Word report from the latest data' : editTip },
+  ];
+  return (
+    <>
+      <StatusCard checks={checks} />
+      <QuickActionsCard actions={actions} />
     </>
   );
 }
@@ -610,23 +656,34 @@ function AINarrativeCard({ cfg, set }) {
 }
 
 // ── Output ───────────────────────────────────────────────────────────────────
-function OutputCard({ cfg, set, period, setPeriod }) {
+function OutputCard({ cfg, set }) {
   const exp = cfg.export || {};
   const rep = cfg.report || {};
-  // Output format mapping: cfg.export.format is one of csv/json/xlsx/mysql/postgres/supabase.
-  // We treat "docx" as a UI-only state that doesn't change cfg.export.format (the .docx is
-  // the report output, not the export). Selecting docx just highlights the chip.
-  const reportFmt = (rep.template || '').endsWith('.docx') ? 'docx' : null;
-  const activeFmt = reportFmt || exp.format || 'csv';
+  // cfg.export.format = the data-file format (csv/xlsx today) shown on the Reports tab.
+  const activeFmt = exp.format || 'csv';
 
   const db = exp.database || {};
   const isSql = activeFmt === 'mysql' || activeFmt === 'postgres';
-  const isSupabase = activeFmt === 'supabase';
 
-  const pickFmt = (id) => {
-    if (id === 'docx') return; // .docx report stays as-is
-    set('export.format')(id);
+  const pickFmt = (f) => {
+    if (f.soon) return;
+    set('export.format')(f.id);
   };
+
+  // Export file name: the user edits a base name; the period + split suffixes are
+  // appended automatically into report.filename_pattern (the CLI's actual token).
+  const FNAME_SUFFIX = '_{period}_{split}.docx';
+  const fnpat = rep.filename_pattern || '';
+  const exportName = fnpat.endsWith(FNAME_SUFFIX)
+    ? fnpat.slice(0, -FNAME_SUFFIX.length)
+    : (fnpat ? fnpat.replace(/\.docx$/, '') : (cfg.form?.alias || 'project'));
+  const setExportName = (v) => set('report.filename_pattern')(`${v}${FNAME_SUFFIX}`);
+
+  // Split-by options: categorical questions only (searchable via <datalist>).
+  const catOptions = (cfg.questions || [])
+    .filter(q => q.category === 'categorical')
+    .map(q => q.export_label || q.label || q.kobo_key)
+    .filter(Boolean);
 
   return (
     <div className="src-card">
@@ -635,127 +692,210 @@ function OutputCard({ cfg, set, period, setPeriod }) {
           <div className="src-card__title">Output</div>
           <div className="src-card__sub">Where exports are written and what formats are emitted.</div>
         </div>
-        <button className="btn btn-ghost btn-sm">+ Add destination</button>
       </div>
 
+      {/* 1 — Formats */}
       <div className="src-field">
         <div className="src-field__label">Formats
-          <div className="src-field__hint">File formats (Word/CSV/XLSX/JSON) write locally. Database formats (MySQL/PostgreSQL/Supabase) write to a remote server and need credentials.</div>
+          <div className="src-field__hint">Sets the format of the exported data files shown on the Reports tab. CSV and XLSX ship today; JSON and database exports are on the roadmap.</div>
         </div>
         <div className="chip-tabs">
           {FORMATS.map(f => (
-            <button key={f.id} className="chip-tab" data-active={activeFmt === f.id} onClick={() => pickFmt(f.id)}>
+            <button key={f.id} className="chip-tab" data-active={activeFmt === f.id} disabled={f.soon}
+                    onClick={() => pickFmt(f)}
+                    title={f.soon ? 'Coming in a future version' : ''}>
               {f.label}
               {f.sub && <span className="chip-tab__sub">· {f.sub}</span>}
+              {f.soon && <span className="chip-tab__sub">· soon</span>}
             </button>
           ))}
         </div>
       </div>
 
-      {(isSql || isSupabase) && (
+      {isSql && (
         <div className="src-field">
-          <div className="src-field__label">{isSupabase ? 'Supabase connection' : 'Database connection'}
+          <div className="src-field__label">Database connection
             <div className="src-field__hint">Written to <code>export.database</code>. Use the <code>env:</code> prefix to read secrets from environment variables.</div>
           </div>
-          {isSql ? (
-            <div className="db-cred-grid">
-              <label className="db-cred">
-                <span>Host</span>
-                <input className="src-input src-input--mono" value={db.host || ''} placeholder="localhost" onChange={e => set('export.database.host')(e.target.value)} />
-              </label>
-              <label className="db-cred">
-                <span>Port</span>
-                <input className="src-input src-input--mono" type="number" value={db.port ?? ''} placeholder={activeFmt === 'postgres' ? '5432' : '3306'} onChange={e => set('export.database.port')(e.target.value ? parseInt(e.target.value, 10) : '')} />
-              </label>
-              <label className="db-cred">
-                <span>Database</span>
-                <input className="src-input src-input--mono" value={db.name || ''} placeholder="kobo_reports" onChange={e => set('export.database.name')(e.target.value)} />
-              </label>
-              <label className="db-cred">
-                <span>Table</span>
-                <input className="src-input src-input--mono" value={db.table || ''} placeholder="submissions" onChange={e => set('export.database.table')(e.target.value)} />
-              </label>
-              <label className="db-cred">
-                <span>User</span>
-                <input className="src-input src-input--mono" value={db.user || ''} placeholder="env:DB_USER" onChange={e => set('export.database.user')(e.target.value)} />
-              </label>
-              <label className="db-cred">
-                <span>Password</span>
-                <input className="src-input src-input--mono" type="password" value={db.password || ''} placeholder="env:DB_PASSWORD" onChange={e => set('export.database.password')(e.target.value)} />
-              </label>
-              <label className="db-cred db-cred--wide">
-                <span>On existing table</span>
-                <select className="src-input" value={db.if_exists || 'append'} onChange={e => set('export.database.if_exists')(e.target.value)}>
-                  <option value="append">append — add rows</option>
-                  <option value="replace">replace — drop &amp; recreate (deletes existing rows)</option>
-                  <option value="fail">fail — error if the table exists</option>
-                </select>
-              </label>
-            </div>
-          ) : (
-            <div className="db-cred-grid">
-              <label className="db-cred db-cred--wide">
-                <span>Project URL</span>
-                <input className="src-input src-input--mono" value={db.supabase_url || ''} placeholder="https://xxxx.supabase.co" onChange={e => set('export.database.supabase_url')(e.target.value)} />
-              </label>
-              <label className="db-cred db-cred--wide">
-                <span>Service-role key</span>
-                <input className="src-input src-input--mono" type="password" value={db.supabase_key || ''} placeholder="env:SUPABASE_KEY" onChange={e => set('export.database.supabase_key')(e.target.value)} />
-              </label>
-              <label className="db-cred db-cred--wide">
-                <span>Table</span>
-                <input className="src-input src-input--mono" value={db.table || ''} placeholder="submissions" onChange={e => set('export.database.table')(e.target.value)} />
-              </label>
-            </div>
-          )}
+          <div className="db-cred-grid">
+            <label className="db-cred">
+              <span>Host</span>
+              <input className="src-input src-input--mono" value={db.host || ''} placeholder="localhost" onChange={e => set('export.database.host')(e.target.value)} />
+            </label>
+            <label className="db-cred">
+              <span>Port</span>
+              <input className="src-input src-input--mono" type="number" value={db.port ?? ''} placeholder={activeFmt === 'postgres' ? '5432' : '3306'} onChange={e => set('export.database.port')(e.target.value ? parseInt(e.target.value, 10) : '')} />
+            </label>
+            <label className="db-cred">
+              <span>Database</span>
+              <input className="src-input src-input--mono" value={db.name || ''} placeholder="kobo_reports" onChange={e => set('export.database.name')(e.target.value)} />
+            </label>
+            <label className="db-cred">
+              <span>Table</span>
+              <input className="src-input src-input--mono" value={db.table || ''} placeholder="submissions" onChange={e => set('export.database.table')(e.target.value)} />
+            </label>
+            <label className="db-cred">
+              <span>User</span>
+              <input className="src-input src-input--mono" value={db.user || ''} placeholder="env:DB_USER" onChange={e => set('export.database.user')(e.target.value)} />
+            </label>
+            <label className="db-cred">
+              <span>Password</span>
+              <input className="src-input src-input--mono" type="password" value={db.password || ''} placeholder="env:DB_PASSWORD" onChange={e => set('export.database.password')(e.target.value)} />
+            </label>
+            <label className="db-cred db-cred--wide">
+              <span>On existing table</span>
+              <select className="src-input" value={db.if_exists || 'append'} onChange={e => set('export.database.if_exists')(e.target.value)}>
+                <option value="append">append — add rows</option>
+                <option value="replace">replace — drop &amp; recreate (deletes existing rows)</option>
+                <option value="fail">fail — error if the table exists</option>
+              </select>
+            </label>
+          </div>
         </div>
       )}
 
-      <div className="src-field">
-        <div className="src-field__label">Report output dir</div>
-        <input className="src-input src-input--mono" value={rep.output_dir || 'reports'} onChange={e => set('report.output_dir')(e.target.value)} />
-      </div>
+      {/* 2 — Reporting period */}
+      <PeriodRangeField cfg={cfg} set={set} />
 
-      <div className="src-field">
-        <div className="src-field__label">Filename pattern
-          <div className="src-field__hint">Use <code>{'{form.alias}'}</code>, <code>{'{period}'}</code>, <code>{'{split}'}</code>.</div>
-        </div>
-        <input
-          className="src-input src-input--mono"
-          value={cfg.report?.filename_pattern || `${cfg.form?.alias || 'project'}_{period}_{split}.docx`}
-          onChange={e => set('report.filename_pattern')(e.target.value)}
-        />
-      </div>
-
+      {/* 3 — Split by */}
       <div className="src-field">
         <div className="src-field__label">Split by
-          <div className="src-field__hint">Generate one report per unique value of a column.</div>
+          <div className="src-field__hint">Generate one report per unique value of a categorical question.</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <input className="src-input src-input--mono" value={rep.split_by || ''} placeholder="region_admin1" onChange={e => set('report.split_by')(e.target.value)} />
+          <input
+            className="src-input src-input--mono"
+            list="split-by-options"
+            value={rep.split_by || ''}
+            placeholder={catOptions.length ? 'Search categorical questions…' : 'No categorical questions yet'}
+            onChange={e => set('report.split_by')(e.target.value)}
+          />
+          <datalist id="split-by-options">
+            {catOptions.map(o => <option key={o} value={o} />)}
+          </datalist>
           {rep.split_by && <div className="src-field__hint">Will produce 1 report per unique value.</div>}
         </div>
       </div>
 
+      {/* 4 — Export file name */}
       <div className="src-field">
-        <div className="src-field__label">Download for period
-          <div className="src-field__hint">Sets the active period used by download and build-report commands.</div>
+        <div className="src-field__label">Export file name
+          <div className="src-field__hint">Base name for generated reports. Period and split suffixes are appended automatically.</div>
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <PeriodPicker value={period} onChange={async v => {
-            setPeriod(v);
-            if (v) {
-              try {
-                await fetch('/api/periods/current', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ label: v }),
-                });
-              } catch { /* leave UI as-is */ }
-            }
-          }} />
-          <div className="src-field__hint" style={{ marginTop: 6 }}>Active: {period || 'none set'}</div>
+        <input
+          className="src-input src-input--mono"
+          value={exportName}
+          placeholder={cfg.form?.alias || 'project'}
+          onChange={e => setExportName(e.target.value)}
+        />
+        <div className="src-field__hint" style={{ marginTop: 6 }}>
+          Full pattern: <code>{`${exportName || '<name>'}_{period}_{split}.docx`}</code>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Reporting period: Year / Quarter / Month, or a custom start–end range ──────
+// Writes periods.current (a label) + a registry entry carrying started/ended
+// dates. build-report slices the data to that submission-date window.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fSlug = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 32);
+const pad2 = (n) => String(n).padStart(2, '0');
+const lastDay = (y, m) => new Date(y, m, 0).getDate();   // m = 1..12
+
+function PeriodRangeField({ cfg, set }) {
+  const periods = cfg.periods || {};
+  const curLabel = periods.current || '';
+  const cur = (periods.registry || []).find(e => e.label === curLabel) || {};
+
+  const thisYear = new Date().getFullYear();
+  const [mode, setMode]       = useState(cur.mode || 'year');
+  const [year, setYear]       = useState(cur.year || thisYear);
+  const [quarter, setQuarter] = useState(cur.quarter || 1);
+  const [month, setMonth]     = useState(cur.month || 1);
+  const [start, setStart]     = useState(mode === 'custom' ? (cur.started || '') : '');
+  const [end, setEnd]         = useState(mode === 'custom' ? (cur.ended || '') : '');
+
+  // Compute {label, started, ended} for the current selection.
+  const resolve = () => {
+    if (mode === 'year') {
+      return { label: `${year}`, started: `${year}-01-01`, ended: `${year}-12-31` };
+    }
+    if (mode === 'quarter') {
+      const m0 = (quarter - 1) * 3 + 1;
+      return { label: `Q${quarter} ${year}`, started: `${year}-${pad2(m0)}-01`,
+               ended: `${year}-${pad2(m0 + 2)}-${pad2(lastDay(year, m0 + 2))}` };
+    }
+    if (mode === 'month') {
+      return { label: `${MONTHS[month - 1]} ${year}`, started: `${year}-${pad2(month)}-01`,
+               ended: `${year}-${pad2(month)}-${pad2(lastDay(year, month))}` };
+    }
+    return { label: start && end ? `${start} → ${end}` : '', started: start, ended: end };
+  };
+
+  const apply = () => {
+    const { label, started, ended } = resolve();
+    if (!label) return;
+    const slug = fSlug(label);
+    set('periods.current')(label);
+    const reg = [...(periods.registry || [])];
+    const i = reg.findIndex(e => e.slug === slug || e.label === label);
+    const entry = { label, slug, started, ended, mode, year, quarter, month };
+    reg[i >= 0 ? i : reg.length] = i >= 0 ? { ...reg[i], ...entry } : entry;
+    set('periods.registry')(reg);
+  };
+
+  const preview = resolve();
+  const yearOpts = []; for (let y = thisYear + 1; y >= thisYear - 8; y--) yearOpts.push(y);
+
+  return (
+    <div className="src-field">
+      <div className="src-field__label">Reporting period
+        <div className="src-field__hint">Reports include only submissions whose date falls in this window.</div>
+      </div>
+
+      <div className="chip-tabs" style={{ marginBottom: 10, width: 'fit-content' }}>
+        {['year', 'quarter', 'month', 'custom'].map(m => (
+          <button key={m} className="chip-tab" data-active={mode === m} onClick={() => setMode(m)}>
+            {m === 'custom' ? 'Custom range' : m[0].toUpperCase() + m.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {mode !== 'custom' && (
+          <select className="src-input" style={{ width: 110 }} value={year} onChange={e => setYear(+e.target.value)}>
+            {yearOpts.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        )}
+        {mode === 'quarter' && (
+          <select className="src-input" style={{ width: 120 }} value={quarter} onChange={e => setQuarter(+e.target.value)}>
+            {[1, 2, 3, 4].map(q => <option key={q} value={q}>Q{q}</option>)}
+          </select>
+        )}
+        {mode === 'month' && (
+          <select className="src-input" style={{ width: 120 }} value={month} onChange={e => setMonth(+e.target.value)}>
+            {MONTHS.map((mn, i) => <option key={mn} value={i + 1}>{mn}</option>)}
+          </select>
+        )}
+        {mode === 'custom' && (
+          <>
+            <input type="date" className="src-input" value={start} onChange={e => setStart(e.target.value)} />
+            <span style={{ color: 'var(--ink-3)' }}>→</span>
+            <input type="date" className="src-input" value={end} onChange={e => setEnd(e.target.value)} />
+          </>
+        )}
+        <button className="btn btn-sm" onClick={apply} disabled={!preview.label}>Set period</button>
+      </div>
+
+      <div className="src-field__hint" style={{ marginTop: 8 }}>
+        {curLabel
+          ? <>Active: <b>{curLabel}</b>{cur.started ? ` · ${cur.started} → ${cur.ended}` : ''}</>
+          : 'No period set — reports include all submissions.'}
+        {preview.label && preview.label !== curLabel && (
+          <> · pending: <b>{preview.label}</b> ({preview.started} → {preview.ended}) — click Set period, then Save.</>
+        )}
       </div>
     </div>
   );

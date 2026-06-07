@@ -173,6 +173,18 @@ def load_data(
         main_cols.insert(0, id_col)
         col_map[id_col] = id_col
 
+    # Reserved submission-time meta column — used by period date-range filtering at
+    # report time. Kobo exposes `_submission_time`; Ona varies (`end`/`submission_time`).
+    sub_time_src = next(
+        (c for c in ("_submission_time", "submission_time", "_submitted_at", "end", "today")
+         if c in flat.columns),
+        None,
+    )
+    if sub_time_src and "_submission_time" not in col_map.values():
+        if sub_time_src not in main_cols:
+            main_cols.append(sub_time_src)
+        col_map[sub_time_src] = "_submission_time"
+
     df = flat[main_cols].rename(columns=col_map)
     for q in main_questions:
         label = q.get("export_label") or q.get("label") or q["kobo_key"]
@@ -459,13 +471,75 @@ def export_data(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFra
         raise ValueError(f"Unknown export format '{fmt}'.")
 
 
+def _data_prefix(alias: str, period: Optional[Dict]) -> str:
+    """Filename prefix for a period's data files.
+
+    Two period flavors:
+      - **Date-range** periods (carry ``started``/``ended``) do NOT separate data
+        by file — one plain ``{alias}_data_*`` download is sliced by submission
+        date at report time. Prefix is just the alias.
+      - **Label-only** periods (legacy) keep per-period files ``{alias}_{slug}_*``.
+    """
+    if period and (period.get("started") or period.get("ended")):
+        return alias
+    if period:
+        return f"{alias}_{period['slug']}"
+    return alias
+
+
+def filter_to_period(
+    df: pd.DataFrame,
+    repeat_tables: Optional[Dict[str, pd.DataFrame]],
+    period: Optional[Dict],
+) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame]]:
+    """Keep only rows whose submission time falls in the period's date range.
+
+    No-op unless *period* carries ``started``/``ended`` dates. Orphaned repeat
+    rows (whose root submission was filtered out) are pruned via ``_root_id``.
+    """
+    repeat_tables = repeat_tables or {}
+    if not period:
+        return df, repeat_tables
+    started, ended = period.get("started"), period.get("ended")
+    if not (started or ended):
+        return df, repeat_tables
+    if "_submission_time" not in df.columns:
+        log.warning(
+            "Period date filter skipped: data has no _submission_time column "
+            "(re-run download to capture it)."
+        )
+        return df, repeat_tables
+
+    ts = pd.to_datetime(df["_submission_time"], errors="coerce", utc=True).dt.tz_localize(None)
+    mask = ts.notna()
+    if started:
+        mask &= ts >= pd.to_datetime(started)
+    if ended:
+        # Inclusive end-of-day: keep everything before the day after `ended`.
+        mask &= ts < pd.to_datetime(ended) + pd.Timedelta(days=1)
+    kept = df[mask]
+    log.info(
+        f"Period filter ({started or '…'} – {ended or '…'}): "
+        f"{len(kept)}/{len(df)} submissions in range."
+    )
+
+    id_col = next((c for c in ("_id", "_index", "_uuid") if c in kept.columns), None)
+    if id_col is not None:
+        ids = set(kept[id_col])
+        repeat_tables = {
+            name: (rdf[rdf["_root_id"].isin(ids)] if "_root_id" in rdf.columns else rdf)
+            for name, rdf in repeat_tables.items()
+        }
+    return kept, repeat_tables
+
+
 def _export_file(df: pd.DataFrame, cfg: Dict, fmt: str, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:
     out_dir = Path(cfg.get("export", {}).get("output_dir", "data/processed"))
     out_dir.mkdir(parents=True, exist_ok=True)
     alias = cfg.get("form", {}).get("alias", "form")
     from src.utils.periods import current_period
     period = current_period(cfg)
-    prefix = f"{alias}_{period['slug']}" if period else alias
+    prefix = _data_prefix(alias, period)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if fmt == "xlsx":
@@ -733,7 +807,7 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
     alias = cfg.get("form", {}).get("alias", "form")
     from src.utils.periods import current_period
     period = period or current_period(cfg)
-    prefix = f"{alias}_{period['slug']}" if period else alias
+    prefix = _data_prefix(alias, period)
 
     def _latest(pattern, session=session):
         matches = sorted(out_dir.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True)
@@ -803,4 +877,6 @@ def load_processed_data(cfg: Dict, sample_size: Optional[int] = None, random_sam
                     repeat_tables[group_name] = pd.read_json(f, orient="records")
                 log.info(f"Loaded repeat table '{group_name}' ({len(repeat_tables[group_name])} rows)")
 
+    # Date-range periods slice the single download by submission time at load time.
+    df, repeat_tables = filter_to_period(df, repeat_tables, period)
     return df, repeat_tables

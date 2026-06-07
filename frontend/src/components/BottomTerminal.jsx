@@ -15,7 +15,7 @@ const PIPELINE_TREE = [
   { id: 'fetch.questions', label: 'fetch.questions', depth: 2 },
   { id: 'model',           label: 'Model',           depth: 1 },
   { id: 'analyze',         label: 'Analyze',         depth: 1 },
-  { id: 'present',         label: 'Present',         depth: 1 },
+  { id: 'present',         label: 'Deliver',         depth: 1 },
 ];
 
 // Map a raw log-line level (cmd|info|success|warning|error from useCommand) to the

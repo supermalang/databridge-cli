@@ -32,8 +32,8 @@ const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'framew
 const STAGES = [
   { id: 'home', label: 'Home', home: true },
   { id: 'extract', label: 'Extract', subs: [
-    { id: 'connection', label: 'Connection & output', render: () => <Sources section="setup" /> },
-    { id: 'ai',         label: 'AI configuration',     render: () => <Sources section="ai" /> },
+    { id: 'connection', label: 'Connection',       render: () => <Sources section="setup" /> },
+    { id: 'ai',         label: 'AI configuration',  render: () => <Sources section="ai" /> },
   ] },
   { id: 'transform', label: 'Transform', subs: [
     { id: 'questions', label: 'Questions', render: () => <Questions /> },
@@ -47,7 +47,8 @@ const STAGES = [
     { id: 'ask',         label: 'Ask',                  render: () => <Ask /> },
     { id: 'composition', label: 'Charts & indicators', render: () => <Composition sections={ANALYZE_SECTIONS} /> },
   ] },
-  { id: 'present', label: 'Present', subs: [
+  { id: 'present', label: 'Deliver', subs: [
+    { id: 'output',    label: 'Output',    render: () => <Sources section="output" /> },
     { id: 'templates', label: 'Templates', render: () => <Templates /> },
     { id: 'reports',   label: 'Reports',   render: () => <Reports /> },
   ] },

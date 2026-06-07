@@ -3,8 +3,8 @@
 const STAGE_CARDS = [
   {
     id: 'extract', step: '01', label: 'Extract', tone: 'accent',
-    desc: 'Connect a Kobo, Ona, or INFORM form, pick output destinations, and configure the AI provider.',
-    subs: [{ id: 'connection', label: 'Connection & output' }, { id: 'ai', label: 'AI configuration' }],
+    desc: 'Connect a Kobo, Ona, or INFORM form and configure the AI provider.',
+    subs: [{ id: 'connection', label: 'Connection' }, { id: 'ai', label: 'AI configuration' }],
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 1.5 14 5v6l-6 3.5L2 11V5z"/><path d="M2 5l6 3.5L14 5M8 8.5V15"/></svg>,
   },
   {
@@ -26,9 +26,9 @@ const STAGE_CARDS = [
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><line x1="3.5" y1="13" x2="3.5" y2="8"/><line x1="8" y1="13" x2="8" y2="4"/><line x1="12.5" y1="13" x2="12.5" y2="10"/></svg>,
   },
   {
-    id: 'present', step: '05', label: 'Present', tone: 'rose',
-    desc: 'Generate Word reports from your charts, indicators, and summaries, and manage report templates.',
-    subs: [{ id: 'reports', label: 'Reports' }, { id: 'templates', label: 'Templates' }],
+    id: 'present', step: '05', label: 'Deliver', tone: 'rose',
+    desc: 'Export data to files or a database, set report output options, then generate and manage Word reports.',
+    subs: [{ id: 'output', label: 'Output' }, { id: 'reports', label: 'Reports' }, { id: 'templates', label: 'Templates' }],
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2h7l3 3v9H3z"/><polyline points="10 2 10 5 13 5"/></svg>,
   },
 ];
