@@ -220,6 +220,11 @@ export default function App() {
   // pane's React key carries the epoch it was last mounted at, and is only
   // bumped when the pane becomes active — so a stale tab refreshes when you next
   // open it, and the tab you're currently editing is never yanked out.
+  //
+  // The pane key is ALSO scoped to the active project id (see the render below),
+  // so switching projects changes every pane's identity and forces a remount +
+  // fresh fetch — otherwise the tab open at switch time would keep showing the
+  // previous project's settings/files (pages fetch on mount, not on switch).
   const [epoch, setEpoch] = useState(0);
   const [keyEpoch, setKeyEpoch] = useState({});
   const epochRef = useRef(0);
@@ -358,7 +363,7 @@ export default function App() {
                 .filter(p => visited.has(p.key) || p.key === activeKey)
                 .map(p => (
                   <div
-                    key={`${p.key}#${keyEpoch[p.key] ?? epoch}`}
+                    key={`${p.key}@${activeProjectId ?? 'none'}#${keyEpoch[p.key] ?? epoch}`}
                     className="tab-content"
                     style={{
                       flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
