@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import ProfileModal from './ProfileModal.jsx';
 
 function initials(me) {
   const src = (me?.name || me?.email || '?').trim();
@@ -9,9 +8,9 @@ function initials(me) {
 }
 
 // Circular avatar that opens a dropdown: identity header, Profile, Sign out.
-export default function UserMenu({ me, role, isSuperadmin, onProfileSaved }) {
+// "Profile" delegates to onOpenProfile (the parent opens a full-screen page).
+export default function UserMenu({ me, role, isSuperadmin, onOpenProfile }) {
   const [open, setOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const ref = useRef(null);
   const isDev = !me || me.sub === 'dev-local';
 
@@ -39,7 +38,7 @@ export default function UserMenu({ me, role, isSuperadmin, onProfileSaved }) {
             </div>
           </div>
           <div className="user-menu__sep" />
-          <button className="user-menu__item" onClick={() => { setOpen(false); setProfileOpen(true); }}>
+          <button className="user-menu__item" onClick={() => { setOpen(false); onOpenProfile?.(); }}>
             Profile
           </button>
           {!isDev && (
@@ -48,9 +47,6 @@ export default function UserMenu({ me, role, isSuperadmin, onProfileSaved }) {
             </form>
           )}
         </div>
-      )}
-      {profileOpen && (
-        <ProfileModal me={me} onClose={() => setProfileOpen(false)} onSaved={onProfileSaved} />
       )}
     </div>
   );

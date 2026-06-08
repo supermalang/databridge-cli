@@ -46,18 +46,6 @@ def llm_safe_questions(cfg: Dict) -> list:
             if not is_effective_hidden(q) and not is_pii(q)]
 
 
-def llm_safe_column_names(cfg: Dict) -> set:
-    """Export-label/label/kobo_key names of the llm-safe questions — useful for
-    dropping unsafe columns from a data-derived catalog (e.g. a profile)."""
-    names: set = set()
-    for q in llm_safe_questions(cfg):
-        for k in ("export_label", "label", "kobo_key"):
-            v = q.get(k)
-            if v:
-                names.add(v)
-    return names
-
-
 def question_column_name(q: Dict):
     """The DataFrame column name a question maps to: export_label → label → kobo_key."""
     return q.get("export_label") or q.get("label") or q.get("kobo_key")

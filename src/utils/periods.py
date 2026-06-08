@@ -83,8 +83,3 @@ def parse_period_arg(cfg: Dict, arg: Optional[str]) -> Optional[Dict]:
             {"label": arg, "slug": slugify(arg)},
         )
     return current_period(cfg)
-
-
-def period_data_glob(alias: str, slug: str) -> str:
-    """Glob pattern for a period's main data files (used by load_processed_data)."""
-    return f"{alias}_{slug}_data_*"
