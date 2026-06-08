@@ -4,7 +4,6 @@ import { useToast } from '../components/Toast.jsx';
 import { isHidden, indexQuestionsByColumn, buildGroupTree } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
 import EmptyState from '../components/EmptyState.jsx';
-import { useRun } from '../lib/run.js';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -16,7 +15,6 @@ export default function Validate() {
   const [questions, setQuestions] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { run } = useRun();
 
   const loadQuestions = async () => {
     try {
@@ -186,8 +184,6 @@ export default function Validate() {
           <QuickActionsCard actions={[
             { icon: RailIcons.refresh, label: 'Re-run validation', onClick: runValidation,
               disabled: loading, title: 'Re-scan the downloaded data' },
-            { icon: RailIcons.download, label: 'Download data', onClick: () => run('download'),
-              title: 'Download fresh submissions to validate' },
           ]} />
         </>
       }>

@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast.jsx';
 import { usePerms } from '../lib/perms.js';
 import { useRun } from '../lib/run.js';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
+import { loadConfig } from '../lib/config.js';
 
 export default function Reports() {
   const toast = useToast();
@@ -15,6 +16,7 @@ export default function Reports() {
   const { run } = useRun();
   const [reports, setReports] = useState(null);
   const [sessions, setSessions] = useState(null);
+  const [cfg, setCfg] = useState(null);
 
   // Compare modal state
   const [showCompare, setShowCompare] = useState(false);
@@ -36,6 +38,21 @@ export default function Reports() {
   }, []);
 
   useEffect(() => { loadReports(); loadSessions(); }, [loadReports, loadSessions]);
+  useEffect(() => { loadConfig().then(setCfg); }, []);
+
+  // build-report is only runnable once its inputs exist: an API connection,
+  // fetched questions, downloaded data, and a report template. Gate the action
+  // and tell the user what's still missing.
+  const buildMissing = [
+    !(cfg?.api?.url && cfg?.api?.token) && 'connection',
+    !((cfg?.questions || []).length > 0) && 'questions',
+    !(sessions?.length) && 'data',
+    !(cfg?.report?.template) && 'template',
+  ].filter(Boolean);
+  const buildReady = canEdit && buildMissing.length === 0;
+  const buildTitle = !canEdit ? 'Editor access required'
+    : buildReady ? 'Render a Word report from the latest data'
+    : `Needs: ${buildMissing.join(', ')}`;
 
   // Fetch registry periods when Compare modal opens
   useEffect(() => {
@@ -82,13 +99,9 @@ export default function Reports() {
           ]} />
           <QuickActionsCard actions={[
             { icon: RailIcons.doc, label: 'Build report', onClick: () => run('build-report'),
-              disabled: !canEdit, title: canEdit ? 'Render a Word report from the latest data' : 'Editor access required' },
-            { icon: RailIcons.play, label: 'Run pipeline', onClick: () => run('run-all'),
-              disabled: !canEdit, title: canEdit ? 'Download → template → build-report' : 'Editor access required' },
+              disabled: !buildReady, title: buildTitle },
             { icon: RailIcons.copy, label: 'Compare periods', onClick: () => { setSelected([]); setShowCompare(true); },
               title: 'Build a comparison report across periods' },
-            { icon: RailIcons.refresh, label: 'Refresh', onClick: () => { loadReports(); loadSessions(); },
-              title: 'Reload the file lists' },
           ]} />
         </>
       }>

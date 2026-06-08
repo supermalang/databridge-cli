@@ -7,7 +7,7 @@ import { useRun } from '../lib/run.js';
 import { usePerms } from '../lib/perms.js';
 import { useAiStatus } from '../lib/aiStatus.js';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
-import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
+import { RailLayout, StatusCard } from '../components/Rail.jsx';
 
 const PLATFORMS = [
   { id: 'ona',  name: 'Ona / INFORM', tag: 'ona.io · UNICEF INFORM',        defaultUrl: 'https://api.ona.io/api/v1' },
@@ -206,11 +206,11 @@ export default function Sources({ section = 'setup' } = {}) {
           <OutputCard cfg={cfg} set={set} />
         </RailLayout>
       ) : section === 'ai' ? (
-        <RailLayout rail={<ExtractRail cfg={cfg} questionCount={questionCount} lastCheck={lastCheck} testConnection={testConnection} />}>
+        <RailLayout rail={<ExtractRail cfg={cfg} questionCount={questionCount} lastCheck={lastCheck}  />}>
           <AINarrativeCard cfg={cfg} set={set} />
         </RailLayout>
       ) : (
-        <RailLayout rail={<ExtractRail cfg={cfg} questionCount={questionCount} lastCheck={lastCheck} testConnection={testConnection} />}>
+        <RailLayout rail={<ExtractRail cfg={cfg} questionCount={questionCount} lastCheck={lastCheck}  />}>
           <ConnectionCard
             cfg={cfg} set={set} platform={platform}
             showToken={showToken} setShowToken={setShowToken}
@@ -223,34 +223,19 @@ export default function Sources({ section = 'setup' } = {}) {
   );
 }
 
-// ── Right rail (Extract): Status · Quick actions · Tips ───────────────────────
-function ExtractRail({ cfg, questionCount, lastCheck, testConnection }) {
-  const { run } = useRun();
-  const { canEdit } = usePerms();
-  const editTip = canEdit ? '' : 'Editor access required';
-  const actions = [
-    { icon: RailIcons.refresh, label: 'Refresh questions', onClick: () => run('fetch-questions'),
-      disabled: !canEdit, title: canEdit ? 'Re-fetch the form schema from the platform' : editTip },
-    { icon: RailIcons.plug, label: 'Test connection', onClick: testConnection,
-      title: 'Check the API URL, token and form UID' },
-    { icon: RailIcons.download, label: 'Download data', onClick: () => run('download'),
-      disabled: !canEdit, title: canEdit ? 'Download submissions to a data session' : editTip },
-  ];
+// ── Right rail (Extract): Status · Tips ───────────────────────────────────────
+function ExtractRail({ cfg, questionCount, lastCheck }) {
   return (
     <>
       <StatusCard checks={sourceChecks(cfg, questionCount, lastCheck)} />
-      <QuickActionsCard actions={actions} />
       <TipsRailCard />
     </>
   );
 }
 
-// ── Right rail (Deliver → Output): Status · Quick actions ─────────────────────
+// ── Right rail (Deliver → Output): Status ─────────────────────────────────────
 function OutputRail({ cfg }) {
-  const { run } = useRun();
-  const { canEdit } = usePerms();
   const period = cfg.periods?.current || '';
-  const editTip = canEdit ? '' : 'Editor access required';
   const exp = cfg.export || {};
   const fmt = exp.format || 'csv';
   const db = exp.database || {};
@@ -259,25 +244,16 @@ function OutputRail({ cfg }) {
   const checks = [
     { tone: 'ok', label: `Export format: ${fmt.toUpperCase()}`,
       sub: isSql ? 'writes to a database' : 'data files on the Reports tab' },
-    isSql
-      ? { tone: dbReady ? 'ok' : 'warn',
-          label: dbReady ? 'Destination configured' : 'Destination incomplete',
-          sub: dbReady ? 'database credentials set' : 'add connection credentials' }
-      : { tone: 'ok', label: 'Local output', sub: 'reports/ folder' },
+    isSql && { tone: dbReady ? 'ok' : 'warn',
+      label: dbReady ? 'Destination configured' : 'Destination incomplete',
+      sub: dbReady ? 'database credentials set' : 'add connection credentials' },
     { tone: period ? 'ok' : 'warn',
       label: period ? `Period: ${period}` : 'No reporting period',
       sub: period ? 'reports filter to this window' : 'all submissions included' },
-  ];
-  const actions = [
-    { icon: RailIcons.download, label: 'Download data', onClick: () => run('download'),
-      disabled: !canEdit, title: canEdit ? 'Download + export submissions to the chosen destination' : editTip },
-    { icon: RailIcons.doc, label: 'Build report', onClick: () => run('build-report'),
-      disabled: !canEdit, title: canEdit ? 'Render a Word report from the latest data' : editTip },
-  ];
+  ].filter(Boolean);
   return (
     <>
       <StatusCard checks={checks} />
-      <QuickActionsCard actions={actions} />
     </>
   );
 }
@@ -920,7 +896,6 @@ function PeriodRangeField({ cfg, set }) {
 // Build the readiness checks shown in the Extract Status card.
 function sourceChecks(cfg, questionCount, lastCheck) {
   const hostFromUrl = (cfg.api?.url || '').replace(/^https?:\/\//, '');
-  const chartCount = (cfg.charts || []).length;
   return [
     // Connection — only "reachable" once a live test has actually passed.
     {
@@ -937,14 +912,6 @@ function sourceChecks(cfg, questionCount, lastCheck) {
       tone: questionCount > 0 ? 'ok' : 'warn',
       label: questionCount > 0 ? `${questionCount} questions configured` : 'No questions yet',
       sub: questionCount > 0 ? 'from saved config' : 'run Fetch questions to populate',
-    },
-    // Template presence (we don't validate its contents here).
-    {
-      tone: cfg.report?.template ? 'ok' : 'warn',
-      label: cfg.report?.template ? 'Template configured' : 'No template configured',
-      sub: cfg.report?.template
-        ? `${chartCount} chart${chartCount === 1 ? '' : 's'} configured`
-        : 'generate-template will create one',
     },
     // AI — reflects saved config only (verification lives on the AI card).
     {
@@ -963,13 +930,13 @@ function TipsRailCard() {
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.2v1.8h5V9.7A4.5 4.5 0 0 0 8 1.5zm-1.5 12h3v1h-3v-1z"/></svg>
       </div>
       <div className="tips-card__item">
-        Use the <code>env:</code> prefix in the API key field to keep secrets out of YAML.
+        Prefix the token with <code>env:</code> (e.g. <code>env:KOBO_TOKEN</code>) to read it from an environment variable instead of saving the literal value.
       </div>
       <div className="tips-card__item">
-        Rename columns in <b>Questions</b> once and they flow through to charts, indicators, and AI prompts automatically.
+        Run <b>Test connection</b> before fetching questions — it checks the API URL, token, and form UID.
       </div>
       <div className="tips-card__item">
-        Split-by reports inherit the filename pattern — one big rollup or many small reports, same template.
+        Re-fetching questions preserves your edits: renamed columns and adjusted categories carry over, and only new fields are added.
       </div>
     </div>
   );
