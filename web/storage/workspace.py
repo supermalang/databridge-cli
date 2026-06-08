@@ -1,6 +1,7 @@
 """Bridge a project's files (Minio, durable) <-> the local working dirs (a materialized
 mirror of the ACTIVE project). Uses the 3a Storage abstraction; keys via storage_key."""
 import copy
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List
 
@@ -8,6 +9,13 @@ from web.storage.base import storage_key
 from web.storage.factory import get_storage
 from src.utils.config import write_config
 from src.utils.periods import slugify
+
+# Max concurrent object downloads in pull_workspace. The mirror lives on Minio/S3
+# over the network, so a project's files are dominated by round-trip latency, not
+# bandwidth — downloading them in parallel collapses N sequential round-trips into
+# roughly one. The boto3 client and the local backend are both safe to call from
+# multiple threads for independent keys/dest paths.
+_PULL_WORKERS = 16
 
 # category -> local dir (relative to base)
 CATEGORY_DIRS: Dict[str, str] = {
@@ -53,9 +61,9 @@ def push_outputs(org_id: str, project_id: str, base=".") -> int:
 
 def pull_workspace(org_id: str, project_id: str, base=".") -> int:
     """Clear the local mirror dirs (preserving processed/charts) then download the
-    project's files from Minio. Returns #files pulled."""
+    project's files from Minio in parallel. Returns #files pulled."""
     store = get_storage()
-    n = 0
+    tasks: List[tuple] = []   # (key, dest) pairs to download
     for category in CATEGORY_DIRS:
         d = _local_dir(Path(base), category)
         d.mkdir(parents=True, exist_ok=True)
@@ -63,11 +71,14 @@ def pull_workspace(org_id: str, project_id: str, base=".") -> int:
             f.unlink()
         prefix = storage_key(org_id, project_id, category, "")
         for key in store.list(prefix):
-            name = key[len(prefix):]
-            dest = d / name
-            store.get_file(key, dest)
-            n += 1
-    return n
+            tasks.append((key, d / key[len(prefix):]))
+    if not tasks:
+        return 0
+    with ThreadPoolExecutor(max_workers=min(_PULL_WORKERS, len(tasks))) as ex:
+        # Consume the iterator so every download completes and the first failure
+        # (if any) propagates, preserving the original fail-fast behaviour.
+        list(ex.map(lambda t: store.get_file(t[0], t[1]), tasks))
+    return len(tasks)
 
 
 def is_empty(org_id: str, project_id: str) -> bool:

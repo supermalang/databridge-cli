@@ -67,3 +67,19 @@ def test_is_empty(storage, tmp_path):
     src = tmp_path / "src"; _seed_local(src)
     workspace.push_outputs("o1", "p1", base=src)
     assert workspace.is_empty("o1", "p1") is False
+
+
+def test_pull_many_files_parallel(storage, tmp_path):
+    """pull_workspace downloads files concurrently — verify a larger batch all
+    lands intact (exercises the thread-pool path)."""
+    src = tmp_path / "src"
+    (src / "data" / "processed").mkdir(parents=True)
+    for i in range(50):
+        (src / "data" / "processed" / f"f{i}.csv").write_text(f"row,{i}\n")
+    workspace.push_outputs("o1", "p1", base=src)
+
+    dest = tmp_path / "dest"
+    pulled = workspace.pull_workspace("o1", "p1", base=dest)
+    assert pulled == 50
+    for i in range(50):
+        assert (dest / "data" / "processed" / f"f{i}.csv").read_text() == f"row,{i}\n"

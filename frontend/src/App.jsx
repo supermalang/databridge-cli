@@ -10,14 +10,14 @@ import Ask from './pages/Ask.jsx';
 import Reports from './pages/Reports.jsx';
 import Templates from './pages/Templates.jsx';
 import BottomTerminal from './components/BottomTerminal.jsx';
-import Modal from './components/Modal.jsx';
 import { useConfirm } from './components/ConfirmDialog.jsx';
-import ProjectMembersModal from './components/ProjectMembersModal.jsx';
+import UserMenu from './components/UserMenu.jsx';
+import ProjectForm from './pages/ProjectForm.jsx';
+import ProfileForm from './pages/ProfileForm.jsx';
 import { useToast } from './components/Toast.jsx';
 import { useCommand } from './hooks/useCommand.js';
 import { fetchMe } from './lib/auth.js';
-import { listProjects, activateProject, createProject } from './lib/projects.js';
-import { deleteProject as apiDeleteProject } from './lib/members.js';
+import { listProjects, activateProject } from './lib/projects.js';
 import { PermsProvider } from './lib/perms.js';
 import { RunProvider } from './lib/run.js';
 import { DirtyProvider } from './lib/dirty.js';
@@ -53,8 +53,6 @@ const STAGES = [
     { id: 'reports',   label: 'Reports',   render: () => <Reports /> },
   ] },
 ];
-
-const USER = { initials: 'MK' };
 
 function ActivePeriodChip() {
   const [cur, setCur] = useState(null);
@@ -95,9 +93,9 @@ export default function App() {
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [projMenuOpen, setProjMenuOpen] = useState(false);
-  const [newProjOpen, setNewProjOpen] = useState(false);
-  const [newProjName, setNewProjName] = useState('');
-  const [membersFor, setMembersFor] = useState(null);   // project being managed
+  const [projectForm, setProjectForm] = useState(null);     // 'create' | project object | null
+  const [projectFormTab, setProjectFormTab] = useState('details');   // initial tab for the form
+  const [profileOpen, setProfileOpen] = useState(false);    // user profile page overlay
   const refreshProjects = async () => {
     const { projects, active_id, is_superadmin } = await listProjects();
     setProjects(projects); setActiveProjectId(active_id); setIsSuperadmin(!!is_superadmin);
@@ -106,6 +104,15 @@ export default function App() {
   useEffect(() => { refreshProjects(); }, []);
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
   const activeRole = activeProject?.role || (isSuperadmin ? 'superadmin' : null);
+  const activeProjects   = projects.filter(p => !p.is_archived);
+  const archivedProjects = projects.filter(p => p.is_archived);
+
+  // Open the multi-tab project form for create / edit / manage-members.
+  const openProjectForm = (target, tab = 'details') => {
+    setProjMenuOpen(false);
+    setProjectFormTab(tab);
+    setProjectForm(target);
+  };
 
   // Project switch remounts the keep-alive panes (via the epoch bump below),
   // which discards any in-progress edits — so confirm first if a page is dirty.
@@ -123,32 +130,6 @@ export default function App() {
     setProjMenuOpen(false);
     window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
   };
-  const submitNewProject = async () => {
-    const name = newProjName.trim();
-    if (!name) return;
-    try {
-      const { id } = await createProject(name);
-      await refreshProjects();
-      setNewProjOpen(false); setNewProjName('');
-      await switchProject(id);
-      toast(`Project "${name}" created`, 'ok');
-    } catch (e) { toast(e.message || 'Create failed', 'err'); }
-  };
-  const removeProject = async (p) => {
-    if (!await confirm({
-      title: 'Delete project?',
-      message: `“${p.name}” and all of its data, reports and members will be permanently deleted. This can’t be undone.`,
-      confirmLabel: 'Delete project',
-    })) return;
-    try {
-      await apiDeleteProject(p.id);
-      const updated = await refreshProjects();
-      setProjMenuOpen(false);
-      if (p.id === activeProjectId && updated[0]) await switchProject(updated[0].id);
-      toast(`Deleted "${p.name}"`, 'ok');
-    } catch (e) { toast(e.message || 'Delete failed', 'err'); }
-  };
-
   const nowTime = () => {
     const d = new Date();
     return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
@@ -239,6 +220,11 @@ export default function App() {
   // pane's React key carries the epoch it was last mounted at, and is only
   // bumped when the pane becomes active — so a stale tab refreshes when you next
   // open it, and the tab you're currently editing is never yanked out.
+  //
+  // The pane key is ALSO scoped to the active project id (see the render below),
+  // so switching projects changes every pane's identity and forces a remount +
+  // fresh fetch — otherwise the tab open at switch time would keep showing the
+  // previous project's settings/files (pages fetch on mount, not on switch).
   const [epoch, setEpoch] = useState(0);
   const [keyEpoch, setKeyEpoch] = useState({});
   const epochRef = useRef(0);
@@ -279,29 +265,48 @@ export default function App() {
             </button>
             {projMenuOpen && (
               <div className="project-menu">
-                {projects.map(p => (
+                {activeProjects.map(p => (
                   <div key={p.id}
                        className={`project-menu__item ${p.id === activeProjectId ? 'active' : ''}`}
                        onClick={() => switchProject(p.id)}>
-                    {p.name}
-                    {p.role && <span className="project-menu__role">{p.role}</span>}
+                    <span className="project-menu__label">{p.name}</span>
+                    <span className="project-menu__right">
+                      {p.role && <span className="project-menu__role">{p.role}</span>}
+                      {(p.role === 'admin' || p.role === 'superadmin' || isSuperadmin) && (
+                        <button className="project-menu__gear" title="Project settings"
+                                onClick={(e) => { e.stopPropagation(); openProjectForm(p); }}>
+                          ⚙
+                        </button>
+                      )}
+                    </span>
                   </div>
                 ))}
+                {archivedProjects.length > 0 && (
+                  <>
+                    <div className="project-menu__sep" />
+                    <div className="project-menu__grouplabel">Archived</div>
+                    {archivedProjects.map(p => (
+                      <div key={p.id} className="project-menu__item project-menu__archived">
+                        <span className="project-menu__label">{p.name}</span>
+                        {(p.role === 'admin' || p.role === 'superadmin' || isSuperadmin) && (
+                          <button className="project-menu__gear" title="Project settings"
+                                  onClick={(e) => { e.stopPropagation(); openProjectForm(p); }}>
+                            ⚙
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                )}
                 <div className="project-menu__sep" />
                 {activeProject && (
                   <div className="project-menu__item"
-                       onClick={() => { setMembersFor(activeProject); setProjMenuOpen(false); }}>
+                       onClick={() => openProjectForm(activeProject, 'members')}>
                     Manage members…
                   </div>
                 )}
-                {activeProject && (activeRole === 'admin' || activeRole === 'superadmin') && (
-                  <div className="project-menu__item project-menu__danger"
-                       onClick={() => removeProject(activeProject)}>
-                    Delete “{activeProject.name}”
-                  </div>
-                )}
                 <div className="project-menu__item project-menu__add"
-                     onClick={() => { setProjMenuOpen(false); setNewProjName(''); setNewProjOpen(true); }}>
+                     onClick={() => openProjectForm('create')}>
                   + New project
                 </div>
               </div>
@@ -317,19 +322,8 @@ export default function App() {
           <button className="iconbtn" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
           </button>
-          <button className="iconbtn" title="Notifications">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2a4 4 0 0 0-4 4v3l-1.5 2h11L12 9V6a4 4 0 0 0-4-4z"/><path d="M6.5 13a1.5 1.5 0 0 0 3 0"/></svg>
-          </button>
-          {me && me.sub !== 'dev-local' ? (
-            <form method="POST" action="/auth/logout" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
-              <span className="topbar-user" title={me.email}>{me.email}</span>
-              <button type="submit" className="iconbtn" title="Sign out">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 14H3V2h3"/><polyline points="10 11 13 8 10 5"/><line x1="13" y1="8" x2="6" y2="8"/></svg>
-              </button>
-            </form>
-          ) : (
-            <button className="iconbtn iconbtn--avatar" title={me?.email || 'Account'}>{USER.initials}</button>
-          )}
+          <UserMenu me={me} role={activeRole} isSuperadmin={isSuperadmin}
+                    onOpenProfile={() => setProfileOpen(true)} />
         </div>
       </header>
 
@@ -369,7 +363,7 @@ export default function App() {
                 .filter(p => visited.has(p.key) || p.key === activeKey)
                 .map(p => (
                   <div
-                    key={`${p.key}#${keyEpoch[p.key] ?? epoch}`}
+                    key={`${p.key}@${activeProjectId ?? 'none'}#${keyEpoch[p.key] ?? epoch}`}
                     className="tab-content"
                     style={{
                       flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
@@ -393,21 +387,35 @@ export default function App() {
         setOpen={setTermOpen}
       />
 
-      {newProjOpen && (
-        <Modal title="New project" onClose={() => setNewProjOpen(false)}
-               onSave={submitNewProject} saveLabel="Create">
-          <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>
-            Project name
-          </label>
-          <input autoFocus type="text" value={newProjName}
-                 onChange={e => setNewProjName(e.target.value)}
-                 onKeyDown={e => { if (e.key === 'Enter') submitNewProject(); }}
-                 placeholder="e.g. Q3 Monitoring" style={{ width: '100%' }} />
-        </Modal>
+      {projectForm && (
+        <div className="project-form-overlay">
+          <ProjectForm
+            mode={projectForm}
+            initialTab={projectFormTab}
+            canAdmin={projectForm !== 'create' &&
+                      (projectForm.role === 'admin' || projectForm.role === 'superadmin' || isSuperadmin)}
+            onChanged={refreshProjects}
+            onDone={async (pid) => {
+              const wasCreate = projectForm === 'create';
+              setProjectForm(null);
+              const updated = await refreshProjects();
+              // If the form created a new project, switch to it.
+              if (wasCreate && pid && updated.some(p => p.id === pid)) {
+                await switchProject(pid);
+              }
+            }}
+          />
+        </div>
       )}
 
-      {membersFor && (
-        <ProjectMembersModal project={membersFor} onClose={() => { setMembersFor(null); refreshProjects(); }} />
+      {profileOpen && (
+        <div className="project-form-overlay">
+          <ProfileForm
+            me={me}
+            onDone={() => setProfileOpen(false)}
+            onSaved={(u) => setMe(prev => ({ ...prev, ...u }))}
+          />
+        </div>
       )}
       {confirmDialog}
     </div>
