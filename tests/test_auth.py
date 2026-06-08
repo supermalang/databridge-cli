@@ -257,6 +257,71 @@ def test_refresh_failure_invalidates_session(monkeypatch):
     assert user is None and new_cookie is None
 
 
+class _FakeZitadel:
+    """Stand-in for the Authlib OIDC client used by exchange_token."""
+    def __init__(self, token, userinfo):
+        self._token = token
+        self._userinfo = userinfo
+        self.userinfo_calls = 0
+
+    async def authorize_access_token(self, request):
+        return self._token
+
+    async def userinfo(self, token=None):
+        self.userinfo_calls += 1
+        return self._userinfo
+
+
+class _FakeOAuth:
+    def __init__(self, zitadel):
+        self.zitadel = zitadel
+
+
+def test_exchange_token_fetches_userinfo_when_id_token_lacks_claims(monkeypatch):
+    """Zitadel's id_token omits email/profile by default — exchange_token must
+    fall back to the userinfo endpoint so the stored user row isn't blank."""
+    fake = _FakeZitadel(
+        token={"userinfo": {"sub": "abc"}, "refresh_token": "rt", "expires_in": 3600},
+        userinfo={"sub": "abc", "email": "real@x.io", "name": "Real Name"},
+    )
+    monkeypatch.setattr(auth, "_get_oauth", lambda: _FakeOAuth(fake))
+    claims = asyncio.run(auth.exchange_token(request=None))
+    assert claims["email"] == "real@x.io"
+    assert claims["name"] == "Real Name"
+    assert claims["sub"] == "abc"
+    assert fake.userinfo_calls == 1
+
+
+def test_exchange_token_skips_userinfo_when_id_token_has_claims(monkeypatch):
+    """When the id_token already carries email+name, no extra userinfo call."""
+    fake = _FakeZitadel(
+        token={"userinfo": {"sub": "abc", "email": "in@token.io", "name": "In Token"},
+               "refresh_token": "rt", "expires_in": 3600},
+        userinfo={"sub": "abc", "email": "should@not.use", "name": "Unused"},
+    )
+    monkeypatch.setattr(auth, "_get_oauth", lambda: _FakeOAuth(fake))
+    claims = asyncio.run(auth.exchange_token(request=None))
+    assert claims["email"] == "in@token.io"
+    assert claims["name"] == "In Token"
+    assert fake.userinfo_calls == 0
+
+
+def test_exchange_token_survives_userinfo_failure(monkeypatch):
+    """A failing userinfo call must not break login — fall back to id_token claims."""
+    fake = _FakeZitadel(
+        token={"userinfo": {"sub": "abc"}, "refresh_token": "rt", "expires_in": 3600},
+        userinfo={},
+    )
+    async def boom(token=None):
+        raise RuntimeError("userinfo endpoint down")
+    fake.userinfo = boom
+    monkeypatch.setattr(auth, "_get_oauth", lambda: _FakeOAuth(fake))
+    claims = asyncio.run(auth.exchange_token(request=None))
+    assert claims["sub"] == "abc"
+    assert claims["email"] == ""
+    assert claims["name"] == ""
+
+
 def test_real_app_health_endpoint_ok():
     """The real app exposes an unauthenticated /api/health liveness probe
     (whitelisted by the auth middleware)."""

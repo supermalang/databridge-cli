@@ -153,9 +153,23 @@ async def build_login_redirect(request, redirect_uri):
 
 
 async def exchange_token(request) -> dict:
-    """Authlib: exchange the code, validate the id_token, return a flat claims dict."""
-    token = await _get_oauth().zitadel.authorize_access_token(request)
+    """Authlib: exchange the code, validate the id_token, return a flat claims dict.
+
+    Zitadel's id_token omits the `email`/`profile` claims by default (they're served
+    from the userinfo endpoint), so `token["userinfo"]` — which Authlib parses out of
+    the id_token — often carries only `sub`. When email/name are missing we call the
+    userinfo endpoint explicitly so the stored user row isn't blank. Failures there are
+    non-fatal: we fall back to whatever the id_token gave us.
+    """
+    client = _get_oauth().zitadel
+    token = await client.authorize_access_token(request)
     info = token.get("userinfo") or {}
+    if not info.get("email") or not info.get("name"):
+        try:
+            extra = await client.userinfo(token=token)
+            info = {**info, **{k: v for k, v in (extra or {}).items() if v}}
+        except Exception:  # noqa: BLE001 — userinfo is best-effort enrichment
+            log.warning("userinfo fetch failed; using id_token claims only", exc_info=True)
     return {
         "sub": info.get("sub"),
         "email": info.get("email", ""),
