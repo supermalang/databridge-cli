@@ -51,7 +51,7 @@ function detectAiPreset(ai) {
 }
 
 // CSV + XLSX ship today (they set the format of the data files shown on the
-// Reports tab); JSON + database exports are on the roadmap (see ROADMAP.md) and
+// Reports tab); JSON + database exports are on the roadmap (see docs/ROADMAP.md) and
 // render as disabled "soon" chips.
 const FORMATS = [
   { id: 'csv',      label: 'CSV',  sub: 'flat' },

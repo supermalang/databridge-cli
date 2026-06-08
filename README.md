@@ -7,288 +7,172 @@
 databridge-cli
 ==============================
 
-**databridge-cli** is a web-based report generation platform that connects to [Kobo Toolbox](https://www.kobotoolbox.org/) or [Ona](https://ona.io/) data collection services. It automates the full pipeline from fetching survey questions, generating Word templates, downloading submission data, to building Word (.docx) reports with embedded charts — all from a browser-based interface.
+**databridge-cli** is a multi-tenant, web-based report-generation platform that connects to [Kobo Toolbox](https://www.kobotoolbox.org/) or [Ona](https://ona.io/) data-collection services. It automates the full pipeline — fetching survey questions, profiling and validating data, configuring charts/indicators, downloading submissions, and building Word (`.docx`) reports with embedded charts — from a browser-based interface, with optional AI assistance.
+
+Everything is driven by a single `config.yml` per project. Multiple users and organizations can each work on their own projects, with per-project role-based access control.
 
 # Features
-- Web UI with dashboard, config editor, questions editor, report manager, and embedded terminal
-- 4-step automated pipeline: fetch questions → generate template → download data → build report
-- YAML-based configuration editable from the browser (CodeMirror syntax-highlighted editor)
-- **Questions tab** — inline `export_label` editing table: rename columns used in charts and templates without touching YAML
-- Real-time log streaming via Server-Sent Events (SSE)
-- Word (.docx) report generation with embedded charts and text/number indicators
-- **21 chart types** including NGO-specific: grouped bar, bullet chart, Likert scale, scorecard, population pyramid, dot map
-- **Indicators** — text/number/percentage values rendered inline in Word (`{{ ind_<name> }}` placeholders)
-- **Split-by reports** — generate one report per unique value of any question (e.g., one per region)
-- Platform selection: supports both **Kobo Toolbox** and **Ona**, with custom/self-hosted URLs
-- Automatic repeat group handling — repeat data is exported as separate linked tables
-- Docker Compose deployment with Traefik HTTPS
-- Web terminal (ttyd) for direct CLI access from the browser
+
+- **Guided 5-stage workflow** in the browser: Extract → Transform → Model → Analyze → Deliver
+- **Multi-tenant**: users ↔ organizations ↔ projects, each project with its own config, data, reports, and templates
+- **Per-project RBAC**: `viewer` / `editor` / `admin` roles, project owners, email invitations, and global superadmins
+- **Authentication** via Zitadel (OIDC); identity, orgs, and memberships auto-provisioned on first login
+- **21 chart types** including NGO-specific ones: grouped bar, bullet chart, Likert scale, scorecard, population pyramid, dot map
+- **Indicators** — text/number/percentage values rendered inline in Word (`{{ ind_<name> }}` placeholders), with disaggregation, results-framework linkage, and data-quality stats
+- **Data profiling & validation** — deterministic EDA profile and data-quality findings (missingness, outliers, duplicates, type issues) before you build
+- **Ask** — natural-language questions answered as locally-computed charts or indicators
+- **AI narrative** — auto-written summary / observations / recommendations, with prompts versioned in [Langfuse](https://cloud.langfuse.com)
+- **Multi-period** support (baseline / midline / endline or quarterly rounds) and a **results framework** (logframe)
+- **PII redaction + consent gating** at export and render time
+- **Split-by reports** — one report per unique value of any column (e.g., one per region)
 - Export to CSV, JSON, XLSX, MySQL, PostgreSQL, or Supabase
+- Real-time log streaming via Server-Sent Events (SSE), with concurrent runs isolated per project
+- Runs locally with **no Docker** (uvicorn + Vite); a production Docker image is provided for deployment
 
-### Trust & audit
+---
 
-- Every value shown in the Composition tab — indicator "Latest", view dimensions — is computed live from your downloaded data. No placeholders.
-- Generated `.docx` reports include a provenance footer: when the report was generated, when the underlying data was downloaded, the number of submissions, the active filters, and a short hash of the config that produced the report. Two reports from the same config + data set have the same hash; if they differ, something in the inputs changed.
-- A pytest suite under `tests/` covers the provenance helper and a build-report smoke path. Run `pytest -v` to verify.
+# How it works
 
-### Validate (data quality)
+Three layers in two languages:
 
-The **Validate** tab (step 3 of 5) scans your downloaded submissions and surfaces:
+| Layer | Language | Lives in | What it does |
+|---|---|---|---|
+| **CLI + data + reports** | Python (pandas, matplotlib, docxtpl) | `src/` | Fetch schemas, download submissions, apply filters, render 21 chart types, fill Word templates |
+| **HTTP API + log streamer** | Python (FastAPI + uvicorn) | `web/` | `/api/*` REST endpoints, runs CLI commands as subprocesses and streams stdout as SSE |
+| **Web UI** | React (Vite) | `frontend/` | The guided dashboard that calls `/api/*` |
 
-- **Missingness** — columns where ≥5% of rows are blank or NaN, with severity escalating at 20% and 50%.
-- **Numeric outliers** — quantitative columns with values outside `Q1 − 3·IQR` to `Q3 + 3·IQR`. Catches mistyped Age=999 or NumStudents=-1 without flooding on legitimate skew.
-- **Duplicate identifiers** — rows that share `_uuid`, `_id`, or `_index` (whichever the data uses).
-- **Type-coercion issues** — quantitative columns containing non-numeric strings like `"n/a"` or `"TBD"`.
+Backing services:
 
-Findings are computed by `src/data/validate.py` and served by `POST /api/validate`. There are no user-configurable thresholds in this MVP — the defaults are tuned for typical M&E survey data.
+- **Postgres** — application database (users, orgs, projects, memberships, invitations). Each project's `config.yml` is stored as a `jsonb` column (the source of truth) and mirrored to disk for the CLI. Migrations are run automatically (Alembic) on startup.
+- **Minio / S3** — durable per-project object storage for data sessions, reports, and templates. The local `data/`, `reports/`, and `templates/` directories are a materialized mirror of the active project.
+- **Zitadel (OIDC)** — authentication and (optionally) user provisioning for invitations.
 
-### Multi-period workflow
+---
 
-`databridge-cli` can track data collection across multiple periods (baseline, midline, endline; or quarterly rounds) without overwriting earlier downloads.
+# The workflow (web UI)
 
-**Config**:
+The UI is organized as **Home + five ordered stages**. Stages with more than one screen show a secondary sub-tab strip.
 
-```yaml
-periods:
-  current:  "Q2 2026"
-  baseline: "Q1 2026"
-  registry:
-    - { label: "Q1 2026", slug: "q1_2026" }
-    - { label: "Q2 2026", slug: "q2_2026" }
-```
+| Stage | Sub-tabs | Purpose |
+|---|---|---|
+| **Home** | — | Greeting, pipeline strip, KPIs, recent runs, AI queue, project usage; one-click "Run pipeline" |
+| **Extract** | Connection · AI configuration | Platform picker (Kobo/Ona), API & form, AI provider/narrative |
+| **Transform** | Questions · Profile · Validate | Edit `export_label`s; deterministic data profile; data-quality findings |
+| **Model** | Views | Named virtual tables (joins/aggregations) reused by charts, summaries, indicators |
+| **Analyze** | Ask · Charts & indicators | Natural-language Q&A; charts, indicators, tables, summaries, framework, PII |
+| **Deliver** | Output · Templates · Reports | Export format; Word template management; generated `.docx` reports + data sessions |
 
-**Commands**:
+A sticky **bottom terminal** shows pipeline-run / fetch logs and survives tab switches.
 
-```bash
-# Tag a download with a period (auto-registers if new)
-python3 src/data/make.py download --period "Q3 2026"
+---
 
-# Build the report for a specific period
-python3 src/data/make.py build-report --period "Q2 2026"
+# Running locally (no Docker)
 
-# Comparison report (any number of periods)
-python3 src/data/make.py build-report --compare "Q1 2026,Q2 2026"
-
-# Switch the active period
-python3 src/data/make.py set-period "Q3 2026"
-```
-
-**Template placeholders** (in addition to the standard `{{ ind_<name> }}`):
-
-- `{{ ind_<name>_p_<slug> }}` — value for a specific period
-- `{{ ind_<name>_delta }}` — current minus baseline
-- `{{ ind_<name>_pct_change }}` — percent change from baseline
-- `{{ provenance.period_label }}` — the active period label
-- `{{ provenance.compared_periods }}` — list when --compare was used
-
-**Backward compatibility**: configs without a `periods:` block behave exactly as before. Single-period mode is the default.
-
-### Results framework (logframe)
-
-Structure your indicators in a Goal → Outcomes → Outputs hierarchy. The framework is editable in the Composition tab and renders as a `{{ logframe }}` section in generated reports.
-
-**Config**:
-
-```yaml
-framework:
-  goal:
-    id:    GOAL
-    label: "Reduce child mortality by 25% in target districts by 2030"
-  outcomes:
-    - id: OC1
-      label: "80% of children under 5 fully vaccinated"
-      parent: GOAL
-  outputs:
-    - id: OP1.1
-      label: "10,000 vaccination doses administered"
-      parent: OC1
-
-indicators:
-  - name: vaccinations_administered
-    framework_ref: OP1.1
-    stat: sum
-    question: Number of doses
-```
-
-**Template usage**:
-
-```
-{% if logframe.has_framework %}
-Results Framework
-{% for row in logframe.rows %}
-{{ '  ' * row.indent }}{{ row.label }}{% if row.indicators %}: {% for ind in row.indicators %}{{ ind.name }}={{ ind.value }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
-{% endfor %}
-{% endif %}
-```
-
-**Validation**: indicators whose `framework_ref` doesn't match any node appear as warnings in the **Validate** tab (`orphan_framework_ref` finding).
-
-**Backward compatibility**: configs without a `framework:` block behave exactly as today.
-
-### Privacy & consent (PII)
-
-Redact PII columns and gate on respondent consent at render time. Raw values stay in `data/processed/` for internal analysis; reports, previews, and exported result tables never expose them.
-
-**Config**:
-
-```yaml
-pii:
-  consent_column: "Consent_to_share_data"
-  consent_value:  "yes"                     # default
-  redact:
-    - column: "Respondent_name"
-      strategy: drop                        # remove column from output
-    - column: "Phone_number"
-      strategy: hash                        # sha256(value)[:8], deterministic
-    - column: "GPS"
-      strategy: generalize_geo
-      decimals: 2                           # ~1 km precision
-    - column: "Date_of_birth"
-      strategy: generalize_date             # year only
-    - column: "National_ID"
-      strategy: mask                        # ***
-```
-
-**Where it applies**: report rendering (`build-report`), all preview endpoints (chart/indicator/summary/view), and the Validate tab. The data files on disk are NOT redacted (they live under `data/processed/` and never leave your machine).
-
-**Suggestions**: the Validate tab surfaces columns whose name looks PII-shaped (`name`, `phone`, `email`, `gps`, `dob`, etc.) as info-level findings — a soft prompt to add them to `pii.redact`.
-
-**Backward compatibility**: configs without a `pii:` block behave exactly as today.
-
-### Prompt management
-
-AI feature prompts (narrator, chart suggester, template generator, etc.) are stored and versioned in [Langfuse](https://cloud.langfuse.com). This lets you edit prompts in the Langfuse UI without touching code, track version history, and monitor cost/latency per call.
-
-**Setup:**
-
-1. Create a free account at [cloud.langfuse.com](https://cloud.langfuse.com).
-2. Go to **Settings → API Keys** and copy your public key and secret key.
-3. Add them to your `.env` file:
-   ```
-   LANGFUSE_PUBLIC_KEY=pk-lf-...
-   LANGFUSE_SECRET_KEY=sk-lf-...
-   LANGFUSE_HOST=https://cloud.langfuse.com   # default; omit for cloud
-   ```
-4. Seed the bundled default prompts into Langfuse:
-   ```bash
-   python3 src/data/make.py push-prompts
-   ```
-   Use `--force` to overwrite already-seeded prompts with the current bundled defaults.
-
-**Offline fallback:** Prompts are cached locally in `~/.cache/databridge/prompts/` (1-hour TTL). If Langfuse is unreachable, the cached version is used; if there is no cache, the bundled defaults in `src/utils/seed_prompts.py` are used. All AI features work without Langfuse keys.
-
-**Tracing:** Every LLM call is recorded in Langfuse with cost, latency, and token counts. Full pipeline runs are grouped under a single trace.
-
-### Output schemas
-
-The seven JSON-producing prompts each carry a JSON Schema (`config.output_schema` in
-Langfuse). At call time, OpenAI uses Structured Outputs (guaranteed compliance) and
-Anthropic uses forced tool-use; either way, the model can no longer drift from the
-expected shape. If a schema becomes invalid (e.g., edited badly in the UI), the
-client logs a warning and falls back to no-schema mode for that one prompt — the
-feature keeps running. Edit schemas in the Langfuse UI; the next fetch picks them up.
-
-# Installation
 ## Prerequisites
-- [Docker](https://docs.docker.com/get-docker/)
-- [Docker Compose](https://docs.docker.com/compose/install/)
-- A running [Traefik](https://doc.traefik.io/traefik/) reverse proxy with the `xayma_webservers` Docker network created
-- A [Kobo Toolbox](https://www.kobotoolbox.org/) or [Ona](https://ona.io/) API token
 
-## The easy way
-The easiest way to install databridge-cli is to clone it from GitHub:
+- **Python 3.11+** and **Node.js** (for the Vite frontend)
+- A running **Postgres** database (`DATABASE_URL`)
+- A running **Minio / S3** bucket (`S3_*`)
+- A **Kobo Toolbox** or **Ona** API token
+- *(Optional)* a **Zitadel** OIDC app for authentication — when OIDC env vars are absent, the app runs as a single local dev user
+- *(Optional)* an **OpenAI / Anthropic** key and a **Langfuse** account for AI features
+
+Quick local backing services:
+
 ```bash
-$ git clone https://github.com/supermalang/databridge-cli.git
+# Postgres
+docker run --rm -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=databridge -p 5432:5432 postgres:16
+
+# Minio
+docker run --rm -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio12345 \
+  minio/minio server /data --console-address ":9001"
 ```
 
-Navigate to the directory:
+## Setup
+
 ```bash
-$ cd databridge-cli
+git clone https://github.com/supermalang/databridge-cli.git
+cd databridge-cli
+
+cp .env.example .env          # fill in your values (see Configuration)
+cp sample.config.yml config.yml
+
+pip install -r requirements.txt
+# npm dependencies install automatically the first time you run dev.sh / serve.sh
 ```
 
-Copy the sample environment file and fill in your values:
-```bash
-$ cp .env.example .env
-```
+## Two run modes
 
-Create the external Docker network (if not already created):
-```bash
-$ docker network create xayma_webservers
-```
+| Mode | Command | Ports | When to use |
+|---|---|---|---|
+| **Dev (HMR)** | `./scripts/dev.sh` | uvicorn `:8000` + Vite `:51730` (proxies `/api`) | UI iteration — rebuild in ~2s |
+| **Prod-like** | `./scripts/serve.sh` | uvicorn `:8000` only (serves the built React bundle + API) | Demo, share, pre-deploy |
 
-Then start the services:
-```bash
-$ docker compose up -d --build
-```
+In dev mode, open the Vite port (`:51730`); Vite proxies `/api/*` to uvicorn. Override host/port with `HOST=… PORT=…`.
 
-The web UI will be available at `https://your-app-domain.com` once Traefik routes the traffic.
+## Production deployment
+
+A production Docker image (single container: built React + FastAPI on one port) and a single-VPS Docker Compose + Traefik setup are documented in **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+
+---
 
 # Configuration
-## Create the .env file
-Create the `.env` file from the `.env.example` file:
-```bash
-$ cp .env.example .env
-```
 
-Now open the `.env` file and configure it with the appropriate values:
+## Environment variables (`.env`)
 
 | Variable | Required | Description |
 |---|---|---|
-| `KOBO_TOKEN` | Yes | Your Kobo Toolbox or Ona API token |
-| `APP_DOMAIN` | Yes | Domain name for Traefik routing (e.g. `databridge.yourdomain.com`) |
-| `DB_USER` | No | Database username (for optional database export) |
-| `DB_PASSWORD` | No | Database password (for optional database export) |
-| `SUPABASE_KEY` | No | Supabase API key (for optional database export) |
+| `KOBO_TOKEN` | Yes | Kobo Toolbox or Ona API token |
+| `DATABASE_URL` | Yes | Postgres connection string for the app database |
+| `S3_ENDPOINT_URL` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET` / `S3_REGION` | Yes | Minio / S3 object storage for per-project files |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Auth | Zitadel OIDC app. Absent ⇒ auth disabled, single local dev user |
+| `SESSION_SECRET` | Auth | Secret used to sign/encrypt the session cookie (`openssl rand -hex 32`) |
+| `APP_BASE_URL` | Auth | Public base URL (e.g. `https://databridge.example.com`); drives redirect URI + secure cookies |
+| `SUPERADMIN_EMAILS` | No | Comma-separated emails bootstrapped as global superadmins on first login |
+| `ZITADEL_API_TOKEN` | No | Zitadel Management API token; enables creating + emailing invited users |
+| `APP_DOMAIN` | Deploy | Domain for Traefik routing (see docs/DEPLOY.md) |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | AI | Key for the configured AI provider |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | AI | Langfuse prompt management + tracing (optional; bundled seed prompts used otherwise) |
+| `DB_USER` / `DB_PASSWORD` | DB export | Credentials for SQL/Supabase **export targets** (not the app DB) |
+| `SUPABASE_KEY` | Supabase export | Supabase service-role key |
 
-- 🆘 *If you do not have a Kobo token, go to your Kobo Toolbox account settings to generate one. For Ona, go to Settings → API Access.*
-- 🆗 *If you do not export to a database you can ignore `DB_USER`, `DB_PASSWORD` and `SUPABASE_KEY`.*
+Any `config.yml` value starting with `env:` is resolved from the environment at load time (e.g. `token: env:KOBO_TOKEN`).
 
+## `config.yml`
 
-## Update the config file
-Create the `config.yml` file from the sample:
-```bash
-$ cp sample.config.yml config.yml
-```
+Create it from the sample (`cp sample.config.yml config.yml`). When auth is enabled, the active project's config is the source of truth and is mirrored to this file; you can also edit it from the UI or on disk.
 
-Open `config.yml` and configure the API connection:
+### API & form
 
 ```yaml
 api:
-  platform: kobo            # kobo | ona
+  platform: kobo                          # kobo | ona
   url: https://kf.kobotoolbox.org/api/v2
   token: env:KOBO_TOKEN
 
 form:
-  uid: aAbBcCdDeEfFgGhH     # your form ID
-  alias: monitoring_survey   # used for output file names
+  uid: aAbBcCdDeEfFgGhH                    # asset UID
+  alias: monitoring_survey                 # filename prefix in exports
 ```
 
-**Platform selection:**
-
 | Platform | `api.platform` | Example `api.url` |
-|----------|---------------|-------------------|
+|----------|----------------|-------------------|
 | Kobo Toolbox | `kobo` | `https://kf.kobotoolbox.org/api/v2` |
 | Kobo (self-hosted) | `kobo` | `https://kobo.yourdomain.com/api/v2` |
 | Ona | `ona` | `https://api.ona.io/api/v1` |
 | Ona (self-hosted) | `ona` | `https://ona.yourdomain.com/api/v1` |
 
-- 🆘 *To find your form UID: on Kobo, go to your form's Settings → REST Services and copy the asset UID from the URL. On Ona, the form ID is the numeric ID visible in the form URL.*
+### Questions
 
-**The full config file has the following sections:**
+Auto-populated by `fetch-questions`. On re-run, your edits to `category` and `export_label` are preserved. Each entry: `kobo_key`, `label`, `type`, `category` (`categorical` / `quantitative` / `qualitative` / `geographical` / `date` / `undefined`), `group`, `choice_list`, `export_label`. Free-text questions may carry a `classify:` block to cluster responses into themes during `download`.
 
-#### Questions
-Auto-populated by the `fetch-questions` command. Each question has:
-- `kobo_key` — the field path in the API response (e.g., `group_name/field_name`)
-- `label` — human-readable label from the form
-- `type` — field type (select_one, integer, text, etc.)
-- `category` — auto-assigned: `categorical`, `quantitative`, `qualitative`, `geographical`, `date`, or `undefined`
-- `export_label` — column name in the exported data (editable — this is what charts and templates reference)
-- `repeat_group` — name of the repeat group if the field belongs to one, otherwise `null`
+> Charts and templates reference `export_label` values — rename them in the **Questions** sub-tab to short, clean column names.
 
-> After running `fetch-questions`, use the **Questions tab** in the web UI to rename `export_label` values to short, clean column names. These names are used in chart `questions:` lists and template placeholders.
+### Filters
 
-#### Filters
-Apply filters to downloaded data using [pandas query syntax](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.query.html):
+[pandas `.query()` syntax](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.query.html), applied before export and chart generation. Column names are `export_label`s.
+
 ```yaml
 filters:
   - "Age > 0"
@@ -296,10 +180,24 @@ filters:
   - "submission_date >= '2025-01-01'"
 ```
 
-> Filters are applied sequentially. Filtered-out submissions also remove their repeat group entries.
+### Views
 
-#### Charts
-Define charts to embed in the Word report. Each chart maps to a `{{ chart_<name> }}` placeholder in the template:
+Named virtual tables computed once and reused by charts/summaries/indicators.
+
+```yaml
+views:
+  - name: dept_student_totals
+    source: villages          # repeat group path, or "main"
+    join_parent: [Departement]
+    group_by: Departement
+    question: Number of Students
+    agg: sum                  # sum | mean | count | max | min
+```
+
+### Charts
+
+Each chart maps to a `{{ chart_<name> }}` placeholder.
+
 ```yaml
 charts:
   - name: satisfaction_overview
@@ -309,103 +207,36 @@ charts:
     options:
       top_n: 10
       width_inches: 5.5
-      color: "#378ADD"
-      sort: value           # value | label | none
-
-  - name: age_distribution
-    title: Age distribution
-    type: histogram
-    questions: [Age]
-    options:
-      bins: 12
-
-  - name: community_by_region
-    title: Community breakdown by region
-    type: stacked_bar
-    questions: [Region, Community]
-    options:
-      normalize: true       # 100% stacked
-
-  - name: beneficiaries_target
-    title: Beneficiaries reached vs target
-    type: bullet_chart
-    questions: [Beneficiary_ID]
-    options:
-      target: 5000
-
-  - name: site_map
-    title: Survey site locations
-    type: dot_map
-    questions: [gps_latitude, gps_longitude]
-    options:
-      color_by: Region
+      sort: value             # value | label | none
 ```
 
-**Supported chart types (21 total):**
+### Indicators
 
-| Type | Questions needed | Notes |
-|------|-----------------|-------|
-| `bar` | 1 categorical | |
-| `horizontal_bar` | 1 categorical | Best for long labels |
-| `stacked_bar` | 2 categorical | `normalize: true` for 100% stacked |
-| `grouped_bar` | 2 categorical | `[category, group_by]` |
-| `pie` | 1 categorical | |
-| `donut` | 1 categorical | |
-| `line` | 1 date/numeric | `freq: day\|week\|month\|year` |
-| `area` | 1 date/numeric | `freq: day\|week\|month\|year` |
-| `histogram` | 1 numeric | `bins: N` |
-| `scatter` | 2 numeric | |
-| `box_plot` | 1 categorical + 1 numeric | |
-| `heatmap` | 2 categorical | |
-| `treemap` | 1 categorical | Requires `squarify` |
-| `waterfall` | 1 categorical | |
-| `funnel` | 1 categorical | |
-| `table` | 1 categorical | Renders as PNG |
-| `bullet_chart` | 1 numeric | `target: N` required |
-| `likert` | 1 categorical | `scale: [...]`, `neutral: "..."` |
-| `scorecard` | 1+ questions | One KPI card per question |
-| `pyramid` | 2 categorical | `[age_group, gender]` |
-| `dot_map` | 2 numeric | `[latitude, longitude]`, optional basemap |
+Each indicator renders as `{{ ind_<name> }}`.
 
-**Common chart options (all types):**
-- `top_n` — max categories to show (default 15, pie/donut default 8)
-- `width_inches` / `height_inches` — chart dimensions
-- `color` — hex color for single-series charts (e.g. `"#D85A30"`)
-- `xlabel` / `ylabel` — axis label overrides
-- `sort` — `value` (default) | `label` | `none` (bar, horizontal_bar, grouped_bar, waterfall)
-
-#### Indicators
-Define text/number values that appear inline in report text as `{{ ind_<name> }}` placeholders:
 ```yaml
 indicators:
   - name: total_beneficiaries
     label: Total beneficiaries
     question: Beneficiary_ID
-    stat: count              # count|sum|mean|median|min|max|percent|most_common
-    format: number           # number|decimal|percent|text
-
-  - name: pct_female
-    label: Female beneficiaries
-    question: Gender
-    stat: percent
-    filter_value: "Female"   # required for stat: percent
-    format: percent
-    decimals: 1
-
-  - name: top_region
-    label: Most represented region
-    question: Region
-    stat: most_common
-    format: text
+    stat: count               # see stats below
+    format: number            # number | decimal | percent | text
+  - name: vaccinations_administered
+    stat: sum
+    question: Number of doses
+    framework_ref: OP1.1               # link to a results-framework node
+    disaggregate_by: [Region, Sex]     # adds ind_<name>_breakdown + ind_<name>_table
+    primary: true                      # headline indicator for its framework node
 ```
 
-In your Word template: `"This report covers {{ ind_total_beneficiaries }} beneficiaries. {{ ind_pct_female }} are female."`
+**`stat` options:** `count` · `count_distinct` · `sum` · `mean` · `median` · `min` · `max` · `percent` · `most_common` · `grouped_agg` · `completeness` · `outlier_rate` · `duplicate_rate` (the last three are data-quality stats — pair with `format: percent`).
+**`direction`:** `increase` (default, higher-is-better) | `decrease` (lower-is-better) — controls achievement vs target.
 
-#### Export
-Configure the output format and destination:
+### Export
+
 ```yaml
 export:
-  format: csv   # csv | json | xlsx | mysql | postgres | supabase
+  format: csv                 # csv | json | xlsx | mysql | postgres | supabase
   output_dir: data/processed
   database:
     host: localhost
@@ -414,189 +245,267 @@ export:
     user: env:DB_USER
     password: env:DB_PASSWORD
     table: submissions
-    # supabase_url: https://yourproject.supabase.co
-    # supabase_key: env:SUPABASE_KEY
 ```
 
-> For file exports (csv, json, xlsx), data is written to `output_dir`. For database exports, configure the `database` section. Use the `env:` prefix to reference environment variables.
+### Report
 
-#### Report
-Configure the Word report generation:
 ```yaml
 report:
   template: templates/report_template.docx
   output_dir: reports
   title: Monitoring Report
   period: Q1 2025
-  # split_by: Village   # generate one report per unique value of this column
+  # split_by: Region          # one report per unique value of this column
 ```
 
-The template is a `.docx` file with Jinja2-style placeholders: `{{ report_title }}`, `{{ period }}`, `{{ n_submissions }}`, `{{ generated_at }}`, `{{ chart_<name> }}`, `{{ ind_<name> }}`, etc. Run `generate-template` to create a starter template automatically.
+The template is a `.docx` with Jinja2-style placeholders: `{{ report_title }}`, `{{ period }}`, `{{ n_submissions }}`, `{{ generated_at }}`, `{{ summary_text }}`, `{{ chart_<name> }}`, `{{ ind_<name> }}`, `{{ data_quality }}`, `{{ logframe }}`, `{{ provenance.footer }}`, etc. Run `generate-template` to create a correct starter template — never type chart placeholders by hand.
+
+Optional sections — **`periods:`** (multi-period), **`framework:`** (results framework / logframe), **`pii:`** (redaction + consent), and **`ai:`** (narrative) — are documented in their sections below.
 
 ---
 
-You can edit `config.yml` in two ways:
-1. **From the browser** — use the **Config** tab in the web UI (includes syntax highlighting and YAML validation on save)
-2. **From disk** — edit the file directly; changes are picked up immediately since the file is volume-mounted
+# CLI commands
 
-> The web UI validates YAML before saving — if the syntax is invalid, the save will be rejected with an error message.
+Run from the project root with `PYTHONPATH=.`. All of these are also exposed in the UI as `POST /api/run/{command}` with streamed logs (only whitelisted commands can be triggered — no arbitrary shell).
 
-
-## Customize Traefik
-> *This part is optional*
-
-The `docker-compose.yml` configures two Traefik routers on the `xayma_webservers` external network:
-- **databridge** — serves the web UI on your `APP_DOMAIN`
-- **databridge-terminal** — serves the web terminal at the `/terminal` path
-
-Both use HTTPS via Let's Encrypt (`certresolver=letsencrypt`). To add basic authentication, add `basicauth` middleware labels to the services in `docker-compose.yml`.
-
-> ⚠️ *It is recommended to add basic auth for public-facing deployments.*
-
-
-# Usage
-#### Command line
-The CLI entry point runs inside the Docker container. You can execute commands from the **web UI Dashboard** (recommended), the **web terminal** at `/terminal`, or directly via `docker exec`:
+| Command | Description | Key options |
+|---|---|---|
+| `fetch-questions` | Fetch form schema → write questions into `config.yml` | — |
+| `generate-template` | Build a starter Word template from charts/indicators | `--out <path>` |
+| `download` | Download submissions, apply filters/PII gate, export | `--sample N`, `--period "Q3 2026"`, `--no-redact` |
+| `build-report` | Build the Word report from downloaded data | `--sample N`, `--random-sample`, `--split-by <col>`, `--split-sample N`, `--period "..."`, `--compare "Q1,Q2"` |
+| `run-all` | Run the whole pipeline: download → generate-template (if missing) → build-report | `--sample N`, `--period "..."`, `--force`, `--auto-charts` |
+| `set-period` | Switch the active period (`periods.current`) | `--baseline` |
+| `push-prompts` | Push bundled seed prompts to Langfuse | `--force` |
+| `list-sessions` | List downloaded data sessions | — |
+| `suggest-charts` / `suggest-views` / `suggest-summaries` / `suggest-tables` / `suggest-indicators` | AI suggestions (write YAML to stdout or `--out`) | `--out <path>` |
+| `ai-generate-template` | AI-designed Word template | `--out <path>` |
 
 ```bash
-$ docker exec -it databridge-cli-app python3 src/data/make.py [COMMAND] [OPTIONS]
+# Typical first run
+python3 src/data/make.py fetch-questions
+python3 src/data/make.py generate-template
+python3 src/data/make.py download --sample 50
+python3 src/data/make.py build-report --sample 50
+
+# Or the whole thing at once
+python3 src/data/make.py run-all --auto-charts
+
+# One report per region
+python3 src/data/make.py build-report --split-by Region
 ```
 
-The 4-step workflow:
+> `run-all` skips the build-report stage when the downloaded data + report-relevant config are unchanged since the last build (fingerprints in `reports/.run_all_state.json`); pass `--force` to rebuild. `--auto-charts` derives a deterministic starter chart set from your questions when none are configured.
 
-| Step | Command | Description | Options |
-|------|---------|-------------|---------|
-| 1 | `fetch-questions` | Fetch form schema from Kobo/Ona and write questions into `config.yml` | — |
-| 2 | `generate-template` | Build a starter Word template from chart and indicator definitions in `config.yml` | `--out <path>` |
-| 3 | `download` | Download form submissions, apply filters, and export data | `--sample N` |
-| 4 | `build-report` | Generate Word (.docx) report with embedded charts | `--sample N`, `--split-by <column>` |
+---
 
-**Run the full pipeline:**
-```bash
-$ python3 src/data/make.py fetch-questions
-$ python3 src/data/make.py generate-template
-$ python3 src/data/make.py download
-$ python3 src/data/make.py build-report
-```
+# Chart types (21)
 
-**Generate one report per region:**
-```bash
-$ python3 src/data/make.py build-report --split-by Region
-```
+All share the signature `fn(df, questions, title, out_path, opts)`.
 
-**Test with a sample of 50 submissions:**
-```bash
-$ python3 src/data/make.py download --sample 50
-$ python3 src/data/make.py build-report --sample 50
-```
+| Type | Questions needed | Notes |
+|---|---|---|
+| `bar` | 1 categorical | |
+| `horizontal_bar` | 1 categorical | best for long labels |
+| `stacked_bar` | 2 categorical | `[x_axis, stack_by]`; option `normalize: true` |
+| `grouped_bar` | 2 categorical | `[category, group_by]` |
+| `pie` | 1 categorical | |
+| `donut` | 1 categorical | |
+| `line` | 1–2 | date + numeric; option `freq: month` |
+| `area` | 1–2 | date + numeric; option `freq: month` |
+| `histogram` | 1 numeric | option `bins` |
+| `scatter` | 2 numeric | |
+| `box_plot` | 1 categorical + 1 numeric | |
+| `heatmap` | 2 categorical | |
+| `treemap` | 1 categorical | requires `squarify` |
+| `waterfall` | 1 categorical | |
+| `funnel` | 1 categorical | |
+| `table` | 1 categorical | renders as PNG |
+| `bullet_chart` | 1 numeric | option `target` (required) |
+| `likert` | 1 categorical | diverging bar; options `scale`, `neutral` |
+| `scorecard` | 1+ any | KPI cards; options `columns`, `stat` |
+| `pyramid` | age_group + gender | demographic pyramid |
+| `dot_map` | lat + lon | GPS dot map; options `basemap`, `color_by`, `size` |
 
-> ⚠️ *Depending on your environment you might need to use `python` (with version 3) instead of `python3`*
+**Common options:** `top_n`, `width_inches`, `height_inches`, `color`, `xlabel`, `ylabel`. **Sort** (`bar`, `horizontal_bar`, `grouped_bar`, `waterfall`): `sort: value | label | none`.
 
-
-#### Web UI
-Once the services are running, open `https://your-app-domain.com` in a browser. The interface has six tabs:
-
-- **Dashboard** — Run the 4 pipeline steps with one click and view real-time logs streamed via SSE. Build Report supports split-by from a dropdown.
-- **Config** — Edit `config.yml` with a CodeMirror YAML editor (syntax highlighting, validation on save)
-- **Questions** — Browse all fetched questions in a table and edit `export_label` inline. Save changes back to `config.yml` without touching YAML.
-- **Reports** — Browse, download, and delete generated `.docx` reports; also shows downloaded data files
-- **Templates** — Manage Word templates: upload, download, generate, preview placeholders, and set the active template for report generation
-- **Terminal** — Full web terminal (ttyd) for direct CLI access at `/terminal`
-
-
-#### API endpoints
-The FastAPI backend exposes the following REST API:
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | Serve the web UI |
-| `GET` | `/api/config` | Read `config.yml` content |
-| `POST` | `/api/config` | Write `config.yml` (validates YAML before saving) |
-| `POST` | `/api/run/{command}` | Run a CLI command, stream logs via SSE |
-| `GET` | `/api/status` | Get last command run status |
-| `GET` | `/api/reports` | List generated reports |
-| `GET` | `/api/reports/download/{filename}` | Download a report file |
-| `DELETE` | `/api/reports/{filename}` | Delete a report file |
-| `GET` | `/api/data` | List downloaded data files |
-| `GET` | `/api/data/download/{filename}` | Download a data file |
-| `GET` | `/api/questions` | Read questions list from `config.yml` |
-| `POST` | `/api/questions` | Save updated questions list to `config.yml` |
-| `GET` | `/api/templates` | List template files |
-| `GET` | `/api/templates/download/{filename}` | Download a template |
-| `POST` | `/api/templates/upload` | Upload a `.docx` template |
-| `DELETE` | `/api/templates/{filename}` | Delete a template |
-| `GET` | `/api/templates/active` | Get active template name |
-| `POST` | `/api/templates/set-active/{filename}` | Set active template in config |
-| `GET` | `/api/templates/preview/{filename}` | List template placeholders |
-
+---
 
 # Repeat groups
 
-Forms with repeat groups (e.g., listing household members within a household survey) are automatically detected during `fetch-questions`. Repeat data is exported as **separate tables** linked to the main table.
+Forms with repeat groups (e.g., household members within a household survey) are flattened into a **main table plus one table per repeat level** (including nested sub-repeats). Every repeat row carries linkage columns:
 
-**Output structure:**
+- `_root_id` — id of the root submission the row descends from
+- `_parent_index` — alias of `_root_id` (backward-compat)
+- `_parent_row_id` — `_row_id` of the immediate parent repeat row
+- `_row_id` — stable composite id, e.g. `"12.0.1"`
+- `_row_index` — position within the immediate parent
 
-| Table | Columns | Description |
-|-------|---------|-------------|
-| Main table | `_id`, all non-repeat questions | One row per submission |
-| Repeat table (one per group) | `_parent_index`, `_row_index`, repeat fields | One row per repeat entry |
-
-- `_parent_index` links back to the parent submission's `_id`
-- `_row_index` is the position within the repeat (0, 1, 2, ...)
+Join any level to its parent on `_parent_row_id == parent._row_id`, or to the root on `_root_id == main._id`.
 
 **Export behavior by format:**
 
 | Format | Main table | Repeat tables |
 |--------|-----------|---------------|
-| CSV | `alias_data.csv` | `alias_groupname.csv` (one file per group) |
-| JSON | `alias_data.json` | `alias_groupname.json` (one file per group) |
-| XLSX | `main` sheet | One sheet per group (in the same file) |
-| SQL | `submissions` table | `submissions_groupname` table |
-| Supabase | `submissions` table | `submissions_groupname` table |
+| CSV | `alias_data.csv` | `alias_groupname.csv` (one per group) |
+| JSON | `alias_data.json` | `alias_groupname.json` (one per group) |
+| XLSX | `main` sheet | one sheet per group |
+| SQL / Supabase | `submissions` | `submissions_groupname` |
 
-> Filters applied to the main table automatically remove orphaned repeat rows whose parent submission was filtered out.
+> Filters applied to the main table automatically prune orphaned repeat rows whose parent submission was filtered out.
 
+---
 
-# Docker services
+# Data quality, profiling & Ask
 
-| Service | Container | Port | Description |
-|---------|-----------|------|-------------|
-| `app` | `databridge-cli-app` | 8000 | FastAPI backend + web UI (served via Traefik with HTTPS) |
-| `terminal` | `databridge-cli-terminal` | 7681 | ttyd web shell accessible at `/terminal` path |
+- **Profile** (`GET /api/profile`) — a deterministic EDA profile for every table: per-column role, completeness, cardinality, numeric stats + 3×IQR outliers, date ranges, low-cardinality top values, correlations, duplicate-id info. No LLM, no I/O.
+- **Validate** (`POST /api/validate`) — findings for missingness, numeric outliers, duplicate identifiers, type-coercion issues, and orphan `framework_ref`s. A read-only **data-quality overview** (`GET /api/data-quality`) shows per-column completeness / outlier-rate / duplicate-rate.
+- **Ask** (`POST /api/ask`) — ask a question in plain language; it returns 1–3 locally-computed answers (each a chart or a scalar indicator), grounded captions from the actual values, and can be **refined** ("make it a line chart", "split by sex"). Save an answer back into `config.yml`. Needs an AI provider + downloaded data.
 
-**Volume mounts** (shared by both services):
+---
 
-| Host path | Container path | Purpose |
-|-----------|---------------|---------|
-| `./config.yml` | `/app/config.yml` | Pipeline configuration |
-| `./data/` | `/app/data/` | Raw and processed data, charts |
-| `./reports/` | `/app/reports/` | Generated Word reports |
-| `./templates/` | `/app/templates/` | Word templates |
-| `./references/` | `/app/references/` | Reference documents |
+# Authentication, projects & access control
 
+When OIDC env vars are configured, the app authenticates users via **Zitadel**. On first login a user and a personal organization are auto-provisioned from the identity claims.
+
+- **Multi-tenant model:** users ↔ organizations ↔ projects. Each project stores its own `config.yml` (as `jsonb`) and owns its data sessions, reports, and templates in object storage. All queries are membership-scoped — you only see your orgs' projects.
+- **Per-project RBAC:** `ProjectMembership` with roles `viewer < editor < admin`, plus the project **owner** (creator) and a global **superadmin** override. Mutating endpoints require at least `editor`; destructive/admin operations require `admin`.
+- **Invitations:** an admin can invite by email; if a Zitadel Management token is configured the user is created and emailed. Pending invites become memberships when that email logs in.
+- **Per-run isolation:** each run executes in its own temp directory hydrated from object storage; outputs are pushed back on success. One run per project at a time; different projects run concurrently.
+
+> The member roster shows each member's name/email (falling back to a user id only if neither is known). Identity is populated from OIDC claims at login.
+
+---
+
+# AI features & prompt management
+
+AI features (narrator, chart/view/summary/table/indicator suggesters, template generator, text classifier, Ask engine) call an LLM provider configured in the `ai:` block:
+
+```yaml
+ai:
+  provider: openai            # openai | anthropic
+  model: gpt-4o
+  api_key: env:OPENAI_API_KEY
+  base_url: ""                # optional — Azure, Groq, Mistral, Ollama
+  language: English
+  max_tokens: 1500
+```
+
+Prompts are stored and versioned in **[Langfuse](https://cloud.langfuse.com)** and fetched at runtime. Resolution order: local cache (`~/.cache/databridge/prompts/`, 1-hour TTL) → Langfuse → bundled seeds (`src/utils/seed_prompts.py`). AI features keep working with no Langfuse keys (bundled seeds) and no provider key (the feature no-ops).
+
+```bash
+python3 src/data/make.py push-prompts          # seed prompts into Langfuse (create-if-missing)
+python3 src/data/make.py push-prompts --force   # overwrite with current bundled defaults
+```
+
+**Output schemas:** the JSON-producing prompts carry a JSON Schema (in Langfuse's per-prompt `config`). OpenAI enforces it via Structured Outputs; Anthropic via forced tool-use. An invalid schema falls back to no-schema mode for that one prompt (logged), so the feature keeps running. Every LLM call is recorded as a Langfuse generation with cost/latency/token counts; a full pipeline run is grouped under one trace.
+
+---
+
+# Multi-period workflow
+
+Track data collection across periods (baseline / midline / endline, or quarterly rounds) without overwriting earlier downloads.
+
+```yaml
+periods:
+  current:  "Q2 2026"
+  baseline: "Q1 2026"
+  registry:
+    - { label: "Q1 2026", slug: "q1_2026", started: 2026-01-01, ended: 2026-03-31 }
+    - { label: "Q2 2026", slug: "q2_2026" }
+```
+
+A registry entry is either **date-range** (has `started`/`ended` — one plain download is sliced by `_submission_time` at report time) or **label-only** (legacy per-period downloads writing slug-prefixed files).
+
+```bash
+python3 src/data/make.py download --period "Q3 2026"
+python3 src/data/make.py build-report --period "Q2 2026"
+python3 src/data/make.py build-report --compare "Q1 2026,Q2 2026"
+python3 src/data/make.py set-period "Q3 2026"
+```
+
+**Extra placeholders:** `{{ ind_<name>_p_<slug> }}`, `{{ ind_<name>_delta }}`, `{{ ind_<name>_pct_change }}`, `{{ provenance.period_label }}`, `{{ provenance.compared_periods }}`. Configs without a `periods:` block behave as single-period.
+
+---
+
+# Results framework (logframe)
+
+Structure indicators in a Goal → Outcomes → Outputs hierarchy, editable in **Analyze → Charts & indicators** and rendered as a `{{ logframe }}` section.
+
+```yaml
+framework:
+  goal:
+    id: GOAL
+    label: "Reduce child mortality by 25% in target districts by 2030"
+  outcomes:
+    - { id: OC1, label: "80% of children under 5 fully vaccinated", parent: GOAL }
+  outputs:
+    - { id: OP1.1, label: "10,000 vaccination doses administered", parent: OC1 }
+```
+
+Link an indicator to a node with `framework_ref: OP1.1`; mark the headline indicator with `primary: true`. Indicators whose `framework_ref` doesn't match any node surface as an `orphan_framework_ref` finding in Validate. Configs without `framework:` are unaffected.
+
+---
+
+# Privacy & consent (PII)
+
+Redact PII columns and gate on respondent consent.
+
+```yaml
+pii:
+  consent_column: "Consent_to_share_data"
+  consent_value:  "yes"
+  redact:
+    - { column: "Respondent_name", strategy: drop }
+    - { column: "Phone_number",    strategy: hash }            # sha256(value)[:8]
+    - { column: "GPS",             strategy: generalize_geo, decimals: 2 }
+    - { column: "Date_of_birth",   strategy: generalize_date } # year only
+    - { column: "National_ID",     strategy: mask }
+```
+
+Two tiers: a **strict export gate** (`enforce_pii` inside `download` — fail-closed on a missing consent/redact column or unknown strategy, consent-gates the main table, prunes orphaned repeat rows, then redacts) so `data/processed` + DB/Supabase are always gated; and a **lenient render net** at report/preview time as defense-in-depth. `download --no-redact` is an explicit, CLI-only escape hatch that writes raw data and logs a warning. Configs without a `pii:` block are unaffected.
+
+---
+
+# Trust & audit
+
+- Values shown in the UI are computed live from your downloaded data — no placeholders.
+- Generated `.docx` reports include a provenance footer (`{{ provenance.footer }}`): when generated, when the data was downloaded, the number of submissions, active filters, a short hash of the config, and a PII note when redaction is configured. Same config + data ⇒ same hash.
+
+---
+
+# API endpoints
+
+The FastAPI backend exposes `/api/*`. Highlights (not exhaustive):
+
+- **Config & questions:** `GET/POST /api/config`, `GET/POST /api/questions`
+- **Run pipeline:** `POST /api/run/{command}` (SSE), `GET /api/status`, `POST /api/stop/{run_id}`
+- **Outputs:** `/api/reports*`, `/api/templates*`, `/api/data*`, `/api/data/sessions`
+- **Analysis:** `GET /api/profile`, `POST /api/validate`, `GET /api/data-quality`, `GET /api/base-tables`, `POST /api/ask`, `POST /api/ask/refine`, `POST /api/ask/save`
+- **Projects & access:** `GET /api/projects`, project members `GET/POST/PATCH/DELETE /api/projects/{id}/members*`, invitations, `POST /api/admin/superadmins`
+- **Auth:** `/auth/login`, `/auth/callback`, `/auth/logout`, `GET /api/me`
+- **Health:** `GET /api/health`
+
+Mutating endpoints are role-gated (editor for config/questions/run/deletes; admin for templates/projects/members). Previews, suggestions, and AI-test stay ungated.
+
+---
+
+# Testing
+
+A pytest suite under `tests/` covers auth, RBAC, provisioning, the provenance helper, prompt-seed validation, and build-report / compare smoke paths. Tests run against SQLite (`DATABRIDGE_SKIP_MIGRATIONS=1`) and the local-fs storage backend (`STORAGE_BACKEND=local`).
+
+```bash
+PYTHONPATH=. pytest -v
+```
+
+---
 
 # Schedule automatic execution
-> *This part is optional*
 
-You can schedule the automatic execution of the pipeline by creating a cron task on the host machine. The commands run inside the Docker container via `docker exec`.
+Schedule the pipeline with a host cron job that runs the CLI (set `PYTHONPATH=.`), or `docker exec` into the production container (see [docs/DEPLOY.md](docs/DEPLOY.md)). Example daily run at 02:00:
 
-1. Display and copy the command to be executed by the cron task:
-
-```bash
-$ echo "docker exec databridge-cli-app python3 src/data/make.py fetch-questions && docker exec databridge-cli-app python3 src/data/make.py download && docker exec databridge-cli-app python3 src/data/make.py build-report"
+```cron
+0 2 * * * cd /path/to/databridge-cli && PYTHONPATH=. python3 src/data/make.py run-all
 ```
 
-2. Edit the `crontab` file:
-> *The `crontab` file contains instructions for the cron daemon in the following simplified manner: "**run this command on this date at this time**".*
-
-```bash
-$ crontab -e
-```
-
-Add at the end of the file the command you have copied from the previous step in this way and save and close the file:
-```
-0 2 * * * docker exec databridge-cli-app python3 src/data/make.py fetch-questions && docker exec databridge-cli-app python3 src/data/make.py download && docker exec databridge-cli-app python3 src/data/make.py build-report
-```
-This gives instruction to the cron daemon to run the full pipeline every day at 2:00 AM.
-
-> ⚠️ *On Windows, use [Task Scheduler](https://www.windowscentral.com/how-create-automated-task-using-task-scheduler-windows-10) instead.*
+> On Windows, use [Task Scheduler](https://www.windowscentral.com/how-create-automated-task-using-task-scheduler-windows-10).
