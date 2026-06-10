@@ -2,7 +2,16 @@ import { useState, useEffect } from 'react';
 import PageHeader from './PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import AiThinking from '../components/AiThinking.jsx';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
+
+const ASK_MESSAGES = [
+  'Reading your question…',
+  'Scanning your data…',
+  'Computing the answer…',
+  'Building the chart…',
+  'Writing the caption…',
+];
 
 // Generic fallback shown instantly; replaced on mount by data-aware examples from
 // /api/ask/examples (AI-generated when available, else derived from the schema).
@@ -154,6 +163,12 @@ export default function Ask() {
           {loading ? 'Asking…' : 'Ask'}
         </button>
       </form>
+
+      {loading && (
+        <div style={{ padding: 24, display: 'flex', justifyContent: 'center' }}>
+          <AiThinking messages={ASK_MESSAGES} />
+        </div>
+      )}
 
       {/* First-run guidance: what you can ask + one-click examples. */}
       {!loading && !error && !result && (

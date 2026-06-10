@@ -9,6 +9,7 @@ import { loadConfig, saveConfigPatch } from '../lib/config.js';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 import PageHeader from './PageHeader.jsx';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
+import AiThinking from '../components/AiThinking.jsx';
 
 // ── chart type catalog ───────────────────────────────────────────────────────
 const CHART_TYPES = [
@@ -740,6 +741,14 @@ function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHel
     <>
       {checks.length > 0 && <StatusCard checks={checks} />}
       <QuickActionsCard actions={aiActions} />
+      {suggesting && (
+        <AiThinking card messages={[
+          'Reading your questions…',
+          'Analyzing distributions…',
+          'Choosing the best options…',
+          `Drafting ${SECTION_LABELS[suggesting] || 'suggestions'}…`,
+        ]} />
+      )}
       {showChartHelp && <TokenAnatomy />}
       {showChartHelp && <ChartLibrary />}
       {showChartHelp && <TipsCard />}
