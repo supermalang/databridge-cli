@@ -10,6 +10,7 @@ import PageHeader from './PageHeader.jsx';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { useRun } from '../lib/run.js';
 import { RailLayout, RailToolbar, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
+import AiThinking from '../components/AiThinking.jsx';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function colName(q) {
@@ -516,6 +517,13 @@ export default function Questions() {
             { icon: RailIcons.shield, label: 'Flag PII', onClick: suggestPII,
               disabled: !!suggesting || !aiReady, title: aiReady ? 'Ask the AI to flag personal-data fields' : AI_LOCK_TIP },
           ]} />
+          {suggesting && (
+            <AiThinking card messages={[
+              'Reading your questions…',
+              'Analyzing each field…',
+              'Flagging matches…',
+            ]} />
+          )}
         </>
       }>
 
