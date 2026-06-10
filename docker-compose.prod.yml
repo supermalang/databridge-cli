@@ -75,34 +75,7 @@ services:
       echo 'bucket ${S3_BUCKET} ready'"
     restart: "no"
 
-  # Reverse proxy + automatic HTTPS (Let's Encrypt). Discovers the app via Docker
-  # labels; streams SSE (the run logs) without buffering by default.
-  traefik:
-    image: traefik:v3.1
-    restart: unless-stopped
-    command:
-      - --providers.docker=true
-      - --providers.docker.exposedbydefault=false
-      - --entrypoints.web.address=:80
-      - --entrypoints.websecure.address=:443
-      # Redirect all HTTP → HTTPS.
-      - --entrypoints.web.http.redirections.entrypoint.to=websecure
-      - --entrypoints.web.http.redirections.entrypoint.scheme=https
-      # Let's Encrypt via TLS-ALPN challenge; cert stored in the named volume.
-      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
-      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
-      - --certificatesresolvers.le.acme.tlschallenge=true
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      # Read-only Docker socket so Traefik can discover the app's labels.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik_letsencrypt:/letsencrypt
-    depends_on:
-      - app
 
 volumes:
   pgdata:
   miniodata:
-  traefik_letsencrypt:
