@@ -131,16 +131,18 @@ export default function Composition({ sections } = {}) {
 
   // Dispatch table for batch AI suggestions: maps kind → CLI command, YAML key,
   // setter, and user-facing labels. Keeps the suggest flow generic for all three sections.
+  // Keyed by the canonical section key (plural) — the same keys the rail emits via
+  // SECTION_LABELS/counts — so onSuggestKind(k) always resolves a spec.
   const suggestSpec = {
-    chart:   { command: 'suggest-charts',    key: 'charts',    setter: setCharts,    label: 'chart',   plural: 'charts',
+    charts:   { command: 'suggest-charts',    key: 'charts',    setter: setCharts,    label: 'chart',   plural: 'charts',
                placeholder: 'e.g. Focus on geographic distribution. Include a stacked bar of food security by region. Avoid simple count charts where possible.' },
-    indicator: { command: 'suggest-indicators', key: 'indicators', setter: setIndicators, label: 'indicator', plural: 'indicators',
+    indicators: { command: 'suggest-indicators', key: 'indicators', setter: setIndicators, label: 'indicator', plural: 'indicators',
                placeholder: 'e.g. Headline counts and averages — total households, average household size, % female-headed.' },
-    table:   { command: 'suggest-tables',    key: 'tables',    setter: setTables,    label: 'table',   plural: 'tables',
+    tables:   { command: 'suggest-tables',    key: 'tables',    setter: setTables,    label: 'table',   plural: 'tables',
                placeholder: 'e.g. A breakdown table of households by region, and one of food-security class by wilaya.' },
-    view:    { command: 'suggest-views',     key: 'views',     setter: setViews,     label: 'view',    plural: 'views',
+    views:    { command: 'suggest-views',     key: 'views',     setter: setViews,     label: 'view',    plural: 'views',
                placeholder: 'e.g. Per-Wilaya aggregates for health and education. Join location into all repeat groups.' },
-    summary: { command: 'suggest-summaries', key: 'summaries', setter: setSummaries, label: 'summary', plural: 'summaries',
+    summaries: { command: 'suggest-summaries', key: 'summaries', setter: setSummaries, label: 'summary', plural: 'summaries',
                placeholder: 'e.g. One paragraph per topic area summarising the most important findings.' },
   };
 
@@ -179,7 +181,7 @@ export default function Composition({ sections } = {}) {
     },
   });
 
-  const openSuggestModal = (kind = 'chart') => { setSuggestText(''); setSuggestKind(kind); };
+  const openSuggestModal = (kind = 'charts') => { setSuggestText(''); setSuggestKind(kind); };
   const submitSuggestion = () => {
     const kind = suggestKind;
     if (!kind) return;
