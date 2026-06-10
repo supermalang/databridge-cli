@@ -602,6 +602,33 @@ async def suggest_pii_questions(request: Request):
         _invalidate_ai(request)
         raise HTTPException(status_code=500, detail=f"suggest-pii failed: {e}")
 
+
+class ViewDescribePayload(BaseModel):
+    description: str = ""
+
+
+@app.post("/api/views/describe")
+async def describe_view(payload: ViewDescribePayload, request: Request):
+    """Turn a plain-language description into a structured view spec to prefill the
+    Create-View form. Reuses the view_suggester (same AI as 'Suggest views'),
+    passing the description as the user request. Returns {"views": [view, ...]}.
+    Preview-style: it suggests, it does not save. On AI failure, re-locks AI buttons.
+    """
+    from src.reports.ai_view_suggester import suggest_views
+    desc = (payload.description or "").strip()
+    if not desc:
+        raise HTTPException(status_code=400, detail="A description is required.")
+    try:
+        cfg = load_config(CONFIG_PATH)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        views = suggest_views(cfg, user_request=desc)
+        return {"views": views or []}
+    except Exception as e:  # noqa: BLE001 — an AI-call failure re-locks the AI buttons
+        _invalidate_ai(request)
+        raise HTTPException(status_code=500, detail=f"describe-view failed: {e}")
+
 @app.post("/api/ai/test")
 async def test_ai(payload: AITestPayload, request: Request):
     api_key = payload.api_key.strip()

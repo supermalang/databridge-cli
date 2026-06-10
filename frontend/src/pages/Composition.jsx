@@ -1562,14 +1562,66 @@ function TableModal({ initial, columns = [], onClose, onSave }) {
 }
 
 function ViewModal({ initial, onClose, onSave }) {
+  const { aiReady } = useAiStatus();
   const [name, setName]               = useState(initial?.name || '');
   const [source, setSource]           = useState(initial?.source || 'main');
   const [joinParent, setJoinParent]   = useState(csv(initial?.join_parent || []));
+  const [columns, setColumns]         = useState(csv(initial?.columns || []));
   const [filter, setFilter]           = useState(initial?.filter || '');
+  const [aggregate, setAggregate]     = useState(!!initial?.group_by);
   const [groupBy, setGroupBy]         = useState(initial?.group_by || '');
   const [question, setQuestion]       = useState(initial?.question || '');
   const [agg, setAgg]                 = useState(initial?.agg || 'sum');
   const [err, setErr]                 = useState('');
+
+  // Table catalog from the latest download → powers the source/column dropdowns.
+  const [tables, setTables] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/base-tables').then(r => r.json())
+      .then(d => { if (alive && Array.isArray(d.tables)) setTables(d.tables); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const byName = Object.fromEntries(tables.map(t => [t.name, t]));
+  const tableNames = tables.map(t => t.name);
+  const sourceCols = byName[source]?.columns || [];
+  const parentName = byName[source]?.parent;
+  const parentCols = (parentName && byName[parentName]?.columns) || [];
+
+  // Describe-box: plain language → AI → prefill the fields below.
+  const [describeText, setDescribeText] = useState('');
+  const [describing, setDescribing]     = useState(false);
+  const build = async () => {
+    const d = describeText.trim();
+    if (!d) return;
+    setDescribing(true); setErr('');
+    try {
+      const r = await fetch('/api/views/describe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: d }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setErr(data.detail || `Request failed (${r.status})`);
+        window.dispatchEvent(new CustomEvent('databridge:ai-recheck'));
+        return;
+      }
+      const v = (data.views || [])[0];
+      if (!v) { setErr('AI did not return a view — try rephrasing.'); return; }
+      if (v.name) setName(v.name);
+      if (v.source) setSource(v.source);
+      setJoinParent(csv(v.join_parent || []));
+      setColumns(csv(v.columns || []));
+      setFilter(v.filter || '');
+      if (v.group_by) { setAggregate(true); setGroupBy(v.group_by); setQuestion(v.question || ''); setAgg(v.agg || 'sum'); }
+      else { setAggregate(false); setGroupBy(''); setQuestion(''); }
+    } catch (e) {
+      setErr(e.message || 'Network error');
+      window.dispatchEvent(new CustomEvent('databridge:ai-recheck'));
+    } finally { setDescribing(false); }
+  };
+
   const filterErr = validateFilterExpr(filter);
   const submit = () => {
     if (!name.trim() || !source.trim()) return setErr('Name and source are required.');
@@ -1577,28 +1629,67 @@ function ViewModal({ initial, onClose, onSave }) {
     const item = { name: name.trim(), source: source.trim() };
     const jp = fromCsv(joinParent); if (jp.length) item.join_parent = jp;
     if (filter.trim()) item.filter = filter.trim();
-    if (groupBy.trim()) {
+    const cols = fromCsv(columns); if (cols.length) item.columns = cols;
+    if (aggregate && groupBy.trim()) {
       item.group_by = groupBy.trim();
       if (question.trim()) { item.question = question.trim(); if (agg) item.agg = agg; }
     }
     onSave(item);
   };
+
   return (
-    <Modal title={initial ? `Edit view: ${initial.name}` : 'Add view'} onClose={onClose} onSave={submit} width={560}>
+    <Modal title={initial ? `Edit view: ${initial.name}` : 'Add view'} onClose={onClose} onSave={submit} width={580}>
       <ModalError>{err}</ModalError>
-      <ModalField label="Name"><input className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
-      <ModalField label="Source"><input className="src-input" value={source} onChange={e => setSource(e.target.value)} /></ModalField>
-      <ModalField label="Join parent"><input className="src-input" value={joinParent} onChange={e => setJoinParent(e.target.value)} /></ModalField>
+
+      <div style={{ padding: '2px 0 12px', borderBottom: '1px dashed var(--border)', marginBottom: 4 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>
+          ✨ Describe the view <span style={{ fontWeight: 400, color: 'var(--ink-3)' }}>— let AI fill the form below</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input className="src-input" style={{ flex: 1 }} value={describeText}
+                 onChange={e => setDescribeText(e.target.value)}
+                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (aiReady && !describing && describeText.trim()) build(); } }}
+                 disabled={!aiReady || describing}
+                 placeholder={aiReady ? 'e.g. total students per department, only villages with students' : AI_LOCK_TIP} />
+          <button className="btn btn-primary btn-sm" onClick={build}
+                  disabled={!aiReady || describing || !describeText.trim()}
+                  title={aiReady ? '' : AI_LOCK_TIP} style={{ whiteSpace: 'nowrap' }}>Build</button>
+        </div>
+        {describing && <div style={{ marginTop: 8 }}><AiThinking messages={['Reading your description…', 'Matching tables & columns…', 'Composing the view…']} /></div>}
+      </div>
+
+      <ModalField label="Name"><input className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="villages_with_dept" /></ModalField>
+      <ModalField label="Source table" hint="Which base table this view draws from">
+        <ColumnPicker value={source} onChange={setSource} options={tableNames} multi={false} placeholder="main, or a repeat table…" />
+      </ModalField>
+      {parentName && (
+        <ModalField label="Join from parent" hint={`Columns to bring down from "${parentName}"`}>
+          <ColumnPicker value={joinParent} onChange={setJoinParent} options={parentCols} placeholder="Search parent columns…" />
+        </ModalField>
+      )}
+      <ModalField label="Columns" hint="Which columns to keep — leave blank for all">
+        <ColumnPicker value={columns} onChange={setColumns} options={sourceCols} placeholder="Search columns…" />
+      </ModalField>
       <ModalField label="Filter" hint="pandas query syntax, e.g. Age > 18 and Region == 'North'">
         <input className="src-input" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Age > 18 and Region == 'North'"
                style={filterErr ? { borderColor: 'var(--rose)' } : undefined} />
         {filterErr && <div style={{ color: 'var(--rose)', fontSize: 11.5, marginTop: 4 }}>{filterErr}</div>}
       </ModalField>
-      <ModalField label="Group by"><input className="src-input" value={groupBy} onChange={e => setGroupBy(e.target.value)} /></ModalField>
-      {groupBy && (
+      <ModalField label="Aggregate">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+          <input type="checkbox" checked={aggregate} onChange={e => setAggregate(e.target.checked)} />
+          Roll rows up into group totals
+        </label>
+      </ModalField>
+      {aggregate && (
         <>
-          <ModalField label="Aggregate column"><input className="src-input" value={question} onChange={e => setQuestion(e.target.value)} /></ModalField>
-          <ModalField label="Aggregate"><select className="src-input" value={agg} onChange={e => setAgg(e.target.value)}>{['sum', 'mean', 'count', 'max', 'min'].map(a => <option key={a} value={a}>{a}</option>)}</select></ModalField>
+          <ModalField label="Group by">
+            <ColumnPicker value={groupBy} onChange={setGroupBy} options={sourceCols} multi={false} placeholder="Column to group by…" />
+          </ModalField>
+          <ModalField label="Aggregate column">
+            <ColumnPicker value={question} onChange={setQuestion} options={sourceCols} multi={false} placeholder="Numeric column to aggregate…" />
+          </ModalField>
+          <ModalField label="Function"><select className="src-input" value={agg} onChange={e => setAgg(e.target.value)}>{['sum', 'mean', 'count', 'max', 'min'].map(a => <option key={a} value={a}>{a}</option>)}</select></ModalField>
         </>
       )}
     </Modal>
