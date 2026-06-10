@@ -179,7 +179,7 @@ export default function Ask() {
             <div className="ask-examples">
               {examples.map(ex => (
                 <button key={ex} type="button" className="ask-example"
-                        disabled={!aiReady}
+                        disabled={!aiReady} title={aiReady ? '' : AI_LOCK_TIP}
                         onClick={() => setQuestion(ex)}>{ex}</button>
               ))}
             </div>

@@ -329,6 +329,9 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .rail-action:hover{color:var(--accent)}
 .rail-action svg{width:14px;height:14px;color:var(--ink-3)}
 .rail-action:hover svg{color:var(--accent)}
+.rail-action:disabled{opacity:.45;cursor:not-allowed}
+.rail-action:disabled:hover{color:var(--ink-2)}
+.rail-action:disabled:hover svg{color:var(--ink-3)}
 
 .check-list{display:flex;flex-direction:column;gap:9px}
 .check-list__item{display:grid;grid-template-columns:18px 1fr;gap:9px;align-items:start;font-size:12.5px;line-height:1.45}
@@ -719,6 +722,8 @@ header :focus-visible, .btn-primary:focus-visible { outline-color: #fff; }
 .ask-examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
 .ask-example { border: 1px solid var(--border-2); background: var(--surface); color: var(--ink-2); border-radius: 999px; padding: 6px 14px; font-size: 12.5px; cursor: pointer; transition: border-color .12s, background .12s; }
 .ask-example:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+.ask-example:disabled { opacity: .5; cursor: not-allowed; }
+.ask-example:disabled:hover { border-color: var(--border-2); background: var(--surface); color: var(--ink-2); }
 
 /* ── Responsive: keep the 9-tab nav usable on narrow screens ─────────────── */
 .tabs-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
