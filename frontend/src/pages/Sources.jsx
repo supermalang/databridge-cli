@@ -175,11 +175,13 @@ export default function Sources({ section = 'setup' } = {}) {
         sub={header.sub}
         actions={
           <>
-            <div className="config-view-toggle">
-              <button className={`view-btn ${view === 'form' ? 'active' : ''}`} onClick={() => setView('form')}>↻ Form</button>
-              <button className={`view-btn ${view === 'yaml' ? 'active' : ''}`} onClick={() => setView('yaml')}>{'{ } YAML'}</button>
-            </div>
-            <button className="btn btn-primary" onClick={view === 'yaml' ? saveYaml : saveAll} disabled={view === 'form' && !dirty}>
+            {section !== 'output' && (
+              <div className="config-view-toggle">
+                <button className={`view-btn ${view === 'form' ? 'active' : ''}`} onClick={() => setView('form')}>↻ Form</button>
+                <button className={`view-btn ${view === 'yaml' ? 'active' : ''}`} onClick={() => setView('yaml')}>{'{ } YAML'}</button>
+              </div>
+            )}
+            <button className={`btn ${dirty ? 'btn-primary' : ''}`} onClick={view === 'yaml' ? saveYaml : saveAll} disabled={view === 'form' && !dirty}>
               Save changes
             </button>
           </>

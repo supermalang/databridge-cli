@@ -120,6 +120,7 @@ export default function Composition({ sections } = {}) {
   const [tables,     setTables]    = useState([]);
   const [summaries,  setSummaries] = useState([]);
   const [views,      setViews]     = useState([]);
+  const [baseline,   setBaseline]  = useState('');   // JSON of editable sections at last load/save
   const [templates,  setTemplates] = useState([]);
   const [activeTpl,  setActiveTpl] = useState('');
   const [editing,    setEditing]   = useState(null);
@@ -386,6 +387,14 @@ export default function Composition({ sections } = {}) {
     setTables(Array.isArray(c.tables) ? c.tables : []);
     setSummaries(Array.isArray(c.summaries) ? c.summaries : []);
     setViews(Array.isArray(c.views) ? c.views : []);
+    setBaseline(JSON.stringify({
+      filters: Array.isArray(c.filters) ? c.filters : [],
+      charts: Array.isArray(c.charts) ? c.charts : [],
+      indicators: Array.isArray(c.indicators) ? c.indicators : [],
+      tables: Array.isArray(c.tables) ? c.tables : [],
+      summaries: Array.isArray(c.summaries) ? c.summaries : [],
+      views: Array.isArray(c.views) ? c.views : [],
+    }));
     try {
       const [t, a] = await Promise.all([
         fetch('/api/templates').then(r => r.json()),
@@ -414,6 +423,7 @@ export default function Composition({ sections } = {}) {
         if (has('summaries')) setOrDelete('summaries', summaries);
         if (has('views')) setOrDelete('views', views);
       });
+      setBaseline(snapshot);   // current edits are now the saved baseline → button reverts to outline
       toast('Saved ✓', 'ok');
     } catch (e) { toast(e.message, 'err'); }
   };
@@ -432,6 +442,13 @@ export default function Composition({ sections } = {}) {
     setter(prev => prev.filter((_, j) => j !== i));
   };
 
+  // Dirty tracking: compare the editable sections against the last-saved snapshot
+  // so the Save button reads solid only while there are unsaved edits.
+  const snapshot = useMemo(
+    () => JSON.stringify({ filters, charts, indicators, tables, summaries, views }),
+    [filters, charts, indicators, tables, summaries, views]);
+  const dirty = snapshot !== baseline;
+
   const questionCount = (cfg.questions || []).length;
   // Available column names (export labels) for autocomplete in the editors.
   const columnOptions = useMemo(() => {
@@ -449,6 +466,7 @@ export default function Composition({ sections } = {}) {
         questionCount={questionCount}
         sections={secs}
         onSave={saveAll}
+        dirty={dirty}
       />
       <RailLayout rail={
         <CompositionRail
@@ -757,7 +775,7 @@ function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHel
 }
 
 // ── Header band ──────────────────────────────────────────────────────────────
-function Header({ questionCount, sections = ALL_SECTIONS, onSave }) {
+function Header({ questionCount, sections = ALL_SECTIONS, onSave, dirty }) {
   const has = (k) => sections.includes(k);
   const viewsOnly = has('views') && !has('charts');
   return (
@@ -767,9 +785,10 @@ function Header({ questionCount, sections = ALL_SECTIONS, onSave }) {
       accent={viewsOnly ? 'views.' : 'composition.'}
       sub={viewsOnly
         ? 'Virtual data tables — computed once and reused by charts, summaries, and indicators downstream.'
-        : <>Define what shows up in the report — charts, indicators, summaries, and the framework. Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
+        : <>Define what shows up in the report — charts, indicators, and summaries. Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
       actions={
-        <button className="btn btn-primary" onClick={onSave}>
+        <button className={`btn ${dirty ? 'btn-primary' : ''}`} onClick={onSave} disabled={!dirty}
+                title={dirty ? '' : 'No unsaved changes'}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
           Save changes
         </button>
@@ -1566,7 +1585,7 @@ function ViewModal({ initial, onClose, onSave }) {
   const [name, setName]               = useState(initial?.name || '');
   const [source, setSource]           = useState(initial?.source || 'main');
   const [joinParent, setJoinParent]   = useState(csv(initial?.join_parent || []));
-  const [columns, setColumns]         = useState(csv(initial?.columns || []));
+  const [columns, setColumns]         = useState(csv(initial?.keep_columns || []));
   const [filter, setFilter]           = useState(initial?.filter || '');
   const [aggregate, setAggregate]     = useState(!!initial?.group_by);
   const [groupBy, setGroupBy]         = useState(initial?.group_by || '');
@@ -1612,7 +1631,7 @@ function ViewModal({ initial, onClose, onSave }) {
       if (v.name) setName(v.name);
       if (v.source) setSource(v.source);
       setJoinParent(csv(v.join_parent || []));
-      setColumns(csv(v.columns || []));
+      setColumns(csv(v.keep_columns || []));
       setFilter(v.filter || '');
       if (v.group_by) { setAggregate(true); setGroupBy(v.group_by); setQuestion(v.question || ''); setAgg(v.agg || 'sum'); }
       else { setAggregate(false); setGroupBy(''); setQuestion(''); }
@@ -1629,7 +1648,10 @@ function ViewModal({ initial, onClose, onSave }) {
     const item = { name: name.trim(), source: source.trim() };
     const jp = fromCsv(joinParent); if (jp.length) item.join_parent = jp;
     if (filter.trim()) item.filter = filter.trim();
-    const cols = fromCsv(columns); if (cols.length) item.columns = cols;
+    const keep = fromCsv(columns); if (keep.length) item.keep_columns = keep;
+    // Preserve preview-set drop/rename specs (managed in the view preview, not here).
+    if (initial?.drop_columns?.length) item.drop_columns = initial.drop_columns;
+    if (Array.isArray(initial?.columns) && initial.columns.length) item.columns = initial.columns;
     if (aggregate && groupBy.trim()) {
       item.group_by = groupBy.trim();
       if (question.trim()) { item.question = question.trim(); if (agg) item.agg = agg; }

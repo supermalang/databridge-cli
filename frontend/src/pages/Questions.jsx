@@ -482,7 +482,7 @@ export default function Questions() {
       right={
         <>
           {dirtyIndices.size > 0 && <span className="q-unsaved-pill">{dirtyIndices.size} unsaved</span>}
-          <button className="btn btn-primary" onClick={save} disabled={dirtyIndices.size === 0 || !canEdit}
+          <button className={`btn ${dirtyIndices.size > 0 && canEdit ? 'btn-primary' : ''}`} onClick={save} disabled={dirtyIndices.size === 0 || !canEdit}
                   title={canEdit ? '' : 'You have viewer access — editing questions requires an editor or admin role'}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
             Save changes

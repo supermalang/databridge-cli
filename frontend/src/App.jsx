@@ -25,7 +25,7 @@ import { AiStatusProvider } from './lib/aiStatus.js';
 
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
-const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'framework', 'pii'];
+const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'pii'];
 
 // The workflow: Home + five ordered stages. Stages with >1 sub render a
 // secondary sub-tab strip; single-sub stages navigate straight to their page.
@@ -153,8 +153,16 @@ export default function App() {
         setTermOpen(true);
       }
       if (status === 'success' || status === 'error') runningCmdRef.current = null;
-      if (status === 'success') toast(`${command} done ✓`, 'ok');
-      if (status === 'error')   toast(`${command} failed`, 'err');
+      if (status === 'success') {
+        toast(`${command} done ✓`, 'ok');
+        // Collapse the terminal once a task succeeds — but only after a short beat so
+        // the final log + result is visible, and only if no new run has started.
+        setTimeout(() => { if (!runningCmdRef.current) setTermOpen(false); }, 1400);
+      }
+      if (status === 'error') {
+        toast(`${command} failed`, 'err');
+        setTermOpen(true);   // keep it open on failure so the user can read the log
+      }
     },
   });
 

@@ -448,6 +448,15 @@ def build_views(
             if drop_cols:
                 df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore")
 
+            # Keep only the user-selected columns (references original names, like
+            # drops). No-op if none survive, so aggregated/renamed views never
+            # collapse to empty.
+            keep_cols = v.get("keep_columns", []) or []
+            if keep_cols:
+                keep = [c for c in keep_cols if c in df.columns]
+                if keep:
+                    df = df[keep]
+
             # Apply column renames and type overrides AFTER drops, so renames only
             # affect columns that survived the drop.
             col_specs = v.get("columns", [])
