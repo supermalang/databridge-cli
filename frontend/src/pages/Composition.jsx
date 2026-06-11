@@ -767,7 +767,7 @@ function Header({ questionCount, sections = ALL_SECTIONS, onSave }) {
       accent={viewsOnly ? 'views.' : 'composition.'}
       sub={viewsOnly
         ? 'Virtual data tables — computed once and reused by charts, summaries, and indicators downstream.'
-        : <>Define what shows up in the report — charts, indicators, summaries, and the framework. Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
+        : <>Define what shows up in the report — charts, indicators, and summaries. Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
       actions={
         <button className="btn btn-primary" onClick={onSave}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>

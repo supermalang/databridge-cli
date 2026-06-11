@@ -25,7 +25,7 @@ import { AiStatusProvider } from './lib/aiStatus.js';
 
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
-const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'framework', 'pii'];
+const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'pii'];
 
 // The workflow: Home + five ordered stages. Stages with >1 sub render a
 // secondary sub-tab strip; single-sub stages navigate straight to their page.
