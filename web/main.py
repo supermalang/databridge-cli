@@ -1538,6 +1538,14 @@ async def _compute_view_df(payload):
     hidden_names = _hidden_view_columns(_cfg or {})
     if hidden_names:
         df = df.drop(columns=[c for c in df.columns if c in hidden_names], errors="ignore")
+    # Keep only the user-selected columns (references original names, like drops).
+    # No-op if none of the requested columns survive, so an aggregated/renamed view
+    # never collapses to empty.
+    keep_cols = v.get("keep_columns", []) or []
+    if keep_cols:
+        keep = [c for c in keep_cols if c in df.columns]
+        if keep:
+            df = df[keep]
     # Apply renames and type overrides AFTER drops.
     col_specs = v.get("columns", [])
     rename_map = {}
