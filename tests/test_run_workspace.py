@@ -51,3 +51,31 @@ def test_hydrate_unknown_command_uses_safe_default(storage, tmp_path):
     dest = tmp_path / "run"
     n = workspace.hydrate_run_dir("o1", "p1", "some-future-cmd", dest, {})
     assert n == 2                                  # default ["processed", "templates"]
+
+
+def test_uploaded_template_is_hydrated_into_build_report_run(storage, tmp_path):
+    # Reproduces the "Template not found" bug: a template that only lived in the local
+    # mirror was invisible to build-report, which hydrates templates/ from Minio.
+    # put_project_file must persist it to durable storage so hydration finds it.
+    local = tmp_path / "templates" / "test1.docx"
+    local.parent.mkdir(parents=True)
+    local.write_bytes(b"DOCX")
+    workspace.put_project_file("o1", "p1", "templates", local)
+
+    dest = tmp_path / "run"
+    workspace.hydrate_run_dir("o1", "p1", "build-report", dest,
+                              {"report": {"template": "templates/test1.docx"}})
+    assert (dest / "templates" / "test1.docx").read_bytes() == b"DOCX"
+
+
+def test_delete_project_file_removes_from_storage(storage, tmp_path):
+    local = tmp_path / "templates" / "test1.docx"
+    local.parent.mkdir(parents=True)
+    local.write_bytes(b"DOCX")
+    workspace.put_project_file("o1", "p1", "templates", local)
+    workspace.delete_project_file("o1", "p1", "templates", "test1.docx")
+
+    dest = tmp_path / "run"
+    n = workspace.hydrate_run_dir("o1", "p1", "build-report", dest, {})
+    assert not (dest / "templates" / "test1.docx").exists()
+    assert n == 0
