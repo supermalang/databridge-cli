@@ -48,6 +48,19 @@ def delete_project_storage(org_id: str, project_id: str) -> None:
     get_storage().delete_prefix(f"orgs/{org_id}/projects/{project_id}/")
 
 
+def put_project_file(org_id: str, project_id: str, category: str, local_path) -> None:
+    """Upload a single file into a project's durable storage under `category`.
+    Used for files created outside a run (e.g. a template uploaded via the UI) so
+    they're available when a run hydrates that category from Minio into its temp dir."""
+    name = Path(local_path).name
+    get_storage().put_file(storage_key(org_id, project_id, category, name), local_path)
+
+
+def delete_project_file(org_id: str, project_id: str, category: str, name: str) -> None:
+    """Remove a single file from a project's durable storage. Best-effort."""
+    get_storage().delete(storage_key(org_id, project_id, category, name))
+
+
 def push_outputs(org_id: str, project_id: str, base=".") -> int:
     """Upload the local mirror dirs to Minio under the project prefix. Returns #files."""
     store = get_storage()

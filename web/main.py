@@ -2030,7 +2030,9 @@ async def download_template(filename: str, request: Request):
 
 @app.post("/api/templates/upload")
 async def upload_template(file: UploadFile, request: Request):
-    _require(request, "admin")
+    with db_session.SessionLocal() as _db:
+        _user, project, _role = require_role(request, _db, "admin")
+        org_id, project_id = str(project.org_id), str(project.id)
     if not file.filename or not file.filename.endswith(".docx"):
         raise HTTPException(status_code=400, detail="Only .docx files are allowed")
     safe_name = Path(file.filename).name
@@ -2041,17 +2043,24 @@ async def upload_template(file: UploadFile, request: Request):
     content = await file.read()
     async with aiofiles.open(dest, "wb") as f:
         await f.write(content)
+    # Persist to durable storage too: runs hydrate the templates/ dir from Minio
+    # (not the local mirror), so a template that only lives locally is invisible to
+    # build-report and fails with "Template not found".
+    storage_workspace.put_project_file(org_id, project_id, "templates", dest)
     return {"ok": True, "name": safe_name, "size_kb": round(len(content)/1024,1)}
 
 @app.delete("/api/templates/{filename}")
 async def delete_template(filename: str, request: Request):
-    _require(request, "admin")
+    with db_session.SessionLocal() as _db:
+        _user, project, _role = require_role(request, _db, "admin")
+        org_id, project_id = str(project.org_id), str(project.id)
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = TEMPLATES_DIR / filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     path.unlink()
+    storage_workspace.delete_project_file(org_id, project_id, "templates", filename)
     return {"ok": True}
 
 @app.get("/api/templates/active")
@@ -2066,12 +2075,17 @@ async def get_active_template():
 
 @app.post("/api/templates/set-active/{filename}")
 async def set_active_template(filename: str, request: Request):
-    _require(request, "admin")
+    with db_session.SessionLocal() as _db:
+        _user, project, _role = require_role(request, _db, "admin")
+        org_id, project_id = str(project.org_id), str(project.id)
     if "/" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = TEMPLATES_DIR / filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="Template file not found")
+    # Self-heal: ensure the active template is in durable storage even if it was
+    # uploaded before uploads started persisting to Minio, so the run hydration finds it.
+    storage_workspace.put_project_file(org_id, project_id, "templates", path)
     if not CONFIG_PATH.exists():
         raise HTTPException(status_code=400, detail="config.yml not found")
     async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
