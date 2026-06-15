@@ -16,6 +16,7 @@ export default function Reports() {
   const { run } = useRun();
   const [reports, setReports] = useState(null);
   const [sessions, setSessions] = useState(null);
+  const [templates, setTemplates] = useState(null);
   const [cfg, setCfg] = useState(null);
 
   // Compare modal state
@@ -37,17 +38,30 @@ export default function Reports() {
     } catch { setSessions([]); }
   }, []);
 
-  useEffect(() => { loadReports(); loadSessions(); }, [loadReports, loadSessions]);
+  const loadTemplates = useCallback(async () => {
+    try {
+      const data = await (await fetch('/api/templates')).json();
+      setTemplates(data.files || []);
+    } catch { setTemplates([]); }
+  }, []);
+
+  useEffect(() => { loadReports(); loadSessions(); loadTemplates(); }, [loadReports, loadSessions, loadTemplates]);
   useEffect(() => { loadConfig().then(setCfg); }, []);
 
   // build-report is only runnable once its inputs exist: an API connection,
   // fetched questions, downloaded data, and a report template. Gate the action
   // and tell the user what's still missing.
+  // Template check mirrors backend resolution (src/reports/builder.py): build-report
+  // uses report.template if set, otherwise falls back to templates/report_template.docx.
+  // So "template present" means the file build-report will actually load exists — not
+  // merely that report.template was explicitly set via "set active".
+  const activeTemplateName = (cfg?.report?.template || 'templates/report_template.docx').split('/').pop();
+  const hasTemplate = !!templates?.some((t) => t.name === activeTemplateName);
   const buildMissing = [
     !(cfg?.api?.url && cfg?.api?.token) && 'connection',
     !((cfg?.questions || []).length > 0) && 'questions',
     !(sessions?.length) && 'data',
-    !(cfg?.report?.template) && 'template',
+    !hasTemplate && 'template',
   ].filter(Boolean);
   const buildReady = canEdit && buildMissing.length === 0;
   const buildTitle = !canEdit ? 'Editor access required'
