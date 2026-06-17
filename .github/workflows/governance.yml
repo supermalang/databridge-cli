@@ -1,0 +1,38 @@
+name: Governance
+
+# Server-side teeth for the roadmap-governed workflow. Local PreToolUse hooks guard the
+# AI agent; this guards every contributor + PR.
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  roadmap-template:
+    name: Validate roadmap template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docs/ROADMAP.md must pass the roadmap guard
+        # Reuse the exact same validator the local guard-roadmap hook uses (DRY).
+        run: |
+          python3 -c "import json; print(json.dumps({'tool_name':'Write','tool_input':{'file_path':'docs/ROADMAP.md','content':open('docs/ROADMAP.md').read()}}))" \
+            | bash .claude/hooks/guard-roadmap.sh
+
+  branch-policy:
+    name: Enforce git-flow PR direction
+    runs-on: ubuntu-latest
+    steps:
+      - name: PRs into main come from develop/release; into develop from feature/fix/chore
+        run: |
+          base="${{ github.base_ref }}"; head="${{ github.head_ref }}"
+          if [ "$base" = "main" ]; then
+            case "$head" in
+              develop|release/*) echo "OK: $head -> main" ;;
+              *) echo "::error::PRs into main must come from develop or release/* (got '$head')"; exit 1 ;;
+            esac
+          elif [ "$base" = "develop" ]; then
+            case "$head" in
+              feature/*|fix/*|chore/*) echo "OK: $head -> develop" ;;
+              *) echo "::error::PRs into develop must come from feature/ fix/ chore/ (got '$head')"; exit 1 ;;
+            esac
+          fi
