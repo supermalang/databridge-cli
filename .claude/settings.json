@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest *)",
+      "Bash(PYTHONPATH=. MPLBACKEND=Agg python -m pytest *)"
+    ]
+  }
+}
