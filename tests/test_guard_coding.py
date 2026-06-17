@@ -57,3 +57,17 @@ def test_exempt_docs_passes(tmp_path):
 def test_exempt_config_passes(tmp_path):
     p = setup(tmp_path)
     assert run(p, "Write", str(p / "config.yml"), "t").returncode == 0
+
+
+def test_traversal_path_still_gated(tmp_path):
+    # C1 regression: a non-canonical path that resolves into src/ must still be gated.
+    p = setup(tmp_path)  # no marker
+    r = run(p, "Write", str(p / "web" / ".." / "src" / "x.py"), "c")
+    assert r.returncode == 2
+
+
+def test_all_gated_dirs_block_without_marker(tmp_path):
+    p = setup(tmp_path)  # no marker
+    for sub in ("web/main.py", "frontend/src/App.jsx", "tests/test_foo.py"):
+        r = run(p, "Write", str(p / sub), "c")
+        assert r.returncode == 2, sub

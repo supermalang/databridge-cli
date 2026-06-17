@@ -23,7 +23,7 @@ function flush(   miss){
   id=""; body=""
 }
 BEGIN{h1=0; dor=0; dod=0; gs=0}
-NR==1 && $0 ~ /^# .*[Rr]oadmap/ {h1=1}
+$0 ~ /^# .*[Rr]oadmap/ && !h1 {h1=1}
 $0 ~ /^## Definition of Ready/ {dor=1}
 $0 ~ /^## Definition of Done/ {dod=1}
 $0 ~ /^## Global status/ {gs=1}

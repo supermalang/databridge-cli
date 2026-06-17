@@ -37,6 +37,11 @@ def test_commit_on_feature_allowed(tmp_path):
     assert run(p, 'git commit -m "x"').returncode == 0
 
 
+def test_plain_push_on_main_blocked(tmp_path):
+    p = gitrepo(tmp_path, "main")
+    assert run(p, "git push").returncode == 2
+
+
 def test_non_git_command_ignored(tmp_path):
     p = gitrepo(tmp_path, "main")
     assert run(p, "ls -la").returncode == 0

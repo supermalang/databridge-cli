@@ -4,6 +4,8 @@ set -euo pipefail
 input="$(cat)"
 fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""')"
 case "$fp" in */.claude/.active-task.json|.claude/.active-task.json) ;; *) exit 0 ;; esac
+tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
+[ "$tool" = "Write" ] || { echo "Write the active-task marker as a whole file via /roadmap (not $tool)." >&2; exit 2; }
 content="$(printf '%s' "$input" | jq -r '.tool_input.content // ""')"
 id="$(printf '%s' "$content" | jq -r '.id // ""' 2>/dev/null || echo "")"
 root="${CLAUDE_PROJECT_DIR:-$PWD}"; rm="$root/docs/ROADMAP.md"
