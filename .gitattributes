@@ -1,0 +1,3 @@
+# Shell hooks must stay LF or they break when executed via bash.
+*.sh text eol=lf
+.claude/hooks/* text eol=lf
