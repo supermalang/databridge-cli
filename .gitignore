@@ -22,3 +22,4 @@ frontend/.vite/
 .claude/settings.local.json
 .claude/.active-task*
 .claude/skills/impeccable/
+.github/skills/
