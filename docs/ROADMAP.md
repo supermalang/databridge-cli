@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 13 | 10 / 13 |
+| [Express Template Fill](#express-template-fill) | 14 | 10 / 14 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1151,6 +1151,60 @@ A card is startable only when all of the following hold:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_run_api.py -k "split"` ·
   `cd frontend && npx playwright test express-template-fill.spec.ts`
+
+---
+
+- [ ] **XTF-14 — Reposition the run alert in-page (below the title, content width) + icon Stop**
+
+  Refinement of XTF-10. The run alert currently renders as a fixed bar pinned above the top
+  nav (App.jsx ~265, outside the page). Move it to flow **inside the page content** — below the
+  top nav and the page title/header, immediately before the page's main container — constrained
+  to the main-container width with top + bottom margin (not a full-bleed fixed bar). Replace the
+  text "Stop" button with a compact **icon button** (X / stop icon) carrying an accessible label.
+  All other XTF-10 behavior (shown while `running`, reads the active command, View-logs link,
+  `stop` via `/api/stop/{run_id}`, clears on terminal status, `role="status"`) is preserved.
+  Depends on **XTF-10** (shipped). Independent of XTF-11/12/13.
+
+  **Files:** `frontend/src/App.jsx` (render the alert inside the content column — below the
+  nav/page header, before the active pane — instead of the fixed top bar) ·
+  `frontend/src/styles.css` (in-flow `.run-alert` layout: content-width, vertical margins; icon
+  stop button) · `frontend/tests/e2e/run-alert.spec.ts` (update placement + icon-stop assertions
+  and refresh the baseline)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - While `running`, the alert renders **in the page content flow** (below the top nav + page
+    title, before the main container), at the content/main-container width with visible top and
+    bottom margin — NOT a fixed full-width bar pinned to the viewport top
+  - The Stop control is an **icon button** (e.g. X or a stop glyph), not a text button, with an
+    accessible label (`aria-label`) and visible focus ring; it still calls `useCommand.stop()`
+    (→ `POST /api/stop/{run_id}`, fallback `/api/stop`)
+  - All preserved XTF-10 behavior still holds: `data-testid="run-alert"` + `run-stop`; shows the
+    active command; View-logs toggles the terminal; alert clears on a terminal status;
+    `role="status"`
+  - Impeccable audit/critique clean on the repositioned alert + icon button
+
+  **Unit tests:** N/A (frontend-only placement/markup change; Vitest not installed — asserted by
+  the Playwright E2E below, consistent with XTF-9/10).
+
+  **E2E:** `frontend/tests/e2e/run-alert.spec.ts` (update) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — drive the mocked running build; assert `run-alert` is present in the
+  page content (e.g. it is NOT the viewport-pinned fixed bar — assert it scrolls with / sits
+  within the content column, and appears after the page header) and that `run-stop` is an icon
+  button (no visible "Stop" text; has an `aria-label`) that still POSTs `/api/stop/{run_id}`;
+  alert clears on terminal status. Refresh the `run-alert.png` baseline to the new in-page layout
+  at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
+
+  **UAT:**
+  1. Start a build. Confirm the alert now appears inside the page (below the title, above the
+     main content), spanning the content width with margin above and below — not a bar stuck to
+     the very top of the window.
+  2. Confirm the Stop control is a small icon (X/stop) with a tooltip/label; click it and confirm
+     the run cancels and the alert clears.
+  3. Confirm View-logs still toggles the terminal and the alert still names the active command.
+
+  **Verify:** `cd frontend && npx playwright test run-alert.spec.ts`
 
 ---
 
