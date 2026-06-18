@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 5 | 2 / 5 |
+| [Express Template Fill](#express-template-fill) | 5 | 3 / 5 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -589,7 +589,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-3 — Apply: persist config + resolve template (`apply_inference`)**
+- [x] **XTF-3 — Apply: persist config + resolve template (`apply_inference`)**
 
   Write approved specs into `config.yml` without clobbering, and rewrite each token's run span to
   a single clean `{{ canonical }}` run so docxtpl renders it (critical for charts). Depends on
