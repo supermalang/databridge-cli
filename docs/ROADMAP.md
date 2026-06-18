@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 7 | 5 / 7 |
+| [Express Template Fill](#express-template-fill) | 7 | 6 / 7 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -731,7 +731,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-6 — Fix: persist the uploaded template across infer → apply**
+- [x] **XTF-6 — Fix: persist the uploaded template across infer → apply**
 
   Bug found in review: `POST /api/template/infer` writes the uploaded `.docx` to a throwaway
   temp file and never persists it; the panel then calls `POST /api/template/apply` with only the
