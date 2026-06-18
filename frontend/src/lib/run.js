@@ -5,6 +5,7 @@ import { createContext, useContext } from 'react';
 
 const RunContext = createContext({
   run: async () => {},
+  stop: async () => {},
   running: false,
   activeCmd: null,
 });

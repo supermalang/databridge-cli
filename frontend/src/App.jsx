@@ -23,6 +23,16 @@ import { RunProvider } from './lib/run.js';
 import { DirtyProvider } from './lib/dirty.js';
 import { AiStatusProvider } from './lib/aiStatus.js';
 
+// Human-friendly verbs for the active run alert. Falls back to a generic phrasing.
+const RUN_LABELS = {
+  'build-report': 'Building report…',
+  'run-all': 'Building report…',
+  download: 'Downloading data…',
+  'fetch-questions': 'Fetching questions…',
+  'generate-template': 'Generating template…',
+};
+const runLabel = (cmd) => RUN_LABELS[cmd] || (cmd ? `Running ${cmd}…` : 'Running…');
+
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
 const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'pii'];
@@ -140,7 +150,7 @@ export default function App() {
   // ref because onLog's closure would otherwise see a stale value.
   const LOG_CAP = 1500;
   const runningCmdRef = useRef(null);
-  const { run, running, activeCmd } = useCommand({
+  const { run, stop, running, activeCmd } = useCommand({
     onLog: (line, level) => setLogLines(prev =>
       [...prev, { line, level, time: nowTime(), command: runningCmdRef.current }].slice(-LOG_CAP)),
     onStatus: ({ command, status }) => {
@@ -251,6 +261,28 @@ export default function App() {
 
   return (
     <div className="layout">
+      {running && (
+        <div className="run-alert" data-testid="run-alert" role="status" aria-live="polite">
+          <span className="run-alert__dot" aria-hidden="true" />
+          <span className="run-alert__label">{runLabel(activeCmd)}</span>
+          <button
+            type="button"
+            className="run-alert__logs"
+            onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}
+          >
+            View logs
+          </button>
+          <button
+            type="button"
+            className="run-alert__stop"
+            data-testid="run-stop"
+            aria-label="Stop the running task"
+            onClick={() => stop()}
+          >
+            Stop
+          </button>
+        </div>
+      )}
       <header>
         <div className="brand">
           <h1>databridge-cli</h1>
@@ -320,13 +352,6 @@ export default function App() {
               </div>
             )}
           </div>
-          {running && (
-            <button className="run-indicator" title={`Running ${activeCmd}… — click to view logs`}
-                    onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
-              <span className="status-dot running" />
-              <span className="run-indicator__label">Running {activeCmd}…</span>
-            </button>
-          )}
           <button className="iconbtn" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
           </button>
@@ -363,7 +388,7 @@ export default function App() {
       )}
 
       <PermsProvider value={{ role: activeRole, isSuperadmin }}>
-        <RunProvider value={{ run, running, activeCmd }}>
+        <RunProvider value={{ run, stop, running, activeCmd }}>
          <DirtyProvider value={dirtyRef}>
           <AiStatusProvider>
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>

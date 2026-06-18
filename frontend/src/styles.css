@@ -734,15 +734,47 @@ header :focus-visible, .btn-primary:focus-visible { outline-color: #fff; }
 @media (max-width: 720px) {
   header { padding: 0 14px; gap: 10px; }
   .topbar-user { display: none; }
-  .run-indicator__label { display: none; }
-  .run-indicator { padding: 0 9px; }
 }
 
-/* ── Global run-in-progress indicator (topbar, all tabs) ─────────────────── */
-.run-indicator { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12); color: #fff; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-.run-indicator:hover { background: rgba(255,255,255,.2); }
-.run-indicator .status-dot { background: #fff; }
-.run-indicator__label { font-family: var(--font-mono); letter-spacing: .01em; }
+/* ── Global run-in-progress alert (fixed top-of-app banner, all tabs) ────── */
+.run-alert {
+  display: flex; align-items: center; gap: 12px;
+  flex-shrink: 0;
+  padding: 9px 20px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border-bottom: 1px solid var(--accent);
+  font-size: 13px; font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+.run-alert__dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0;
+  animation: pulse 1s infinite;
+}
+.run-alert__label { letter-spacing: .005em; }
+.run-alert__logs {
+  margin-left: auto;
+  background: transparent; border: none;
+  color: var(--accent-2); font-size: 12.5px; font-weight: 600;
+  cursor: pointer; padding: 4px 8px; border-radius: var(--r-sm);
+}
+.run-alert__logs:hover { background: rgba(15,118,110,.10); }
+.run-alert__logs:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.run-alert__stop {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 30px; padding: 0 16px;
+  border-radius: 999px; border: 1px solid var(--rose);
+  background: var(--surface); color: var(--rose);
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.run-alert__stop:hover { background: var(--rose); color: #fff; }
+.run-alert__stop:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+@media (max-width: 720px) {
+  .run-alert { padding: 8px 14px; gap: 8px; }
+  .run-alert__stop { min-height: 34px; padding: 0 18px; }
+}
 
 /* ── Searchable column picker (Composition editors) ──────────────────────── */
 .colpick { position: relative; }
