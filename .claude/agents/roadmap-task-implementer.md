@@ -43,11 +43,13 @@ not edit them.**
 - Generate the Playwright screenshots at all three viewports (mobile 390×844, tablet 820×1180,
   desktop 1440×900 — `cd frontend && npm run test:e2e`), but DO NOT bless the baselines with
   `--update-snapshots` on your own. Produce the candidates and hand them to the dispatcher: the
-  human approves the first visual baseline per viewport. The same goes for UAT — it is human-run.
+  human approves the first visual baseline per viewport. The same goes for UAT on UI-facing
+  cards — it is human-run. (Non-UI/CLI cards have `UAT: N/A`; their human gate is PR review, so
+  there is no UAT step to hand off — note that in your summary instead.)
 
 ## Definition of Done (the universal gate, per the roadmap header)
 Unit + E2E green · visual baseline produced for human approval · impeccable audit/critique
-clean · UAT left for human sign-off · changes committed.
+clean · UAT left for human sign-off (UI-facing cards; `N/A` for non-UI/CLI) · changes committed.
 
 ## Commits
 Commit in small TDD steps with Conventional Commits (`test(scope): …`, then `feat(scope): …`).

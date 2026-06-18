@@ -26,8 +26,10 @@ Files) and the diff/commits for the task.
    the task genuinely has no UI surface.
 5. **No scope creep** — the diff touches only the card's stated Files and adds nothing beyond
    the AC. Flag extras.
-6. **UAT recorded** — the manual UAT checklist has been run and signed off (or is explicitly
-   queued for the human, in which case verdict is NOT-DONE-pending-UAT).
+6. **UAT recorded** — for UI-facing cards, the manual UAT checklist has been run and signed off
+   (or is explicitly queued for the human, in which case verdict is NOT-DONE-pending-UAT). For
+   non-UI/CLI cards UAT is `N/A` — do not require a sign-off; the human gate is the PR review,
+   so confirm the Verify command + tests pass instead.
 
 ## Output
 `DONE` or `NOT-DONE`. For NOT-DONE, list each failed check with the specific gap and what would
