@@ -104,6 +104,12 @@ async function stubBootstrap(page: Page) {
   await page.route('**/api/ai/status', (r) => r.fulfill({ json: { configured: true, verified: true } }));
   await page.route('**/api/templates', (r) => r.fulfill({ json: { files: [] } }));
   await page.route('**/api/templates/active', (r) => r.fulfill({ json: { active: null } }));
+  // /api/state readiness flags (web/main.py GET /api/state). Default to READY so
+  // the existing banner-opens-the-flow tests keep working once XTF-9 gates the
+  // banner on has_questions && has_data; the XTF-9 "not ready" test re-registers
+  // this route AFTER beforeEach (last-registered wins) to flip it false.
+  await page.route('**/api/state', (r) =>
+    r.fulfill({ json: { has_questions: true, has_data: true, has_templates: false, has_ai: true } }));
 }
 
 // XTF-6 contract: infer PERSISTS the upload and returns a resolvable `template`
@@ -303,6 +309,110 @@ test.describe('XTF-7 — Express Infer button is gated on AI-tested status', () 
     // <input> behind a styled label, so we assert the visible Infer button + the
     // upload control is present in the DOM).
     await page.getByTestId('express-banner').first().click();
+    await expect(page.getByTestId('express-infer')).toBeVisible();
+    await expect(page.getByTestId('express-upload')).toBeAttached();
+  });
+});
+
+/**
+ * XTF-9 — Gate the "In a hurry?" Express banner on questions + data.
+ *
+ * The ExpressBanner currently renders ALWAYS enabled (Templates.jsx ~14,
+ * Home.jsx ~55), but inference can't validate proposals without real columns —
+ * `/api/template/infer` returns the EXPRESS_NO_DATA_MESSAGE precondition when no
+ * data is downloaded. The banner must consume `GET /api/state`'s readiness flags
+ * and stay DISABLED + non-actionable, with an accessible hint, until BOTH
+ * `has_questions` AND `has_data` are true.
+ *
+ * Contract pinned here (the implementer must match):
+ *   - The banner reads `/api/state` → `has_questions && has_data`.
+ *   - When not both true: rendered disabled (`disabled` OR `aria-disabled="true"`),
+ *     a hint with `data-testid="express-hint"` is visible, and clicking the banner
+ *     does NOT open the express flow (no `express-upload` / `express-infer`).
+ *   - When both true: enabled, and clicking opens the flow exactly as today.
+ *   - `data-testid="express-banner"` is preserved on the banner element.
+ *
+ * `/api/state` is NOT mocked by stubBootstrap (it falls through to the catch-all
+ * `{}`), so each test below registers its own `/api/state` route AFTER beforeEach
+ * — Playwright matches last-registered-first, so the per-test mock wins without
+ * disturbing the rest of the bootstrap ordering the app needs to render.
+ *
+ * The full readiness shape returned by web/main.py GET /api/state (~1790–1821) is
+ * `{has_questions, has_data, has_templates, has_ai}`; we send all four so the mock
+ * matches the real contract even though only the first two gate the banner.
+ */
+
+// What the implementer is expected to render for the unmet-precondition hint.
+// The card's AC gives this as an example ("Download data and configure questions
+// before using Express fill"); we assert on the load-bearing keywords only so the
+// exact wording stays the implementer's to choose.
+const HINT_KEYWORDS = /download data|configure questions/i;
+
+test.describe('XTF-9 — Express banner is gated on questions + data', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await stubExpress(page);
+    await page.goto('http://localhost:51730/');
+  });
+
+  test('not ready (no questions, no data) → banner disabled, hint shown, click does NOT open the flow', async ({ page }) => {
+    // Override /api/state AFTER beforeEach so this wins: neither precondition met.
+    await page.route('**/api/state', (r) =>
+      r.fulfill({ json: { has_questions: false, has_data: false, has_templates: false, has_ai: true } }));
+
+    // App mounted logged-in with the active project (proves the bootstrap mocks
+    // are sound, so any failure below is the missing XTF-9 gate — not a bad mock).
+    await expect(page.getByText('Test Project')).toBeVisible();
+
+    const banner = page.getByTestId('express-banner').first();
+    await expect(banner).toBeVisible();
+
+    // The banner is disabled / non-actionable: either a disabled <button> or
+    // aria-disabled="true". Accept either so the implementer picks the markup.
+    const isDisabled = await banner.isDisabled().catch(() => false);
+    const ariaDisabled = await banner.getAttribute('aria-disabled');
+    expect(
+      isDisabled || ariaDisabled === 'true',
+      'banner should be disabled (disabled attr or aria-disabled="true") when not ready',
+    ).toBeTruthy();
+
+    // An accessible hint explains what's needed first.
+    const hint = page.getByTestId('express-hint');
+    await expect(hint).toBeVisible();
+    await expect(hint).toHaveText(HINT_KEYWORDS);
+
+    // Clicking the disabled banner must NOT open the express flow. `force` bypasses
+    // Playwright's actionability checks so we exercise the click even on a disabled
+    // control — the gate must come from the banner, not from Playwright refusing.
+    await banner.click({ force: true });
+    await expect(page.getByTestId('express-upload')).toHaveCount(0);
+    await expect(page.getByTestId('express-infer')).toHaveCount(0);
+
+    // Visual baseline of the gated (disabled + hint) state (3 viewports via
+    // playwright.config.ts). The implementer produces the baselines for approval.
+    await expect(page).toHaveScreenshot('express-banner-gated.png');
+  });
+
+  test('ready (questions + data) → banner enabled and opens the express flow on click', async ({ page }) => {
+    // Override /api/state AFTER beforeEach so this wins: both preconditions met.
+    await page.route('**/api/state', (r) =>
+      r.fulfill({ json: { has_questions: true, has_data: true, has_templates: false, has_ai: true } }));
+
+    await expect(page.getByText('Test Project')).toBeVisible();
+
+    const banner = page.getByTestId('express-banner').first();
+    await expect(banner).toBeVisible();
+
+    // Enabled: not a disabled <button> and not aria-disabled.
+    await expect(banner).toBeEnabled();
+    const ariaDisabled = await banner.getAttribute('aria-disabled');
+    expect(ariaDisabled === 'true', 'banner must not be aria-disabled when ready').toBeFalsy();
+
+    // No gating hint in the ready state.
+    await expect(page.getByTestId('express-hint')).toHaveCount(0);
+
+    // Clicking opens the express flow exactly as today.
+    await banner.click();
     await expect(page.getByTestId('express-infer')).toBeVisible();
     await expect(page.getByTestId('express-upload')).toBeAttached();
   });

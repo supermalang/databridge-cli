@@ -850,6 +850,29 @@ header :focus-visible, .btn-primary:focus-visible { outline-color: #fff; }
 .express-banner__text { flex: 1; min-width: 0; }
 .express-banner__arrow { font-size: 16px; color: var(--accent); flex-shrink: 0; }
 
+/* Gated (not-ready) state — reads as intentionally unavailable, not broken. */
+.express-banner-wrap { margin: 0 0 18px; }
+.express-banner-wrap .express-banner { margin: 0; }
+.express-banner:disabled,
+.express-banner[aria-disabled="true"] {
+  cursor: not-allowed;
+  background: var(--surface-2, var(--surface));
+  border-color: var(--border, var(--line));
+  border-style: dashed;
+  color: var(--ink-3);
+  box-shadow: none;
+}
+.express-banner:disabled:hover,
+.express-banner[aria-disabled="true"]:hover { box-shadow: none; border-color: var(--border, var(--line)); }
+.express-banner:disabled .express-banner__arrow,
+.express-banner[aria-disabled="true"] .express-banner__arrow { color: var(--ink-3); }
+.express-hint {
+  display: flex; align-items: center; gap: 6px;
+  margin: 6px 2px 0; padding: 0;
+  color: var(--ink-3); font-size: 12.5px; line-height: 1.4;
+}
+.express-hint::before { content: "ⓘ"; font-style: normal; opacity: .8; }
+
 .express-flow { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px 8px; }
 .express-upload-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .express-filename { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-3); }
