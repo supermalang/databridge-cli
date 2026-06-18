@@ -42,8 +42,24 @@ export default function Home({ navigate }) {
 
   const go = (stageId, subId) => (e) => { e?.stopPropagation?.(); navigate(stageId, subId); };
 
+  // Discoverability: jump straight to the express template-fill flow on the
+  // Templates tab. The 5-step pipeline below remains the default path.
+  const openExpress = () => {
+    navigate('present', 'templates');
+    // Defer so the Templates pane has mounted before it receives the open signal.
+    setTimeout(() => window.dispatchEvent(new CustomEvent('databridge:open-express')), 0);
+  };
+
   return (
     <div className="page">
+      <button type="button" className="express-banner" data-testid="express-banner" onClick={openExpress}>
+        <span className="express-banner__icon" aria-hidden="true">⚡</span>
+        <span className="express-banner__text">
+          In a hurry? Upload a template and let AI fill it
+        </span>
+        <span className="express-banner__arrow" aria-hidden="true">→</span>
+      </button>
+
       <div className="home-head">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="greeting__date">DATABRIDGE · WORKFLOW</div>

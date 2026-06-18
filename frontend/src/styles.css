@@ -831,3 +831,91 @@ header :focus-visible, .btn-primary:focus-visible { outline-color: #fff; }
 .pf-panel select { border: 1px solid var(--border-2, #D6DBE3); border-radius: 8px; padding: 8px 30px 8px 11px;
   font-size: 13.5px; background-color: var(--surface, #fff); color: var(--ink, #0B1220);
   font-family: var(--font-sans); outline: 0; transition: border-color .12s, box-shadow .12s; }
+
+/* --------------------------------------------------------------------------- *
+ * Express Template Fill (XTF-5) — discoverability banner + review/approve panel
+ * --------------------------------------------------------------------------- */
+.express-banner {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  margin: 0 0 18px; padding: 13px 18px; text-align: left; cursor: pointer;
+  background: linear-gradient(90deg, var(--accent-soft) 0%, var(--surface) 70%);
+  border: 1px solid var(--accent); border-radius: var(--r-lg);
+  color: var(--accent-ink); font-family: var(--font-sans); font-size: 14px; font-weight: 600;
+  transition: box-shadow .12s, transform .05s, border-color .12s;
+}
+.express-banner:hover { box-shadow: var(--shadow-md); border-color: var(--accent-2); }
+.express-banner:active { transform: translateY(1px); }
+.express-banner:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.express-banner__icon { font-size: 18px; line-height: 1; flex-shrink: 0; }
+.express-banner__text { flex: 1; min-width: 0; }
+.express-banner__arrow { font-size: 16px; color: var(--accent); flex-shrink: 0; }
+
+.express-flow { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px 8px; }
+.express-upload-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.express-filename { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-3); }
+.express-message {
+  padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--gold);
+  background: var(--gold-soft); color: var(--gold); font-size: 13.5px; line-height: 1.5;
+}
+.express-error {
+  padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--rose);
+  background: var(--rose-soft); color: var(--rose); font-size: 13.5px; line-height: 1.5;
+}
+
+.express-review-panel {
+  border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden;
+  background: var(--surface);
+}
+.express-review-head, .express-row {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) 120px minmax(0, 1fr) minmax(0, 1.2fr) auto;
+  gap: 12px; align-items: center; padding: 10px 14px;
+}
+.express-review-head {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); background: var(--surface-2); border-bottom: 1px solid var(--border);
+}
+.express-row { border-bottom: 1px solid var(--border); }
+.express-row:last-of-type { border-bottom: 0; }
+.express-row[data-status="needs_attention"] {
+  background: var(--gold-soft);
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+.express-row__placeholder { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.express-row__token { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); }
+.express-row__canonical { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+.express-row__select, .express-row__name {
+  width: 100%; padding: 6px 9px; border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  font-size: 12.5px; background: var(--surface); color: var(--ink);
+  font-family: var(--font-sans); outline: 0; transition: border-color .12s, box-shadow .12s;
+}
+.express-row__name { font-family: var(--font-mono); }
+.express-row__select:focus, .express-row__name:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.express-row__spec { min-width: 0; font-size: 12px; color: var(--ink-3); }
+.express-row__spec code {
+  font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block;
+}
+.express-row__actions { display: flex; justify-content: flex-end; }
+.express-row__reason {
+  grid-column: 1 / -1; font-size: 12.5px; color: #92400E; font-weight: 500; padding-top: 2px;
+}
+.express-review-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; background: var(--surface-2); border-top: 1px solid var(--border);
+}
+.express-foot-hint { font-size: 12.5px; color: var(--ink-3); }
+.express-success {
+  margin: 12px 14px 14px; padding: 12px 14px; border-radius: var(--r-md);
+  border: 1px solid var(--green); background: var(--green-soft); color: var(--accent-2);
+  font-size: 13.5px; line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .express-review-head { display: none; }
+  .express-row {
+    grid-template-columns: 1fr; gap: 8px; padding: 12px 14px;
+  }
+  .express-row__actions { justify-content: flex-start; }
+}
