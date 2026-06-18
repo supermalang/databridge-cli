@@ -25,11 +25,13 @@ export default defineConfig({
     { name: 'tablet', use: { viewport: { width: 820, height: 1180 } } },
     { name: 'desktop', use: { viewport: { width: 1440, height: 900 } } },
   ],
-  // Uncomment for app-driven specs (XTF-5, UX-*):
-  // webServer: {
-  //   command: 'npm run dev',
-  //   url: 'http://localhost:51730',
-  //   reuseExistingServer: !process.env.CI,
-  //   timeout: 120_000,
-  // },
+  // App-driven specs (XTF-5, UX-*) boot Vite. The spec stubs every /api/** call
+  // with page.route(), so no FastAPI backend is required — Vite serves the SPA
+  // and all network is intercepted in-page.
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:51730',
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+  },
 });
