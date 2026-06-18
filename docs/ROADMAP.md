@@ -6,9 +6,9 @@
 > affordances so users know they're coming.
 >
 > Legend: `- [ ]` todo · `- [x]` done.
-> "Done" gate: implementation + its tests passing —
-> `PYTHONPATH=. MPLBACKEND=Agg python -m pytest`. UI-only tasks verify visually in the dev
-> server (`./scripts/dev.sh`).
+> "Done" gate: see the **Definition of Done** below — back-end tests via
+> `PYTHONPATH=. MPLBACKEND=Agg python -m pytest`; UI tasks via the Playwright visual harness
+> (`cd frontend && npm run test:e2e`) with human-approved baselines at mobile/tablet/desktop.
 
 ---
 
@@ -26,7 +26,8 @@ A card is startable only when all of the following hold:
 ## Definition of Done
 
 - Unit tests pass (pytest green; Vitest green for frontend-only cards)
-- E2E Playwright spec passes, including visual baseline (`toHaveScreenshot`)
+- E2E Playwright spec passes, including human-approved visual baselines at **all three
+  viewports** — mobile (390×844), tablet (820×1180), desktop (1440×900) — via `toHaveScreenshot`
 - Impeccable audit/critique clean (no outstanding UX or accessibility findings)
 - UAT signed off by a human reviewer following the card's UAT steps
 - All changes committed and merged to the integration branch
@@ -39,6 +40,7 @@ A card is startable only when all of the following hold:
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 5 | 0 / 5 |
+| [Visual / E2E harness](#visual--e2e-harness) | 1 | 0 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -164,7 +166,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render the project switcher with a project that has a color and emoji set; assert the avatar element displays the emoji rather than the two-letter fallback; assert the avatar background matches the project color.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — create a project with a distinctive color and emoji, switch to it, and assert the switcher avatar and menu row both show the icon/color in a baseline screenshot.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — create a project with a distinctive color and emoji, switch to it, and assert the switcher avatar and menu row both show the icon/color in a baseline screenshot. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Create a new project, set a color swatch and emoji icon in the form, and save. Open the project switcher and confirm the avatar displays the emoji on the chosen background color.
@@ -189,7 +191,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render the switcher, simulate keyboard Tab into the trigger; assert `aria-expanded` toggles on Enter; simulate Escape and assert the dropdown closes; simulate ArrowDown and assert focus moves to the first menu item.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the project switcher by keyboard, navigate to a project row with ArrowDown, activate with Enter, and assert the project switches; assert Escape closes the dropdown without switching.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the project switcher by keyboard, navigate to a project row with ArrowDown, activate with Enter, and assert the project switches; assert Escape closes the dropdown without switching. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Tab to the project switcher trigger using only the keyboard. Press Enter and confirm the dropdown opens.
@@ -215,7 +217,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render a project list containing an archived project; assert the archived row does not carry the active-row hover class; assert an "Unarchive" button or affordance is present in the row; assert clicking the row body does not trigger a project switch.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — archive a project, open the project list, and take a baseline screenshot confirming the archived row is visually de-emphasized; click the Unarchive affordance and confirm the project returns to active state.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — archive a project, open the project list, and take a baseline screenshot confirming the archived row is visually de-emphasized; click the Unarchive affordance and confirm the project returns to active state. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Archive a project via its settings. Open the project switcher and confirm the archived row appears visually distinct (dimmed or labelled) from active projects.
@@ -239,7 +241,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render `ProjectForm`, change the project name field, then simulate clicking Back; assert the dirty-guard confirmation dialog appears; confirm that accepting the dialog navigates away and rejecting keeps the form open with the edited value.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — edit a project's name without saving, click Back, and assert a confirmation prompt appears; dismiss it and confirm the form remains with the unsaved change intact.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — edit a project's name without saving, click Back, and assert a confirmation prompt appears; dismiss it and confirm the form remains with the unsaved change intact. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Open an existing project's edit form, change the name, then click the Back button. Confirm a confirmation dialog appears warning of unsaved changes.
@@ -263,7 +265,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render `ProjectMembersPanel` with a member record that has no email or name (only `user_id`); assert no UUID string is rendered; render with a member that matches the current user and assert a "you" badge is present.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open a project's Members panel and take a baseline screenshot confirming all rows show a human-readable identifier and the current user's row has a "you" tag.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open a project's Members panel and take a baseline screenshot confirming all rows show a human-readable identifier and the current user's row has a "you" tag. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Open the Members panel for a project. Confirm every member row shows an email address or display name, with no UUID visible.
@@ -286,7 +288,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render `ProjectForm` with an empty name field; assert the submit button has the `disabled` attribute; assert an inline error message is visible; type a character and assert the button becomes enabled and the error disappears.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the create-project form, clear the name field, and attempt to submit; assert the inline error appears and the form is not submitted; enter a valid name and assert the error clears.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the create-project form, clear the name field, and attempt to submit; assert the inline error appears and the form is not submitted; enter a valid name and assert the error clears. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Open the create-project form and leave the name field empty. Confirm the Submit button is disabled and an inline error is visible beneath the name field.
@@ -307,7 +309,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render `ProfileForm`; assert the email input has the `disabled` attribute; assert helper text containing "sign-in provider" (or the chosen copy) is present in the rendered output.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the Profile page and take a baseline screenshot confirming the email field is disabled and helper text is visible beneath it.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the Profile page and take a baseline screenshot confirming the email field is disabled and helper text is visible beneath it. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Open your Profile page. Confirm the email field is not editable (greyed out or disabled).
@@ -329,7 +331,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render the color swatch group; assert each swatch element has a non-empty `aria-label`; select a swatch and assert it gains `aria-pressed="true"` while the previously selected one loses it.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the project form, inspect color swatches with an accessibility audit, and assert no color-name-only violations; select a swatch and assert `aria-pressed` state changes are reflected.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the project form, inspect color swatches with an accessibility audit, and assert no color-name-only violations; select a swatch and assert `aria-pressed` state changes are reflected. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Open the create/edit project form and use a screen reader (or browser accessibility inspector) to navigate the color swatches. Confirm each swatch announces its color name.
@@ -352,7 +354,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — mock `pull_workspace` to return a delayed promise; trigger a project switch and assert a loading indicator is rendered; resolve the promise and assert the indicator is gone.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — switch between two projects and assert a loading indicator is visible during the transition; take a baseline screenshot of the final settled state.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — switch between two projects and assert a loading indicator is visible during the transition; take a baseline screenshot of the final settled state. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Switch to a project that has a large workspace (several data files). Confirm a loading indicator appears immediately after clicking the project row.
@@ -752,7 +754,7 @@ A card is startable only when all of the following hold:
   infer → assert the review panel shows the placeholder → kind/name mapping with a flagged row
   highlighted → edit/resolve the flagged row → assert **Apply & build** enables → click it →
   assert the report downloads. Capture a `toHaveScreenshot` baseline of the review panel
-  (flagged + resolved states).
+  (flagged + resolved states) at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. From the Dashboard, click the "In a hurry?" banner. Confirm the express flow opens and the
@@ -765,6 +767,66 @@ A card is startable only when all of the following hold:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py` ·
   Playwright: `npx playwright test express-template-fill.spec.ts`
+
+---
+
+## Visual / E2E harness
+
+> The Definition of Done requires Playwright `toHaveScreenshot` baselines at mobile/tablet/desktop
+> for every UI card, but the harness to produce them did not exist. This stands it up once so all
+> UI cards (XTF-5, UX-*) can satisfy that gate.
+
+---
+
+- [ ] **VIS-1 — Playwright visual harness (mobile/tablet/desktop)**
+
+  Install and configure Playwright with three viewport projects, a deterministic smoke spec with
+  committed baselines, a CI job, and the governance updates that make the three-viewport rule
+  enforceable. Foundation for every UI card's visual check; no product feature.
+
+  **Files:** `frontend/package.json` (devDep + `test:e2e*` scripts) ·
+  `frontend/playwright.config.ts` (3 viewport projects) ·
+  `frontend/tests/e2e/harness-smoke.spec.ts` (+ committed `*-snapshots/*.png` baselines) ·
+  `.github/workflows/visual.yml` · `.gitignore` · `docs/ROADMAP.md` (DoD + UI-card sweep) ·
+  `.claude/skills/roadmap/SKILL.md` · `.claude/agents/*.md` (5 roadmap agents) · `CLAUDE.md`
+
+  **Config/schema impact:** None — tooling only. No app config or schema change.
+
+  **Acceptance criteria**
+  - `@playwright/test` is a frontend devDependency; `npm run test:e2e` / `test:e2e:update` /
+    `test:e2e:report` scripts exist
+  - `playwright.config.ts` defines three Chromium projects — mobile (390×844), tablet (820×1180),
+    desktop (1440×900) — so each `toHaveScreenshot` yields one baseline per viewport (filename
+    carries the project name; the three never collide)
+  - A smoke spec renders a deterministic fixture and asserts `toHaveScreenshot`; one baseline per
+    viewport is committed and the suite passes deterministically on a clean re-run
+  - A trivial visual change to the fixture makes the suite FAIL (diffing actually works)
+  - CI workflow runs the visual suite on PRs touching `frontend/**`, installing Chromium with OS
+    deps and uploading the HTML report on failure
+  - Governance updated in lockstep: the global Definition of Done requires approved baselines at
+    all three viewports; the card-template E2E guidance (`SKILL.md`) and the five roadmap agents
+    specify the three-viewport requirement; `CLAUDE.md` documents the harness + commands
+  - Transient Playwright output (`playwright-report/`, `test-results/`, `blob-report/`) is
+    gitignored while baseline PNGs remain tracked
+
+  **Unit tests:** N/A (harness/tooling card — no Python/JS unit under test; the deliverable's own
+  test is the Playwright smoke spec below).
+
+  **E2E:** `frontend/tests/e2e/harness-smoke.spec.ts` — a deterministic `page.setContent` fixture
+  asserted via `toHaveScreenshot` under all three viewport projects, with the three baselines
+  committed (`harness-smoke.spec.ts-snapshots/sample-panel-{mobile,tablet,desktop}-linux.png`).
+  Impeccable audit/critique is N/A for the throwaway fixture (no product UI). Verify: a clean
+  `npm run test:e2e` is green; flipping a fixture style reds the suite.
+
+  **UAT:**
+  1. Run `cd frontend && npm run test:e2e`. Confirm 3 tests pass (one per viewport) against the
+     committed baselines.
+  2. Confirm three baseline PNGs exist under
+     `frontend/tests/e2e/harness-smoke.spec.ts-snapshots/` (mobile/tablet/desktop).
+  3. Make a trivial change to the fixture (e.g. button color), run `npm run test:e2e`, and confirm
+     the suite FAILS with a visual diff; revert and confirm it passes again.
+
+  **Verify:** `cd frontend && npm run test:e2e`
 
 ---
 
