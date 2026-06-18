@@ -18,6 +18,13 @@ frontend/.vite/
 # Dev manager state (PIDs + logs from scripts/dev.sh start)
 .dev/
 
+# Playwright visual harness: ignore transient run output; KEEP committed baselines
+# (frontend/tests/e2e/**/*-snapshots/*.png are intentionally tracked).
+frontend/playwright-report/
+frontend/blob-report/
+frontend/test-results/
+frontend/.playwright/
+
 # Claude Code: track shared config (settings, skills/roadmap, hooks, agents); ignore local + vendored
 .claude/settings.local.json
 .claude/.active-task*

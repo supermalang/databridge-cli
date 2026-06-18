@@ -28,8 +28,11 @@ spec the implementer must satisfy, so they must encode the *requirement*, not th
    One behavior per test; clear arrange/act/assert; no dependence on incidental implementation
    detail.
 2. **E2E (Playwright):** if the card has a real E2E (not `N/A`), write the spec that drives the
-   user flow and include the visual assertion `await expect(page).toHaveScreenshot()`. (You do
-   NOT approve the baseline — that's a human step.)
+   user flow and include the visual assertion `await expect(page).toHaveScreenshot()`. The harness
+   (`frontend/playwright.config.ts`, VIS-1) runs every spec under three viewport projects —
+   mobile 390×844, tablet 820×1180, desktop 1440×900 — so one assertion yields a baseline per
+   viewport; do not hard-code a single viewport in the spec. (You do NOT approve the baselines —
+   that's a human step.)
 3. **Run them and prove RED:**
    `PYTHONPATH=. MPLBACKEND=Agg python -m pytest <files> -q`
    Each test must FAIL because the behavior is missing — NOT because of an ImportError, syntax

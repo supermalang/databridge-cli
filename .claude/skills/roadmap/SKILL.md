@@ -22,7 +22,8 @@ content, `Write` the whole file.
     UAT signed · committed.
 - Each task card carries (labels checked verbatim by the guard):
   `**Acceptance criteria**` (testable, behavior-specific), `**Unit tests:**` (pytest file +
-  cases), `**E2E:**` (Playwright spec + visual: impeccable audit/critique + `toHaveScreenshot`;
+  cases), `**E2E:**` (Playwright spec + visual: impeccable audit/critique + `toHaveScreenshot`
+  baselines at all three viewports — mobile 390×844, tablet 820×1180, desktop 1440×900;
   `N/A (reason)` for non-UI), `**UAT:**` (manual numbered steps). Plus Files / Config impact /
   Verify. ID = `AREA-N`. Each sprint adds golden-path `SP-N-E` + sprint UAT.
 
