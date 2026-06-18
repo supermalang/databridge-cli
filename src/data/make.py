@@ -421,6 +421,115 @@ def cmd_run_all(ctx, sample, period, force, auto_charts):
         log.info("✓ Pipeline complete.")
 
 
+@cli.command("infer-template")
+@click.option("--template", "template", required=True, type=click.Path(dir_okay=False),
+              help="Path to the uploaded .docx template with placeholders to infer.")
+@click.option("--out", default="reports/.template_inference.json",
+              help="Where to write the proposal list JSON.")
+@click.pass_context
+def cmd_infer_template(ctx, template, out):
+    """Infer config specs for the placeholders in an uploaded Word template.
+
+    Runs extract_placeholders -> infer_specs -> annotate_proposals over the
+    NON-literal placeholders, writes the proposal list to --out, and prints a
+    summary table. Requires a configured AI provider and previously downloaded
+    data (local validation needs the real columns).
+    """
+    import json as _json
+    from src.reports import template_inference as ti
+    from src.data import transform, profile
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
+
+    # Extract first so a placeholder-free template is a friendly no-op.
+    tokens = ti.extract_placeholders(template)
+    nl_tokens = [t for t in tokens if t.kind != "literal"]
+    if not nl_tokens:
+        click.echo("No placeholders found in the template — nothing to infer.")
+        return
+
+    # AI is required for this feature; it cannot degrade to seeds.
+    ai_cfg = cfg.get("ai") or {}
+    if not ti.ask_engine._ai_ready(ai_cfg):
+        click.echo("No AI provider configured. Set an AI provider + key in config.yml "
+                   "(the express template fill requires AI).", err=True)
+        sys.exit(1)
+
+    # Local validation needs the real downloaded columns.
+    try:
+        df, repeat_tables = transform.load_processed_data(cfg)
+    except FileNotFoundError as e:
+        click.echo(f"No downloaded data found ({e}). Run Download first to "
+                   "populate the columns local validation needs.", err=True)
+        sys.exit(1)
+
+    prof = profile.profile_dataset(cfg, df, repeat_tables)
+    catalog = ti.ask_engine.build_catalog(prof, cfg)
+
+    proposals = ti.infer_specs(nl_tokens, catalog, ai_cfg)
+    proposals = ti.annotate_proposals(proposals, prof)
+
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(_json.dumps(
+        {"template": str(template), "proposals": proposals}, indent=2, ensure_ascii=False
+    ))
+
+    click.echo(f"{'PLACEHOLDER':<32} {'KIND':<10} {'NAME':<24} STATUS")
+    for tok, prop in zip(nl_tokens, proposals):
+        click.echo(f"{tok.raw[:31]:<32} {str(prop.get('kind','')):<10} "
+                   f"{str(prop.get('name','')):<24} {prop.get('status','')}")
+    click.echo(f"Wrote {len(proposals)} proposal(s) to {out_path}")
+
+
+@cli.command("apply-template")
+@click.option("--from", "from_path", default="reports/.template_inference.json",
+              type=click.Path(dir_okay=False),
+              help="Proposal list JSON produced by infer-template (possibly user-edited).")
+@click.option("--build", is_flag=True, default=False,
+              help="After applying, chain into build-report.")
+@click.pass_context
+def cmd_apply_template(ctx, from_path, build):
+    """Apply approved proposals: persist config + resolve the template.
+
+    Reads the proposal list JSON, drops any proposal still flagged
+    (status == "needs_attention"), runs apply_inference (writes config sections +
+    the resolved template), persists config, and optionally chains build-report.
+    """
+    import json as _json
+    from src.reports import template_inference as ti
+    from src.utils.config import write_config
+    config_path = ctx.obj["config_path"]
+    cfg = load_config(config_path)
+
+    from_p = Path(from_path)
+    if not from_p.exists():
+        click.echo(f"Proposal file not found: {from_p}. Run 'infer-template' first.", err=True)
+        sys.exit(1)
+    data = _json.loads(from_p.read_text())
+    proposals = data.get("proposals") if isinstance(data, dict) else data
+    template = (data.get("template") if isinstance(data, dict) else None)
+    proposals = proposals or []
+
+    if not template:
+        click.echo("No template path recorded in the proposal file.", err=True)
+        sys.exit(1)
+
+    approved = [p for p in proposals if p.get("status") != "needs_attention"]
+    if not approved:
+        click.echo("No approved proposals to apply (all flagged needs_attention).")
+        return
+
+    cfg, resolved = ti.apply_inference(approved, cfg, template)
+    cfg.setdefault("report", {})["template"] = str(resolved)
+    write_config(cfg, config_path)
+    click.echo(f"Applied {len(approved)} proposal(s); resolved template: {resolved}")
+
+    if build:
+        _invoke(ctx, cmd_build_report, sample=None, random_sample=False, split_by=None,
+                split_sample=None, session=None, period=None, compare=None)
+
+
 @cli.command("set-period")
 @click.argument("label")
 @click.option("--baseline", is_flag=True, default=False, help="Also set this period as the baseline.")
