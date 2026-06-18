@@ -767,3 +767,405 @@ def test_apply_preserves_original_upload(tmp_path):
     assert Path(str(resolved)).resolve() != Path(template).resolve(), (
         "resolved template must be a new file, not the original upload"
     )
+
+
+# =========================================================================== #
+# XTF-4 — CLI commands (infer-template, apply-template)
+# =========================================================================== #
+# These tests are the spec for the two new Click commands appended to
+# ``src/data/make.py`` (and their registration in ``web.main.ALLOWED_COMMANDS``)
+# for XTF-4. They are derived strictly from the XTF-4 acceptance criteria and
+# design spec §5. They are written before the commands exist and are expected
+# to be RED until the commands land — RED for the RIGHT reason: Click reports
+# "No such command 'infer-template' / 'apply-template'" (nonzero exit), and the
+# ALLOWED_COMMANDS keys are missing — NOT because of fixture / mock / import bugs.
+#
+# They are selectable with ``-k "cli or command"`` (every test name below
+# contains "cli"); the XTF-1/2/3 tests above are NOT matched by that filter, so
+# they keep running under ``-k "extract or infer or annotate or apply"``.
+#
+# --------------------------------------------------------------------------- #
+# Contract committed to here (AC-derived; the implementer must satisfy these
+# exact flag names + message substrings, kept aligned with the card/spec wording)
+# --------------------------------------------------------------------------- #
+#
+# ``infer-template --template <file> [--out reports/.template_inference.json]``
+#   * runs extract_placeholders -> infer_specs -> annotate_proposals;
+#   * writes the proposal LIST to the --out JSON (one entry per NON-literal
+#     token; known {{ }} literals are passthrough and NOT proposals);
+#   * prints a summary table (placeholder -> kind/name/status) and exits 0.
+#   * No AI provider/key configured  -> nonzero exit + a message naming the AI
+#     provider requirement (assert substring "AI provider", case-insensitive).
+#   * No downloaded data             -> nonzero exit + the "run Download first"
+#     message (assert substring "download first", case-insensitive).
+#   * Zero placeholders found        -> a friendly no-op message + exit 0.
+#
+# ``apply-template [--from reports/.template_inference.json] [--build]``
+#   * reads the (possibly user-edited) proposal list JSON;
+#   * DROPS any proposal still flagged (status == "needs_attention") or not
+#     approved before calling apply_inference (so a needs_attention row never
+#     reaches config / the resolved template);
+#   * calls apply_inference -> persists config via write_config + writes the
+#     resolved template;
+#   * with --build, chains into the build-report command via ctx.invoke
+#     (the same _invoke seam run-all uses, so it is mockable).
+#
+# Both command names are present in ``web.main.ALLOWED_COMMANDS``.
+#
+# MOCKING SEAMS (chosen to mirror how build-report / download / run-all /
+# ask_engine detect their preconditions, NOT invented):
+#   * "no AI provider/key": same shape build-report's AI features check — an
+#     ``ai`` config whose provider/api_key are absent (or api_key is an unresolved
+#     ``env:`` ref) is treated as not-configured. The configured case uses
+#     {provider: openai, api_key: sk-test} like the suggester tests.
+#   * "no downloaded data": ``src/data/transform.load_processed_data`` raises
+#     ``FileNotFoundError("... Run 'download' first.")`` when no session exists —
+#     the same seam ask/build-report read through. We monkeypatch it on the
+#     ``make`` module (where the command imports it) to simulate present/absent
+#     data without writing real CSVs.
+#   * profile + catalog: ``src/data/profile.profile_dataset`` and
+#     ``ask_engine.build_catalog`` — patched to return a tiny deterministic
+#     profile so the command does not depend on a real download.
+#   * the LLM: ``template_inference.infer_specs`` is patched to return canned
+#     proposals (the suggester-test convention of mocking at the inference
+#     boundary rather than the raw lf_client.chat, since the command orchestrates
+#     the module function).
+#   * build-report chaining: patch ``make._invoke`` (the run-all sequencing
+#     seam) and/or the ``apply_inference`` call to spy on the chained build.
+#
+# If the implementer wires a precondition at a different-but-equivalent seam,
+# these monkeypatches still hold as long as the command imports the helpers via
+# the ``make`` module namespace (the established pattern in make.py).
+
+import json as _json
+
+import pytest as _pytest
+import yaml as _yaml
+from click.testing import CliRunner
+
+from src.data import make as _make
+
+
+_AI_OK = {"provider": "openai", "api_key": "sk-test", "model": "gpt-x", "max_tokens": 1500}
+
+
+def _profile_xtf4():
+    """A minimal profile in the shape build_catalog / validate_recipe expect."""
+    return {
+        "main": {
+            "name": "main", "rows": 3,
+            "columns": [
+                {"name": "Region", "role": "categorical", "distinct": 2, "missing_pct": 0.0,
+                 "top_values": [{"value": "N", "count": 2}, {"value": "S", "count": 1}]},
+                {"name": "Age", "role": "quantitative", "distinct": 3, "missing_pct": 0.0,
+                 "min": 10.0, "max": 30.0, "mean": 20.0, "median": 20.0},
+            ],
+            "correlations": [], "duplicates": None,
+        }
+    }
+
+
+def _write_cfg_xtf4(tmp_path, *, ai=True):
+    """A config.yml with (optionally) a configured AI provider, written to disk
+    so the CLI's ``load_config`` reads it the same way every other command does."""
+    cfg = {
+        "api": {"platform": "kobo", "url": "https://x.example.com/api/v2", "token": "t"},
+        "form": {"uid": "aaa", "alias": "survey"},
+        "questions": [{"export_label": "Region", "category": "categorical"}],
+    }
+    if ai:
+        cfg["ai"] = dict(_AI_OK)
+    p = tmp_path / "config.yml"
+    p.write_text(_yaml.safe_dump(cfg))
+    return p
+
+
+def _docx_for_cli(tmp_path, texts, name="upload.docx"):
+    """Build a .docx with one placeholder per paragraph (single run each)."""
+    doc = Document()
+    for t in texts:
+        doc.add_paragraph(t)
+    path = tmp_path / name
+    doc.save(str(path))
+    return str(path)
+
+
+def _patch_data_present(monkeypatch, profile=None):
+    """Simulate a successful prior download: load_processed_data returns a frame +
+    profile_dataset / build_catalog return a tiny deterministic profile/catalog.
+    Patched on the ``make`` module namespace (where the command imports them)."""
+    import pandas as pd
+    from src.data import transform as _transform
+    from src.data import profile as _profile_mod
+
+    prof = profile or _profile_xtf4()
+    df = pd.DataFrame({"Region": ["N", "N", "S"], "Age": [10, 20, 30]})
+
+    # The command may import these via `from ... import` inside the function or as
+    # module attributes; patch both the source modules and the make namespace so
+    # whichever binding the implementer chooses resolves to our stub.
+    for mod, attr, val in [
+        (_transform, "load_processed_data", lambda *a, **k: (df, {})),
+        (_profile_mod, "profile_dataset", lambda *a, **k: prof),
+    ]:
+        monkeypatch.setattr(mod, attr, val, raising=False)
+    monkeypatch.setattr(
+        ti.ask_engine, "build_catalog", lambda *a, **k: {"tables": []}, raising=False
+    )
+
+
+def _patch_no_data(monkeypatch):
+    """Simulate no prior download: load_processed_data raises FileNotFoundError
+    with the canonical "Run 'download' first." message (the real seam's wording)."""
+    import pandas as pd  # noqa: F401  (ensures pandas importable in this env)
+    from src.data import transform as _transform
+
+    def _boom(*a, **k):
+        raise FileNotFoundError(
+            "No data matching data/processed/survey_data*.csv. Run 'download' first."
+        )
+
+    monkeypatch.setattr(_transform, "load_processed_data", _boom, raising=False)
+
+
+# --------------------------------------------------------------------------- #
+# infer-template — writes the --out JSON, one entry per non-literal token, exit 0
+# --------------------------------------------------------------------------- #
+def test_cli_infer_template_writes_proposal_json_and_exits_zero(tmp_path, monkeypatch):
+    """AC: infer-template runs extract -> infer -> annotate, writes the proposal
+    list to --out, and exits 0. The template has two NON-literal placeholders and
+    one known {{ }} literal (passthrough); the JSON must hold one entry per
+    non-literal token (the literal is NOT a proposal)."""
+    cfg_path = _write_cfg_xtf4(tmp_path, ai=True)
+    template = _docx_for_cli(
+        tmp_path,
+        ["[Region breakdown]", "[Average age]", "{{ report_title }}"],
+    )
+    out_json = tmp_path / "proposals.json"
+
+    _patch_data_present(monkeypatch)
+
+    def _fake_infer(nl_tokens, catalog, ai_cfg):
+        # One proposal per NON-literal token passed in (the literal is filtered out
+        # by the command before infer_specs is called).
+        return [
+            {"token_index": i, "kind": "chart",
+             "spec": {"name": f"c{i}", "type": "bar", "questions": ["Region"]},
+             "name": f"c{i}", "confidence": 0.9, "reason": "ok"}
+            for i, _t in enumerate(nl_tokens)
+        ]
+
+    monkeypatch.setattr(ti, "infer_specs", _fake_infer, raising=False)
+
+    res = CliRunner().invoke(
+        _make.cli,
+        ["--config", str(cfg_path), "infer-template",
+         "--template", template, "--out", str(out_json)],
+    )
+
+    assert res.exit_code == 0, res.output
+    assert out_json.exists(), f"--out JSON not written. output:\n{res.output}"
+    data = _json.loads(out_json.read_text())
+    proposals = data["proposals"] if isinstance(data, dict) else data
+    assert isinstance(proposals, list)
+    # Exactly the two non-literal tokens -> two proposals (the literal is excluded).
+    assert len(proposals) == 2, proposals
+
+
+# --------------------------------------------------------------------------- #
+# infer-template — no AI provider/key configured -> nonzero + AI-provider message
+# --------------------------------------------------------------------------- #
+def test_cli_infer_template_errors_without_ai_provider(tmp_path, monkeypatch):
+    """AC: infer-template errors clearly when no AI provider/key is configured,
+    with a message naming the AI-provider requirement (the feature requires AI —
+    it cannot degrade to seeds)."""
+    cfg_path = _write_cfg_xtf4(tmp_path, ai=False)
+    template = _docx_for_cli(tmp_path, ["[Region breakdown]"])
+    out_json = tmp_path / "proposals.json"
+
+    # Data is present so the ONLY failing precondition is the missing AI provider.
+    _patch_data_present(monkeypatch)
+
+    res = CliRunner().invoke(
+        _make.cli,
+        ["--config", str(cfg_path), "infer-template",
+         "--template", template, "--out", str(out_json)],
+    )
+
+    assert res.exit_code != 0, res.output
+    assert "ai provider" in res.output.lower(), res.output
+
+
+# --------------------------------------------------------------------------- #
+# infer-template — no downloaded data -> nonzero + "run Download first" message
+# --------------------------------------------------------------------------- #
+def test_cli_infer_template_errors_without_downloaded_data(tmp_path, monkeypatch):
+    """AC: infer-template errors when no data has been downloaded (local
+    validation needs real columns), with the "run Download first" message."""
+    cfg_path = _write_cfg_xtf4(tmp_path, ai=True)
+    template = _docx_for_cli(tmp_path, ["[Region breakdown]"])
+    out_json = tmp_path / "proposals.json"
+
+    _patch_no_data(monkeypatch)
+
+    res = CliRunner().invoke(
+        _make.cli,
+        ["--config", str(cfg_path), "infer-template",
+         "--template", template, "--out", str(out_json)],
+    )
+
+    assert res.exit_code != 0, res.output
+    assert "download first" in res.output.lower(), res.output
+
+
+# --------------------------------------------------------------------------- #
+# infer-template — zero placeholders -> friendly no-op message, exit 0
+# --------------------------------------------------------------------------- #
+def test_cli_infer_template_zero_placeholders_is_friendly_noop(tmp_path, monkeypatch):
+    """AC: zero placeholders found -> a friendly no-op message, non-error exit."""
+    cfg_path = _write_cfg_xtf4(tmp_path, ai=True)
+    template = _docx_for_cli(tmp_path, ["Just prose, no placeholders here."])
+    out_json = tmp_path / "proposals.json"
+
+    _patch_data_present(monkeypatch)
+    # infer_specs must NOT be needed when there is nothing to infer; if it is
+    # called it would still no-op on an empty list, so leave it real.
+
+    res = CliRunner().invoke(
+        _make.cli,
+        ["--config", str(cfg_path), "infer-template",
+         "--template", template, "--out", str(out_json)],
+    )
+
+    assert res.exit_code == 0, res.output
+    # A friendly message mentioning that no placeholders were found.
+    assert "no placeholder" in res.output.lower(), res.output
+
+
+# --------------------------------------------------------------------------- #
+# apply-template — writes config + resolved template and DROPS a needs_attention
+# proposal that was not approved
+# --------------------------------------------------------------------------- #
+def test_cli_applytmpl_drops_needs_attention_and_writes_config(tmp_path, monkeypatch):
+    """AC: apply-template reads the proposals, drops any still flagged/unapproved,
+    runs apply_inference (writes config + resolved template). Here the proposal
+    list has one ``ok`` chart and one ``needs_attention`` chart; only the ``ok``
+    one may reach apply_inference (and thus config)."""
+    cfg_path = _write_cfg_xtf4(tmp_path, ai=True)
+    template = _docx_for_cli(tmp_path, ["[Region breakdown]", "[Mystery thing]"])
+
+    proposals = [
+        {"token_index": 0, "kind": "chart",
+         "spec": {"name": "by_region", "type": "bar", "questions": ["Region"]},
+         "name": "by_region", "confidence": 0.9, "reason": "ok", "status": "ok"},
+        {"token_index": 1, "kind": "chart",
+         "spec": {"name": "mystery", "type": "bar", "questions": ["NotAColumn"]},
+         "name": "mystery", "confidence": 0.2, "reason": "missing column",
+         "status": "needs_attention"},
+    ]
+    from_json = tmp_path / "proposals.json"
+    from_json.write_text(_json.dumps({"proposals": proposals, "template": template}))
+
+    # Spy on apply_inference to capture which proposals survived the drop, and to
+    # avoid depending on its real config/docx side effects here.
+    seen = {"approved": None}
+
+    def _spy_apply(approved, cfg, template_path):
+        seen["approved"] = list(approved)
+        # Mimic the real return: (cfg with the spec written, resolved path).
+        cfg.setdefault("charts", [])
+        for p in approved:
+            cfg["charts"].append(dict(p.get("spec") or {}, name=p.get("name")))
+        resolved = str(tmp_path / "upload.resolved.docx")
+        Document().save(resolved)
+        return cfg, resolved
+
+    monkeypatch.setattr(ti, "apply_inference", _spy_apply, raising=False)
+
+    res = CliRunner().invoke(
+        _make.cli,
+        ["--config", str(cfg_path), "apply-template", "--from", str(from_json)],
+    )
+
+    assert res.exit_code == 0, res.output
+    # The needs_attention proposal was dropped: only the ok one reached apply.
+    assert seen["approved"] is not None, "apply_inference was never called"
+    names = [p.get("name") for p in seen["approved"]]
+    assert names == ["by_region"], f"needs_attention not dropped: {names}"
+
+    # Config was persisted with the approved chart.
+    saved = _yaml.safe_load(cfg_path.read_text())
+    chart_names = [c.get("name") for c in (saved.get("charts") or [])]
+    assert "by_region" in chart_names, saved
+    assert "mystery" not in chart_names, saved
+
+
+# --------------------------------------------------------------------------- #
+# apply-template --build — chains into the build-report path
+# --------------------------------------------------------------------------- #
+def test_cli_applytmpl_build_chains_into_build_report(tmp_path, monkeypatch):
+    """AC: with --build, apply-template chains into build-report. We assert the
+    chained call via the same _invoke seam run-all uses (monkeypatched to record
+    the command name), so no real report is built."""
+    cfg_path = _write_cfg_xtf4(tmp_path, ai=True)
+    template = _docx_for_cli(tmp_path, ["[Region breakdown]"])
+
+    proposals = [
+        {"token_index": 0, "kind": "chart",
+         "spec": {"name": "by_region", "type": "bar", "questions": ["Region"]},
+         "name": "by_region", "confidence": 0.9, "reason": "ok", "status": "ok"},
+    ]
+    from_json = tmp_path / "proposals.json"
+    from_json.write_text(_json.dumps({"proposals": proposals, "template": template}))
+
+    def _spy_apply(approved, cfg, template_path):
+        cfg.setdefault("charts", []).append(
+            {"name": "by_region", "type": "bar", "questions": ["Region"]}
+        )
+        resolved = str(tmp_path / "upload.resolved.docx")
+        Document().save(resolved)
+        return cfg, resolved
+
+    monkeypatch.setattr(ti, "apply_inference", _spy_apply, raising=False)
+
+    invoked = []
+    monkeypatch.setattr(
+        _make, "_invoke",
+        lambda ctx, command, **kw: invoked.append(command.name),
+        raising=False,
+    )
+
+    res = CliRunner().invoke(
+        _make.cli,
+        ["--config", str(cfg_path), "apply-template",
+         "--from", str(from_json), "--build"],
+    )
+
+    assert res.exit_code == 0, res.output
+    assert "build-report" in invoked, (
+        f"--build did not chain into build-report; invoked={invoked}\n{res.output}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Both command names registered in web.main.ALLOWED_COMMANDS
+# --------------------------------------------------------------------------- #
+def test_cli_names_registered_in_allowed_commands():
+    """AC: both commands added to ALLOWED_COMMANDS in web/main.py (so they are
+    runnable via the SSE run endpoint)."""
+    from web import main as web_main
+    assert "infer-template" in web_main.ALLOWED_COMMANDS
+    assert "apply-template" in web_main.ALLOWED_COMMANDS
+
+
+# --------------------------------------------------------------------------- #
+# The commands actually exist on the CLI group (guards against the RED being a
+# generic Click usage error rather than a missing command — once implemented,
+# `--help` must succeed for each).
+# --------------------------------------------------------------------------- #
+@_pytest.mark.parametrize("command", ["infer-template", "apply-template"])
+def test_cli_name_is_registered_on_cli_group(command):
+    """AC: infer-template / apply-template are real Click commands on the group."""
+    res = CliRunner().invoke(_make.cli, [command, "--help"])
+    assert res.exit_code == 0, res.output
+    assert "No such command" not in res.output

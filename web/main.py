@@ -473,6 +473,8 @@ ALLOWED_COMMANDS = {
     "download":             ["--sample"],
     "build-report":         ["--sample", "--split-by", "--session", "--period", "--compare"],
     "run-all":              ["--sample", "--period", "--auto-charts"],
+    "infer-template":       ["--template", "--out"],
+    "apply-template":       ["--from", "--build"],
 }
 
 class RunPayload(BaseModel):
