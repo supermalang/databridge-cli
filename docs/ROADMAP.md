@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 5 | 4 / 5 |
+| [Express Template Fill](#express-template-fill) | 5 | 5 / 5 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -668,7 +668,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-5 — Web review/approve panel + discoverability**
+- [x] **XTF-5 — Web review/approve panel + discoverability**
 
   The user-facing card: a Templates-tab review/approve panel over the proposals, the two API
   endpoints, and a discoverability banner/button. Depends on **XTF-1**, **XTF-2**, **XTF-3**,
