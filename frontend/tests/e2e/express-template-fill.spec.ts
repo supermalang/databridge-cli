@@ -94,11 +94,23 @@ async function stubBootstrap(page: Page) {
   await page.route('**/api/templates/active', (r) => r.fulfill({ json: { active: null } }));
 }
 
-async function stubExpress(page: Page) {
+// XTF-6 contract: infer PERSISTS the upload and returns a resolvable `template`
+// ref alongside the proposals; the panel then carries THAT ref into apply (never
+// the bare client file.name). This server-assigned ref differs from the uploaded
+// file name on purpose so the assertion proves the ref — not file.name — is sent.
+const INFER_TEMPLATE_REF = 'express_8f3c1a2b.docx';
+const RESOLVED_TEMPLATE = 'templates/express_8f3c1a2b.resolved.docx';
+
+async function stubExpress(page: Page, appliedBody?: { value: any }) {
   await page.route('**/api/template/infer', (r) =>
-    r.fulfill({ json: { proposals: PROPOSALS, message: null } }));
-  await page.route('**/api/template/apply', (r) =>
-    r.fulfill({ json: { ok: true, template: 'templates/report.resolved.docx', n_written: 3 } }));
+    r.fulfill({ json: { proposals: PROPOSALS, message: null, template: INFER_TEMPLATE_REF } }));
+  await page.route('**/api/template/apply', (r) => {
+    if (appliedBody) {
+      try { appliedBody.value = JSON.parse(r.request().postData() || '{}'); }
+      catch { appliedBody.value = null; }
+    }
+    return r.fulfill({ json: { ok: true, template: RESOLVED_TEMPLATE, n_written: 3 } });
+  });
   await page.route('**/api/run/build-report', (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: BUILD_SSE }));
 }
@@ -159,5 +171,46 @@ test.describe('Express Template Fill review/approve panel', () => {
     // 6. Apply & build → success / download path.
     await applyBtn.click();
     await expect(page.getByTestId('express-success')).toBeVisible();
+  });
+
+  test('apply carries the infer-returned template ref and reaches the success state', async ({ page }) => {
+    // Re-register the express stubs with an apply-body capture. Playwright matches
+    // the LAST-registered route first, so this overrides the beforeEach stubs.
+    const applied: { value: any } = { value: undefined };
+    await stubExpress(page, applied);
+
+    await expect(page.getByText('Test Project')).toBeVisible();
+
+    // Open the express flow + upload a template whose name differs from the
+    // server-assigned ref (so we can prove the ref — not file.name — is sent).
+    await page.getByTestId('express-banner').first().click();
+    await page.getByTestId('express-upload').setInputFiles({
+      name: 'my_local_template.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: Buffer.from('PK fake docx'),
+    });
+    await page.getByTestId('express-infer').click();
+
+    // Resolve the flagged row so Apply & build enables.
+    const flagged = page.locator('[data-testid="express-row"][data-status="needs_attention"]');
+    await flagged.getByTestId('express-row-drop').click();
+    const applyBtn = page.getByTestId('express-apply-build');
+    await expect(applyBtn).toBeEnabled();
+
+    // Apply & build → the request must carry the INFER-returned ref, not file.name.
+    await applyBtn.click();
+    const success = page.getByTestId('express-success');
+    await expect(success).toBeVisible();
+
+    // The XTF-6 frontend contract: apply body.template === the infer-returned ref.
+    expect(applied.value, 'apply request body should have been captured').toBeTruthy();
+    expect(applied.value.template).toBe(INFER_TEMPLATE_REF);
+    expect(applied.value.template).not.toBe('my_local_template.docx');
+
+    // Success state shows the resolved template name.
+    await expect(success).toContainText('express_8f3c1a2b.resolved');
+
+    // New visual baseline of the SUCCESS state (3 viewports via playwright.config.ts).
+    await expect(page).toHaveScreenshot('express-success.png');
   });
 });

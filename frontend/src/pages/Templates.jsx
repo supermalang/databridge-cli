@@ -35,10 +35,13 @@ function ExpressFlow({ onClose }) {
   const [rows, setRows] = useState(null);          // null = not inferred yet
   const [applied, setApplied] = useState(false);
   const [resolved, setResolved] = useState(null);
+  // The infer endpoint persists the upload and returns a resolvable ref; we carry
+  // that into apply so a freshly-uploaded .docx survives the round-trip (XTF-6).
+  const [templateRef, setTemplateRef] = useState(null);
 
   const onPick = (e) => {
     setFile(e.target.files?.[0] || null);
-    setError(null); setMessage(null); setRows(null); setApplied(false);
+    setError(null); setMessage(null); setRows(null); setApplied(false); setTemplateRef(null);
   };
 
   const infer = async () => {
@@ -58,6 +61,7 @@ function ExpressFlow({ onClose }) {
         setMessage(data.message);
         return;
       }
+      setTemplateRef(data.template || null);
       setRows((data.proposals || []).map((p, i) => ({ ...p, _key: `${p.name || 'row'}-${i}` })));
     } catch (err) {
       setError(err.message || 'Network error');
@@ -84,7 +88,7 @@ function ExpressFlow({ onClose }) {
     try {
       const r = await fetch('/api/template/apply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ proposals, template: file?.name }),
+        body: JSON.stringify({ proposals, template: templateRef || file?.name }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data.ok) {
