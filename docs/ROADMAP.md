@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 5 | 3 / 5 |
+| [Express Template Fill](#express-template-fill) | 5 | 4 / 5 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -628,7 +628,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-4 — CLI commands (`infer-template`, `apply-template`)**
+- [x] **XTF-4 — CLI commands (`infer-template`, `apply-template`)**
 
   Two-phase CLI so review can happen between inference and apply, with a JSON proposal artifact
   and an optional `--build` chain. Depends on **XTF-1**, **XTF-2**, **XTF-3**.
