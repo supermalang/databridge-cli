@@ -15,8 +15,11 @@ Every assertion is derived from the XTF-5 acceptance criteria + spec §6:
 - apply runs ``apply_inference``, writes config, and returns
   ``{ok, template, n_written}`` with the resolved template path.
 """
+import io
+
 import pandas as pd
 import pytest
+from docx import Document
 from fastapi.testclient import TestClient
 
 import web.main as wm
@@ -196,3 +199,139 @@ def test_apply_writes_config_and_returns_resolved_template(monkeypatch, client, 
     assert body["n_written"] == 1
     # Config was persisted with the approved chart spec.
     assert saved["charts"][0]["name"] == "by_region"
+
+
+# --------------------------------------------------------------------------- #
+# XTF-6 — Persist the uploaded template across infer → apply (the bug).
+#
+# These are deliberately UN-mocked at the inference layer: only the LLM seam
+# (`infer_specs`) is stubbed with a deterministic proposal. `extract_placeholders`,
+# the upload-persistence path, and `apply_inference` all run for real, so they
+# reproduce the production bug — an uploaded .docx that infer never persists nor
+# returns a ref for, so apply cannot resolve it.
+# --------------------------------------------------------------------------- #
+def _real_docx_bytes(placeholder="[bar chart of Region]"):
+    """A minimal real .docx (python-docx) carrying one NL placeholder."""
+    doc = Document()
+    doc.add_paragraph("Intro paragraph.")
+    doc.add_paragraph(placeholder)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def test_infer_apply_roundtrip_real(monkeypatch, client, tmp_path):
+    """Real infer→apply round-trip: the upload must survive into apply.
+
+    AC (XTF-6):
+    - infer persists the uploaded .docx and returns a resolvable `template` ref;
+    - the same ref is carried into apply, which resolves the persisted file and
+      runs the REAL `apply_inference` against it;
+    - the resolved .docx exists on disk, config gained the chart spec, and the
+      response is {ok, template, n_written}.
+
+    Only the LLM seam (`infer_specs`) is mocked; `extract_placeholders` and
+    `apply_inference` run for real. This is the test the network-mocked XTF-5
+    suite could not catch.
+    """
+    import src.reports.template_inference as ti
+
+    # Isolate template storage so we never touch the repo's templates/ dir.
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(wm, "TEMPLATES_DIR", templates_dir)
+
+    # Shared config object: infer reads it; apply reads + writes it.
+    cfg = {"charts": [], "questions": [{"export_label": "Region", "category": "categorical"}],
+           "ai": {"provider": "openai", "api_key": "sk-x"}}
+    saved = {}
+    monkeypatch.setattr(wm, "_require", lambda *a, **k: None)
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+    monkeypatch.setattr(wm, "load_processed_data", lambda *a, **k: (_df(), {}))
+    # Keep profiling/catalog cheap + deterministic (they feed infer_specs, which is mocked).
+    monkeypatch.setattr(wm, "profile_dataset", lambda *a, **k: {})
+    monkeypatch.setattr(wm.ask_engine, "build_catalog", lambda *a, **k: {})
+
+    # The ONLY mocked seam: the batched LLM call. One real chart proposal for the
+    # single NL placeholder (token_index 0) in the uploaded docx.
+    proposal = {
+        "token_index": 0, "kind": "chart", "name": "by_region",
+        "spec": {"name": "by_region", "title": "By region", "type": "bar",
+                 "questions": ["Region"]},
+        "confidence": 0.95, "reason": "ok", "status": "ok",
+    }
+    monkeypatch.setattr(ti, "infer_specs", lambda *a, **k: [dict(proposal)])
+    # annotate runs for real (validate_recipe is reused) — but with an empty profile
+    # it would flag the chart; stamp it ok directly so the proposal is approvable.
+    monkeypatch.setattr(ti, "annotate_proposals",
+                        lambda props, *a, **k: [{**p, "status": "ok", "reason": "ok"} for p in props])
+
+    # 1. POST the real .docx as a multipart upload to infer.
+    files = {"file": ("fresh_upload.docx", _real_docx_bytes(),
+                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    infer_resp = client.post("/api/template/infer", files=files)
+    assert infer_resp.status_code == 200, infer_resp.text
+    infer_body = infer_resp.json()
+    assert infer_body.get("proposals"), "infer should return the mocked proposal"
+
+    # AC: infer must return a resolvable template ref alongside the proposals.
+    ref = infer_body.get("template")
+    assert ref, "infer must return a 'template' ref so apply can resolve the upload"
+
+    # 2. Carry that ref (NOT a bare client file.name) into the REAL apply.
+    approved = [dict(p) for p in infer_body["proposals"]]
+    apply_resp = client.post("/api/template/apply",
+                             json={"proposals": approved, "template": ref})
+    assert apply_resp.status_code == 200, apply_resp.text
+    apply_body = apply_resp.json()
+
+    # AC: response shape {ok, template, n_written}.
+    assert apply_body.get("ok") is True
+    assert apply_body.get("n_written") == 1
+    resolved = apply_body.get("template")
+    assert resolved, "apply must return the resolved template path"
+
+    # AC: the resolved .docx exists on disk (apply_inference saved a real file).
+    import os
+    assert os.path.isfile(resolved), f"resolved template should exist on disk: {resolved}"
+
+    # AC: config gained the chart spec.
+    written = saved.get("cfg") or cfg
+    chart_names = [c.get("name") for c in (written.get("charts") or [])]
+    assert "by_region" in chart_names, "apply should have written the chart spec into config"
+
+
+def test_apply_unresolvable_ref_returns_clear_error(monkeypatch, client, tmp_path):
+    """Apply with a ref that resolves to no stored file → a clear error, not a 500.
+
+    AC (XTF-6): "if the ref cannot be resolved it returns a clear error (no
+    traceback / no silent wrong-path)." The REAL apply_inference is used; the bug
+    today is that an unresolvable basename is passed straight through to
+    apply_inference, which then fails opening a non-existent path with a 500.
+    """
+    import src.reports.template_inference as ti  # noqa: F401  (kept un-mocked)
+
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(wm, "TEMPLATES_DIR", templates_dir)
+
+    cfg = {"charts": []}
+    monkeypatch.setattr(wm, "_require", lambda *a, **k: None)
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: None)
+
+    approved = [
+        {"token_index": 0, "kind": "chart", "name": "by_region",
+         "spec": {"name": "by_region", "type": "bar", "questions": ["Region"]},
+         "status": "ok"},
+    ]
+    resp = client.post("/api/template/apply",
+                       json={"proposals": approved, "template": "does_not_exist.docx"})
+
+    # A clear, client-facing error — not an unhandled 500 traceback.
+    assert resp.status_code in (400, 404, 422), \
+        f"expected a clear client error, got {resp.status_code}: {resp.text}"
+    body = resp.json()
+    detail = (body.get("detail") or body.get("message") or "")
+    assert detail, "the error response should carry a human-readable message"

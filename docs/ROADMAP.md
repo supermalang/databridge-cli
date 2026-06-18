@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 5 | 5 / 5 |
+| [Express Template Fill](#express-template-fill) | 7 | 6 / 7 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -728,6 +728,107 @@ A card is startable only when all of the following hold:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py` ·
   Playwright: `npx playwright test express-template-fill.spec.ts`
+
+---
+
+- [x] **XTF-6 — Fix: persist the uploaded template across infer → apply**
+
+  Bug found in review: `POST /api/template/infer` writes the uploaded `.docx` to a throwaway
+  temp file and never persists it; the panel then calls `POST /api/template/apply` with only the
+  client `file.name`, which `apply` resolves by basename against `TEMPLATES_DIR` — where a
+  freshly-uploaded file was never stored. So apply hits a non-existent path and can't resolve the
+  template. The network-mocked XTF-5 tests missed it (both endpoints / `apply_inference` mocked).
+  Independent of XTF-7.
+
+  **Files:** `web/main.py` (`api_template_infer` persists the upload + returns a stable ref;
+  `api_template_apply` resolves that ref) · `frontend/src/pages/Templates.jsx` (carry the
+  infer-returned ref into apply instead of `file.name`) · `tests/test_template_api.py` (real,
+  un-mocked infer→apply integration test) · `frontend/tests/e2e/express-template-fill.spec.ts`
+  (update the infer route-mock to return the ref so the flow contract stays valid)
+
+  **Config/schema impact:** None. Uploaded templates are persisted under `TEMPLATES_DIR` (or a
+  per-session dir) — same storage the normal template upload uses.
+
+  **Acceptance criteria**
+  - `api_template_infer` persists the uploaded `.docx` to a stable location and returns a
+    resolvable `template` ref in its response (alongside `proposals`)
+  - The panel carries that returned ref into `api_template_apply` (no longer the bare client
+    `file.name`)
+  - `api_template_apply` resolves the persisted file and runs `apply_inference` against it; if the
+    ref cannot be resolved it returns a clear error (no traceback / no silent wrong-path)
+  - A real **un-mocked** integration test exercises infer→apply end to end (only the LLM seam
+    mocked, NOT `apply_inference`/`extract_placeholders`): the resolved template exists and config
+    is written
+  - The `express-template-fill.spec.ts` E2E is extended so its infer route-mock returns the ref
+    and the full upload → Infer → approve → Apply&build flow reaches success (not an apply error)
+
+  **Unit tests:** `tests/test_template_api.py::test_infer_apply_roundtrip_real` — a real
+  infer→apply integration test: POST a multipart `.docx` to `/api/template/infer` (LLM/`infer_specs`
+  mocked, but `extract_placeholders` and the persistence path real), capture the returned
+  `template` ref, POST it with approved proposals to `/api/template/apply` calling the REAL
+  `apply_inference`, and assert the resolved `.docx` exists on disk + config gained the chart
+  section + response `{ok, template, n_written}`. Plus a negative case: apply with an unresolvable
+  ref returns a clear error, not a 500 traceback.
+
+  **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` (extend) + visual — drive the full
+  upload → Infer → approve → **Apply&build** flow with the infer route-mock returning the persisted
+  template ref; assert apply succeeds (`express-success` shows the resolved name) rather than
+  erroring. `toHaveScreenshot` baseline of the success state at all three viewports (mobile
+  390×844, tablet 820×1180, desktop 1440×900). impeccable audit/critique clean on the changed flow.
+
+  **UAT:**
+  1. Templates → Express fill. Click "Choose .docx" and pick a template that has NOT been
+     previously uploaded/saved. Confirm its name appears.
+  2. Click Infer; wait for the proposal rows; click **Apply & build**.
+  3. Expected: the success banner shows the resolved template name and a build-report run starts —
+     no "Apply failed" / path error; the report appears under the Reports tab.
+  4. Tamper the apply ref (devtools) to a name that does not exist server-side and confirm a clear
+     inline error, not a 500/traceback.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py -k "upload or apply or infer"`
+
+---
+
+- [ ] **XTF-7 — Gate the Express "Infer" button on AI-tested status (parity with other AI buttons)**
+
+  The Express **Infer** button is enabled as soon as a file is chosen (`disabled={!file || loading}`)
+  — unlike every other interactive AI control, which stays disabled until the AI connection is
+  configured **and** verified via `/api/ai/test` (`useAiStatus().aiReady` + `AI_LOCK_TIP`). Bring
+  Infer to parity so users get the same "Test the AI connection first" affordance instead of
+  clicking into a backend error message. Independent of XTF-6.
+
+  **Files:** `frontend/src/pages/Templates.jsx` (`useAiStatus`; `disabled={!aiReady || !file || loading}`;
+  `AI_LOCK_TIP` tooltip when locked) · `frontend/tests/e2e/express-template-fill.spec.ts` (assert
+  the gate via mocked `/api/ai/status`)
+
+  **Config/schema impact:** None — reuses the existing `/api/ai/status` + `aiStatus` context.
+
+  **Acceptance criteria**
+  - With AI not configured/verified (`/api/ai/status` → `aiReady:false`), the Infer button is
+    disabled and exposes the `AI_LOCK_TIP` ("Test the AI connection first …") tooltip, even when a
+    file is chosen
+  - With `aiReady:true`, Infer enables once a file is chosen (current behavior preserved)
+  - The discoverability banner still opens the flow regardless (it triggers no AI call); only Infer
+    is gated
+  - Matches the lock/tooltip pattern used by the Composition suggester buttons
+
+  **Unit tests:** N/A (frontend-only gating; Vitest is not installed — the gate is asserted by the
+  Playwright E2E below, consistent with XTF-5's Apply&build gating coverage).
+
+  **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` (extend) + visual — mock
+  `/api/ai/status` → `{aiReady:false}` and assert Infer is `disabled` with the lock tooltip; then
+  `{aiReady:true}` and assert it enables after choosing a file. Capture a `toHaveScreenshot`
+  baseline of the locked state at all three viewports (mobile 390×844, tablet 820×1180, desktop
+  1440×900). impeccable audit/critique clean on the changed control.
+
+  **UAT:**
+  1. With no AI provider configured (or configured but not tested), open Templates → Express fill.
+     Confirm the **Infer** button is disabled and hovering shows "Test the AI connection first".
+  2. Configure + test the AI connection (Extract → AI configuration). Return to Express fill,
+     choose a `.docx`, and confirm **Infer** is now enabled.
+  3. Confirm the "In a hurry?" banner still opens the Express flow even when AI is untested.
+
+  **Verify:** `cd frontend && npx playwright test express-template-fill.spec.ts`
 
 ---
 
