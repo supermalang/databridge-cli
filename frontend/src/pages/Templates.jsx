@@ -5,6 +5,7 @@ import { useConfirm } from '../components/ConfirmDialog.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { usePerms } from '../lib/perms.js';
 import { useRun } from '../lib/run.js';
+import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 
 const KINDS = ['chart', 'indicator', 'summary', 'table', 'narrative', 'metadata'];
 
@@ -27,6 +28,7 @@ export function ExpressBanner({ onOpen }) {
 function ExpressFlow({ onClose }) {
   const toast = useToast();
   const { run, running } = useRun();
+  const { aiReady } = useAiStatus();
   const fileRef = useRef(null);
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -131,7 +133,8 @@ function ExpressFlow({ onClose }) {
             className="btn btn-primary btn-sm"
             data-testid="express-infer"
             onClick={infer}
-            disabled={!file || loading}
+            disabled={!aiReady || !file || loading}
+            title={aiReady ? undefined : AI_LOCK_TIP}
           >
             {loading ? 'Inferring…' : 'Infer'}
           </button>
