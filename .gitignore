@@ -18,5 +18,8 @@ frontend/.vite/
 # Dev manager state (PIDs + logs from scripts/dev.sh start)
 .dev/
 
-# Local agent state (Claude Code per-project artifacts)
-.claude/
+# Claude Code: track shared config (settings, skills/roadmap, hooks, agents); ignore local + vendored
+.claude/settings.local.json
+.claude/.active-task*
+.claude/skills/impeccable/
+.github/skills/

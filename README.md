@@ -498,6 +498,35 @@ A pytest suite under `tests/` covers auth, RBAC, provisioning, the provenance he
 PYTHONPATH=. pytest -v
 ```
 
+> Working with an AI agent (Claude Code)? Tests run as `PYTHONPATH=. MPLBACKEND=Agg python -m pytest` — the headless matplotlib backend is required for the chart-rendering tests.
+
+---
+
+# Development workflow & governance
+
+This repo uses a lightweight, **roadmap-driven** development process, enforced for AI agents by hooks under `.claude/` and documented for humans here and in [CLAUDE.md](CLAUDE.md).
+
+**All work is tracked in [docs/ROADMAP.md](docs/ROADMAP.md).** Every task is a card with a fixed template:
+
+- **Acceptance criteria** — concrete, testable conditions for *this* task
+- **Unit tests** (pytest) · **E2E** (Playwright + visual snapshot, for UI) · **UAT** (manual checklist)
+- The roadmap header carries a single **Definition of Ready** (entry gate) and **Definition of Done** (exit gate)
+
+**Lifecycle:** define → plan → test → implement → verify → deliver. Tests are written **first, from the acceptance criteria** (by a separate author from the implementer, so tests validate the requirement — not the code), proven to fail, then made to pass. Visual quality on UI changes is checked with [impeccable](https://www.npmjs.com/package/impeccable) (`audit` / `critique`) plus Playwright screenshots.
+
+**Branching (git-flow) — protected branches receive merges only:**
+
+```
+feature/… ─PR→ develop ─release PR→ main
+fix/…    ─┘
+chore/…  ─┘
+```
+
+- Branch from `develop` using `feature/`, `fix/`, or `chore/` prefixes.
+- **Never commit directly to `main` or `develop`.** `main` receives releases from `develop`; `develop` receives merges from derived branches. Open a PR; delete the branch after merge.
+
+**For AI agents:** the `/roadmap` skill is the only way to edit the roadmap, and PreToolUse guard hooks block (1) code edits without an active, *Ready* roadmap task, (2) commits/code-edits on `main`/`develop`, and (3) roadmap writes that don't match the template. Server-side, CI validates the roadmap template and branch protection requires PR review. See [CLAUDE.md](CLAUDE.md#development-workflow-gated) for the full contract.
+
 ---
 
 # Schedule automatic execution
