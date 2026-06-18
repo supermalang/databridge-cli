@@ -40,7 +40,7 @@ A card is startable only when all of the following hold:
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 5 | 0 / 5 |
-| [Visual / E2E harness](#visual--e2e-harness) | 1 | 0 / 1 |
+| [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -778,7 +778,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **VIS-1 — Playwright visual harness (mobile/tablet/desktop)**
+- [x] **VIS-1 — Playwright visual harness (mobile/tablet/desktop)**
 
   Install and configure Playwright with three viewport projects, a deterministic smoke spec with
   committed baselines, a CI job, and the governance updates that make the three-viewport rule
