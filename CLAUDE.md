@@ -179,11 +179,11 @@ Full placeholder list (with the data shape behind `{{ data_quality }}` / `{{ log
 
 ## Prompts (Langfuse — `src/utils/lf_client.py`)
 
-16 prompt sites fetched by name at runtime (`narrator`, `summaries`, `chart_suggester`,
-`*_suggester`, `classifier_*`, `ask_*`). Resolution order: **cache**
+17 prompt sites fetched by name at runtime (`narrator`, `summaries`, `chart_suggester`,
+`*_suggester`, `classifier_*`, `ask_*`, `template_inference`). Resolution order: **cache**
 (`~/.cache/databridge/prompts/`, 1h TTL) → **Langfuse** (HTTPS) → **bundled seeds**
 (`src/utils/seed_prompts.py`). AI features keep working offline (seeds) and with no AI keys
-(feature no-ops). 12 of the 16 produce JSON with an `output_schema` enforced via OpenAI
+(feature no-ops). 13 of the 17 produce JSON with an `output_schema` enforced via OpenAI
 structured outputs / Anthropic forced tool-use. Seed with `push-prompts`.
 
 Full prompt↔file↔contract table, Langfuse setup/tracing, and the output-schema rules:
