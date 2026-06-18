@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 13 | 7 / 13 |
+| [Express Template Fill](#express-template-fill) | 13 | 8 / 13 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -832,7 +832,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-8 — Fix: Express apply persists the resolved template to durable storage + a relative `report.template`**
+- [x] **XTF-8 — Fix: Express apply persists the resolved template to durable storage + a relative `report.template`**
 
   Bug found in review: `api_template_apply` (web/main.py ~2562) sets
   `cfg["report"]["template"]` to the **absolute** resolved path and never `put_project_file`s the
