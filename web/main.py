@@ -2063,6 +2063,20 @@ async def delete_template(filename: str, request: Request):
         raise HTTPException(status_code=404, detail="File not found")
     path.unlink()
     storage_workspace.delete_project_file(org_id, project_id, "templates", filename)
+    # If the deleted file is the active report template, clear the reference so the
+    # config never points at a now-missing template (no dangling path).
+    try:
+        cfg = load_config(CONFIG_PATH)
+    except Exception:  # noqa: BLE001 — no/unreadable config: nothing to repoint
+        cfg = None
+    if isinstance(cfg, dict):
+        report = cfg.get("report") or {}
+        active = report.get("template")
+        if active and Path(str(active)).name == filename:
+            report["template"] = ""
+            cfg["report"] = report
+            write_config(cfg, CONFIG_PATH)
+            _sync_active_project_from_file(request)
     return {"ok": True}
 
 @app.get("/api/templates/active")
@@ -2559,10 +2573,36 @@ async def api_template_apply(payload: TemplateApplyPayload, request: Request):
             detail=("Could not resolve the template — it was not found in storage. "
                     "Re-run Infer to upload the template again."),
         )
-    cfg.setdefault("report", {})["template"] = str(resolved)
+    # apply_inference returns the ABSOLUTE resolved .docx (saved next to the upload,
+    # i.e. under TEMPLATES_DIR for a stored/uploaded template). Push it to durable
+    # storage so a later run's hydrate_run_dir pulls it into its isolated tempdir,
+    # and store a RELATIVE `templates/<name>` ref in config (the shape
+    # set_active_template writes) so the hydrated run resolves the same file
+    # build-report loads, instead of a stale absolute host-mirror path.
+    resolved_path = Path(resolved)
+    ref_template = str(resolved)
+    under_templates = True
+    try:
+        resolved_path.relative_to(Path(TEMPLATES_DIR))
+    except ValueError:
+        under_templates = False
+    if under_templates:
+        # Resolve the active project so the resolved .docx can be pushed under it.
+        # If there is no active project we can't push to durable storage, so keep
+        # the absolute on-disk ref rather than write an unbacked relative path.
+        try:
+            with db_session.SessionLocal() as _db:
+                _user, project, _role = require_role(request, _db, "editor")
+                org_id, project_id = str(project.org_id), str(project.id)
+        except HTTPException:
+            org_id = project_id = None
+        if org_id is not None:
+            storage_workspace.put_project_file(org_id, project_id, "templates", resolved_path)
+            ref_template = f"templates/{resolved_path.name}"
+    cfg.setdefault("report", {})["template"] = ref_template
     write_config(cfg, CONFIG_PATH)
     _sync_active_project_from_file(request)
-    return {"ok": True, "template": resolved, "n_written": len(approved)}
+    return {"ok": True, "template": ref_template, "n_written": len(approved)}
 
 
 class FrameworkPayload(BaseModel):
