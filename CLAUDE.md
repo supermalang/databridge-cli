@@ -81,6 +81,21 @@ PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q            # full suite
 PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_flatten.py   # single file
 ```
 
+**Visual / E2E (Playwright).** UI cards are screenshot-tested at three viewports — mobile
+(390×844), tablet (820×1180), desktop (1440×900) — defined as projects in
+`frontend/playwright.config.ts`. Baselines live next to each spec under
+`frontend/tests/e2e/<spec>-snapshots/*.png` (tracked) and one is produced per viewport.
+
+```bash
+cd frontend && npm run test:e2e          # run visual suite vs committed baselines (3 viewports)
+cd frontend && npm run test:e2e:update   # regenerate baselines (human approves the diff)
+cd frontend && npm run test:e2e:report   # open the last HTML report
+```
+
+App-driven specs boot Vite via the `webServer` block in the config; fixture/smoke specs use
+`page.setContent` and need no server. CI runs the suite on PRs touching `frontend/**`
+(`.github/workflows/visual.yml`).
+
 ### CLI (run from root)
 
 ```bash
@@ -274,8 +289,9 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
 - **Tests-first, separate authors.** `roadmap-test-author` writes tests from the AC and proves
   them red; `roadmap-task-implementer` makes them pass and never edits them. A test believed
   wrong is escalated, not edited.
-- **Visual checks.** impeccable `audit`/`critique` + Playwright `toHaveScreenshot` on UI tasks;
-  a human approves the first baseline and runs UAT.
+- **Visual checks.** impeccable `audit`/`critique` + Playwright `toHaveScreenshot` on UI tasks,
+  baselined at three viewports (mobile/tablet/desktop — see *Tests → Visual / E2E*); a human
+  approves the first baseline per viewport and runs UAT.
 - **Server-side teeth.** CI validates the roadmap template + rejects direct main/develop pushes;
   GitHub branch protection requires PR review.
 
