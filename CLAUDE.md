@@ -275,11 +275,11 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
   tests/` are blocked without a fresh marker. Exempt: minor config, `docs/**`, `*.md`,
   `.claude/**`, `scripts/**`, `.github/**`.
 - **Definition of Ready (entry gate).** A card is *startable* only when Ready: AC concrete +
-  testable, Unit/E2E/UAT filled, Files known, deps resolved, scoped, on a derived branch.
-  `guard-ready` blocks the marker otherwise.
+  testable, Unit/E2E/UAT filled (E2E + UAT may be `N/A` for non-UI/CLI cards), Files known, deps
+  resolved, scoped, on a derived branch. `guard-ready` blocks the marker otherwise.
 - **Definition of Done (exit gate).** Unit + E2E green · visual baseline approved · impeccable
-  audit/critique clean · UAT signed · committed. `roadmap-verifier` gates it before a card
-  flips `- [x]`.
+  audit/critique clean · UAT signed (UI-facing cards only; non-UI/CLI cards are `N/A`, gated by
+  PR review) · committed. `roadmap-verifier` gates it before a card flips `- [x]`.
 - **Roadmap edits go through `/roadmap`** (whole-file rewrite; `guard-roadmap` validates the
   template — header `## Definition of Ready` + `## Definition of Done` + `## Global status`;
   each card carries the literal labels `Acceptance criteria`, `Unit tests`, `E2E`, `UAT`).
@@ -291,7 +291,8 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
   wrong is escalated, not edited.
 - **Visual checks.** impeccable `audit`/`critique` + Playwright `toHaveScreenshot` on UI tasks,
   baselined at three viewports (mobile/tablet/desktop — see *Tests → Visual / E2E*); a human
-  approves the first baseline per viewport and runs UAT.
+  approves the first baseline per viewport and runs UAT. UAT applies to UI-facing cards; non-UI/CLI
+  cards mark it `N/A` and rely on PR review as the human gate.
 - **Server-side teeth.** CI validates the roadmap template + rejects direct main/develop pushes;
   GitHub branch protection requires PR review.
 

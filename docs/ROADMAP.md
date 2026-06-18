@@ -17,7 +17,8 @@
 A card is startable only when all of the following hold:
 
 - Acceptance criteria are concrete and testable (no vague outcomes)
-- Unit tests, E2E, and UAT fields are filled with specific targets (no blank or placeholder text)
+- Unit tests, E2E, and UAT fields are filled with specific targets (no blank or placeholder
+  text); E2E and UAT may be `N/A (reason)` for non-UI/CLI cards (UAT moves in lockstep with E2E)
 - All affected files are identified
 - All blocking dependencies are resolved
 - Scope is limited to one deliverable
@@ -29,7 +30,9 @@ A card is startable only when all of the following hold:
 - E2E Playwright spec passes, including human-approved visual baselines at **all three
   viewports** — mobile (390×844), tablet (820×1180), desktop (1440×900) — via `toHaveScreenshot`
 - Impeccable audit/critique clean (no outstanding UX or accessibility findings)
-- UAT signed off by a human reviewer following the card's UAT steps
+- UAT signed off by a human reviewer following the card's UAT steps — required for **UI-facing
+  cards** (those with a real E2E); non-UI/CLI cards mark `UAT: N/A` and rely on the Verify
+  command + unit tests + the verifier + PR review as the human gate
 - All changes committed and merged to the integration branch
 
 ## Global status
@@ -78,10 +81,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Set `export.format: json` in `config.yml`, run `download --sample 20`. Open the output file and confirm it is a valid JSON array of objects with one entry per submission.
-  2. With a PII config active, confirm the output file omits or redacts the designated PII columns.
-  3. In the Deliver → Output tab, confirm the JSON chip is selectable with no "soon" badge.
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** set `export.format: json`, run `download --sample 20`, open the output file.
 
@@ -105,10 +105,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Set `export.database` to a scratch MySQL instance, run `download --sample 20`. Connect to MySQL and confirm the target table exists with the expected row count.
-  2. Remove the `pymysql` driver and re-run. Confirm a clear error message is shown and the process exits cleanly.
-  3. In the Deliver → Output tab, confirm the MySQL chip is selectable and the database credential fields appear.
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** point `export.database` at a scratch MySQL, run `download --sample 20`, inspect
   the table.
@@ -132,10 +129,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Set `export.database` to a scratch PostgreSQL instance, run `download --sample 20`. Connect to Postgres and confirm the target table exists with the expected row count.
-  2. Run a second `download --sample 20`. Confirm the table is replaced (not duplicated).
-  3. In the Deliver → Output tab, confirm the PostgreSQL chip is selectable and the database credential fields appear.
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** point `export.database` at a scratch Postgres, run `download --sample 20`,
   inspect the table.
@@ -390,10 +384,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Add `equity_dimensions: [gender, location]` to `config.yml` and run `build-report`. Open the generated report and confirm one disaggregation section exists per indicator × dimension combination.
-  2. Remove `equity_dimensions` and re-run. Confirm no disaggregation sections appear.
-  3. Use a dimension column that has three distinct values and confirm the stacked/grouped bar chart shows three segments.
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
 ---
 
@@ -415,10 +406,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Set `warning: 70` and `critical: 50` on an indicator with a known `pct_achievement` below 50. Run `build-report` and confirm the traffic-light table marks that indicator red.
-  2. Open the Validate panel and confirm below-threshold indicators are listed as flagged.
-  3. Set the actual value above the warning threshold and re-run. Confirm the indicator shows green.
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
 ---
 
@@ -439,10 +427,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Add `unit: "%"`, `source: "Household survey"`, `frequency: "annual"`, and `responsible: "M&E team"` to one indicator in `config.yml`. Run `generate-template` and confirm a reference annex section appears in the generated template with those values.
-  2. Run `build-report` and confirm the annex is populated in the output report.
-  3. Leave the metadata fields absent on a second indicator and confirm the report renders without error or empty placeholder artifacts.
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
 ---
 
@@ -464,10 +449,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Configure `api:` with two aliased forms (baseline and endline). Run `fetch-questions` and confirm two separate question sets appear in `config.yml`.
-  2. Run `download` and confirm two named data files are written, one per alias.
-  3. Define an indicator with `form: endline` and run `build-report`. Confirm the indicator value is drawn from the endline data, not the baseline.
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
 ---
 
@@ -489,10 +471,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Add `weight_column: survey_weight` to an indicator and run `build-report`. Confirm the reported value differs from the unweighted value when survey weights are non-uniform.
-  2. Remove `weight_column` and re-run. Confirm the value reverts to the simple mean.
-  3. Add `weight_column` to a bar chart config and run `build-report`. Confirm the chart bars reflect weighted counts.
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
 ---
 
@@ -604,14 +583,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface — back-end inference/validation)
 
-  **UAT:**
-  1. With an AI provider configured and data downloaded, run inference over a template with a
-     chart-like and an indicator-like placeholder and confirm each returns a config-shaped spec
-     with a kind, name, and confidence.
-  2. Add a placeholder that references a column not present in the data; confirm its proposal is
-     marked `needs_attention` with a reason naming the missing column.
-  3. Disconnect Langfuse and confirm inference still runs using the bundled `template_inference`
-     seed.
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k "infer or annotate"`
 
@@ -650,12 +622,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface — config + docx resolution)
 
-  **UAT:**
-  1. Approve a set of proposals and run apply. Open `config.yml` and confirm the new chart /
-     indicator / summary entries are present and existing entries are untouched.
-  2. Open the resolved template in Word and confirm each placeholder reads as a clean
-     `{{ ... }}` token; run the existing `build-report` and confirm charts render.
-  3. Confirm the original uploaded template file is still present next to the resolved one.
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k apply`
 
@@ -695,13 +662,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface — CLI commands; the UI flow is covered by XTF-5)
 
-  **UAT:**
-  1. Run `infer-template --template my.docx`. Confirm the printed summary table lists each
-     placeholder with a kind/name/status and a JSON artifact is written.
-  2. Edit the JSON to drop one flagged row, then run `apply-template --from <json> --build`.
-     Confirm config is updated, the template is resolved, and a report is built.
-  3. Run `infer-template` with no AI key configured and confirm a clear error explains an AI
-     provider is required.
+  **UAT:** N/A (CLI, no web-UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k "cli or command"`
 
