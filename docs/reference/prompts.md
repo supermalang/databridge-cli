@@ -24,6 +24,7 @@ instance). Each AI feature fetches its prompt by name at runtime via
 | `ask_caption` | `src/reports/ask_engine.py` | JSON: `{"captions": {...}}` |
 | `ask_refine` | `src/reports/ask_engine.py` | JSON: `{"item": {"kind": ...}}` |
 | `ask_examples` | `src/reports/ai_ask_examples.py` | JSON: `{"questions": [...]}` |
+| `template_inference` | `src/reports/template_inference.py` | JSON: `{"proposals": [{"token_index", "kind", "name", "spec", "confidence", "reason"}]}` |
 
 ## Setup
 
@@ -73,7 +74,7 @@ run in the Langfuse UI.
 
 ## Output schemas (structured outputs)
 
-Twelve of the sixteen prompts produce JSON and have an `output_schema` in their seed's
+Thirteen of the seventeen prompts produce JSON and have an `output_schema` in their seed's
 `config` (all except `summaries`, `ask_propose`, `ask_caption`, and `ask_refine`). The
 schema travels with the prompt (stored in Langfuse's per-prompt `config` field) and is
 enforced at the LLM call:

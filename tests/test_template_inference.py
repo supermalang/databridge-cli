@@ -243,3 +243,274 @@ def test_extract_location_runspan_round_trips_to_same_runs(tmp_path):
     )
     spanned = "".join(target_para.runs[i].text for i in run_indices)
     assert "[[Total]]" in spanned
+
+
+# =========================================================================== #
+# XTF-2 — Batched inference + local validation
+# =========================================================================== #
+# These tests are the spec for two new functions appended to
+# ``src/reports/template_inference.py`` (XTF-2). They are derived strictly from
+# the XTF-2 acceptance criteria and design spec §4.2 / §4.3. Written before the
+# implementation lands; expected RED until ``infer_specs`` / ``annotate_proposals``
+# exist.
+#
+# Contract committed to here (AC-derived, mirroring ask_engine shapes):
+#
+# ``infer_specs(nl_tokens, catalog, ai_cfg) -> List[Proposal]``
+#   * makes exactly ONE batched ``lf_client.chat`` call (trace_name=
+#     "template_inference", json_mode=True) over ALL nl_tokens + the catalog;
+#   * returns one Proposal per token.
+#
+# A ``Proposal`` is a mapping (dict access) carrying at least:
+#   * ``token_index`` -- int, index into the input token list
+#   * ``kind``        -- one of chart | indicator | summary | table | narrative | metadata
+#   * ``spec``        -- a config-shaped dict (chart: {name,title,type,questions,…};
+#                        indicator: {name,stat,question,…}; summary: {name,stat,questions,…})
+#   * ``name``        -- canonical slug (str)
+#   * ``confidence``  -- float in 0..1
+#   * ``reason``      -- str
+#
+# ``annotate_proposals(proposals, profile) -> List[Proposal]`` is local +
+# deterministic (no AI). It reuses ``ask_engine.validate_recipe`` / ``CHART_REQS``
+# / ``INDICATOR_STATS`` and adds:
+#   * ``status``      -- "ok" or "needs_attention"
+#   * ``reason``      -- human-readable (overwritten/augmented with the failure)
+# and dedupes canonical ``name``s (suffix on collision). ``needs_attention`` is
+# set when confidence is low, validation fails, or a referenced column is absent.
+# Narrative tokens map to a fixed slot (recommendations/observations/summary_text)
+# when the text clearly matches, else a ``summaries`` entry with ``stat: "ai"``.
+#
+# These assertions intentionally pin dict-shaped Proposals.
+
+from src.reports import template_inference as ti
+from src.reports import ask_engine
+
+
+# Confidence threshold used by the tests. The implementation must treat a
+# proposal *below* this as low-confidence (needs_attention). 0.5 is a midpoint
+# clearly below "high"; the AC only requires "low confidence" be flagged, so the
+# tests use values at the extremes (0.1 low, 0.95 high) to stay robust to the
+# implementation's exact cutoff.
+_LOW_CONF = 0.1
+_HIGH_CONF = 0.95
+
+
+def _profile_xtf2():
+    """A profile shaped exactly like ``ask_engine.validate_recipe`` expects:
+    keyed by table name, each table {name, rows, columns:[{name, role, …}]}.
+    Mirrors tests/test_ask_engine.py::_profile_fixture."""
+    return {
+        "main": {
+            "name": "main", "rows": 3,
+            "columns": [
+                {"name": "_id", "role": "linkage", "distinct": 3, "missing_pct": 0.0},
+                {"name": "Region", "role": "categorical", "distinct": 2, "missing_pct": 0.0,
+                 "top_values": [{"value": "N", "count": 2}, {"value": "S", "count": 1}]},
+                {"name": "Age", "role": "quantitative", "distinct": 3, "missing_pct": 0.0,
+                 "min": 10.0, "max": 30.0, "mean": 20.0, "median": 20.0},
+                {"name": "Income", "role": "quantitative", "distinct": 3, "missing_pct": 0.0,
+                 "min": 100.0, "max": 900.0, "mean": 500.0, "median": 500.0},
+                {"name": "Story", "role": "qualitative", "distinct": 3, "missing_pct": 0.0},
+            ],
+            "correlations": [], "duplicates": None,
+        }
+    }
+
+
+def _proposal(kind, spec, name, confidence=_HIGH_CONF, token_index=0, reason="proposed"):
+    """Build a Proposal dict in the shape ``infer_specs`` returns."""
+    return {
+        "token_index": token_index,
+        "kind": kind,
+        "spec": dict(spec),
+        "name": name,
+        "confidence": confidence,
+        "reason": reason,
+    }
+
+
+def _get(proposal, key):
+    """Read a Proposal field whether the impl returns dicts or objects."""
+    if isinstance(proposal, dict):
+        return proposal[key]
+    return getattr(proposal, key)
+
+
+# --------------------------------------------------------------------------- #
+# annotate_proposals — confidence gate
+# --------------------------------------------------------------------------- #
+def test_annotate_flags_low_confidence_as_needs_attention():
+    """AC: needs_attention is set when confidence is low. A bar proposal that is
+    otherwise valid but has a low confidence score must be flagged."""
+    proposals = [
+        _proposal("chart", {"name": "by_region", "title": "By region",
+                            "type": "bar", "questions": ["Region"]},
+                  name="by_region", confidence=_LOW_CONF),
+    ]
+    out = ti.annotate_proposals(proposals, _profile_xtf2())
+    assert _get(out[0], "status") == "needs_attention"
+    assert isinstance(_get(out[0], "reason"), str) and _get(out[0], "reason")
+
+
+# --------------------------------------------------------------------------- #
+# annotate_proposals — missing column
+# --------------------------------------------------------------------------- #
+def test_annotate_flags_missing_column():
+    """AC: needs_attention when a referenced column is absent from the data.
+    A bar chart on a column not present in the profile must be flagged, and the
+    reason should name the offending column."""
+    proposals = [
+        _proposal("chart", {"name": "ghost", "title": "Ghost",
+                            "type": "bar", "questions": ["NotAColumn"]},
+                  name="ghost", confidence=_HIGH_CONF),
+    ]
+    out = ti.annotate_proposals(proposals, _profile_xtf2())
+    assert _get(out[0], "status") == "needs_attention"
+    assert "NotAColumn" in _get(out[0], "reason")
+
+
+# --------------------------------------------------------------------------- #
+# annotate_proposals — bad type/column combo via CHART_REQS
+# --------------------------------------------------------------------------- #
+def test_annotate_flags_scatter_with_one_quantitative():
+    """AC: bad type/column combo flagged via validate_recipe/CHART_REQS. A
+    scatter needs >=2 quantitative columns; one quantitative + one categorical
+    must fail and the reason should mention the quantitative requirement."""
+    proposals = [
+        _proposal("chart", {"name": "scatter_bad", "title": "Scatter",
+                            "type": "scatter", "questions": ["Age", "Region"]},
+                  name="scatter_bad", confidence=_HIGH_CONF),
+    ]
+    out = ti.annotate_proposals(proposals, _profile_xtf2())
+    assert _get(out[0], "status") == "needs_attention"
+    assert "quantitative" in _get(out[0], "reason")
+
+
+# --------------------------------------------------------------------------- #
+# annotate_proposals — valid proposals pass
+# --------------------------------------------------------------------------- #
+def test_annotate_passes_valid_bar_indicator_summary():
+    """AC: a valid bar / indicator / summary proposal is status ok. All three
+    reference real columns, satisfy their role requirements, and have high
+    confidence."""
+    proposals = [
+        _proposal("chart", {"name": "by_region", "title": "By region",
+                            "type": "bar", "questions": ["Region"]},
+                  name="by_region", confidence=_HIGH_CONF, token_index=0),
+        _proposal("indicator", {"name": "mean_age", "stat": "mean",
+                                "question": "Age"},
+                  name="mean_age", confidence=_HIGH_CONF, token_index=1),
+        _proposal("summary", {"name": "income_summary", "stat": "sum",
+                              "questions": ["Income"]},
+                  name="income_summary", confidence=_HIGH_CONF, token_index=2),
+    ]
+    out = ti.annotate_proposals(proposals, _profile_xtf2())
+    statuses = [_get(p, "status") for p in out]
+    assert statuses == ["ok", "ok", "ok"], statuses
+
+
+# --------------------------------------------------------------------------- #
+# annotate_proposals — dedupe canonical names
+# --------------------------------------------------------------------------- #
+def test_annotate_dedupes_colliding_names_with_suffix():
+    """AC: canonical names are deduped (suffix on collision). Two valid proposals
+    that resolve to the same slug must end with distinct ``name`` values."""
+    proposals = [
+        _proposal("chart", {"name": "by_region", "title": "By region",
+                            "type": "bar", "questions": ["Region"]},
+                  name="by_region", confidence=_HIGH_CONF, token_index=0),
+        _proposal("chart", {"name": "by_region", "title": "By region again",
+                            "type": "bar", "questions": ["Region"]},
+                  name="by_region", confidence=_HIGH_CONF, token_index=1),
+    ]
+    out = ti.annotate_proposals(proposals, _profile_xtf2())
+    names = [_get(p, "name") for p in out]
+    assert len(set(names)) == 2, f"names not deduped: {names}"
+    # The original slug is preserved on (at least) one; the other is suffixed.
+    assert "by_region" in names
+
+
+# --------------------------------------------------------------------------- #
+# annotate_proposals — narrative routing
+# --------------------------------------------------------------------------- #
+def test_annotate_narrative_recommendations_maps_to_slot():
+    """AC: a narrative token clearly matching 'recommendations' maps to the fixed
+    ``recommendations`` slot."""
+    proposals = [
+        _proposal("narrative", {}, name="recommendations",
+                  confidence=_HIGH_CONF, reason="Recommendations"),
+    ]
+    out = ti.annotate_proposals(proposals, _profile_xtf2())
+    p = out[0]
+    # The canonical name resolves to the fixed slot regardless of internal spec
+    # representation.
+    assert _get(p, "name") == "recommendations"
+    assert _get(p, "status") == "ok"
+
+
+def test_annotate_free_form_narrative_maps_to_ai_summary():
+    """AC: a free-form narrative (not a fixed slot) maps to a summaries entry with
+    stat 'ai' and the placeholder text carried as the prompt."""
+    placeholder_text = "Write a paragraph about progress against targets this quarter"
+    proposals = [
+        _proposal("narrative", {"prompt": placeholder_text},
+                  name="progress_narrative", confidence=_HIGH_CONF,
+                  reason=placeholder_text),
+    ]
+    out = ti.annotate_proposals(proposals, _profile_xtf2())
+    p = out[0]
+    spec = _get(p, "spec")
+    assert spec.get("stat") == "ai", f"expected stat 'ai', got spec={spec}"
+    assert placeholder_text in (spec.get("prompt") or ""), spec
+
+
+# --------------------------------------------------------------------------- #
+# infer_specs — exactly one batched LLM call
+# --------------------------------------------------------------------------- #
+def test_infer_specs_makes_one_batched_chat_call(monkeypatch):
+    """AC: infer_specs makes a SINGLE batched lf_client.chat call for N tokens,
+    via get_prompt('template_inference', …) + chat(trace_name='template_inference',
+    json_mode=True). Mock the LLM (suggester convention) and assert call count==1."""
+    calls = {"chat": 0, "trace_names": [], "json_modes": []}
+
+    monkeypatch.setattr(
+        ti.lf_client, "get_prompt",
+        lambda *a, **k: ([{"role": "user", "content": "x"}], {}),
+    )
+
+    def _fake_chat(*a, **k):
+        calls["chat"] += 1
+        calls["trace_names"].append(k.get("trace_name"))
+        calls["json_modes"].append(k.get("json_mode"))
+        # One Proposal per input token, returned as a JSON string (suggester style).
+        return (
+            '{"proposals": ['
+            '{"token_index": 0, "kind": "chart", "name": "by_region", '
+            '"spec": {"name": "by_region", "type": "bar", "questions": ["Region"]}, '
+            '"confidence": 0.9, "reason": "bar of region"},'
+            '{"token_index": 1, "kind": "indicator", "name": "mean_age", '
+            '"spec": {"name": "mean_age", "stat": "mean", "question": "Age"}, '
+            '"confidence": 0.8, "reason": "mean age"}'
+            ']}'
+        )
+
+    monkeypatch.setattr(ti.lf_client, "chat", _fake_chat)
+
+    # Three NL tokens (objects with .inner, like XTF-1 Token); batched into one call.
+    nl_tokens = [
+        ti.Token(raw="[Region breakdown]", inner="Region breakdown",
+                 delimiter="[", kind="nl", location=ti.Location()),
+        ti.Token(raw="[average age]", inner="average age",
+                 delimiter="[", kind="nl", location=ti.Location()),
+        ti.Token(raw="[total income]", inner="total income",
+                 delimiter="[", kind="nl", location=ti.Location()),
+    ]
+    catalog = ask_engine.build_catalog(_profile_xtf2())
+    ai_cfg = {"provider": "openai", "model": "gpt-x", "api_key": "sk-test"}
+
+    out = ti.infer_specs(nl_tokens, catalog, ai_cfg)
+
+    assert calls["chat"] == 1, f"expected exactly one batched chat call, got {calls['chat']}"
+    assert calls["trace_names"] == ["template_inference"]
+    assert calls["json_modes"] == [True]
+    assert isinstance(out, list) and out, "infer_specs returned no proposals"

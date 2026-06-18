@@ -894,6 +894,97 @@ _ASK_EXAMPLES_OUTPUT_SCHEMA = {
     },
 }
 
+# Express Template Fill (XTF-2): one batched call maps each NL placeholder to a
+# config-shaped Proposal. `spec`'s shape varies by kind (chart/indicator/summary/
+# table/narrative/metadata), but OpenAI Strict mode forbids open maps, so `spec`
+# is modeled as a single fully-closed superset object — every possible field is
+# present and nullable; unused fields are left null. The Python layer reads only
+# the fields each kind needs and validates locally against the profile afterwards.
+_TEMPLATE_INFERENCE_SPEC_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["name", "title", "type", "questions", "question", "stat",
+                 "group_by", "filter", "filter_value", "prompt"],
+    "properties": {
+        "name":         {"type": ["string", "null"]},
+        "title":        {"type": ["string", "null"]},
+        "type":         {"type": ["string", "null"]},
+        "questions":    {"type": ["array", "null"], "items": {"type": "string"}},
+        "question":     {"type": ["string", "null"]},
+        "stat":         {"type": ["string", "null"]},
+        "group_by":     {"type": ["string", "null"]},
+        "filter":       {"type": ["string", "null"]},
+        "filter_value": {"type": ["string", "null"]},
+        "prompt":       {"type": ["string", "null"]},
+    },
+}
+
+_TEMPLATE_INFERENCE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["proposals"],
+    "properties": {
+        "proposals": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["token_index", "kind", "name", "spec",
+                             "confidence", "reason"],
+                "properties": {
+                    "token_index": {"type": "integer"},
+                    "kind": {"type": "string",
+                             "enum": ["chart", "indicator", "summary", "table",
+                                      "narrative", "metadata"]},
+                    "name": {"type": "string"},
+                    "spec": _TEMPLATE_INFERENCE_SPEC_SCHEMA,
+                    "confidence": {"type": "number"},
+                    "reason": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
+_TEMPLATE_INFERENCE: ChatMessages = [
+    {"role": "system", "content": (
+        "You map natural-language report-template placeholders to data-backed "
+        "specifications. You are given a numbered list of placeholders (the text a "
+        "user typed into a Word template, e.g. \"Total beneficiaries\", \"Region "
+        "breakdown\", \"Recommendations\") and a catalog of the available tables and "
+        "columns (with roles and data shape). For EACH placeholder, return exactly one "
+        "proposal that best realises it from the data. Use ONLY table and column names "
+        "that appear in the catalog. For charts, choose a type from the chart list and "
+        "respect its column requirements; for indicators, choose a stat from the "
+        "indicator list. Respond with valid JSON only — no fences, no commentary."
+    )},
+    {"role": "user", "content": (
+        "Placeholders (token_index + text):\n{{placeholders}}\n\n"
+        "Available data (catalog):\n{{catalog}}\n\n"
+        "Proposal kinds: {{kinds}}\n\n"
+        "Chart types (with column requirements):\n{{chart_types}}\n\n"
+        "Indicator stats:\n{{indicator_stats}}\n\n"
+        "Return ONE proposal per placeholder. Each proposal has: \"token_index\" (the "
+        "input index), \"kind\" (one of the kinds above), a snake_case \"name\" "
+        "(canonical slug), a config-shaped \"spec\", a \"confidence\" (0..1), and a short "
+        "\"reason\".\n"
+        "- chart: spec = {\"name\", \"title\", \"type\" (from the chart list), "
+        "\"questions\" (column names in the order the type expects)}; optionally "
+        "\"group_by\", \"filter\".\n"
+        "- indicator: spec = {\"name\", \"stat\" (from the indicator list), \"question\" "
+        "(a column; omit only for \"count\")}; \"filter_value\" required for \"percent\".\n"
+        "- summary: spec = {\"name\", \"stat\", \"questions\" (column names)}.\n"
+        "- table: spec = {\"name\", \"title\", \"questions\" (≥1 categorical column)}.\n"
+        "- narrative: a prose section (e.g. recommendations, observations, an executive "
+        "summary, or a free-form paragraph). spec = {\"prompt\": <the placeholder text>}; "
+        "set \"name\" to recommendations/observations/summary_text when it clearly matches.\n"
+        "- metadata: a report property (title, period). spec = {}; set \"name\" to "
+        "title/period.\n"
+        'Return ONLY JSON: {"proposals": [{"token_index": 0, "kind": "...", "name": '
+        '"...", "spec": {...}, "confidence": 0.0, "reason": "..."}]}'
+    )},
+]
+
 SeedPrompt = Dict[str, Any]   # {"messages": ChatMessages, "config": Dict[str, Any]}
 
 SEED_PROMPTS: Dict[str, SeedPrompt] = {
@@ -920,6 +1011,8 @@ SEED_PROMPTS: Dict[str, SeedPrompt] = {
                              "config": {"output_schema": _HIDDEN_SUGGESTER_OUTPUT_SCHEMA}},
     "pii_suggester":        {"messages": _PII_SUGGESTER,
                              "config": {"output_schema": _PII_SUGGESTER_OUTPUT_SCHEMA}},
+    "template_inference": {"messages": _TEMPLATE_INFERENCE,
+                           "config": {"output_schema": _TEMPLATE_INFERENCE_OUTPUT_SCHEMA}},
     "ask_propose": {"messages": _ASK_PROPOSE, "config": {}},
     "ask_caption": {"messages": _ASK_CAPTION, "config": {}},
     "ask_refine":  {"messages": _ASK_REFINE,  "config": {}},
