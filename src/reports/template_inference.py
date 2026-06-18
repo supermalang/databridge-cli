@@ -18,9 +18,10 @@ token for downstream inference.
 """
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from docx import Document
 
@@ -409,3 +410,180 @@ def annotate_proposals(proposals: List[Proposal], profile: Dict) -> List[Proposa
         seen.add(name)
         ann["name"] = name
     return out
+
+
+# =========================================================================== #
+# XTF-3 — Apply: persist config + resolve template.
+# =========================================================================== #
+# ``apply_inference(approved, cfg, template_path) -> (cfg, resolved_path)``
+# writes each approved Proposal's spec into the right config section (without
+# clobbering user entries) and rewrites each token's run span in the .docx to a
+# single clean ``{{ canonical }}`` run — critical so chart placeholders are one
+# unbroken XML run for docxtpl.
+
+# Approved proposal kind → (config section, canonical {{ }} prefix).
+_KIND_SECTION = {
+    "chart": ("charts", "chart_"),
+    "indicator": ("indicators", "ind_"),
+    "summary": ("summaries", "summary_"),
+    "table": ("tables", "table_"),
+}
+
+
+def _iter_all_paragraphs(doc):
+    """Yield every paragraph in the same document order as ``extract_placeholders``.
+
+    Body paragraphs + tables, then each section's header and footer. Must mirror
+    :func:`extract_placeholders` exactly so flat token indices line up.
+    """
+    for para in doc.paragraphs:
+        yield para
+    for table in doc.tables:
+        for para in _iter_table_paragraphs(table):
+            yield para
+    for section in doc.sections:
+        for part in (section.header, section.footer):
+            for para in part.paragraphs:
+                yield para
+            for table in part.tables:
+                for para in _iter_table_paragraphs(table):
+                    yield para
+
+
+def _unique_name(base: str, taken: set) -> str:
+    """A name not already in ``taken``; suffix ``_2``, ``_3`` … on collision."""
+    name = base
+    i = 2
+    while name in taken:
+        name = f"{base}_{i}"
+        i += 1
+    taken.add(name)
+    return name
+
+
+def _write_spec(cfg: Dict, section: str, spec: Dict, slug: str) -> str:
+    """Append ``spec`` (with its ``name`` set to a deduped slug) into ``cfg[section]``.
+
+    Never clobbers an existing entry; returns the final (possibly suffixed) name.
+    """
+    entries = cfg.setdefault(section, [])
+    if not isinstance(entries, list):
+        entries = []
+        cfg[section] = entries
+    taken = {e.get("name") for e in entries if isinstance(e, dict)}
+    name = _unique_name(slug, taken)
+    new_entry = dict(spec)
+    new_entry["name"] = name
+    entries.append(new_entry)
+    return name
+
+
+def _set_narrative_slot(cfg: Dict, proposal: Proposal):
+    """Route a narrative proposal: fixed slot → report.*; AI summary → summaries."""
+    name = proposal.get("name", "")
+    spec = proposal.get("spec") or {}
+    if name in _NARRATIVE_SLOTS:
+        report = cfg.setdefault("report", {})
+        report[name] = spec.get("prompt") or report.get(name) or ""
+        return name
+    slug = _slugify(spec.get("name") or name or "narrative")
+    return _write_spec(cfg, "summaries", spec, slug)
+
+
+def _set_metadata(cfg: Dict, proposal: Proposal):
+    """Route a metadata proposal to its canonical ``report.*`` field."""
+    name = str(proposal.get("name", "") or "report.title")
+    section, _, field_name = name.partition(".")
+    field_name = field_name or "title"
+    target = cfg.setdefault(section or "report", {})
+    spec = proposal.get("spec") or {}
+    target[field_name] = spec.get("value") or spec.get(field_name) or target.get(field_name) or ""
+    return name
+
+
+def _resolved_path(template_path: str) -> str:
+    """A new path next to the upload for the resolved template."""
+    base, ext = os.path.splitext(str(template_path))
+    return f"{base}.resolved{ext or '.docx'}"
+
+
+def apply_inference(
+    approved: List[Proposal], cfg: Dict, template_path
+) -> Tuple[Dict, str]:
+    """Persist approved specs into ``cfg`` and resolve the template.
+
+    For each approved :data:`Proposal` (matched to an extracted token by
+    ``token_index``), the spec is appended to its config section using the
+    established list-of-dicts shape (canonical slug as ``name``; existing entries
+    are never clobbered, colliding names are suffixed). The token's run span is
+    then replaced by a single clean ``{{ <prefix>_<slug> }}`` run with the other
+    runs in the span cleared. The resolved ``.docx`` is saved as a NEW file (the
+    original upload is preserved) and its path returned.
+    """
+    cfg = cfg if isinstance(cfg, dict) else {}
+    template_path = str(template_path)
+
+    # Re-extract tokens so approved.token_index lines up with the .docx.
+    tokens = extract_placeholders(template_path)
+
+    # Open a fresh document to rewrite (keeps the original upload untouched).
+    doc = Document(template_path)
+    paragraphs = list(_iter_all_paragraphs(doc))
+
+    # Map each paragraph (by identity) to its run-relative tokens so we can match
+    # an extracted token back to a concrete paragraph + run span. We rebuild the
+    # flat token list in the same order to align indices.
+    flat_index = 0
+    token_locations = {}  # token_index -> (paragraph, [run indices])
+    for para in paragraphs:
+        for tok in _tokens_in_paragraph(para):
+            token_locations[flat_index] = (para, list(tok.location.runs))
+            flat_index += 1
+
+    # Persist each approved spec into its config section, then rewrite its token.
+    for prop in approved:
+        kind = prop.get("kind", "chart")
+        spec = dict(prop.get("spec") or {})
+
+        if kind == "narrative":
+            _set_narrative_slot(cfg, prop)
+            canonical = None
+        elif kind == "metadata":
+            _set_metadata(cfg, prop)
+            canonical = None
+        else:
+            section, prefix = _KIND_SECTION.get(kind, _KIND_SECTION["chart"])
+            base_slug = _slugify(prop.get("name") or spec.get("name") or kind)
+            final_name = _write_spec(cfg, section, spec, base_slug)
+            canonical = f"{{{{ {prefix}{final_name} }}}}"
+
+        if canonical is None:
+            continue
+
+        loc = token_locations.get(prop.get("token_index"))
+        if not loc:
+            continue
+        para, run_indices = loc
+        _rewrite_run_span(para, run_indices, canonical)
+
+    resolved = _resolved_path(template_path)
+    doc.save(resolved)
+    return cfg, resolved
+
+
+def _rewrite_run_span(paragraph, run_indices: List[int], text: str):
+    """Replace the token's run span with a single clean run carrying ``text``.
+
+    The first run in the span gets ``text``; the remaining spanned runs are
+    cleared. So the placeholder ends up as exactly one non-empty XML run.
+    """
+    if not run_indices:
+        return
+    runs = paragraph.runs
+    first = run_indices[0]
+    if first >= len(runs):
+        return
+    runs[first].text = text
+    for idx in run_indices[1:]:
+        if idx < len(runs):
+            runs[idx].text = ""

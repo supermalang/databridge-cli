@@ -514,3 +514,256 @@ def test_infer_specs_makes_one_batched_chat_call(monkeypatch):
     assert calls["trace_names"] == ["template_inference"]
     assert calls["json_modes"] == [True]
     assert isinstance(out, list) and out, "infer_specs returned no proposals"
+
+
+# =========================================================================== #
+# XTF-3 — Apply: persist config + resolve template (apply_inference)
+# =========================================================================== #
+# These tests are the spec for ``apply_inference`` appended to
+# ``src/reports/template_inference.py`` (XTF-3). Derived strictly from the XTF-3
+# acceptance criteria and design spec §4.4. Written before the implementation
+# lands; expected RED (AttributeError: module has no attribute 'apply_inference')
+# until it exists.
+#
+# Contract committed to here (AC-derived):
+#
+# ``apply_inference(approved, cfg, template_path) -> (cfg, resolved_template_path)``
+#
+#   * ``approved`` is the list of approved Proposal dicts (the same shape
+#     ``annotate_proposals`` returns: keys ``token_index``, ``kind``, ``spec``,
+#     ``name``, ``confidence``, ``reason``, ``status``). Only ``status == "ok"``
+#     proposals are expected to be passed in (the CLI/web layer drops flagged
+#     ones before calling); these tests pass ``status="ok"``.
+#
+#   * To know WHERE each approved proposal's token lives in the .docx,
+#     ``apply_inference`` re-runs ``extract_placeholders(template_path)``
+#     internally and matches approved proposals to extracted tokens by
+#     ``token_index`` (index into the extracted NL-token list). So a test:
+#       1. builds a .docx with known NL placeholders,
+#       2. calls ``extract_placeholders`` to learn token indices,
+#       3. builds approved Proposal dicts referencing those ``token_index`` +
+#          a ``spec`` / ``name`` / ``kind`` (status "ok"),
+#       4. calls ``apply_inference``.
+#
+#   * Config: each approved spec is appended/merged into the section for its
+#     kind — chart -> ``cfg["charts"]``, indicator -> ``cfg["indicators"]``,
+#     summary -> ``cfg["summaries"]``, table -> ``cfg["tables"]`` — using the
+#     established list-of-dicts shape, where the entry's ``name`` is the canonical
+#     slug (e.g. ``by_region``). Existing user-authored entries are NEVER
+#     clobbered; a colliding name is given a numeric suffix.
+#
+#   * Template resolution: the token's run span is replaced by a SINGLE clean run
+#     whose text is the canonical ``{{ <prefix>_<slug> }}`` placeholder
+#     (chart -> ``chart_``, indicator -> ``ind_``, summary -> ``summary_``,
+#     table -> ``table_``); the other runs in the span are cleared. So the chart
+#     placeholder is exactly ONE unbroken XML run. The resolved .docx is saved as
+#     a NEW file (the original upload is preserved). The resolved path is returned.
+
+from pathlib import Path
+
+
+# Canonical placeholder prefix per kind (the {{ }} text the builder fills).
+_KIND_PREFIX = {
+    "chart": "chart_",
+    "indicator": "ind_",
+    "summary": "summary_",
+    "table": "table_",
+}
+
+
+def _approved(kind, spec, name, token_index, status="ok", confidence=_HIGH_CONF):
+    """Build an approved Proposal dict (annotate_proposals output shape)."""
+    return {
+        "token_index": token_index,
+        "kind": kind,
+        "spec": dict(spec),
+        "name": name,
+        "confidence": confidence,
+        "reason": "approved",
+        "status": status,
+    }
+
+
+def _docx_with_nl_placeholders(tmp_path, texts, name="upload.docx"):
+    """Build a .docx with one NL placeholder per paragraph (single run each)."""
+    doc = Document()
+    for t in texts:
+        doc.add_paragraph(t)
+    path = tmp_path / name
+    doc.save(str(path))
+    return str(path)
+
+
+def _section_entry(cfg, section, slug):
+    """Find the config entry in ``cfg[section]`` whose name matches ``slug`` (or a
+    suffixed variant beginning with ``slug``). Returns the entry dict or None."""
+    for e in cfg.get(section, []) or []:
+        if e.get("name") == slug:
+            return e
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# AC: chart proposal -> cfg["charts"], indicator -> cfg["indicators"] (shapes)
+# --------------------------------------------------------------------------- #
+def test_apply_writes_chart_and_indicator_into_their_sections(tmp_path):
+    template = _docx_with_nl_placeholders(
+        tmp_path, ["[Region breakdown]", "[Average age]"]
+    )
+    # token_index is the index into extract_placeholders' returned list.
+    tokens = ti.extract_placeholders(template)
+    assert len(tokens) == 2
+
+    approved = [
+        _approved("chart",
+                  {"name": "by_region", "title": "By region",
+                   "type": "bar", "questions": ["Region"]},
+                  name="by_region", token_index=0),
+        _approved("indicator",
+                  {"name": "mean_age", "stat": "mean", "question": "Age"},
+                  name="mean_age", token_index=1),
+    ]
+    cfg = {"api": {}, "form": {}}
+
+    cfg_out, resolved = ti.apply_inference(approved, cfg, template)
+
+    chart = _section_entry(cfg_out, "charts", "by_region")
+    assert chart is not None, f"chart not written: {cfg_out.get('charts')}"
+    assert chart["type"] == "bar"
+    assert chart["questions"] == ["Region"]
+
+    ind = _section_entry(cfg_out, "indicators", "mean_age")
+    assert ind is not None, f"indicator not written: {cfg_out.get('indicators')}"
+    assert ind["stat"] == "mean"
+    assert ind["question"] == "Age"
+
+
+# --------------------------------------------------------------------------- #
+# AC: never clobber existing user-authored entries; new entry appended
+# --------------------------------------------------------------------------- #
+def test_apply_preserves_existing_user_chart_and_appends_new(tmp_path):
+    template = _docx_with_nl_placeholders(tmp_path, ["[Region breakdown]"])
+    approved = [
+        _approved("chart",
+                  {"name": "by_region", "title": "By region",
+                   "type": "bar", "questions": ["Region"]},
+                  name="by_region", token_index=0),
+    ]
+    # Pre-seed a user-authored chart that must survive untouched.
+    cfg = {
+        "api": {}, "form": {},
+        "charts": [
+            {"name": "chart_existing", "title": "User chart",
+             "type": "pie", "questions": ["Region"]},
+        ],
+    }
+
+    cfg_out, _resolved = ti.apply_inference(approved, cfg, template)
+
+    names = [c.get("name") for c in cfg_out.get("charts", [])]
+    # The user's chart survives verbatim.
+    existing = _section_entry(cfg_out, "charts", "chart_existing")
+    assert existing is not None, f"user chart clobbered: {names}"
+    assert existing["type"] == "pie"
+    # The new chart is appended alongside it.
+    assert _section_entry(cfg_out, "charts", "by_region") is not None, names
+    assert len(cfg_out["charts"]) == 2, names
+
+
+# --------------------------------------------------------------------------- #
+# AC: two approved specs with the same base slug -> distinct suffixed names
+# --------------------------------------------------------------------------- #
+def test_apply_dedupes_colliding_base_slugs_with_suffix(tmp_path):
+    template = _docx_with_nl_placeholders(
+        tmp_path, ["[Region breakdown]", "[Region split]"]
+    )
+    approved = [
+        _approved("chart",
+                  {"name": "by_region", "title": "By region",
+                   "type": "bar", "questions": ["Region"]},
+                  name="by_region", token_index=0),
+        _approved("chart",
+                  {"name": "by_region", "title": "By region (2)",
+                   "type": "bar", "questions": ["Region"]},
+                  name="by_region", token_index=1),
+    ]
+    cfg = {"api": {}, "form": {}}
+
+    cfg_out, _resolved = ti.apply_inference(approved, cfg, template)
+
+    names = [c.get("name") for c in cfg_out.get("charts", [])]
+    assert len(names) == 2, names
+    # Two distinct names; both derived from the base slug.
+    assert len(set(names)) == 2, f"slugs not deduped: {names}"
+    assert "by_region" in names
+    assert all(str(n).startswith("by_region") for n in names), names
+
+
+# --------------------------------------------------------------------------- #
+# AC: resolved chart placeholder occupies exactly ONE run with {{ chart_<slug> }}
+# --------------------------------------------------------------------------- #
+def test_apply_resolves_chart_placeholder_to_single_run(tmp_path):
+    """The chart placeholder must be exactly one unbroken XML run so docxtpl can
+    render it. Build the placeholder split across several runs (as Word does),
+    apply, then assert the resolved paragraph holds the canonical placeholder in a
+    single non-empty run."""
+    doc = Document()
+    para = doc.add_paragraph()
+    for chunk in ["[Reg", "ion break", "down]"]:
+        para.add_run(chunk)
+    template = str(tmp_path / "upload.docx")
+    doc.save(template)
+
+    tokens = ti.extract_placeholders(template)
+    assert len(tokens) == 1
+
+    approved = [
+        _approved("chart",
+                  {"name": "by_region", "title": "By region",
+                   "type": "bar", "questions": ["Region"]},
+                  name="by_region", token_index=0),
+    ]
+    cfg = {"api": {}, "form": {}}
+
+    _cfg_out, resolved = ti.apply_inference(approved, cfg, template)
+
+    expected = "{{ chart_by_region }}"
+    reopened = Document(str(resolved))
+    target = None
+    for p in reopened.paragraphs:
+        if expected in "".join(r.text for r in p.runs):
+            target = p
+            break
+    assert target is not None, "resolved placeholder paragraph not found"
+
+    # Exactly ONE run carries the placeholder text; the other runs in the span
+    # are cleared (empty). So the placeholder is one unbroken run.
+    nonempty = [r for r in target.runs if r.text]
+    assert len(nonempty) == 1, (
+        f"chart placeholder must be exactly one run, got {[r.text for r in target.runs]}"
+    )
+    assert nonempty[0].text == expected, nonempty[0].text
+
+
+# --------------------------------------------------------------------------- #
+# AC: the original uploaded .docx is preserved (resolved saved as new file)
+# --------------------------------------------------------------------------- #
+def test_apply_preserves_original_upload(tmp_path):
+    template = _docx_with_nl_placeholders(tmp_path, ["[Region breakdown]"])
+    approved = [
+        _approved("chart",
+                  {"name": "by_region", "title": "By region",
+                   "type": "bar", "questions": ["Region"]},
+                  name="by_region", token_index=0),
+    ]
+    cfg = {"api": {}, "form": {}}
+
+    _cfg_out, resolved = ti.apply_inference(approved, cfg, template)
+
+    # The original upload still exists.
+    assert Path(template).exists(), "original upload was not preserved"
+    # The resolved template is a distinct, existing file.
+    assert Path(str(resolved)).exists(), "resolved template was not written"
+    assert Path(str(resolved)).resolve() != Path(template).resolve(), (
+        "resolved template must be a new file, not the original upload"
+    )
