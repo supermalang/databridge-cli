@@ -473,6 +473,8 @@ ALLOWED_COMMANDS = {
     "download":             ["--sample"],
     "build-report":         ["--sample", "--split-by", "--session", "--period", "--compare"],
     "run-all":              ["--sample", "--period", "--auto-charts"],
+    "infer-template":       ["--template", "--out"],
+    "apply-template":       ["--from", "--build"],
 }
 
 class RunPayload(BaseModel):
@@ -2413,6 +2415,154 @@ async def api_ask_refine(payload: AskRefinePayload, request: Request):
     except Exception as e:  # noqa: BLE001 — an AI-call failure re-locks the AI buttons
         _invalidate_ai(request)
         raise HTTPException(status_code=500, detail=f"refine failed: {e}")
+
+
+# =========================================================================== #
+# Express Template Fill — review/approve panel (XTF-5).
+# Two thin endpoints proxying the offline `template_inference` pipeline so the
+# Templates tab can upload (or reference) a .docx, infer config specs, review
+# them, and apply the approved ones before chaining the existing build-report
+# run endpoint. Friendly precondition payloads (never a crash): no AI / no data.
+# =========================================================================== #
+EXPRESS_NO_AI_MESSAGE = "Configure an AI provider to use Express fill."
+EXPRESS_NO_DATA_MESSAGE = "No data yet — run Download first."
+
+
+def _unique_template_name(name: str) -> str:
+    """Pick a non-clobbering basename under ``TEMPLATES_DIR`` for ``name``.
+
+    Keeps the original basename when free; otherwise suffixes ``-1``, ``-2``, …
+    before the extension so a fresh upload never overwrites a stored template.
+    """
+    safe = os.path.basename(name or "template.docx") or "template.docx"
+    if not safe.endswith(".docx"):
+        safe += ".docx"
+    dest_dir = Path(TEMPLATES_DIR)
+    if not (dest_dir / safe).exists():
+        return safe
+    stem, ext = os.path.splitext(safe)
+    i = 1
+    while (dest_dir / f"{stem}-{i}{ext}").exists():
+        i += 1
+    return f"{stem}-{i}{ext}"
+
+
+async def _resolve_express_template(
+    request: Request,
+) -> "tuple[Optional[str], Optional[str], Optional[str]]":
+    """Resolve the template for an express request into a (path, ref, error) triple.
+
+    Accepts either a multipart upload (field ``file``/``template``) or a JSON/form
+    ``template`` ref naming a stored template under ``TEMPLATES_DIR``. An uploaded
+    ``.docx`` is **persisted** under ``TEMPLATES_DIR`` (the same storage the normal
+    template upload uses) under a non-clobbering basename, so a later apply can
+    resolve it by ref. ``ref`` is the stored basename to carry into apply; ``path``
+    is the absolute resolved path for inference here.
+    """
+    ctype = request.headers.get("content-type", "")
+    if ctype.startswith("multipart/form-data"):
+        form = await request.form()
+        upload = form.get("file") or form.get("template")
+        if hasattr(upload, "filename"):
+            Path(TEMPLATES_DIR).mkdir(parents=True, exist_ok=True)
+            ref = _unique_template_name(upload.filename or "template.docx")
+            dest = Path(TEMPLATES_DIR) / ref
+            dest.write_bytes(await upload.read())
+            return str(dest), ref, None
+        ref = form.get("template")
+    else:
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        ref = (body or {}).get("template")
+    if not ref:
+        return None, None, "No template provided."
+    safe = os.path.basename(str(ref))
+    stored = Path(TEMPLATES_DIR) / safe
+    return str(stored), safe, None
+
+
+@app.post("/api/template/infer")
+async def api_template_infer(request: Request):
+    """Express fill: parse a template → infer config specs → annotate proposals.
+
+    Returns ``{proposals, message?}``. Precondition failures return HTTP 200 with a
+    friendly ``message`` and no proposals (no AI configured, or no downloaded data).
+    """
+    from src.reports import template_inference as ti
+
+    cfg = load_config(CONFIG_PATH)
+    ai_cfg = cfg.get("ai") or {}
+    if not ask_engine._ai_ready(ai_cfg):
+        return {"proposals": [], "message": EXPRESS_NO_AI_MESSAGE}
+
+    try:
+        df, repeats = load_processed_data(cfg)
+    except FileNotFoundError:
+        return {"proposals": [], "message": EXPRESS_NO_DATA_MESSAGE}
+
+    path, ref, err = await _resolve_express_template(request)
+    if err:
+        return {"proposals": [], "message": err}
+
+    try:
+        tokens = ti.extract_placeholders(path)
+        nl_tokens = [t for t in tokens if getattr(t, "kind", "nl") != "literal"]
+        if not nl_tokens:
+            return {"proposals": [], "message": "No placeholders found in the template.",
+                    "template": ref}
+        prof = profile_dataset(cfg, df, repeats)
+        catalog = ask_engine.build_catalog(prof, cfg)
+        proposals = ti.infer_specs(nl_tokens, catalog, ai_cfg)
+        proposals = ti.annotate_proposals(proposals, prof)
+    except Exception as e:  # noqa: BLE001 — an AI failure re-locks the AI buttons
+        _invalidate_ai(request)
+        raise HTTPException(status_code=500, detail=f"infer failed: {e}")
+    # `template` is a resolvable ref (the persisted basename) the panel carries
+    # into apply so a freshly-uploaded .docx survives the round-trip (XTF-6).
+    return {"proposals": proposals, "message": None, "template": ref}
+
+
+class TemplateApplyPayload(BaseModel):
+    proposals: List[Dict] = []
+    template: Optional[str] = None
+
+
+@app.post("/api/template/apply")
+async def api_template_apply(payload: TemplateApplyPayload, request: Request):
+    """Apply approved proposals: persist config + resolve the template.
+
+    Drops any ``needs_attention`` proposal, runs ``apply_inference`` (writes config
+    sections + the resolved .docx), persists config, and returns
+    ``{ok, template, n_written}`` with the resolved template path. Role gating is
+    enforced downstream by the ``build-report`` run endpoint the client chains into.
+    """
+    _require(request, "editor")
+    from src.reports import template_inference as ti
+    from docx.opc.exceptions import PackageNotFoundError
+
+    cfg = load_config(CONFIG_PATH)
+    approved = [p for p in (payload.proposals or []) if p.get("status") != "needs_attention"]
+
+    template = payload.template
+    if template and not os.path.isabs(template):
+        template = str(Path(TEMPLATES_DIR) / os.path.basename(template))
+
+    # apply_inference opens the .docx; an unresolvable ref surfaces as a clear
+    # client error (not a 500 traceback) rather than a silent wrong-path (XTF-6).
+    try:
+        cfg, resolved = ti.apply_inference(approved, cfg, template)
+    except (FileNotFoundError, PackageNotFoundError):
+        raise HTTPException(
+            status_code=400,
+            detail=("Could not resolve the template — it was not found in storage. "
+                    "Re-run Infer to upload the template again."),
+        )
+    cfg.setdefault("report", {})["template"] = str(resolved)
+    write_config(cfg, CONFIG_PATH)
+    _sync_active_project_from_file(request)
+    return {"ok": True, "template": resolved, "n_written": len(approved)}
 
 
 class FrameworkPayload(BaseModel):

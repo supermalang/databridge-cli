@@ -6,9 +6,9 @@
 > affordances so users know they're coming.
 >
 > Legend: `- [ ]` todo · `- [x]` done.
-> "Done" gate: implementation + its tests passing —
-> `PYTHONPATH=. MPLBACKEND=Agg python -m pytest`. UI-only tasks verify visually in the dev
-> server (`./scripts/dev.sh`).
+> "Done" gate: see the **Definition of Done** below — back-end tests via
+> `PYTHONPATH=. MPLBACKEND=Agg python -m pytest`; UI tasks via the Playwright visual harness
+> (`cd frontend && npm run test:e2e`) with human-approved baselines at mobile/tablet/desktop.
 
 ---
 
@@ -17,7 +17,8 @@
 A card is startable only when all of the following hold:
 
 - Acceptance criteria are concrete and testable (no vague outcomes)
-- Unit tests, E2E, and UAT fields are filled with specific targets (no blank or placeholder text)
+- Unit tests, E2E, and UAT fields are filled with specific targets (no blank or placeholder
+  text); E2E and UAT may be `N/A (reason)` for non-UI/CLI cards (UAT moves in lockstep with E2E)
 - All affected files are identified
 - All blocking dependencies are resolved
 - Scope is limited to one deliverable
@@ -26,9 +27,12 @@ A card is startable only when all of the following hold:
 ## Definition of Done
 
 - Unit tests pass (pytest green; Vitest green for frontend-only cards)
-- E2E Playwright spec passes, including visual baseline (`toHaveScreenshot`)
+- E2E Playwright spec passes, including human-approved visual baselines at **all three
+  viewports** — mobile (390×844), tablet (820×1180), desktop (1440×900) — via `toHaveScreenshot`
 - Impeccable audit/critique clean (no outstanding UX or accessibility findings)
-- UAT signed off by a human reviewer following the card's UAT steps
+- UAT signed off by a human reviewer following the card's UAT steps — required for **UI-facing
+  cards** (those with a real E2E); non-UI/CLI cards mark `UAT: N/A` and rely on the Verify
+  command + unit tests + the verifier + PR review as the human gate
 - All changes committed and merged to the integration branch
 
 ## Global status
@@ -38,7 +42,8 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 5 | 0 / 5 |
+| [Express Template Fill](#express-template-fill) | 7 | 7 / 7 |
+| [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -76,10 +81,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Set `export.format: json` in `config.yml`, run `download --sample 20`. Open the output file and confirm it is a valid JSON array of objects with one entry per submission.
-  2. With a PII config active, confirm the output file omits or redacts the designated PII columns.
-  3. In the Deliver → Output tab, confirm the JSON chip is selectable with no "soon" badge.
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** set `export.format: json`, run `download --sample 20`, open the output file.
 
@@ -103,10 +105,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Set `export.database` to a scratch MySQL instance, run `download --sample 20`. Connect to MySQL and confirm the target table exists with the expected row count.
-  2. Remove the `pymysql` driver and re-run. Confirm a clear error message is shown and the process exits cleanly.
-  3. In the Deliver → Output tab, confirm the MySQL chip is selectable and the database credential fields appear.
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** point `export.database` at a scratch MySQL, run `download --sample 20`, inspect
   the table.
@@ -130,10 +129,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Set `export.database` to a scratch PostgreSQL instance, run `download --sample 20`. Connect to Postgres and confirm the target table exists with the expected row count.
-  2. Run a second `download --sample 20`. Confirm the table is replaced (not duplicated).
-  3. In the Deliver → Output tab, confirm the PostgreSQL chip is selectable and the database credential fields appear.
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** point `export.database` at a scratch Postgres, run `download --sample 20`,
   inspect the table.
@@ -164,7 +160,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render the project switcher with a project that has a color and emoji set; assert the avatar element displays the emoji rather than the two-letter fallback; assert the avatar background matches the project color.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — create a project with a distinctive color and emoji, switch to it, and assert the switcher avatar and menu row both show the icon/color in a baseline screenshot.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — create a project with a distinctive color and emoji, switch to it, and assert the switcher avatar and menu row both show the icon/color in a baseline screenshot. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Create a new project, set a color swatch and emoji icon in the form, and save. Open the project switcher and confirm the avatar displays the emoji on the chosen background color.
@@ -189,7 +185,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render the switcher, simulate keyboard Tab into the trigger; assert `aria-expanded` toggles on Enter; simulate Escape and assert the dropdown closes; simulate ArrowDown and assert focus moves to the first menu item.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the project switcher by keyboard, navigate to a project row with ArrowDown, activate with Enter, and assert the project switches; assert Escape closes the dropdown without switching.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the project switcher by keyboard, navigate to a project row with ArrowDown, activate with Enter, and assert the project switches; assert Escape closes the dropdown without switching. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Tab to the project switcher trigger using only the keyboard. Press Enter and confirm the dropdown opens.
@@ -215,7 +211,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render a project list containing an archived project; assert the archived row does not carry the active-row hover class; assert an "Unarchive" button or affordance is present in the row; assert clicking the row body does not trigger a project switch.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — archive a project, open the project list, and take a baseline screenshot confirming the archived row is visually de-emphasized; click the Unarchive affordance and confirm the project returns to active state.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — archive a project, open the project list, and take a baseline screenshot confirming the archived row is visually de-emphasized; click the Unarchive affordance and confirm the project returns to active state. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Archive a project via its settings. Open the project switcher and confirm the archived row appears visually distinct (dimmed or labelled) from active projects.
@@ -239,7 +235,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render `ProjectForm`, change the project name field, then simulate clicking Back; assert the dirty-guard confirmation dialog appears; confirm that accepting the dialog navigates away and rejecting keeps the form open with the edited value.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — edit a project's name without saving, click Back, and assert a confirmation prompt appears; dismiss it and confirm the form remains with the unsaved change intact.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — edit a project's name without saving, click Back, and assert a confirmation prompt appears; dismiss it and confirm the form remains with the unsaved change intact. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Open an existing project's edit form, change the name, then click the Back button. Confirm a confirmation dialog appears warning of unsaved changes.
@@ -263,7 +259,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render `ProjectMembersPanel` with a member record that has no email or name (only `user_id`); assert no UUID string is rendered; render with a member that matches the current user and assert a "you" badge is present.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open a project's Members panel and take a baseline screenshot confirming all rows show a human-readable identifier and the current user's row has a "you" tag.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open a project's Members panel and take a baseline screenshot confirming all rows show a human-readable identifier and the current user's row has a "you" tag. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Open the Members panel for a project. Confirm every member row shows an email address or display name, with no UUID visible.
@@ -286,7 +282,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render `ProjectForm` with an empty name field; assert the submit button has the `disabled` attribute; assert an inline error message is visible; type a character and assert the button becomes enabled and the error disappears.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the create-project form, clear the name field, and attempt to submit; assert the inline error appears and the form is not submitted; enter a valid name and assert the error clears.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the create-project form, clear the name field, and attempt to submit; assert the inline error appears and the form is not submitted; enter a valid name and assert the error clears. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Open the create-project form and leave the name field empty. Confirm the Submit button is disabled and an inline error is visible beneath the name field.
@@ -307,7 +303,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render `ProfileForm`; assert the email input has the `disabled` attribute; assert helper text containing "sign-in provider" (or the chosen copy) is present in the rendered output.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the Profile page and take a baseline screenshot confirming the email field is disabled and helper text is visible beneath it.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the Profile page and take a baseline screenshot confirming the email field is disabled and helper text is visible beneath it. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Open your Profile page. Confirm the email field is not editable (greyed out or disabled).
@@ -329,7 +325,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — render the color swatch group; assert each swatch element has a non-empty `aria-label`; select a swatch and assert it gains `aria-pressed="true"` while the previously selected one loses it.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the project form, inspect color swatches with an accessibility audit, and assert no color-name-only violations; select a swatch and assert `aria-pressed` state changes are reflected.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the project form, inspect color swatches with an accessibility audit, and assert no color-name-only violations; select a swatch and assert `aria-pressed` state changes are reflected. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Open the create/edit project form and use a screen reader (or browser accessibility inspector) to navigate the color swatches. Confirm each swatch announces its color name.
@@ -352,7 +348,7 @@ A card is startable only when all of the following hold:
 
   **Unit tests:** Vitest component test — mock `pull_workspace` to return a delayed promise; trigger a project switch and assert a loading indicator is rendered; resolve the promise and assert the indicator is gone.
 
-  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — switch between two projects and assert a loading indicator is visible during the transition; take a baseline screenshot of the final settled state.
+  **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — switch between two projects and assert a loading indicator is visible during the transition; take a baseline screenshot of the final settled state. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. Switch to a project that has a large workspace (several data files). Confirm a loading indicator appears immediately after clicking the project row.
@@ -388,10 +384,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Add `equity_dimensions: [gender, location]` to `config.yml` and run `build-report`. Open the generated report and confirm one disaggregation section exists per indicator × dimension combination.
-  2. Remove `equity_dimensions` and re-run. Confirm no disaggregation sections appear.
-  3. Use a dimension column that has three distinct values and confirm the stacked/grouped bar chart shows three segments.
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
 ---
 
@@ -413,10 +406,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Set `warning: 70` and `critical: 50` on an indicator with a known `pct_achievement` below 50. Run `build-report` and confirm the traffic-light table marks that indicator red.
-  2. Open the Validate panel and confirm below-threshold indicators are listed as flagged.
-  3. Set the actual value above the warning threshold and re-run. Confirm the indicator shows green.
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
 ---
 
@@ -437,10 +427,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Add `unit: "%"`, `source: "Household survey"`, `frequency: "annual"`, and `responsible: "M&E team"` to one indicator in `config.yml`. Run `generate-template` and confirm a reference annex section appears in the generated template with those values.
-  2. Run `build-report` and confirm the annex is populated in the output report.
-  3. Leave the metadata fields absent on a second indicator and confirm the report renders without error or empty placeholder artifacts.
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
 ---
 
@@ -462,10 +449,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Configure `api:` with two aliased forms (baseline and endline). Run `fetch-questions` and confirm two separate question sets appear in `config.yml`.
-  2. Run `download` and confirm two named data files are written, one per alias.
-  3. Define an indicator with `form: endline` and run `build-report`. Confirm the indicator value is drawn from the endline data, not the baseline.
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
 ---
 
@@ -487,10 +471,7 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface)
 
-  **UAT:**
-  1. Add `weight_column: survey_weight` to an indicator and run `build-report`. Confirm the reported value differs from the unweighted value when survey weights are non-uniform.
-  2. Remove `weight_column` and re-run. Confirm the value reverts to the simple mean.
-  3. Add `weight_column` to a bar chart config and run `build-report`. Confirm the chart bars reflect weighted counts.
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
 ---
 
@@ -510,7 +491,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-1 — Placeholder extraction from .docx (`extract_placeholders`)**
+- [x] **XTF-1 — Placeholder extraction from .docx (`extract_placeholders`)**
 
   Parse all three delimiters out of an uploaded `.docx` into structured `Token`s. Pure
   function, no AI, no network. Foundation for the rest of the express path.
@@ -556,7 +537,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-2 — Batched inference + local validation (`infer_specs`, `annotate_proposals`)**
+- [x] **XTF-2 — Batched inference + local validation (`infer_specs`, `annotate_proposals`)**
 
   One batched LLM call turns NL placeholders + the data catalog into config-shaped `Proposal`s,
   then deterministic local validation flags anything unsupported. Depends on **XTF-1**.
@@ -602,20 +583,13 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface — back-end inference/validation)
 
-  **UAT:**
-  1. With an AI provider configured and data downloaded, run inference over a template with a
-     chart-like and an indicator-like placeholder and confirm each returns a config-shaped spec
-     with a kind, name, and confidence.
-  2. Add a placeholder that references a column not present in the data; confirm its proposal is
-     marked `needs_attention` with a reason naming the missing column.
-  3. Disconnect Langfuse and confirm inference still runs using the bundled `template_inference`
-     seed.
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k "infer or annotate"`
 
 ---
 
-- [ ] **XTF-3 — Apply: persist config + resolve template (`apply_inference`)**
+- [x] **XTF-3 — Apply: persist config + resolve template (`apply_inference`)**
 
   Write approved specs into `config.yml` without clobbering, and rewrite each token's run span to
   a single clean `{{ canonical }}` run so docxtpl renders it (critical for charts). Depends on
@@ -648,18 +622,13 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface — config + docx resolution)
 
-  **UAT:**
-  1. Approve a set of proposals and run apply. Open `config.yml` and confirm the new chart /
-     indicator / summary entries are present and existing entries are untouched.
-  2. Open the resolved template in Word and confirm each placeholder reads as a clean
-     `{{ ... }}` token; run the existing `build-report` and confirm charts render.
-  3. Confirm the original uploaded template file is still present next to the resolved one.
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k apply`
 
 ---
 
-- [ ] **XTF-4 — CLI commands (`infer-template`, `apply-template`)**
+- [x] **XTF-4 — CLI commands (`infer-template`, `apply-template`)**
 
   Two-phase CLI so review can happen between inference and apply, with a JSON proposal artifact
   and an optional `--build` chain. Depends on **XTF-1**, **XTF-2**, **XTF-3**.
@@ -693,19 +662,13 @@ A card is startable only when all of the following hold:
 
   **E2E:** N/A (no UI surface — CLI commands; the UI flow is covered by XTF-5)
 
-  **UAT:**
-  1. Run `infer-template --template my.docx`. Confirm the printed summary table lists each
-     placeholder with a kind/name/status and a JSON artifact is written.
-  2. Edit the JSON to drop one flagged row, then run `apply-template --from <json> --build`.
-     Confirm config is updated, the template is resolved, and a report is built.
-  3. Run `infer-template` with no AI key configured and confirm a clear error explains an AI
-     provider is required.
+  **UAT:** N/A (CLI, no web-UI surface — verified via the Verify command, unit tests, the verifier, and PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k "cli or command"`
 
 ---
 
-- [ ] **XTF-5 — Web review/approve panel + discoverability**
+- [x] **XTF-5 — Web review/approve panel + discoverability**
 
   The user-facing card: a Templates-tab review/approve panel over the proposals, the two API
   endpoints, and a discoverability banner/button. Depends on **XTF-1**, **XTF-2**, **XTF-3**,
@@ -752,7 +715,7 @@ A card is startable only when all of the following hold:
   infer → assert the review panel shows the placeholder → kind/name mapping with a flagged row
   highlighted → edit/resolve the flagged row → assert **Apply & build** enables → click it →
   assert the report downloads. Capture a `toHaveScreenshot` baseline of the review panel
-  (flagged + resolved states).
+  (flagged + resolved states) at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
   **UAT:**
   1. From the Dashboard, click the "In a hurry?" banner. Confirm the express flow opens and the
@@ -765,6 +728,167 @@ A card is startable only when all of the following hold:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py` ·
   Playwright: `npx playwright test express-template-fill.spec.ts`
+
+---
+
+- [x] **XTF-6 — Fix: persist the uploaded template across infer → apply**
+
+  Bug found in review: `POST /api/template/infer` writes the uploaded `.docx` to a throwaway
+  temp file and never persists it; the panel then calls `POST /api/template/apply` with only the
+  client `file.name`, which `apply` resolves by basename against `TEMPLATES_DIR` — where a
+  freshly-uploaded file was never stored. So apply hits a non-existent path and can't resolve the
+  template. The network-mocked XTF-5 tests missed it (both endpoints / `apply_inference` mocked).
+  Independent of XTF-7.
+
+  **Files:** `web/main.py` (`api_template_infer` persists the upload + returns a stable ref;
+  `api_template_apply` resolves that ref) · `frontend/src/pages/Templates.jsx` (carry the
+  infer-returned ref into apply instead of `file.name`) · `tests/test_template_api.py` (real,
+  un-mocked infer→apply integration test) · `frontend/tests/e2e/express-template-fill.spec.ts`
+  (update the infer route-mock to return the ref so the flow contract stays valid)
+
+  **Config/schema impact:** None. Uploaded templates are persisted under `TEMPLATES_DIR` (or a
+  per-session dir) — same storage the normal template upload uses.
+
+  **Acceptance criteria**
+  - `api_template_infer` persists the uploaded `.docx` to a stable location and returns a
+    resolvable `template` ref in its response (alongside `proposals`)
+  - The panel carries that returned ref into `api_template_apply` (no longer the bare client
+    `file.name`)
+  - `api_template_apply` resolves the persisted file and runs `apply_inference` against it; if the
+    ref cannot be resolved it returns a clear error (no traceback / no silent wrong-path)
+  - A real **un-mocked** integration test exercises infer→apply end to end (only the LLM seam
+    mocked, NOT `apply_inference`/`extract_placeholders`): the resolved template exists and config
+    is written
+  - The `express-template-fill.spec.ts` E2E is extended so its infer route-mock returns the ref
+    and the full upload → Infer → approve → Apply&build flow reaches success (not an apply error)
+
+  **Unit tests:** `tests/test_template_api.py::test_infer_apply_roundtrip_real` — a real
+  infer→apply integration test: POST a multipart `.docx` to `/api/template/infer` (LLM/`infer_specs`
+  mocked, but `extract_placeholders` and the persistence path real), capture the returned
+  `template` ref, POST it with approved proposals to `/api/template/apply` calling the REAL
+  `apply_inference`, and assert the resolved `.docx` exists on disk + config gained the chart
+  section + response `{ok, template, n_written}`. Plus a negative case: apply with an unresolvable
+  ref returns a clear error, not a 500 traceback.
+
+  **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` (extend) + visual — drive the full
+  upload → Infer → approve → **Apply&build** flow with the infer route-mock returning the persisted
+  template ref; assert apply succeeds (`express-success` shows the resolved name) rather than
+  erroring. `toHaveScreenshot` baseline of the success state at all three viewports (mobile
+  390×844, tablet 820×1180, desktop 1440×900). impeccable audit/critique clean on the changed flow.
+
+  **UAT:**
+  1. Templates → Express fill. Click "Choose .docx" and pick a template that has NOT been
+     previously uploaded/saved. Confirm its name appears.
+  2. Click Infer; wait for the proposal rows; click **Apply & build**.
+  3. Expected: the success banner shows the resolved template name and a build-report run starts —
+     no "Apply failed" / path error; the report appears under the Reports tab.
+  4. Tamper the apply ref (devtools) to a name that does not exist server-side and confirm a clear
+     inline error, not a 500/traceback.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py -k "upload or apply or infer"`
+
+---
+
+- [x] **XTF-7 — Gate the Express "Infer" button on AI-tested status (parity with other AI buttons)**
+
+  The Express **Infer** button is enabled as soon as a file is chosen (`disabled={!file || loading}`)
+  — unlike every other interactive AI control, which stays disabled until the AI connection is
+  configured **and** verified via `/api/ai/test` (`useAiStatus().aiReady` + `AI_LOCK_TIP`). Bring
+  Infer to parity so users get the same "Test the AI connection first" affordance instead of
+  clicking into a backend error message. Independent of XTF-6.
+
+  **Files:** `frontend/src/pages/Templates.jsx` (`useAiStatus`; `disabled={!aiReady || !file || loading}`;
+  `AI_LOCK_TIP` tooltip when locked) · `frontend/tests/e2e/express-template-fill.spec.ts` (assert
+  the gate via mocked `/api/ai/status`)
+
+  **Config/schema impact:** None — reuses the existing `/api/ai/status` + `aiStatus` context.
+
+  **Acceptance criteria**
+  - With AI not configured/verified (`/api/ai/status` → `aiReady:false`), the Infer button is
+    disabled and exposes the `AI_LOCK_TIP` ("Test the AI connection first …") tooltip, even when a
+    file is chosen
+  - With `aiReady:true`, Infer enables once a file is chosen (current behavior preserved)
+  - The discoverability banner still opens the flow regardless (it triggers no AI call); only Infer
+    is gated
+  - Matches the lock/tooltip pattern used by the Composition suggester buttons
+
+  **Unit tests:** N/A (frontend-only gating; Vitest is not installed — the gate is asserted by the
+  Playwright E2E below, consistent with XTF-5's Apply&build gating coverage).
+
+  **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` (extend) + visual — mock
+  `/api/ai/status` → `{aiReady:false}` and assert Infer is `disabled` with the lock tooltip; then
+  `{aiReady:true}` and assert it enables after choosing a file. Capture a `toHaveScreenshot`
+  baseline of the locked state at all three viewports (mobile 390×844, tablet 820×1180, desktop
+  1440×900). impeccable audit/critique clean on the changed control.
+
+  **UAT:**
+  1. With no AI provider configured (or configured but not tested), open Templates → Express fill.
+     Confirm the **Infer** button is disabled and hovering shows "Test the AI connection first".
+  2. Configure + test the AI connection (Extract → AI configuration). Return to Express fill,
+     choose a `.docx`, and confirm **Infer** is now enabled.
+  3. Confirm the "In a hurry?" banner still opens the Express flow even when AI is untested.
+
+  **Verify:** `cd frontend && npx playwright test express-template-fill.spec.ts`
+
+---
+
+## Visual / E2E harness
+
+> The Definition of Done requires Playwright `toHaveScreenshot` baselines at mobile/tablet/desktop
+> for every UI card, but the harness to produce them did not exist. This stands it up once so all
+> UI cards (XTF-5, UX-*) can satisfy that gate.
+
+---
+
+- [x] **VIS-1 — Playwright visual harness (mobile/tablet/desktop)**
+
+  Install and configure Playwright with three viewport projects, a deterministic smoke spec with
+  committed baselines, a CI job, and the governance updates that make the three-viewport rule
+  enforceable. Foundation for every UI card's visual check; no product feature.
+
+  **Files:** `frontend/package.json` (devDep + `test:e2e*` scripts) ·
+  `frontend/playwright.config.ts` (3 viewport projects) ·
+  `frontend/tests/e2e/harness-smoke.spec.ts` (+ committed `*-snapshots/*.png` baselines) ·
+  `.github/workflows/visual.yml` · `.gitignore` · `docs/ROADMAP.md` (DoD + UI-card sweep) ·
+  `.claude/skills/roadmap/SKILL.md` · `.claude/agents/*.md` (5 roadmap agents) · `CLAUDE.md`
+
+  **Config/schema impact:** None — tooling only. No app config or schema change.
+
+  **Acceptance criteria**
+  - `@playwright/test` is a frontend devDependency; `npm run test:e2e` / `test:e2e:update` /
+    `test:e2e:report` scripts exist
+  - `playwright.config.ts` defines three Chromium projects — mobile (390×844), tablet (820×1180),
+    desktop (1440×900) — so each `toHaveScreenshot` yields one baseline per viewport (filename
+    carries the project name; the three never collide)
+  - A smoke spec renders a deterministic fixture and asserts `toHaveScreenshot`; one baseline per
+    viewport is committed and the suite passes deterministically on a clean re-run
+  - A trivial visual change to the fixture makes the suite FAIL (diffing actually works)
+  - CI workflow runs the visual suite on PRs touching `frontend/**`, installing Chromium with OS
+    deps and uploading the HTML report on failure
+  - Governance updated in lockstep: the global Definition of Done requires approved baselines at
+    all three viewports; the card-template E2E guidance (`SKILL.md`) and the five roadmap agents
+    specify the three-viewport requirement; `CLAUDE.md` documents the harness + commands
+  - Transient Playwright output (`playwright-report/`, `test-results/`, `blob-report/`) is
+    gitignored while baseline PNGs remain tracked
+
+  **Unit tests:** N/A (harness/tooling card — no Python/JS unit under test; the deliverable's own
+  test is the Playwright smoke spec below).
+
+  **E2E:** `frontend/tests/e2e/harness-smoke.spec.ts` — a deterministic `page.setContent` fixture
+  asserted via `toHaveScreenshot` under all three viewport projects, with the three baselines
+  committed (`harness-smoke.spec.ts-snapshots/sample-panel-{mobile,tablet,desktop}-linux.png`).
+  Impeccable audit/critique is N/A for the throwaway fixture (no product UI). Verify: a clean
+  `npm run test:e2e` is green; flipping a fixture style reds the suite.
+
+  **UAT:**
+  1. Run `cd frontend && npm run test:e2e`. Confirm 3 tests pass (one per viewport) against the
+     committed baselines.
+  2. Confirm three baseline PNGs exist under
+     `frontend/tests/e2e/harness-smoke.spec.ts-snapshots/` (mobile/tablet/desktop).
+  3. Make a trivial change to the fixture (e.g. button color), run `npm run test:e2e`, and confirm
+     the suite FAILS with a visual diff; revert and confirm it passes again.
+
+  **Verify:** `cd frontend && npm run test:e2e`
 
 ---
 

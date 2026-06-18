@@ -16,14 +16,18 @@ content, `Write` the whole file.
 ## Template
 - The header carries, once: `## Definition of Ready` (entry gate), `## Definition of Done`
   (exit gate), and a `## Global status` table.
-  - **DoR:** AC concrete + testable · Unit/E2E/UAT filled (no `TBD`) · Files identified ·
-    dependencies resolved · scoped to one deliverable · on a derived branch.
+  - **DoR:** AC concrete + testable · Unit/E2E/UAT filled (no `TBD`; E2E + UAT may be
+    `N/A (reason)` for non-UI/CLI cards) · Files identified · dependencies resolved · scoped to
+    one deliverable · on a derived branch.
   - **DoD:** unit + E2E green · visual baseline approved · impeccable audit/critique clean ·
-    UAT signed · committed.
+    UAT signed (UI-facing cards only; non-UI/CLI cards are `N/A` — PR review is the human gate) ·
+    committed.
 - Each task card carries (labels checked verbatim by the guard):
   `**Acceptance criteria**` (testable, behavior-specific), `**Unit tests:**` (pytest file +
-  cases), `**E2E:**` (Playwright spec + visual: impeccable audit/critique + `toHaveScreenshot`;
-  `N/A (reason)` for non-UI), `**UAT:**` (manual numbered steps). Plus Files / Config impact /
+  cases), `**E2E:**` (Playwright spec + visual: impeccable audit/critique + `toHaveScreenshot`
+  baselines at all three viewports — mobile 390×844, tablet 820×1180, desktop 1440×900;
+  `N/A (reason)` for non-UI), `**UAT:**` (manual numbered steps for UI-facing cards; `N/A (reason)`
+  for non-UI/CLI cards — UAT moves in lockstep with E2E). Plus Files / Config impact /
   Verify. ID = `AREA-N`. Each sprint adds golden-path `SP-N-E` + sprint UAT.
 
 ## Operations

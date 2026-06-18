@@ -26,8 +26,10 @@ present. The rules below are the contract you must satisfy regardless.
   - concrete, testable conditions specific to THIS task (what it must do)
   **Unit tests:** pytest file + the cases to write first
   **E2E:** Playwright spec + visual check (impeccable audit + critique, and Playwright
-  `toHaveScreenshot`). For non-UI/non-flow tasks write `N/A (reason)`.
-  **UAT:** numbered manual steps + expected results (human sign-off)
+  `toHaveScreenshot` baselines at all three viewports — mobile 390×844, tablet 820×1180,
+  desktop 1440×900). For non-UI/non-flow tasks write `N/A (reason)`.
+  **UAT:** numbered manual steps + expected results (human sign-off) for UI-facing cards;
+  `N/A (reason)` for non-UI/CLI cards (UAT moves with E2E — both N/A together)
   **Files:** paths to be touched
   **Config/schema impact:** None | describe
   **Verify:** the command(s) to run

@@ -17,10 +17,13 @@ For the card(s) under review (a specific `AREA-N`, or the whole `docs/ROADMAP.md
    "is fast", "looks good". Each criterion should map to something a test or a human can check.
 3. **Unit tests are real** — names a pytest file + specific cases, not "add tests".
 4. **E2E is appropriate** — UI/flow tasks specify a Playwright spec + the visual check
-   (impeccable `audit` + `critique`, and Playwright `toHaveScreenshot`). Non-UI tasks may say
+   (impeccable `audit` + `critique`, and Playwright `toHaveScreenshot` baselines at all three
+   viewports — mobile 390×844, tablet 820×1180, desktop 1440×900). Non-UI tasks may say
    `N/A (reason)` — verify the reason is legitimate (truly no UI/flow surface).
-5. **UAT is runnable by a human** — numbered steps with expected results, not a restatement of
-   the acceptance criteria.
+5. **UAT is runnable by a human** — for UI-facing cards, numbered steps with expected results,
+   not a restatement of the acceptance criteria. Non-UI/CLI cards (E2E `N/A`) must have UAT
+   `N/A (reason)` too — flag a non-UI card that still carries manual UAT steps, and a UI card
+   whose UAT is `N/A`.
 6. **ID + status hygiene** — ID is unique, follows `AREA-N`, status checkbox present; Global
    status counts match the cards.
 7. **Scope** — one independently-testable deliverable per card. Flag cards that bundle several.

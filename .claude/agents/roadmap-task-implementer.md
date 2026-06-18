@@ -40,13 +40,16 @@ not edit them.**
 ## Visual check (do NOT self-approve)
 - Run the design gate on the changed UI: `/impeccable audit <target>` and
   `/impeccable critique <target>` — address P0/P1 findings.
-- Generate the Playwright screenshot, but DO NOT bless the baseline with
-  `--update-snapshots` on your own. Produce the candidate and hand it to the dispatcher: the
-  human approves the first visual baseline. The same goes for UAT — it is human-run.
+- Generate the Playwright screenshots at all three viewports (mobile 390×844, tablet 820×1180,
+  desktop 1440×900 — `cd frontend && npm run test:e2e`), but DO NOT bless the baselines with
+  `--update-snapshots` on your own. Produce the candidates and hand them to the dispatcher: the
+  human approves the first visual baseline per viewport. The same goes for UAT on UI-facing
+  cards — it is human-run. (Non-UI/CLI cards have `UAT: N/A`; their human gate is PR review, so
+  there is no UAT step to hand off — note that in your summary instead.)
 
 ## Definition of Done (the universal gate, per the roadmap header)
 Unit + E2E green · visual baseline produced for human approval · impeccable audit/critique
-clean · UAT left for human sign-off · changes committed.
+clean · UAT left for human sign-off (UI-facing cards; `N/A` for non-UI/CLI) · changes committed.
 
 ## Commits
 Commit in small TDD steps with Conventional Commits (`test(scope): …`, then `feat(scope): …`).

@@ -81,6 +81,21 @@ PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q            # full suite
 PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_flatten.py   # single file
 ```
 
+**Visual / E2E (Playwright).** UI cards are screenshot-tested at three viewports — mobile
+(390×844), tablet (820×1180), desktop (1440×900) — defined as projects in
+`frontend/playwright.config.ts`. Baselines live next to each spec under
+`frontend/tests/e2e/<spec>-snapshots/*.png` (tracked) and one is produced per viewport.
+
+```bash
+cd frontend && npm run test:e2e          # run visual suite vs committed baselines (3 viewports)
+cd frontend && npm run test:e2e:update   # regenerate baselines (human approves the diff)
+cd frontend && npm run test:e2e:report   # open the last HTML report
+```
+
+App-driven specs boot Vite via the `webServer` block in the config; fixture/smoke specs use
+`page.setContent` and need no server. CI runs the suite on PRs touching `frontend/**`
+(`.github/workflows/visual.yml`).
+
 ### CLI (run from root)
 
 ```bash
@@ -164,11 +179,11 @@ Full placeholder list (with the data shape behind `{{ data_quality }}` / `{{ log
 
 ## Prompts (Langfuse — `src/utils/lf_client.py`)
 
-16 prompt sites fetched by name at runtime (`narrator`, `summaries`, `chart_suggester`,
-`*_suggester`, `classifier_*`, `ask_*`). Resolution order: **cache**
+17 prompt sites fetched by name at runtime (`narrator`, `summaries`, `chart_suggester`,
+`*_suggester`, `classifier_*`, `ask_*`, `template_inference`). Resolution order: **cache**
 (`~/.cache/databridge/prompts/`, 1h TTL) → **Langfuse** (HTTPS) → **bundled seeds**
 (`src/utils/seed_prompts.py`). AI features keep working offline (seeds) and with no AI keys
-(feature no-ops). 12 of the 16 produce JSON with an `output_schema` enforced via OpenAI
+(feature no-ops). 13 of the 17 produce JSON with an `output_schema` enforced via OpenAI
 structured outputs / Anthropic forced tool-use. Seed with `push-prompts`.
 
 Full prompt↔file↔contract table, Langfuse setup/tracing, and the output-schema rules:
@@ -260,11 +275,11 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
   tests/` are blocked without a fresh marker. Exempt: minor config, `docs/**`, `*.md`,
   `.claude/**`, `scripts/**`, `.github/**`.
 - **Definition of Ready (entry gate).** A card is *startable* only when Ready: AC concrete +
-  testable, Unit/E2E/UAT filled, Files known, deps resolved, scoped, on a derived branch.
-  `guard-ready` blocks the marker otherwise.
+  testable, Unit/E2E/UAT filled (E2E + UAT may be `N/A` for non-UI/CLI cards), Files known, deps
+  resolved, scoped, on a derived branch. `guard-ready` blocks the marker otherwise.
 - **Definition of Done (exit gate).** Unit + E2E green · visual baseline approved · impeccable
-  audit/critique clean · UAT signed · committed. `roadmap-verifier` gates it before a card
-  flips `- [x]`.
+  audit/critique clean · UAT signed (UI-facing cards only; non-UI/CLI cards are `N/A`, gated by
+  PR review) · committed. `roadmap-verifier` gates it before a card flips `- [x]`.
 - **Roadmap edits go through `/roadmap`** (whole-file rewrite; `guard-roadmap` validates the
   template — header `## Definition of Ready` + `## Definition of Done` + `## Global status`;
   each card carries the literal labels `Acceptance criteria`, `Unit tests`, `E2E`, `UAT`).
@@ -274,8 +289,10 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
 - **Tests-first, separate authors.** `roadmap-test-author` writes tests from the AC and proves
   them red; `roadmap-task-implementer` makes them pass and never edits them. A test believed
   wrong is escalated, not edited.
-- **Visual checks.** impeccable `audit`/`critique` + Playwright `toHaveScreenshot` on UI tasks;
-  a human approves the first baseline and runs UAT.
+- **Visual checks.** impeccable `audit`/`critique` + Playwright `toHaveScreenshot` on UI tasks,
+  baselined at three viewports (mobile/tablet/desktop — see *Tests → Visual / E2E*); a human
+  approves the first baseline per viewport and runs UAT. UAT applies to UI-facing cards; non-UI/CLI
+  cards mark it `N/A` and rely on PR review as the human gate.
 - **Server-side teeth.** CI validates the roadmap template + rejects direct main/develop pushes;
   GitHub branch protection requires PR review.
 

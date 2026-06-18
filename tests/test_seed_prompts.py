@@ -7,6 +7,7 @@ EXPECTED_NAMES = {
     "classifier_discover", "classifier_classify",
     "ask_propose", "ask_caption", "ask_refine", "ask_examples",
     "hidden_suggester", "pii_suggester",
+    "template_inference",
 }
 
 def test_all_prompts_present():
