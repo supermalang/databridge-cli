@@ -38,6 +38,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
+| [Express Template Fill](#express-template-fill) | 5 | 0 / 5 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -490,6 +491,280 @@ A card is startable only when all of the following hold:
   1. Add `weight_column: survey_weight` to an indicator and run `build-report`. Confirm the reported value differs from the unweighted value when survey weights are non-uniform.
   2. Remove `weight_column` and re-run. Confirm the value reverts to the simple mean.
   3. Add `weight_column` to a bar chart config and run `build-report`. Confirm the chart bars reflect weighted counts.
+
+---
+
+## Express Template Fill
+
+> An **optional fast-path** alongside the default 5-step pipeline (download → Questions →
+> Composition → template → build-report). The user uploads a finished Word template with
+> placeholders in `[ ]`, `[[ ]]`, or `{{ }}`; one batched LLM call infers a config-shaped spec
+> per placeholder from the data-aware catalog; specs are validated locally (reusing Ask-engine
+> rules), reviewed/approved by the user, persisted into `config.yml`, and the template is
+> resolved into a normal docxtpl template — after which the **existing `build-report` runs
+> unchanged**. The 5-step pipeline stays the default; this is additive and discoverable via a
+> banner/button. Full design: [docs/superpowers/specs/2026-06-18-express-template-fill-design.md](superpowers/specs/2026-06-18-express-template-fill-design.md).
+>
+> Cards are dependency-ordered: XTF-2 depends on XTF-1; XTF-3 depends on XTF-1+XTF-2; XTF-4
+> depends on XTF-1–XTF-3; XTF-5 depends on XTF-1–XTF-4.
+
+---
+
+- [ ] **XTF-1 — Placeholder extraction from .docx (`extract_placeholders`)**
+
+  Parse all three delimiters out of an uploaded `.docx` into structured `Token`s. Pure
+  function, no AI, no network. Foundation for the rest of the express path.
+
+  **Files:** `src/reports/template_inference.py` (new — `extract_placeholders`, `Token`) ·
+  `tests/test_template_inference.py` (new)
+
+  **Config/schema impact:** None — read-only over an uploaded `.docx`.
+
+  **Acceptance criteria**
+  - Walks body paragraphs, table cells, headers, and footers; reconstructs full paragraph text
+    by concatenating runs so tokens split across runs are still matched
+  - Matches `[[ … ]]`, then `[ … ]`, then `{{ … }}` in that precedence (a `[[x]]` token is
+    matched once as `[[x]]`, never double-matched as `[x]`)
+  - Each `Token` records `raw`, `inner` (trimmed inner text), `delimiter`, and a `location`
+    (paragraph + run-span reference sufficient to rewrite the token later)
+  - A `{{ }}` token whose `inner` matches a known literal placeholder (`report_title`, `period`,
+    `n_submissions`, `generated_at`, `summary_text`, `observations`, `recommendations`,
+    `chart_*`, `ind_*` incl. `_table`/`_breakdown`, `summary_*`, `table_*`, `data_quality*`,
+    `logframe*`, `provenance.footer`) is marked `kind: literal` and left untouched
+  - All non-literal tokens are returned for downstream inference
+
+  **Unit tests:** `tests/test_template_inference.py` — build `.docx` fixtures programmatically
+  with `python-docx`. Cases: each delimiter matched individually; precedence (`[[Total]]` is one
+  token, not `[Total]`); a token whose characters span multiple runs is matched as one token;
+  tokens located in a table cell, a header, and a footer are all extracted; a `{{ chart_sales }}`
+  / `{{ report_title }}` literal is returned with `kind: literal` and unchanged `raw`; a
+  `{{ unknown thing }}` non-literal is returned as an NL token; `location` round-trips (the
+  recorded run-span identifies the same runs).
+
+  **E2E:** N/A (no UI surface — pure parsing function)
+
+  **UAT:**
+  1. Create a `.docx` containing one placeholder of each delimiter in the body, one in a table
+     cell, one in a header, and one in a footer. Call `extract_placeholders` and confirm all
+     five are returned.
+  2. Hand-type a placeholder so Word splits it across runs (e.g. autocorrect/formatting), and
+     confirm it is still returned as a single token.
+  3. Include `{{ report_title }}` and confirm it comes back marked `literal` with its `raw`
+     text unmodified.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k extract`
+
+---
+
+- [ ] **XTF-2 — Batched inference + local validation (`infer_specs`, `annotate_proposals`)**
+
+  One batched LLM call turns NL placeholders + the data catalog into config-shaped `Proposal`s,
+  then deterministic local validation flags anything unsupported. Depends on **XTF-1**.
+
+  **Files:** `src/reports/template_inference.py` (`infer_specs`, `annotate_proposals`) ·
+  `src/utils/seed_prompts.py` (add `template_inference` seed with `output_schema`) ·
+  `CLAUDE.md` + `docs/reference/prompts.md` (document the new `template_inference` prompt site) ·
+  `tests/test_template_inference.py`
+
+  **Config/schema impact:** None to `config.yml` schema. Adds one new prompt site
+  (`template_inference`) to `SEED_PROMPTS`.
+
+  **Acceptance criteria**
+  - The new `template_inference` prompt site is documented in `CLAUDE.md` (prompt count/list)
+    and the `docs/reference/prompts.md` prompt↔file↔contract table
+  - `infer_specs(nl_tokens, catalog, ai_cfg)` makes a single batched call via
+    `lf_client.get_prompt("template_inference", vars)` + `lf_client.chat(trace_name=
+    "template_inference", json_mode=True)`, where `catalog` is `ask_engine.build_catalog`
+  - Returns one `Proposal` per token: `{token_index, kind ∈ chart|indicator|summary|table|
+    narrative|metadata, spec (config-shaped dict), name (canonical slug), confidence 0..1,
+    reason}`
+  - `template_inference` seed exists in `seed_prompts.py` with a JSON `output_schema` so it works
+    offline via the bundled seed
+  - `annotate_proposals(proposals, profile)` reuses `validate_recipe` / `CHART_REQS` /
+    `INDICATOR_STATS` from `ask_engine.py` to set `status: ok` or `status: needs_attention`
+    with a human-readable reason
+  - `needs_attention` is set when confidence is low, validation fails, or a referenced column is
+    absent from the downloaded data
+  - Canonical `name`s are deduped (suffix on collision)
+  - narrative kinds map to a fixed slot (`summary_text`/`observations`/`recommendations`) when
+    the text clearly matches, else a `summaries` entry with `stat: ai` + `prompt` = placeholder
+    text; metadata maps to `report.title`/`report.period`/etc.
+
+  **Unit tests:** `tests/test_template_inference.py` — mock the LLM call like the existing
+  suggester tests (`tests/` AI-suggester pattern). Cases: `annotate_proposals` flags a proposal
+  with confidence below threshold as `needs_attention`; flags a proposal whose `spec` references
+  a column absent from the profile; flags a bad type/column combo (scatter spec with only one
+  quantitative column) via `validate_recipe`/`CHART_REQS`; passes a valid bar/indicator/summary
+  proposal as `status: ok`; two proposals resolving to the same slug get suffixed distinct
+  `name`s; a narrative token matching "recommendations" maps to the `recommendations` slot while
+  a free-form narrative maps to a `summaries` entry with `stat: ai`; `infer_specs` issues exactly
+  one `lf_client.chat` call for N tokens (assert call count == 1).
+
+  **E2E:** N/A (no UI surface — back-end inference/validation)
+
+  **UAT:**
+  1. With an AI provider configured and data downloaded, run inference over a template with a
+     chart-like and an indicator-like placeholder and confirm each returns a config-shaped spec
+     with a kind, name, and confidence.
+  2. Add a placeholder that references a column not present in the data; confirm its proposal is
+     marked `needs_attention` with a reason naming the missing column.
+  3. Disconnect Langfuse and confirm inference still runs using the bundled `template_inference`
+     seed.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k "infer or annotate"`
+
+---
+
+- [ ] **XTF-3 — Apply: persist config + resolve template (`apply_inference`)**
+
+  Write approved specs into `config.yml` without clobbering, and rewrite each token's run span to
+  a single clean `{{ canonical }}` run so docxtpl renders it (critical for charts). Depends on
+  **XTF-1** and **XTF-2**.
+
+  **Files:** `src/reports/template_inference.py` (`apply_inference`) ·
+  `tests/test_template_inference.py`
+
+  **Config/schema impact:** None — appends to existing `charts`/`indicators`/`summaries`/`report`
+  sections using the established config shapes via `write_config`.
+
+  **Acceptance criteria**
+  - `apply_inference(approved, cfg, template_path) -> (cfg, resolved_template_path)`
+  - Appends/merges each approved spec into the correct config section
+    (`chart_<slug>`/`ind_<slug>`/`summary_<slug>`/`table_<slug>`, narrative slots, `report.*`)
+  - Never clobbers existing user-authored entries; dedupes by name (suffix on collision)
+  - Each token's run span is replaced by a single clean `{{ canonical }}` run, with the other
+    runs in the span cleared — so every chart placeholder is exactly one unbroken XML run
+  - Resolved `.docx` is saved as the project template; the original upload is preserved alongside
+    it; the resolved path is returned
+  - Output template is consumable by the unchanged `build-report` (no build-report changes)
+
+  **Unit tests:** `tests/test_template_inference.py` — Cases: `apply_inference` writes a chart
+  proposal into `config["charts"]` and an indicator into `config["indicators"]` with the expected
+  shapes; pre-seed config with a user-authored `chart_existing` and assert it survives apply
+  (no clobber) while the new entry is appended; two approved specs with the same base slug are
+  written under distinct suffixed names; open the resolved `.docx` with `python-docx` and assert
+  the chart placeholder occupies exactly one run (run count == 1 for that paragraph's placeholder)
+  with text `{{ chart_<slug> }}`; assert the original uploaded `.docx` still exists after apply.
+
+  **E2E:** N/A (no UI surface — config + docx resolution)
+
+  **UAT:**
+  1. Approve a set of proposals and run apply. Open `config.yml` and confirm the new chart /
+     indicator / summary entries are present and existing entries are untouched.
+  2. Open the resolved template in Word and confirm each placeholder reads as a clean
+     `{{ ... }}` token; run the existing `build-report` and confirm charts render.
+  3. Confirm the original uploaded template file is still present next to the resolved one.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k apply`
+
+---
+
+- [ ] **XTF-4 — CLI commands (`infer-template`, `apply-template`)**
+
+  Two-phase CLI so review can happen between inference and apply, with a JSON proposal artifact
+  and an optional `--build` chain. Depends on **XTF-1**, **XTF-2**, **XTF-3**.
+
+  **Files:** `src/data/make.py` (`infer-template`, `apply-template` Click commands) ·
+  `web/main.py` (`ALLOWED_COMMANDS` + allowed flags) · `tests/test_template_inference.py`
+
+  **Config/schema impact:** None. Two new whitelisted commands in `ALLOWED_COMMANDS`.
+
+  **Acceptance criteria**
+  - `infer-template --template <file> [--out reports/.template_inference.json]` runs
+    `extract_placeholders` → `infer_specs` → `annotate_proposals`, writes the proposal list to
+    the `--out` JSON, and prints a summary table (placeholder → kind / name / status)
+  - `infer-template` errors clearly when no AI provider/key is configured, and when no data has
+    been downloaded (local validation needs real columns)
+  - `apply-template [--from reports/.template_inference.json] [--build]` reads the (possibly
+    user-edited) proposals, drops any still flagged/unapproved, runs `apply_inference` (writes
+    config + resolved template); with `--build` it chains into `build-report`
+  - Both commands added to `ALLOWED_COMMANDS` in `web/main.py` with only their allowed flags
+  - Zero placeholders found → a friendly no-op message, non-error exit
+
+  **Unit tests:** `tests/test_template_inference.py` — invoke commands via Click's
+  `CliRunner` with the LLM mocked. Cases: `infer-template` writes the `--out` JSON with one
+  entry per non-literal token and exits 0; `infer-template` with no AI config exits non-zero with
+  a message naming the AI provider requirement; `infer-template` with no downloaded data exits
+  with the "run Download first" message; `apply-template --from <json>` writes config + resolved
+  template and drops a `needs_attention` proposal that was not approved; `apply-template --build`
+  invokes the `build-report` path (assert the chained call via `ctx.invoke`/mock); a template
+  with zero placeholders prints the no-op message and exits 0; assert both command names are in
+  `ALLOWED_COMMANDS`.
+
+  **E2E:** N/A (no UI surface — CLI commands; the UI flow is covered by XTF-5)
+
+  **UAT:**
+  1. Run `infer-template --template my.docx`. Confirm the printed summary table lists each
+     placeholder with a kind/name/status and a JSON artifact is written.
+  2. Edit the JSON to drop one flagged row, then run `apply-template --from <json> --build`.
+     Confirm config is updated, the template is resolved, and a report is built.
+  3. Run `infer-template` with no AI key configured and confirm a clear error explains an AI
+     provider is required.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k "cli or command"`
+
+---
+
+- [ ] **XTF-5 — Web review/approve panel + discoverability**
+
+  The user-facing card: a Templates-tab review/approve panel over the proposals, the two API
+  endpoints, and a discoverability banner/button. Depends on **XTF-1**, **XTF-2**, **XTF-3**,
+  **XTF-4**.
+
+  **Files:** `web/main.py` (`POST /api/template/infer`, `POST /api/template/apply`;
+  `ALLOWED_COMMANDS`) · `frontend/src/pages/Templates.jsx` (review/approve panel) ·
+  `frontend/src/pages/Dashboard.jsx` (discoverability banner/button) ·
+  `tests/test_template_api.py` (new) · `frontend/tests/e2e/express-template-fill.spec.ts` (new
+  Playwright spec)
+
+  **Config/schema impact:** None — endpoints proxy the `template_inference` module + existing
+  run endpoint.
+
+  **Acceptance criteria**
+  - `POST /api/template/infer` (multipart upload or existing-template ref) loads the latest
+    session and runs parse → infer → annotate, returning `{proposals, message?}`
+  - Precondition payloads are friendly: no AI provider/key →
+    "Configure an AI provider to use Express fill."; no downloaded data →
+    "No data yet — run Download first."
+  - `POST /api/template/apply` `{proposals}` runs `apply_inference` and returns
+    `{ok, template, n_written}`; the client then calls the existing `build-report` run endpoint
+  - Templates tab shows a review table: placeholder → proposed kind / canonical name / spec, with
+    `needs_attention` rows highlighted and showing the reason; each row is editable
+    (kind/spec/name) or droppable
+  - **Apply & build** is disabled while any row is `needs_attention` (unless the user drops the
+    flagged ones); loading/empty/error states mirror `Validate.jsx` / `Ask.jsx`
+  - A discoverability banner/button on Dashboard + Templates ("In a hurry? Upload a template and
+    let AI fill it →") opens the express flow; the 5-step pipeline remains the default and
+    unchanged
+  - Impeccable audit/critique clean on the new panel (no UX/accessibility findings)
+
+  **Unit tests:** `tests/test_template_api.py` — `/api/template/infer` returns the no-AI message
+  payload when no provider is configured; returns the "run Download first" payload when no data
+  exists; returns `{proposals: [...]}` (LLM mocked) when AI + data are present; resolves an
+  existing-template ref (not just a multipart upload) to the correct stored template;
+  `/api/template/apply` with approved proposals writes config and returns
+  `{ok, template, n_written}` with the resolved template path. (Plus a Vitest component test for
+  the Templates panel: a `needs_attention` row disables **Apply & build** until edited or
+  dropped.)
+
+  **E2E:** Playwright spec `frontend/tests/e2e/express-template-fill.spec.ts` + visual (impeccable
+  audit/critique + `toHaveScreenshot`) — click the discoverability banner → upload a template →
+  infer → assert the review panel shows the placeholder → kind/name mapping with a flagged row
+  highlighted → edit/resolve the flagged row → assert **Apply & build** enables → click it →
+  assert the report downloads. Capture a `toHaveScreenshot` baseline of the review panel
+  (flagged + resolved states).
+
+  **UAT:**
+  1. From the Dashboard, click the "In a hurry?" banner. Confirm the express flow opens and the
+     5-step pipeline is still the default elsewhere.
+  2. Upload a template and run infer. Confirm the review panel lists each placeholder with its
+     proposed kind/name and that low-confidence/invalid rows are highlighted with a reason.
+  3. Edit or drop the flagged row, confirm **Apply & build** enables, click it, and confirm a
+     report is produced. Then run infer with no AI provider and confirm the friendly
+     "Configure an AI provider" message appears instead of a crash.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py` ·
+  Playwright: `npx playwright test express-template-fill.spec.ts`
 
 ---
 
