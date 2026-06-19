@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * Shared build-options control for the regular Reports build and the Express
@@ -33,6 +33,15 @@ export default function BuildOptions({
   const [sampleMode, setSampleMode] = useState('all');   // 'all' | 'first-n'
   const [sampleN, setSampleN] = useState('2');
 
+  // Searchable combobox (XTF-17): open state, current typed filter, and the
+  // keyboard-highlighted option index over the filtered list (incl. "No split").
+  const NO_SPLIT = '__none__';
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [active, setActive] = useState(0);
+  const comboRef = useRef(null);
+  const inputRef = useRef(null);
+
   // Main-table columns only: a question is main-table when it has no repeat_group.
   const splitCols = useMemo(
     () =>
@@ -43,6 +52,60 @@ export default function BuildOptions({
   );
 
   const splitActive = !!splitBy;
+
+  // The option list shown in the open listbox: a "No split" clear option first, then the
+  // main-table columns filtered (case-insensitive substring) by the typed query.
+  const filteredCols = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return splitCols.filter((c) => !q || c.toLowerCase().includes(q));
+  }, [splitCols, query]);
+
+  const options = useMemo(
+    () => [{ value: NO_SPLIT, label: 'No split — one combined report' },
+           ...filteredCols.map((c) => ({ value: c, label: c }))],
+    [filteredCols],
+  );
+
+  // Keep the keyboard highlight in range as the filtered list shrinks/grows.
+  useEffect(() => {
+    setActive((i) => Math.min(Math.max(i, 0), Math.max(options.length - 1, 0)));
+  }, [options.length]);
+
+  // Close on outside click / blur away from the combobox.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDocClick = (e) => {
+      if (comboRef.current && !comboRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  const openList = () => { setOpen(true); setActive(0); };
+
+  const chooseOption = (value) => {
+    const next = value === NO_SPLIT ? '' : value;
+    setSplitBy(next);
+    setQuery('');
+    setOpen(false);
+    emit(next, sampleMode, sampleN);
+  };
+
+  const onComboKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!open) { openList(); return; }
+      setActive((i) => Math.min(i + 1, options.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) { openList(); return; }
+      setActive((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      if (open && options[active]) { e.preventDefault(); chooseOption(options[active].value); }
+    } else if (e.key === 'Escape') {
+      if (open) { e.preventDefault(); setOpen(false); }
+    }
+  };
 
   const buildOpts = (sb, mode, n) => {
     const opts = {};
@@ -71,21 +134,60 @@ export default function BuildOptions({
       </div>
 
       <div className="build-options__row">
-        <label className="build-options__field">
-          <span className="build-options__label">Split by</span>
-          <select
-            className="build-options__select"
-            data-testid="build-split-by"
-            value={splitBy}
-            onChange={(e) => { setSplitBy(e.target.value); emit(e.target.value, sampleMode, sampleN); }}
-            disabled={disabled}
-          >
-            <option value="">No split — one combined report</option>
-            {splitCols.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-        </label>
+        <div className="build-options__field">
+          <span className="build-options__label" id="build-split-by-label">Split by</span>
+          <div className="build-combo" ref={comboRef}>
+            <input
+              ref={inputRef}
+              className="build-options__select build-combo__input"
+              data-testid="build-split-by"
+              type="text"
+              role="combobox"
+              aria-expanded={open}
+              aria-haspopup="listbox"
+              aria-controls="build-split-by-listbox"
+              aria-labelledby="build-split-by-label"
+              aria-autocomplete="list"
+              autoComplete="off"
+              placeholder="No split — type to filter columns"
+              value={open ? query : (splitBy || '')}
+              disabled={disabled}
+              onFocus={openList}
+              onClick={openList}
+              onChange={(e) => {
+                const v = e.target.value;
+                setQuery(v);
+                setOpen(true);
+                // Highlight the first real column match when filtering, so Enter picks a
+                // column rather than the leading "No split" clear option.
+                setActive(v.trim() ? 1 : 0);
+              }}
+              onKeyDown={onComboKeyDown}
+            />
+            {open && (
+              <ul
+                className="build-combo__list"
+                id="build-split-by-listbox"
+                role="listbox"
+                aria-labelledby="build-split-by-label"
+              >
+                {options.map((opt, i) => (
+                  <li
+                    key={opt.value}
+                    className={`build-combo__option${i === active ? ' is-active' : ''}`}
+                    data-testid="build-split-option"
+                    role="option"
+                    aria-selected={opt.value === NO_SPLIT ? !splitBy : opt.value === splitBy}
+                    onMouseEnter={() => setActive(i)}
+                    onMouseDown={(e) => { e.preventDefault(); chooseOption(opt.value); }}
+                  >
+                    {opt.label}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
 
         <label className="build-options__field">
           <span className="build-options__label">Groups to build</span>

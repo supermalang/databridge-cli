@@ -22,14 +22,21 @@ import { test, expect, Page } from '@playwright/test';
  *
  * SELECTOR CONTRACT (data-testid) the implementer must satisfy:
  *   - build-options       — the build-options control container (screenshot target)
- *   - build-split-by      — the split-by <select> (options = main-table export_labels)
+ *   - build-split-by      — the split-by control. As of XTF-17 this is a searchable
+ *                           COMBOBOX, and build-split-by resolves to the trigger/input the
+ *                           user clicks/types into (no longer a native <select>).
+ *   - build-split-option  — each rendered option in the open combobox listbox. Options are
+ *                           main-table export_labels ONLY (repeat-group excluded), plus a
+ *                           "No split" option that clears split_by. Typing into build-split-by
+ *                           filters which build-split-option elements are visible.
  *   - build-sample-mode   — the sample-preview mode <select>: "all" (default) | "first-n"
  *   - build-sample-n      — the N input, shown/used when mode = "first-n"
  *   - build-run           — the action that triggers run('build-report', {split_by, split_sample})
  *
- * PAYLOAD CONTRACT: choosing a split-by column + "First 2 groups" → the POST body to
- * /api/run/build-report carries { split_by: "<export_label>", split_sample: 2 }. Choosing
- * "Build all groups (default)" and no split-by → neither field present.
+ * PAYLOAD CONTRACT (unchanged by XTF-17): choosing a split-by column + "First 2 groups" →
+ * the POST body to /api/run/build-report carries { split_by: "<export_label>",
+ * split_sample: 2 }. Choosing "Build all groups (default)" and the "No split" option →
+ * neither field present.
  */
 
 const ACTIVE_PROJECT = {
@@ -40,12 +47,25 @@ const ACTIVE_PROJECT = {
   is_archived: false,
 };
 
-// Config with ONE main-table column (Site, no repeat_group) and ONE repeat-group
-// column (member_name, repeat_group: household_members). The split-by selector must
-// list "Site" and must NOT list "member_name". A template + downloaded session also
+// Config with SEVERAL main-table columns (Site, Region, District — no repeat_group) and
+// ONE repeat-group column (member_name, repeat_group: household_members). The split-by
+// combobox must list the main-table columns and must NEVER list "member_name". Several
+// main-table columns make the XTF-17 typeahead filter meaningful: typing "reg" must
+// narrow to "Region" and exclude "Site"/"District". A template + downloaded session also
 // exist so the build action is enabled (Reports.jsx buildMissing gate).
 const MAIN_LABEL = 'Site';
+const REGION_LABEL = 'Region';
+const DISTRICT_LABEL = 'District';
+const MAIN_LABELS = [MAIN_LABEL, REGION_LABEL, DISTRICT_LABEL];
 const REPEAT_LABEL = 'member_name';
+const mainQuestionYaml = (label: string) => [
+  `  - kobo_key: ${label}`,
+  `    label: ${label}`,
+  '    type: select_one',
+  '    category: categorical',
+  `    export_label: ${label}`,
+  '    repeat_group: null',
+];
 const CONFIG_YML = [
   'api:',
   '  url: https://kobo.example.test',
@@ -55,12 +75,7 @@ const CONFIG_YML = [
   'report:',
   '  template: templates/report_template.docx',
   'questions:',
-  '  - kobo_key: Site',
-  `    label: ${MAIN_LABEL}`,
-  '    type: select_one',
-  '    category: categorical',
-  `    export_label: ${MAIN_LABEL}`,
-  '    repeat_group: null',
+  ...MAIN_LABELS.flatMap(mainQuestionYaml),
   '  - kobo_key: household_members/member_name',
   `    label: ${REPEAT_LABEL}`,
   '    type: text',
@@ -110,6 +125,44 @@ function stubRunCapture(page: Page, captured: { value: any }) {
   });
 }
 
+// --- XTF-17 combobox helpers ----------------------------------------------------------
+//
+// The split-by control is a searchable combobox. `build-split-by` resolves to the
+// trigger/input. Opening it (click) reveals a listbox of `build-split-option` elements.
+// Typing into the control filters which options are visible. These helpers keep the spec
+// robust to whether the implementer uses a contenteditable trigger or a text <input>.
+
+// Open the combobox listbox and return a locator over the (currently visible) options.
+async function openSplitBy(page: Page) {
+  const control = page.getByTestId('build-split-by');
+  await control.click();
+  // Options should be present once open.
+  const options = page.getByTestId('build-split-option');
+  await expect(options.first()).toBeVisible();
+  return { control, options };
+}
+
+// Type a filter substring into the open combobox. Focus the control first so keystrokes
+// land on the typeahead input.
+async function typeFilter(page: Page, text: string) {
+  const control = page.getByTestId('build-split-by');
+  await control.click();
+  await control.focus();
+  await page.keyboard.type(text);
+}
+
+// The visible (filtered) option labels in the open listbox.
+async function visibleOptionTexts(page: Page): Promise<string[]> {
+  const options = page.getByTestId('build-split-option');
+  const out: string[] = [];
+  const n = await options.count();
+  for (let i = 0; i < n; i++) {
+    const opt = options.nth(i);
+    if (await opt.isVisible()) out.push(((await opt.textContent()) || '').trim());
+  }
+  return out;
+}
+
 // Navigate to the Reports ("Browse") tab. The exact tab label is the implementer's, so
 // match the tab whose route renders the build action; fall back through likely labels.
 async function gotoReports(page: Page) {
@@ -136,13 +189,13 @@ test.describe('XTF-13 — build options: split-by (main-table only) + sample pre
 
     await gotoReports(page);
 
-    // The split-by selector lists the MAIN-table column and EXCLUDES the repeat-group one.
-    const splitBy = page.getByTestId('build-split-by');
-    await expect(splitBy.locator('option', { hasText: MAIN_LABEL })).toHaveCount(1);
-    await expect(splitBy.locator('option', { hasText: REPEAT_LABEL })).toHaveCount(0);
+    // The split-by combobox lists the MAIN-table columns and EXCLUDES the repeat-group one.
+    const { options } = await openSplitBy(page);
+    await expect(options.filter({ hasText: MAIN_LABEL })).toHaveCount(1);
+    await expect(options.filter({ hasText: REPEAT_LABEL })).toHaveCount(0);
 
-    // Choose the main-table column + "First N groups" with N = 2.
-    await splitBy.selectOption({ label: MAIN_LABEL });
+    // Choose the main-table column (Site) from the open listbox + "First N groups" N = 2.
+    await options.filter({ hasText: MAIN_LABEL }).first().click();
     await page.getByTestId('build-sample-mode').selectOption('first-n');
     await page.getByTestId('build-sample-n').fill('2');
 
@@ -210,5 +263,102 @@ test.describe('XTF-15 — single "Build report" control (rail Quick Action remov
 
     // …while the remaining rail actions (e.g. Compare periods) are unchanged and still present.
     await expect(railActions.filter({ hasText: /compare periods/i })).toHaveCount(1);
+  });
+});
+
+test.describe('XTF-17 — searchable split-by combobox (typeahead, main-table only)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+  });
+
+  test('typing a substring filters to matching main-table columns; repeat-group never appears', async ({ page }) => {
+    await gotoReports(page);
+
+    // Open the combobox: all three main-table columns are listed, repeat-group is not.
+    const { options } = await openSplitBy(page);
+    await expect(options.filter({ hasText: REGION_LABEL })).toHaveCount(1);
+    await expect(options.filter({ hasText: DISTRICT_LABEL })).toHaveCount(1);
+    await expect(options.filter({ hasText: MAIN_LABEL })).toHaveCount(1);
+    // The repeat-group column (member_name) is NEVER an option, even with the list open.
+    await expect(options.filter({ hasText: REPEAT_LABEL })).toHaveCount(0);
+
+    // Type "reg" → the visible options narrow to "Region" and EXCLUDE Site/District.
+    await typeFilter(page, 'reg');
+    await expect.poll(() => visibleOptionTexts(page)).toContain(REGION_LABEL);
+    const visible = await visibleOptionTexts(page);
+    expect(visible).not.toContain(MAIN_LABEL);
+    expect(visible).not.toContain(DISTRICT_LABEL);
+
+    // The repeat-group column still never shows up, regardless of the filter text.
+    expect(visible).not.toContain(REPEAT_LABEL);
+  });
+
+  test('selecting a filtered option sets split_by on the build request', async ({ page }) => {
+    const captured: { value: any } = { value: undefined };
+    await stubRunCapture(page, captured);
+
+    await gotoReports(page);
+
+    // Filter to "Region", then select it (clicking the single filtered option).
+    await typeFilter(page, 'reg');
+    const options = page.getByTestId('build-split-option');
+    await options.filter({ hasText: REGION_LABEL }).first().click();
+
+    // Build → the captured request body carries split_by = the chosen column.
+    await page.getByTestId('build-run').click();
+
+    await expect.poll(() => captured.value, { message: 'run/build-report body captured' }).toBeTruthy();
+    expect(captured.value.split_by).toBe(REGION_LABEL);
+  });
+
+  test('choosing "No split" clears split_by from the build request', async ({ page }) => {
+    const captured: { value: any } = { value: undefined };
+    await stubRunCapture(page, captured);
+
+    await gotoReports(page);
+
+    // First select a real column…
+    let options = (await openSplitBy(page)).options;
+    await options.filter({ hasText: REGION_LABEL }).first().click();
+
+    // …then reopen and choose the "No split" option, which must clear split_by.
+    const control = page.getByTestId('build-split-by');
+    await control.click();
+    options = page.getByTestId('build-split-option');
+    await options.filter({ hasText: /no split/i }).first().click();
+
+    await page.getByTestId('build-run').click();
+
+    await expect.poll(() => captured.value, { message: 'run/build-report body captured' }).toBeTruthy();
+    expect(captured.value.split_by ?? null).toBeNull();
+  });
+
+  test('keyboard: focus + type-to-filter narrows the listbox', async ({ page }) => {
+    await gotoReports(page);
+
+    // Focus the combobox and type — the listbox opens and filters by keystrokes alone.
+    const control = page.getByTestId('build-split-by');
+    await control.focus();
+    await page.keyboard.type('dist');
+
+    await expect.poll(() => visibleOptionTexts(page)).toContain(DISTRICT_LABEL);
+    const visible = await visibleOptionTexts(page);
+    expect(visible).not.toContain(MAIN_LABEL);
+    expect(visible).not.toContain(REGION_LABEL);
+    expect(visible).not.toContain(REPEAT_LABEL);
+  });
+
+  test('visual baseline of the open, filtered combobox', async ({ page }) => {
+    await gotoReports(page);
+
+    // Open + filter so the screenshot captures the searchable listbox state.
+    await typeFilter(page, 'reg');
+    await expect.poll(() => visibleOptionTexts(page)).toContain(REGION_LABEL);
+
+    // One assertion → one baseline per viewport (mobile/tablet/desktop) via
+    // playwright.config.ts. The implementer produces the baselines for human approval.
+    const control = page.getByTestId('build-options');
+    await expect(control).toBeVisible();
+    await expect(control).toHaveScreenshot('build-split-by-open.png');
   });
 });
