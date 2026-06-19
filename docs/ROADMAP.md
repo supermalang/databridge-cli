@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 14 | 14 / 14 |
+| [Express Template Fill](#express-template-fill) | 18 | 18 / 18 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1205,6 +1205,188 @@ A card is startable only when all of the following hold:
   3. Confirm View-logs still toggles the terminal and the alert still names the active command.
 
   **Verify:** `cd frontend && npx playwright test run-alert.spec.ts`
+
+---
+
+- [x] **XTF-15 — Remove the redundant rail "Build report" Quick Action on the Reports page**
+
+  Follow-up from XTF-13/14 review. The Reports page now shows TWO "Build report" buttons: the
+  Quick Actions rail action (`Reports.jsx` ~127, `run('build-report')` with no options) and the
+  XTF-13 BuildOptions control's `build-run` button (split-by + sample). The BuildOptions entry
+  supersedes the rail one ("Build all groups (default)" == the rail's no-option build), and two
+  identically-labelled buttons on one page is a UX smell (it also caused the ambiguous-locator
+  regression repaired in XTF-14). Remove the rail "Build report" Quick Action; keep the other
+  rail actions (e.g. Compare periods). Depends on **XTF-13** (BuildOptions) + **XTF-1–14**
+  (shipped).
+
+  **Files:** `frontend/src/pages/Reports.jsx` (drop the "Build report" entry from the
+  `QuickActionsCard` actions ~127) · `frontend/tests/e2e/build-options.spec.ts` (assert a single
+  build control) · `frontend/tests/e2e/reports-delete-all.spec.ts` + `run-alert.spec.ts` +
+  `terminal-collapse.spec.ts` (refresh the Reports-page baselines the rail change affects)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - The Reports page has exactly ONE "Build report" control — the BuildOptions `build-run`
+    button; the Quick Actions rail no longer contains a "Build report" action
+  - The remaining Quick Actions (e.g. Compare periods) are unchanged and still work
+  - Building from the BuildOptions control is unaffected (still calls `run('build-report', opts)`)
+  - Impeccable audit/critique clean on the updated Reports header/rail (no orphaned spacing)
+
+  **Unit tests:** N/A (frontend-only markup removal; Vitest not installed — asserted by the
+  Playwright E2E below, consistent with prior UI cards).
+
+  **E2E:** `frontend/tests/e2e/build-options.spec.ts` (extend) + visual (impeccable audit/critique
+  + `toHaveScreenshot`) — on the Reports page, assert `getByRole('button', {name:/build report/i})`
+  resolves to EXACTLY ONE element (the `build-run` control) and the Quick Actions rail does not
+  contain a "Build report" action. Refresh the affected Reports-page baselines (the
+  `reports-delete-all.png` and the run-state baselines that screenshot the Reports rail —
+  `run-alert.png`, `terminal-collapse` — change because the rail loses a button) at all three
+  viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human re-approves them.
+
+  **UAT:**
+  1. Open Deliver → Reports. Confirm there is a single "Build a report" entry (the Build options
+     panel) and the Quick Actions rail no longer has a separate "Build report" button.
+  2. Confirm the other Quick Actions (Compare periods) are still present and work.
+  3. Build from the Build options panel and confirm a report is produced as before.
+
+  **Verify:** `cd frontend && npx playwright test build-options.spec.ts reports-delete-all.spec.ts`
+
+---
+
+- [x] **XTF-16 — build-report clears the reports output dir so each build is the current set**
+
+  Bug from review: `build-report` only `mkdir`s the reports `output_dir` (`src/reports/builder.py`
+  ~233) and never removes prior outputs, so reports ACCUMULATE across runs. Two symptoms: (a) a
+  "first N groups" (`--split-sample`) preview correctly builds only N new files but the dir still
+  holds every report from earlier full builds, so the list / Download-all-ZIP shows "everything";
+  (b) those leftover files carry an older `_YYYYMMDD` filename suffix (the build date they were
+  made, `builder.py` ~236 uses `datetime.today()`) while their pull-to-mirror mtime reads as today
+  — so an old report looks freshly generated. Fix: at the start of a build run, clear the prior
+  `*.docx` report outputs in `output_dir` so the resulting set reflects ONLY the current build
+  (works for default, split-by, and `--split-sample`). Per-run web isolation already pushes the
+  fresh set to storage. Backend. Independent of XTF-17/18. Depends on XTF-13 (split options).
+
+  **Files:** `src/reports/builder.py` (clear `output_dir` `*.docx` before the split loop / first
+  `_render`) · `tests/test_build_report_smoke.py` (or a new `tests/test_build_report_outputs.py`)
+
+  **Config/schema impact:** None. Reports are regenerable outputs; a build replaces them.
+
+  **Acceptance criteria**
+  - At the start of a build, existing `*.docx` in the reports `output_dir` are removed before the
+    new report(s) are written (the build's result is exactly the current run's outputs)
+  - A split build with `--split-sample 2` over a column with >2 values yields EXACTLY 2 report
+    files in `output_dir` (no leftovers from a prior full build)
+  - A full split build after a "first 2" build replaces the 2 with the full set (no stale 2 left)
+  - A non-split build yields exactly one report; re-running replaces it (no accumulation)
+  - Charts dir (`data/processed/charts`) handling is unchanged; only the reports `output_dir`
+    `*.docx` are cleared
+
+  **Unit tests:** `tests/test_build_report_outputs.py` (new) — (1) seed `output_dir` with two
+  stale `*.docx`, run `ReportBuilder.build()` (single report), assert the stale files are gone and
+  only the new report remains. (2) build with `split_by` over 3 values + `split_sample=2` → assert
+  exactly 2 `*.docx` exist. (3) then build with `split_sample=None` (all 3) → assert exactly 3 and
+  the prior 2 don't linger as a 4th/5th. Use a tmp `output_dir` + a small fixture df.
+
+  **E2E:** N/A (back-end build behavior — no UI surface of its own; the Reports list/ZIP just
+  reflects the dir. Human gate is the unit tests + PR review).
+
+  **UAT:** N/A (back-end fix; verified via the unit tests, the verifier, and PR review — UAT moves
+  in lockstep with E2E).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_build_report_outputs.py`
+
+---
+
+- [x] **XTF-17 — Searchable split-by dropdown in the build options**
+
+  The split-by control (`frontend/src/components/BuildOptions.jsx`) is a plain `<select>`. For
+  forms with many main-table columns it's hard to scan. Make it a **searchable/filterable**
+  dropdown (type to filter the options) while keeping the same value contract (selecting a column
+  sets `split_by`; clearing → no split). Applies wherever BuildOptions renders (express + regular).
+  Depends on XTF-13 (BuildOptions). Independent of XTF-16/18.
+
+  **Files:** `frontend/src/components/BuildOptions.jsx` (searchable combobox for split-by;
+  keep `data-testid="build-split-by"` resolving to the control + preserve the main-table-only
+  option set) · `frontend/src/styles.css` (combobox styles) ·
+  `frontend/tests/e2e/build-options.spec.ts` (typeahead filter assertions)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - The split-by control lets the user type to filter the column options (combobox), not just a
+    bare native select
+  - The option set is still MAIN-table `export_label`s only (repeat-group excluded), unchanged
+    from XTF-13; selecting one sets `split_by`; a clear/"No split" choice removes it
+  - Keyboard accessible (focus, type-to-filter, arrow/enter select, escape close) with an
+    accessible label; `data-testid="build-split-by"` still resolves to the control
+  - The downstream build contract is unchanged (chosen split_by/split_sample still forwarded)
+  - Impeccable audit/critique clean on the combobox
+
+  **Unit tests:** N/A (frontend-only control; Vitest not installed — asserted by the Playwright
+  E2E below, consistent with prior UI cards).
+
+  **E2E:** `frontend/tests/e2e/build-options.spec.ts` (extend) + visual (impeccable audit/critique
+  + `toHaveScreenshot`) — with a mocked questions catalog containing several main-table columns +
+  one repeat-group column, open the split-by combobox, type a filter substring and assert the list
+  narrows to matching main-table columns (and the repeat-group column never appears); pick one and
+  assert `split_by` is set on the build request; assert the "No split" option clears it. Capture a
+  `toHaveScreenshot` baseline of the open combobox at all three viewports (mobile 390×844, tablet
+  820×1180, desktop 1440×900).
+
+  **UAT:**
+  1. Open the Build options (express or Reports) on a form with many columns. Click the split-by
+     control and type part of a column name — confirm the list filters to matches.
+  2. Confirm only main-table columns appear (no repeat-group fields), pick one, and build — confirm
+     the report splits by it.
+  3. Choose "No split" and confirm a single combined report builds.
+
+  **Verify:** `cd frontend && npx playwright test build-options.spec.ts`
+
+---
+
+- [x] **XTF-18 — Fix: express-path terminal does not auto-collapse after ~5s**
+
+  Bug from review: XTF-11's auto-collapse (terminal opens on a build run, collapses after
+  `window.__TERM_COLLAPSE_MS ?? 5000`, `App.jsx` `onStatus` ~184-199) works for the regular build
+  but NOT when the build is launched from the Express **Apply & build** flow (`Templates.jsx`
+  `applyAndBuild` → `await fetch('/api/template/apply')` then `run('build-report', opts)`). The
+  terminal opens and stays open past the delay. Root-cause via the test reproduction (likely the
+  apply step or the express run path interferes with the collapse timer / user-override flag), then
+  fix so the express build collapses on the SAME ~5s timing as the regular build (and still
+  auto-expands on error). Depends on XTF-11 (collapse logic). Independent of XTF-16/17.
+
+  **Files:** `frontend/src/App.jsx` (onStatus/collapse timing) and/or `frontend/src/pages/Templates.jsx`
+  (`applyAndBuild` — ensure it doesn't suppress/skip the auto-collapse) · `frontend/tests/e2e/terminal-collapse.spec.ts`
+  (add an express-flow case)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - Launching a build via the Express **Apply & build** flow opens the terminal and auto-collapses
+    it to the bar after the configured delay (default ~5s), while the run keeps streaming — same as
+    the regular build
+  - On an express build that ends in error, the terminal still auto-expands
+  - Manual toggling during an express build still works (a user-opened terminal is not auto-collapsed)
+  - The regular-build collapse behavior (XTF-11) is unchanged
+
+  **Unit tests:** N/A (frontend-only timing; Vitest not installed — asserted by the Playwright E2E
+  below with the overridable test delay).
+
+  **E2E:** `frontend/tests/e2e/terminal-collapse.spec.ts` (extend) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) — with `window.__TERM_COLLAPSE_MS` set small, drive the
+  EXPRESS Apply&build flow (mock `/api/template/apply` → ok, then the build SSE `running`), assert
+  the terminal opens then collapses to the bar after the delay while still running, and auto-expands
+  on an error frame. Refresh any affected baseline at all three viewports (mobile 390×844, tablet
+  820×1180, desktop 1440×900).
+
+  **UAT:**
+  1. From the Express flow, Apply & build a report. Confirm the terminal opens, then ~5s later
+     collapses to the bottom bar while the build continues.
+  2. Trigger an express build that fails and confirm the terminal auto-expands to show the error.
+  3. Manually open the terminal during an express build and confirm it stays open (not auto-collapsed).
+
+  **Verify:** `cd frontend && npx playwright test terminal-collapse.spec.ts`
 
 ---
 
