@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 18 | 17 / 18 |
+| [Express Template Fill](#express-template-fill) | 18 | 18 / 18 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1345,7 +1345,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-18 — Fix: express-path terminal does not auto-collapse after ~5s**
+- [x] **XTF-18 — Fix: express-path terminal does not auto-collapse after ~5s**
 
   Bug from review: XTF-11's auto-collapse (terminal opens on a build run, collapses after
   `window.__TERM_COLLAPSE_MS ?? 5000`, `App.jsx` `onStatus` ~184-199) works for the regular build
