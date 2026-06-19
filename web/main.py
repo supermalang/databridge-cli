@@ -471,7 +471,7 @@ ALLOWED_COMMANDS = {
     "suggest-tables":       ["--user-request"],
     "suggest-indicators":   ["--user-request"],
     "download":             ["--sample"],
-    "build-report":         ["--sample", "--split-by", "--session", "--period", "--compare"],
+    "build-report":         ["--sample", "--split-by", "--split-sample", "--session", "--period", "--compare"],
     "run-all":              ["--sample", "--period", "--auto-charts"],
     "infer-template":       ["--template", "--out"],
     "apply-template":       ["--from", "--build"],
@@ -480,6 +480,7 @@ ALLOWED_COMMANDS = {
 class RunPayload(BaseModel):
     sample: Optional[int] = None
     split_by: Optional[str] = None
+    split_sample: Optional[int] = None
     session: Optional[str] = None
     description: Optional[str] = None
     pages: Optional[int] = None
@@ -1629,6 +1630,8 @@ async def run_command(command: str, payload: RunPayload, request: Request):
         cmd += ["--sample", str(payload.sample)]
     if payload.split_by and "--split-by" in ALLOWED_COMMANDS[command]:
         cmd += ["--split-by", payload.split_by]
+    if payload.split_sample and "--split-sample" in ALLOWED_COMMANDS[command]:
+        cmd += ["--split-sample", str(payload.split_sample)]
     if payload.description and "--description" in ALLOWED_COMMANDS[command]:
         cmd += ["--description", payload.description]
     if payload.pages and "--pages" in ALLOWED_COMMANDS[command]:

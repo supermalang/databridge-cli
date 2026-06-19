@@ -967,6 +967,49 @@ header :focus-visible, .btn-primary:focus-visible { outline-color: #fff; }
   font-size: 13.5px; line-height: 1.5;
 }
 
+/* ── Build options control (XTF-13) ───────────────────────────────────────── */
+.build-options {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface-2);
+}
+.build-options__header { display: flex; flex-direction: column; gap: 4px; }
+.build-options__title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.build-options__hint {
+  margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); max-width: 64ch;
+}
+.build-options__row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+.build-options__field { display: flex; flex-direction: column; gap: 5px; min-width: 200px; }
+.build-options__field--n { min-width: 90px; flex: 0 0 auto; }
+.build-options__label {
+  font-size: 11.5px; font-weight: 600; letter-spacing: .01em; text-transform: uppercase;
+  color: var(--ink-3);
+}
+.build-options__select, .build-options__n {
+  padding: 7px 10px; border: 1px solid var(--border-2); border-radius: 7px;
+  font-size: 13px; background: var(--surface); color: var(--ink);
+  font-family: var(--font-sans); outline: 0; transition: border-color .12s, box-shadow .12s;
+}
+.build-options__n { width: 90px; font-family: var(--font-mono); }
+.build-options__select:focus, .build-options__n:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.build-options__select:disabled, .build-options__n:disabled {
+  background: var(--bg-2); color: var(--ink-3); cursor: not-allowed;
+}
+.build-options__preview-note {
+  margin: 0; font-size: 12px; line-height: 1.5; color: var(--accent-ink);
+  background: var(--accent-soft); border-radius: var(--r-sm); padding: 8px 10px;
+}
+.build-options__actions { display: flex; justify-content: flex-end; }
+
+@media (max-width: 720px) {
+  .build-options__field { min-width: 0; width: 100%; }
+  .build-options__row { flex-direction: column; align-items: stretch; }
+  .build-options__actions { justify-content: stretch; }
+  .build-options__actions .btn { width: 100%; }
+}
+
 @media (max-width: 720px) {
   .express-review-head { display: none; }
   .express-row {

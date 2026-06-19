@@ -8,6 +8,7 @@ import { usePerms } from '../lib/perms.js';
 import { useRun } from '../lib/run.js';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 import { loadConfig } from '../lib/config.js';
+import BuildOptions from '../components/BuildOptions.jsx';
 
 export default function Reports() {
   const toast = useToast();
@@ -131,6 +132,20 @@ export default function Reports() {
         </>
       }>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+        {/* ─── Build ─── */}
+        <div className="form-section">
+          <div className="form-section-title">
+            Build a report
+            <span>Render a Word report from the latest data</span>
+          </div>
+          <BuildOptions
+            questions={cfg?.questions || []}
+            disabled={!buildReady}
+            buildTitle={buildTitle}
+            onBuild={(opts) => run('build-report', opts)}
+          />
+        </div>
 
         {/* ─── Reports ─── */}
         <div className="form-section">
