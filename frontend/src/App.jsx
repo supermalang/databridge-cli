@@ -297,30 +297,36 @@ export default function App() {
     return () => { clearInterval(id); window.removeEventListener('databridge:data-changed', bump); };
   }, []);
 
+  // The in-page run alert (XTF-14): rendered in the content flow, below the top
+  // nav and the page header, at the content width. Shown whenever a run is live.
+  const runAlert = running ? (
+    <div className="run-alert" data-testid="run-alert" role="status" aria-live="polite">
+      <span className="run-alert__dot" aria-hidden="true" />
+      <span className="run-alert__label">{runLabel(activeCmd)}</span>
+      <button
+        type="button"
+        className="run-alert__logs"
+        onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}
+      >
+        View logs
+      </button>
+      <button
+        type="button"
+        className="run-alert__stop"
+        data-testid="run-stop"
+        aria-label="Stop the running task"
+        title="Stop the running task"
+        onClick={() => stop()}
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+          <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor" />
+        </svg>
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div className="layout">
-      {running && (
-        <div className="run-alert" data-testid="run-alert" role="status" aria-live="polite">
-          <span className="run-alert__dot" aria-hidden="true" />
-          <span className="run-alert__label">{runLabel(activeCmd)}</span>
-          <button
-            type="button"
-            className="run-alert__logs"
-            onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}
-          >
-            View logs
-          </button>
-          <button
-            type="button"
-            className="run-alert__stop"
-            data-testid="run-stop"
-            aria-label="Stop the running task"
-            onClick={() => stop()}
-          >
-            Stop
-          </button>
-        </div>
-      )}
       <header>
         <div className="brand">
           <h1>databridge-cli</h1>
@@ -430,6 +436,7 @@ export default function App() {
          <DirtyProvider value={dirtyRef}>
           <AiStatusProvider>
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
+              {runAlert}
               {panes
                 .filter(p => visited.has(p.key) || p.key === activeKey)
                 .map(p => (

@@ -113,7 +113,11 @@ async function stubBootstrap(page: Page) {
 async function startBuild(page: Page) {
   await page.locator('.tabs-bar .tab', { hasText: 'Deliver' }).click();
   await page.locator('.subtabs-bar .subtab', { hasText: 'Reports' }).click();
-  const buildBtn = page.getByRole('button', { name: /build report/i });
+  // Disambiguate to the canonical production build button. XTF-13 added a second
+  // "Build report" button (Quick Actions rail) alongside the BuildOptions control, so the
+  // role/name locator now matches two elements (strict-mode violation). Target the stable
+  // data-testid, exactly as run-alert.spec.ts does for the same reason.
+  const buildBtn = page.getByTestId('build-run');
   await expect(buildBtn).toBeVisible();
   await buildBtn.click();
   // Proves the long-lived SSE mock is wired (so later assertions are the XTF-11 gap).

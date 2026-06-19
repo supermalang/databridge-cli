@@ -736,14 +736,17 @@ header :focus-visible, .btn-primary:focus-visible { outline-color: #fff; }
   .topbar-user { display: none; }
 }
 
-/* ── Global run-in-progress alert (fixed top-of-app banner, all tabs) ────── */
+/* ── Global run-in-progress alert (in-page, below the title, content width) ─ */
 .run-alert {
   display: flex; align-items: center; gap: 12px;
   flex-shrink: 0;
-  padding: 9px 20px;
+  width: calc(100% - 64px); max-width: 1256px;
+  margin: 16px auto 4px; padding: 9px 16px;
+  box-sizing: border-box;
   background: var(--accent-soft);
   color: var(--accent-ink);
-  border-bottom: 1px solid var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
   font-size: 13px; font-weight: 600;
   box-shadow: var(--shadow-sm);
 }
@@ -763,17 +766,18 @@ header :focus-visible, .btn-primary:focus-visible { outline-color: #fff; }
 .run-alert__logs:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 .run-alert__stop {
   display: inline-flex; align-items: center; justify-content: center;
-  min-height: 30px; padding: 0 16px;
+  width: 30px; height: 30px; padding: 0;
   border-radius: 999px; border: 1px solid var(--rose);
   background: var(--surface); color: var(--rose);
-  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  cursor: pointer; flex-shrink: 0;
   transition: background .12s, color .12s;
 }
+.run-alert__stop svg { display: block; }
 .run-alert__stop:hover { background: var(--rose); color: #fff; }
 .run-alert__stop:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
 @media (max-width: 720px) {
-  .run-alert { padding: 8px 14px; gap: 8px; }
-  .run-alert__stop { min-height: 34px; padding: 0 18px; }
+  .run-alert { margin: 12px 14px 8px; padding: 8px 12px; gap: 8px; }
+  .run-alert__stop { width: 34px; height: 34px; }
 }
 
 /* ── Searchable column picker (Composition editors) ──────────────────────── */
