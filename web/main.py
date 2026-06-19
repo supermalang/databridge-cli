@@ -1874,13 +1874,41 @@ async def download_report(filename: str, request: Request):
     return FileResponse(path=path, filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
+def _active_org_project_ids(request: Request):
+    """Resolve the caller's active project's (org_id, project_id) — same pattern as
+    list_reports (XTF-20). Returns (None, None) when no active project resolves so
+    durable-delete degrades to local-only without crashing."""
+    try:
+        with db_session.SessionLocal() as db:
+            _user, project = _active_project(request, db)
+        if project is not None:
+            return str(project.org_id), str(project.id)
+    except Exception:
+        pass
+    return None, None
+
+
+def _delete_report_storage_object(org_id, project_id, name) -> None:
+    """Best-effort durable delete of a report's storage object — never raises (the
+    object may already be gone; LocalStorage.delete uses unlink(missing_ok=True))."""
+    if org_id is None or project_id is None:
+        return
+    try:
+        storage_workspace.delete_project_file(org_id, project_id, "reports", name)
+    except Exception:
+        pass
+
+
 @app.delete("/api/reports")
 async def delete_all_reports(request: Request):
     _require(request, "editor")
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    org_id, project_id = _active_org_project_ids(request)
     deleted = 0
     for f in REPORTS_DIR.glob("*.docx"):
+        name = f.name
         f.unlink()
+        _delete_report_storage_object(org_id, project_id, name)
         deleted += 1
     return {"ok": True, "deleted": deleted}
 
@@ -1892,7 +1920,9 @@ async def delete_report(filename: str, request: Request):
     path = REPORTS_DIR / filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found")
+    org_id, project_id = _active_org_project_ids(request)
     path.unlink()
+    _delete_report_storage_object(org_id, project_id, filename)
     return {"ok": True}
 
 @app.get("/api/reports/download-zip")

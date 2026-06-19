@@ -368,3 +368,127 @@ def test_storage_last_modified_implemented(tmp_path):
     assert abs(s3_epoch - s3_when.timestamp()) < 1, (
         f"S3 last_modified {s3_lm!r} did not reflect the object's LastModified "
         f"{s3_when!r}")
+
+
+# =========================================================================== #
+# XTF-23 — DELETE /api/reports (all + single) also deletes DURABLE storage
+# =========================================================================== #
+#
+# Assumed contract for the implementer (do NOT implement here — tests only):
+#
+#   DELETE /api/reports  (delete_all_reports, web/main.py ~1878) and
+#   DELETE /api/reports/{filename}  (delete_report, ~1888) currently only
+#   `unlink` the LOCAL .docx files, so a delete does not survive the next run's
+#   pull_workspace (the durable storage object survives and is re-downloaded).
+#
+#   The fix: in addition to unlinking the local file, each handler resolves the
+#   caller's ACTIVE project's (org_id, project_id) and calls
+#       delete_project_file(org_id, project_id, "reports", name)
+#   (from web/storage/workspace.py) for EACH removed report — so cleanup is
+#   durable.  `delete_project_file` resolves the process storage backend and
+#   calls `store.delete(storage_key(org_id, project_id, "reports", name))`.
+#
+#   Edge contracts:
+#   - DELETE /api/reports (all) deletes the storage object for every .docx it
+#     removes; afterwards the "reports" storage prefix holds none of them, so a
+#     subsequent pull_workspace restores nothing.
+#   - DELETE /api/reports/{filename} deletes ONLY the matching report's storage
+#     object; other reports' durable objects stay intact.
+#   - Storage deletion is best-effort: if the object is already gone, no error
+#     (LocalStorage.delete uses unlink(missing_ok=True)); and if no active
+#     project is resolvable, local-only deletion still happens with no crash.
+#   - Response shapes are UNCHANGED: {"ok": true, "deleted": N} for the bulk
+#     delete and {"ok": true} for the single delete.
+#
+# These tests reuse XTF-20's `_SpyStorage` / `spy_storage` (installed as the
+# process-wide singleton so workspace.get_storage resolves to it) and
+# `dev_org_project_ids` to seed + observe durable "reports" objects.  The key
+# observable is `spy_storage.list(reports_prefix)`: before the delete it lists
+# the seeded report keys; after the (durable) delete it must no longer list the
+# removed key(s).
+# --------------------------------------------------------------------------- #
+
+
+def _reports_prefix(org_id, project_id):
+    """The durable storage key prefix under which a project's report objects live
+    (matches storage_key(org_id, project_id, "reports", name) without a name)."""
+    return storage_key(org_id, project_id, "reports", "")
+
+
+def test_delete_all_reports_durable(
+    reports_dir, client, dev_active_project, dev_org_project_ids, spy_storage
+):
+    """DELETE /api/reports removes BOTH the local .docx files AND every
+    corresponding `reports` storage object, so a subsequent pull_workspace
+    restores nothing.
+
+    AC: "DELETE /api/reports removes both the local .docx files AND the
+    corresponding reports storage objects (resolved for the caller's active
+    org/project), so a subsequent pull_workspace restores nothing."
+    """
+    org_id, project_id = dev_org_project_ids
+    names = ["report_a_20260615.docx", "report_b_20260618.docx"]
+
+    # Seed both locally AND in durable storage (spy backend).
+    _seed_docx(reports_dir, *names)
+    for n in names:
+        spy_storage.stamp(storage_key(org_id, project_id, "reports", n),
+                          datetime(2026, 6, 15, 9, 30))
+
+    prefix = _reports_prefix(org_id, project_id)
+    # Sanity: both report objects are present in durable storage before delete.
+    assert sorted(k[len(prefix):] for k in spy_storage.list(prefix)) == sorted(names)
+
+    resp = client.request("DELETE", "/api/reports")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"ok": True, "deleted": 2}
+
+    # (a) local dir emptied.
+    assert list(reports_dir.glob("*.docx")) == []
+    # (b) durable storage no longer holds either report object.
+    assert spy_storage.list(prefix) == [], (
+        "DELETE /api/reports left report objects in durable storage — the delete "
+        "is not durable and the next pull_workspace would restore them")
+
+    # A subsequent pull_workspace finds nothing to restore (durable objects gone).
+    import web.storage.workspace as ws
+    restored_before = list(reports_dir.glob("*.docx"))
+    ws.pull_workspace(org_id, project_id, base=str(reports_dir.parent))
+    assert list(reports_dir.glob("*.docx")) == restored_before == [], (
+        "pull_workspace restored report files that should have been durably deleted")
+
+
+def test_delete_one_report_durable(
+    reports_dir, client, dev_active_project, dev_org_project_ids, spy_storage
+):
+    """DELETE /api/reports/{filename} removes ONLY the matching report's local
+    file and storage object, leaving the other report objects intact in storage.
+
+    AC: "DELETE /api/reports/{filename} removes the matching local file AND only
+    that file's storage object (other report objects untouched)."
+    """
+    org_id, project_id = dev_org_project_ids
+    target = "report_target_20260615.docx"
+    keep = "report_keep_20260618.docx"
+
+    _seed_docx(reports_dir, target, keep)
+    for n in (target, keep):
+        spy_storage.stamp(storage_key(org_id, project_id, "reports", n),
+                          datetime(2026, 6, 15, 9, 30))
+
+    prefix = _reports_prefix(org_id, project_id)
+    assert sorted(k[len(prefix):] for k in spy_storage.list(prefix)) == sorted([target, keep])
+
+    resp = client.request("DELETE", f"/api/reports/{target}")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"ok": True}
+
+    # Local: only the target removed.
+    assert sorted(p.name for p in reports_dir.glob("*.docx")) == [keep]
+    # Durable storage: only the target object removed, the other stays.
+    remaining = sorted(k[len(prefix):] for k in spy_storage.list(prefix))
+    assert remaining == [keep], (
+        f"single-file delete should remove only {target!r}'s storage object; "
+        f"durable storage now lists {remaining!r}")
