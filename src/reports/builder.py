@@ -103,6 +103,14 @@ class ReportBuilder:
         resolved_period = parse_period_arg(self.cfg, period)
         df, repeat_tables = load_processed_data(self.cfg, sample_size=sample_size, random_sample=random_sample, session=session, period=resolved_period)
         df = apply_computed_columns(df, self.cfg, repeat_tables, strict=self.strict)
+        # Clear prior report outputs so each build's result is exactly the
+        # current run's set (default, split-by, and --split-sample alike).
+        # Only *.docx reports are removed; other files + the charts dir are
+        # untouched. Done once here, not in _render (which runs per split value).
+        out_dir = Path(self.report_cfg.get("output_dir", "reports"))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for stale in out_dir.glob("*.docx"):
+            stale.unlink()
         split_col = split_by or self.report_cfg.get("split_by")
         if split_col:
             if split_col not in df.columns:
