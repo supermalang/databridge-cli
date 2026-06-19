@@ -11,6 +11,11 @@ services:
       context: .
       dockerfile: Dockerfile
     command: sleep infinity
+    # Dev-only memory caps, budgeted for a 3 GB host: the four limits sum to
+    # ~2.5g, leaving ~500m for the host OS + Docker daemon. mem_limit is the
+    # hard ceiling (OOM-kills past it); mem_reservation is a soft floor.
+    mem_limit: 1536m
+    mem_reservation: 512m
     volumes:
       - ..:/workspaces/databridge-cli:cached
       - npm-global:/home/vscode/.npm-global
@@ -32,6 +37,8 @@ services:
 
   db:
     image: postgres:16
+    mem_limit: 512m
+    mem_reservation: 256m
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: dev
@@ -48,6 +55,8 @@ services:
 
   minio:
     image: minio/minio
+    mem_limit: 384m
+    mem_reservation: 128m
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minio
@@ -60,6 +69,7 @@ services:
 
   createbucket:
     image: minio/mc
+    mem_limit: 64m
     depends_on:
       minio:
         condition: service_started
