@@ -33,6 +33,15 @@ const RUN_LABELS = {
 };
 const runLabel = (cmd) => RUN_LABELS[cmd] || (cmd ? `Running ${cmd}…` : 'Running…');
 
+// How long the terminal stays open at the start of a run before auto-collapsing
+// to its bar (the run keeps going). Overridable via window.__TERM_COLLAPSE_MS so
+// the E2E can drive the timing in a few ms instead of waiting the real ~5s.
+const DEFAULT_TERM_COLLAPSE_MS = 5000;
+const termCollapseMs = () => {
+  const v = typeof window !== 'undefined' ? window.__TERM_COLLAPSE_MS : undefined;
+  return Number.isFinite(v) ? v : DEFAULT_TERM_COLLAPSE_MS;
+};
+
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
 const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'pii'];
@@ -95,9 +104,28 @@ export default function App() {
   const { confirm, confirmDialog } = useConfirm();
   const [termOpen, setTermOpen] = useState(false);
   const [logLines, setLogLines] = useState([]);
+
+  // Auto-collapse timing (XTF-11): on a build run the terminal opens, then after
+  // ~5s auto-collapses to its bar while the run keeps streaming; on error it
+  // auto-expands. We track the pending timer plus whether the user has taken
+  // manual control so the auto-timing never yanks a terminal the user opened.
+  const collapseTimerRef = useRef(null);
+  const userOverrodeTermRef = useRef(false);
+  const clearCollapseTimer = () => {
+    if (collapseTimerRef.current) { clearTimeout(collapseTimerRef.current); collapseTimerRef.current = null; }
+  };
+  // Wrap setTermOpen so any manual toggle (nav button / bar click) marks the
+  // terminal as user-controlled and cancels a pending auto-collapse.
+  const setTermOpenManual = (next) => {
+    userOverrodeTermRef.current = true;
+    clearCollapseTimer();
+    setTermOpen(next);   // accepts a value or a functional updater (o => !o)
+  };
   const [formAlias, setFormAlias] = useState('');
   const [me, setMe] = useState(null);
   useEffect(() => { fetchMe().then(setMe); }, []);
+  // Clear any pending auto-collapse timer on unmount.
+  useEffect(() => () => clearCollapseTimer(), []);
 
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
@@ -160,18 +188,28 @@ export default function App() {
         runningCmdRef.current = command;
         setLogLines(prev =>
           [...prev, { line: `running ${command}`, level: 'cmd', time: nowTime(), command }].slice(-LOG_CAP));
+        // Open on run start, then auto-collapse to the bar after the delay even
+        // while the run is still streaming. A fresh run reclaims auto-control.
+        userOverrodeTermRef.current = false;
         setTermOpen(true);
+        clearCollapseTimer();
+        collapseTimerRef.current = setTimeout(() => {
+          collapseTimerRef.current = null;
+          if (!userOverrodeTermRef.current) setTermOpen(false);
+        }, termCollapseMs());
       }
       if (status === 'success' || status === 'error') runningCmdRef.current = null;
       if (status === 'success') {
         toast(`${command} done ✓`, 'ok');
-        // Collapse the terminal once a task succeeds — but only after a short beat so
-        // the final log + result is visible, and only if no new run has started.
-        setTimeout(() => { if (!runningCmdRef.current) setTermOpen(false); }, 1400);
+        // It already collapsed during the run — leave it collapsed (no re-expand
+        // flicker). Just cancel any still-pending auto-collapse timer.
+        clearCollapseTimer();
       }
       if (status === 'error') {
         toast(`${command} failed`, 'err');
-        setTermOpen(true);   // keep it open on failure so the user can read the log
+        // Auto-expand so the failure log is visible, unless the user is in control.
+        clearCollapseTimer();
+        if (!userOverrodeTermRef.current) setTermOpen(true);
       }
     },
   });
@@ -417,7 +455,7 @@ export default function App() {
         cmd={activeCmd}
         lines={logLines}
         open={termOpen}
-        setOpen={setTermOpen}
+        setOpen={setTermOpenManual}
       />
 
       {projectForm && (
