@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 23 | 20 / 23 |
+| [Express Template Fill](#express-template-fill) | 23 | 21 / 23 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1630,7 +1630,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-23 — DELETE /api/reports (all + single) deletes durable storage objects**
+- [x] **XTF-23 — DELETE /api/reports (all + single) deletes durable storage objects**
 
   Bug from the follow-up batch (issue ② in the spec, durable-delete half). `DELETE /api/reports`
   (`web/main.py` ~1848) and `DELETE /api/reports/{filename}` (~1858) only `unlink` local files, so a
