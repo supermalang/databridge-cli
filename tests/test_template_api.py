@@ -572,3 +572,122 @@ def test_delete_active_template_clears_ref(monkeypatch, api_client, tmp_path, de
     # The reference must NOT still point at the deleted file.
     assert tref in (None, "", ) or Path(str(tref)).name != "foo.docx", \
         f"report.template still points at the deleted template: {tref!r}"
+
+
+# --------------------------------------------------------------------------- #
+# XTF-22 — /api/template/apply persists synthesized auto-modeling views.
+#
+# The deterministic resolver (resolve_sources, tested in
+# tests/test_template_inference.py) synthesizes a persisted view when a placeholder
+# spans a repeat table + main. On INFER those pending views travel back to the
+# panel; on APPLY they must be written into config ``views:`` (appended, de-duped
+# by name) so a re-run of build-report resolves the join.
+#
+# ASSUMED CONTRACT (chosen as the most natural design given the existing apply
+# wiring, which carries the full proposal dicts from infer → apply):
+#   * Each proposal that needed a synthesized view carries that view dict under a
+#     ``view`` key on the proposal (the same proposal the panel approves), e.g.
+#       {"token_index": 0, "kind": "chart", "name": "...", "status": "ok",
+#        "spec": {..., "source": "auto_health_facilities__commune"},
+#        "view": {"name": "auto_health_facilities__commune",
+#                 "source": "health_facilities", "join_parent": ["Commune"]}}
+#   * /api/template/apply collects every approved proposal's ``view`` and APPENDS
+#     it into ``cfg["views"]`` (creating the list if absent), de-duped by ``name``
+#     (a view whose name already exists in cfg["views"] is NOT appended twice).
+#
+# If the implementer instead threads pending views via a top-level ``views`` field
+# on the apply payload, that is an equivalent design; this test pins the
+# proposal-carried shape because it matches how the existing apply endpoint already
+# receives proposals and how infer returns them, and is the minimal wiring change.
+# --------------------------------------------------------------------------- #
+def test_apply_persists_synthesized_view(monkeypatch, client, tmp_path):
+    """AC: /api/template/apply persists a synthesized view into config ``views:``
+    (appended, de-duped).
+
+    A chart proposal whose spec sources a synthesized join-view carries the view
+    dict on the proposal. After apply, cfg["views"] contains that view exactly
+    once with source = the repeat table and join_parent = [the main col]."""
+    cfg = {"charts": [], "views": []}
+    saved = {}
+    monkeypatch.setattr(wm, "_require", lambda *a, **k: None)
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+
+    resolved = str(tmp_path / "report.resolved.docx")
+    view = {"name": "auto_health_facilities__commune",
+            "source": "health_facilities", "join_parent": ["Commune"]}
+    approved = [
+        {"token_index": 0, "kind": "chart", "name": "beds_by_commune",
+         "spec": {"name": "beds_by_commune", "type": "bar",
+                  "questions": ["Beds"], "group_by": "Commune",
+                  "source": "auto_health_facilities__commune"},
+         "status": "ok",
+         "view": dict(view)},
+    ]
+
+    import src.reports.template_inference as ti
+
+    def _apply(approved_props, cfg_in, template_path):
+        # apply_inference writes the chart spec into config (its real job); the
+        # view-persistence is the endpoint's responsibility under test here.
+        cfg_in.setdefault("charts", []).append(approved_props[0]["spec"])
+        return cfg_in, resolved
+
+    monkeypatch.setattr(ti, "apply_inference", _apply)
+
+    resp = client.post("/api/template/apply",
+                       json={"proposals": approved, "template": "report.docx"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ok"] is True
+
+    written = saved.get("cfg") or cfg
+    views = written.get("views") or []
+    matching = [v for v in views if v.get("name") == "auto_health_facilities__commune"]
+    assert len(matching) == 1, f"synthesized view not persisted exactly once: {views}"
+    assert matching[0].get("source") == "health_facilities", matching[0]
+    assert matching[0].get("join_parent") == ["Commune"], matching[0]
+
+
+def test_apply_dedupes_existing_synthesized_view(monkeypatch, client, tmp_path):
+    """AC: views are de-duped by name — applying TWO approved proposals that carry
+    the SAME synthesized view name persists it exactly once (no duplicate appended).
+
+    This is the API-level de-dupe guard. It is RED until the endpoint appends each
+    proposal's carried ``view`` into cfg["views"] AND de-dupes by name: an
+    unimplemented endpoint leaves cfg["views"] empty (0 != 1)."""
+    view = {"name": "auto_health_facilities__commune",
+            "source": "health_facilities", "join_parent": ["Commune"]}
+    cfg = {"charts": [], "views": []}
+    saved = {}
+    monkeypatch.setattr(wm, "_require", lambda *a, **k: None)
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+
+    resolved = str(tmp_path / "report.resolved.docx")
+    # Two approved proposals whose join resolves to the SAME synthesized view.
+    approved = [
+        {"token_index": 0, "kind": "chart", "name": "beds_by_commune",
+         "spec": {"name": "beds_by_commune", "type": "bar",
+                  "questions": ["Beds"], "group_by": "Commune",
+                  "source": "auto_health_facilities__commune"},
+         "status": "ok", "view": dict(view)},
+        {"token_index": 1, "kind": "chart", "name": "beds_by_commune_2",
+         "spec": {"name": "beds_by_commune_2", "type": "horizontal_bar",
+                  "questions": ["Beds"], "group_by": "Commune",
+                  "source": "auto_health_facilities__commune"},
+         "status": "ok", "view": dict(view)},
+    ]
+
+    import src.reports.template_inference as ti
+    monkeypatch.setattr(ti, "apply_inference",
+                        lambda ap, c, t: (c, resolved))
+
+    resp = client.post("/api/template/apply",
+                       json={"proposals": approved, "template": "report.docx"})
+    assert resp.status_code == 200, resp.text
+
+    written = saved.get("cfg") or cfg
+    views = written.get("views") or []
+    matching = [v for v in views if v.get("name") == "auto_health_facilities__commune"]
+    assert len(matching) == 1, f"synthesized view not persisted exactly once: {views}"
