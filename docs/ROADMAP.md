@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 14 | 12 / 14 |
+| [Express Template Fill](#express-template-fill) | 14 | 13 / 14 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1085,7 +1085,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-13 — Build options for Express & regular build: split-by (main-table columns) + sample preview (`--split-sample`)**
+- [x] **XTF-13 — Build options for Express & regular build: split-by (main-table columns) + sample preview (`--split-sample`)**
 
   Expose two build options on both build surfaces: a **split-by** selector populated with
   **main-table `export_label`s only** (not repeat-group columns) and a "build all (default) vs first
