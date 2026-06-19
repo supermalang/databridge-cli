@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 23 | 22 / 23 |
+| [Express Template Fill](#express-template-fill) | 23 | 23 / 23 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1502,7 +1502,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-21 — Express split-by dropdown no longer clipped (CSS stacking)**
+- [x] **XTF-21 — Express split-by dropdown no longer clipped (CSS stacking)**
 
   Bug from the follow-up batch (issue ③ in the spec). In the Express review panel (shown after
   Infer), the "Split by" combobox menu is clipped/hidden behind sibling content when opened:
