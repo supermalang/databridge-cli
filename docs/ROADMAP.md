@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 23 | 18 / 23 |
+| [Express Template Fill](#express-template-fill) | 23 | 19 / 23 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1396,7 +1396,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-19 — Storage push mirrors output categories (fixes split-preview leaving stale reports)**
+- [x] **XTF-19 — Storage push mirrors output categories (fixes split-preview leaving stale reports)**
 
   Bug from the follow-up batch (issue ① in the spec). `push_outputs`
   (`web/storage/workspace.py` ~64–72) is **merge-only**: a split preview that builds 2 reports into
