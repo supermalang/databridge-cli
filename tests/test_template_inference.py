@@ -1169,3 +1169,324 @@ def test_cli_name_is_registered_on_cli_group(command):
     res = CliRunner().invoke(_make.cli, [command, "--help"])
     assert res.exit_code == 0, res.output
     assert "No such command" not in res.output
+
+
+# =========================================================================== #
+# XTF-22 — Deterministic auto-modeling resolver for cross-table columns
+# =========================================================================== #
+# These tests are the spec for a NEW deterministic pass appended to
+# ``src/reports/template_inference.py`` (XTF-22):
+#
+#   ``resolve_sources(proposals, profile) -> List[Dict]``
+#
+# It runs AFTER ``infer_specs`` and BEFORE ``annotate_proposals`` (no LLM call),
+# and for each DATA proposal (kind ∈ {chart, indicator, summary, table}) it
+# resolves the ``source`` deterministically from the profile's tables. Derived
+# strictly from the XTF-22 acceptance criteria + design spec §④. Written before
+# the resolver exists; expected RED (``AttributeError: module 'template_inference'
+# has no attribute 'resolve_sources'``) until it lands — RED for the RIGHT reason
+# (the function is missing), not a fixture/import bug.
+#
+# --------------------------------------------------------------------------- #
+# ASSUMED CONTRACT for ``resolve_sources(proposals, profile)`` (the implementer
+# must satisfy this; chosen as the most natural design consistent with the card,
+# the spec, and the surrounding code):
+#
+#   Signature:  resolve_sources(proposals: List[Proposal], profile: Dict) -> List[Dict]
+#
+#   Referenced columns of a data proposal are collected from the spec's
+#   ``questions`` (list) PLUS ``group_by`` (str) PLUS ``question`` (str, the
+#   indicator single-column field) when present — mirroring how
+#   ``ask_engine._validate_chart`` / ``_validate_indicator`` read columns.
+#
+#   For each data proposal, by where its referenced columns live:
+#     * ALL in ``main``                  → leave the spec's ``source`` as-is
+#                                          (absent or "main"); no view synthesized.
+#     * ALL in ONE non-main table        → stamp ``spec["source"] = <table>``.
+#                                          When a column appears in several tables,
+#                                          pick the table that contains the MOST of
+#                                          the spec's columns (the builder._pick_df
+#                                          "most-columns-match" heuristic).
+#     * SPAN a repeat table + ``main``   → synthesize a view dict
+#                                          ``{name, source:<repeat_table>,
+#                                            join_parent:[<main cols referenced>]}``
+#                                          (carry ``group_by``/``question``/``agg``
+#                                          only when the chart is inherently
+#                                          aggregated) and point ``spec["source"]``
+#                                          at the new view ``name``. The view dict
+#                                          is appended to the RETURNED list (the
+#                                          "pending views" collection that
+#                                          /api/template/apply persists).
+#     * STUCK (a column in NO table, or a genuine multi-table tie with no
+#       disambiguating majority) → flag the proposal:
+#                                          ``proposal["status"] = "needs_attention"``
+#                                          and ``proposal["reason"]`` names the
+#                                          candidate tables (or states no table
+#                                          contains the column). No view synthesized.
+#
+#   View names are DETERMINISTIC + collision-safe (e.g.
+#   ``auto_<repeat_leaf>__<joincols>``), de-duped against existing ``profile``
+#   views AND against views already synthesized in the same call, so re-running
+#   the resolver on the same proposals/profile yields the SAME name(s) and no
+#   duplicates (idempotent).
+#
+#   ``resolve_sources`` MUTATES proposals in place (stamping ``spec["source"]`` /
+#   ``status`` / ``reason``) AND returns the list of synthesized view dicts.
+#
+# The tests below read the proposal back via ``_get`` (dict-or-object tolerant)
+# and inspect the proposal object the resolver mutated in place; the synthesized
+# views are read from the resolver's return value.
+# --------------------------------------------------------------------------- #
+
+
+def _profile_xtf22():
+    """A profile with ``main`` + one repeat-group base table, shaped exactly like
+    ``profile_dataset`` returns (keyed by table name; each table
+    ``{name, rows, columns:[{name, role, …}]}``; repeat rows carry linkage cols).
+
+    The repeat table key uses the full slash-replaced repeat-path convention
+    (``health_facilities`` here standing in for a leaf repeat group)."""
+    return {
+        "main": {
+            "name": "main", "rows": 3,
+            "columns": [
+                {"name": "_id", "role": "linkage", "distinct": 3, "missing_pct": 0.0},
+                {"name": "Commune", "role": "categorical", "distinct": 2, "missing_pct": 0.0,
+                 "top_values": [{"value": "A", "count": 2}, {"value": "B", "count": 1}]},
+                {"name": "Region", "role": "categorical", "distinct": 2, "missing_pct": 0.0,
+                 "top_values": [{"value": "N", "count": 2}, {"value": "S", "count": 1}]},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "health_facilities": {
+            "name": "health_facilities", "rows": 5,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 3, "missing_pct": 0.0},
+                {"name": "_root_id", "role": "linkage", "distinct": 3, "missing_pct": 0.0},
+                {"name": "USB operational", "role": "categorical", "distinct": 2,
+                 "missing_pct": 0.0,
+                 "top_values": [{"value": "Oui", "count": 3}, {"value": "Non", "count": 2}]},
+                {"name": "Beds", "role": "quantitative", "distinct": 4, "missing_pct": 0.0,
+                 "min": 1.0, "max": 40.0, "mean": 12.0, "median": 8.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+    }
+
+
+def _data_proposal(kind, spec, name, token_index=0, confidence=_HIGH_CONF,
+                   reason="proposed"):
+    """A data Proposal in the shape ``infer_specs`` returns (no ``status`` yet —
+    resolve_sources runs BEFORE annotate_proposals stamps status)."""
+    return {
+        "token_index": token_index,
+        "kind": kind,
+        "spec": dict(spec),
+        "name": name,
+        "confidence": confidence,
+        "reason": reason,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# (1) single repeat-group column → source stamped to that table; validates clean
+# --------------------------------------------------------------------------- #
+def test_resolve_single_repeat_column():
+    """AC: a proposal whose referenced columns all live in a single repeat-group
+    table gets ``source`` stamped to that table and validates clean (no
+    needs_attention) through the existing annotate/validate path.
+
+    The chart references one column ("USB operational") that lives ONLY in the
+    ``health_facilities`` repeat table. Before the resolver, validation defaults
+    source to "main" and rejects it; after the resolver stamps
+    ``source: health_facilities`` it validates clean."""
+    profile = _profile_xtf22()
+    proposals = [
+        _data_proposal(
+            "chart",
+            {"name": "usb_ops", "title": "USB operational",
+             "type": "bar", "questions": ["USB operational"]},
+            name="usb_ops",
+        ),
+    ]
+
+    views = ti.resolve_sources(proposals, profile)
+
+    # No view is synthesized for the pure single-table case.
+    assert views == [] or all(v.get("source") != "health_facilities" or v.get("join_parent")
+                              for v in views), views
+    # The spec's source is stamped to the repeat table.
+    spec = _get(proposals[0], "spec")
+    assert spec.get("source") == "health_facilities", spec
+
+    # And the proposal now validates clean through the existing annotate path.
+    out = ti.annotate_proposals(proposals, profile)
+    assert _get(out[0], "status") == "ok", _get(out[0], "reason")
+
+
+# --------------------------------------------------------------------------- #
+# (2) repeat column + main column → synthesized view; spec sources the view
+# --------------------------------------------------------------------------- #
+def test_resolve_join_synthesizes_view():
+    """AC: a proposal referencing a repeat-group column + a ``main`` column yields
+    a synthesized view ``{source:<repeat_table>, join_parent:[<main col>]}`` and
+    the spec's ``source`` points at the new view name.
+
+    The chart groups the repeat column "Beds" by the main column "Commune", so it
+    spans ``health_facilities`` (repeat) + ``main`` — the join case."""
+    profile = _profile_xtf22()
+    proposals = [
+        _data_proposal(
+            "chart",
+            {"name": "beds_by_commune", "title": "Beds by commune",
+             "type": "bar", "questions": ["Beds"], "group_by": "Commune"},
+            name="beds_by_commune",
+        ),
+    ]
+
+    views = ti.resolve_sources(proposals, profile)
+
+    # Exactly one synthesized view is returned for apply to persist.
+    assert isinstance(views, list) and len(views) == 1, views
+    view = views[0]
+    assert view.get("source") == "health_facilities", view
+    assert view.get("join_parent") == ["Commune"], view
+    assert view.get("name"), "synthesized view must carry a name"
+
+    # The spec's source now points at the synthesized view (not "main").
+    spec = _get(proposals[0], "spec")
+    assert spec.get("source") == view["name"], spec
+
+
+# --------------------------------------------------------------------------- #
+# (3) idempotent — re-running yields the same view name(s), no duplicates
+# --------------------------------------------------------------------------- #
+def test_resolve_idempotent():
+    """AC: synthesized view names are deterministic + collision-safe, so running
+    the resolver on the same proposals/profile produces the SAME view name(s) with
+    NO duplicates (re-running Infer is idempotent)."""
+    profile = _profile_xtf22()
+
+    def _fresh():
+        return [
+            _data_proposal(
+                "chart",
+                {"name": "beds_by_commune", "title": "Beds by commune",
+                 "type": "bar", "questions": ["Beds"], "group_by": "Commune"},
+                name="beds_by_commune",
+            ),
+        ]
+
+    views_a = ti.resolve_sources(_fresh(), profile)
+    views_b = ti.resolve_sources(_fresh(), profile)
+
+    names_a = [v["name"] for v in views_a]
+    names_b = [v["name"] for v in views_b]
+    # Deterministic: same name(s) on both runs.
+    assert names_a == names_b, (names_a, names_b)
+    # No duplicate names within a single run.
+    assert len(names_a) == len(set(names_a)), names_a
+
+    # And persisting the run-1 views into the profile must NOT create a duplicate
+    # on a re-run: a profile that already contains the synthesized view (by name)
+    # is reused rather than a new differently-named view minted.
+    profile_with_view = dict(profile)
+    # Mirror how build_views reads views: cfg["views"] is a list of view dicts;
+    # but the resolver de-dupes against EXISTING view names. Represent the already
+    # persisted view both as a profile table (so its columns resolve) keyed by the
+    # view name — the minimal stand-in for "this view already exists".
+    profile_with_view[names_a[0]] = {
+        "name": names_a[0], "rows": 5,
+        "columns": profile["health_facilities"]["columns"]
+        + [{"name": "Commune", "role": "categorical", "distinct": 2, "missing_pct": 0.0}],
+        "correlations": [], "duplicates": None,
+    }
+    views_c = ti.resolve_sources(_fresh(), profile_with_view)
+    names_c = [v["name"] for v in views_c]
+    # The same deterministic name is reused (no `_2` suffix duplicate minted).
+    assert names_c == names_a, (names_c, names_a)
+
+
+# --------------------------------------------------------------------------- #
+# (4) column in NO table → needs_attention, reason says no table contains it
+# --------------------------------------------------------------------------- #
+def test_resolve_unknown_column_flagged():
+    """AC: a column present in NO table stays needs_attention with a reason saying
+    no table contains it.
+
+    The chart references "Ghost" which exists in neither ``main`` nor
+    ``health_facilities``; the resolver flags the proposal and the reason names the
+    offending column."""
+    profile = _profile_xtf22()
+    proposals = [
+        _data_proposal(
+            "chart",
+            {"name": "ghost", "title": "Ghost", "type": "bar",
+             "questions": ["Ghost"]},
+            name="ghost",
+        ),
+    ]
+
+    ti.resolve_sources(proposals, profile)
+
+    assert _get(proposals[0], "status") == "needs_attention", proposals[0]
+    reason = _get(proposals[0], "reason")
+    assert "Ghost" in reason, reason
+
+    # The existing annotate path keeps it flagged too (does not silently pass).
+    out = ti.annotate_proposals(proposals, profile)
+    assert _get(out[0], "status") == "needs_attention", _get(out[0], "reason")
+
+
+# --------------------------------------------------------------------------- #
+# (5) genuine multi-table tie → needs_attention naming both candidate tables
+# --------------------------------------------------------------------------- #
+def test_resolve_tie_flagged():
+    """AC: a genuine multi-table tie (a single referenced column present in 2+
+    tables with no disambiguating majority) stays needs_attention with a reason
+    naming BOTH candidate tables.
+
+    "Shared" lives in two repeat tables and nowhere else; a single-column chart on
+    it has no majority to break the tie — the resolver must flag it and name both
+    candidate tables."""
+    profile = {
+        "main": {
+            "name": "main", "rows": 3,
+            "columns": [
+                {"name": "_id", "role": "linkage", "distinct": 3, "missing_pct": 0.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "facilities": {
+            "name": "facilities", "rows": 4,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 3, "missing_pct": 0.0},
+                {"name": "Shared", "role": "categorical", "distinct": 2, "missing_pct": 0.0,
+                 "top_values": [{"value": "x", "count": 2}, {"value": "y", "count": 2}]},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "staff": {
+            "name": "staff", "rows": 6,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 3, "missing_pct": 0.0},
+                {"name": "Shared", "role": "categorical", "distinct": 2, "missing_pct": 0.0,
+                 "top_values": [{"value": "x", "count": 3}, {"value": "y", "count": 3}]},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+    }
+    proposals = [
+        _data_proposal(
+            "chart",
+            {"name": "shared", "title": "Shared", "type": "bar",
+             "questions": ["Shared"]},
+            name="shared",
+        ),
+    ]
+
+    ti.resolve_sources(proposals, profile)
+
+    assert _get(proposals[0], "status") == "needs_attention", proposals[0]
+    reason = _get(proposals[0], "reason")
+    assert "facilities" in reason and "staff" in reason, reason

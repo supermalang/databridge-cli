@@ -2601,6 +2601,12 @@ async def api_template_infer(request: Request):
         prof = profile_dataset(cfg, df, repeats)
         catalog = ask_engine.build_catalog(prof, cfg)
         proposals = ti.infer_specs(nl_tokens, catalog, ai_cfg)
+        # Deterministic auto-modeling: resolve each data proposal's `source`
+        # (single-table) or attach a synthesized join view (repeat + main) BEFORE
+        # validation, so cross-table columns no longer falsely flag as "not in
+        # main". Synthesized views ride along on each proposal under `view` and
+        # are persisted into config `views:` on apply (XTF-22).
+        ti.resolve_sources(proposals, prof)
         proposals = ti.annotate_proposals(proposals, prof)
     except Exception as e:  # noqa: BLE001 — an AI failure re-locks the AI buttons
         _invalidate_ai(request)
@@ -2645,6 +2651,21 @@ async def api_template_apply(payload: TemplateApplyPayload, request: Request):
             detail=("Could not resolve the template — it was not found in storage. "
                     "Re-run Infer to upload the template again."),
         )
+
+    # Persist any synthesized auto-modeling views (XTF-22) the resolver attached
+    # to approved proposals into config `views:`, appended and de-duped by name so
+    # build-report can resolve the join. Idempotent: a view name already present
+    # (in config or among the approved set) is written exactly once.
+    views = cfg.setdefault("views", [])
+    if not isinstance(views, list):
+        views = []
+        cfg["views"] = views
+    view_names = {v.get("name") for v in views if isinstance(v, dict)}
+    for prop in approved:
+        view = prop.get("view")
+        if isinstance(view, dict) and view.get("name") and view["name"] not in view_names:
+            views.append(view)
+            view_names.add(view["name"])
     # apply_inference returns the ABSOLUTE resolved .docx (saved next to the upload,
     # i.e. under TEMPLATES_DIR for a stored/uploaded template). Push it to durable
     # storage so a later run's hydrate_run_dir pulls it into its isolated tempdir,

@@ -413,6 +413,226 @@ def annotate_proposals(proposals: List[Proposal], profile: Dict) -> List[Proposa
 
 
 # =========================================================================== #
+# XTF-22 — Deterministic auto-modeling resolver for cross-table columns.
+# =========================================================================== #
+# ``resolve_sources(proposals, profile)`` runs AFTER ``infer_specs`` and BEFORE
+# ``annotate_proposals`` — pure Python, no LLM. The inference catalog already
+# carries every table (main + repeat-group bases), and ``builder._pick_df``
+# already auto-selects the right table at build time; but validation defaults
+# ``source`` to ``"main"`` and rejects anything not found there. This pass
+# stamps the correct ``source`` (single-table case) or synthesizes a join view
+# (repeat-table + main case) so the existing validation passes for resolved
+# specs, leaving only genuinely ambiguous/unknown columns flagged.
+
+# Data kinds whose columns map onto profile tables.
+_DATA_KINDS = ("chart", "indicator", "summary", "table")
+
+
+def _referenced_columns(spec: Dict) -> List[str]:
+    """Columns a data spec references, mirroring ask_engine validation reads.
+
+    ``questions`` (list) + ``group_by`` (str) + ``question`` (str, the indicator
+    single-column field). Order-preserving, de-duped, blanks dropped.
+    """
+    cols: List[str] = []
+    for c in (spec.get("questions") or []):
+        if c:
+            cols.append(c)
+    for key in ("group_by", "question"):
+        c = spec.get(key)
+        if c:
+            cols.append(c)
+    seen: set = set()
+    out: List[str] = []
+    for c in cols:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def _table_columns(profile: Dict, table: str) -> set:
+    """Set of column names in a profile table (empty when the table is absent)."""
+    tp = profile.get(table) or {}
+    return {c.get("name") for c in (tp.get("columns") or []) if isinstance(c, dict)}
+
+
+def _is_auto_view_table(name: str) -> bool:
+    """True for a profile table that is a previously synthesized auto-view.
+
+    Synthesized views use the deterministic ``auto_<leaf>__<joincols>`` prefix;
+    once persisted into ``config.yml`` ``views:`` they show up as profile tables.
+    They must not themselves be candidate join sources (they would otherwise tie
+    with the real repeat-group base) — recognising them keeps re-runs idempotent.
+    """
+    return str(name).startswith("auto_")
+
+
+def _tables_containing(profile: Dict, column: str) -> List[str]:
+    """Real (non auto-view) table names whose columns include ``column``."""
+    return [t for t in profile
+            if not _is_auto_view_table(t) and column in _table_columns(profile, t)]
+
+
+def _pick_table(profile: Dict, candidates: set, columns: List[str]) -> "tuple[str | None, list[str]]":
+    """Most-columns-match heuristic (mirrors ``builder._pick_df``).
+
+    Among ``candidates`` (table names), return the one containing the MOST of
+    ``columns``. Returns ``(table, ties)`` where ``ties`` is the list of tables
+    sharing the top score when there is no unique winner (>1 table tied on a
+    non-zero score), else an empty list.
+    """
+    scored = [(t, sum(1 for c in columns if c in _table_columns(profile, t)))
+              for t in candidates]
+    scored = [(t, n) for t, n in scored if n > 0]
+    if not scored:
+        return None, []
+    best = max(n for _t, n in scored)
+    top = sorted(t for t, n in scored if n == best)
+    if len(top) > 1:
+        return None, top
+    return top[0], []
+
+
+def _is_aggregated_chart(kind: str, spec: Dict, profile: Dict) -> bool:
+    """True when the chart inherently aggregates a measure by a category.
+
+    Carry ``group_by``/``question``/``agg`` onto a synthesized view only for
+    these: a ``group_by`` over a quantitative ``questions`` column means the
+    view should pre-aggregate (matching ``transform.build_views``)."""
+    if kind not in ("chart", "table"):
+        return False
+    group_by = spec.get("group_by")
+    questions = list(spec.get("questions") or [])
+    if not group_by or not questions:
+        return False
+    # Treat as aggregated when the measure column is quantitative anywhere.
+    measure = questions[0]
+    for t in profile:
+        for c in (profile.get(t, {}).get("columns") or []):
+            if c.get("name") == measure and c.get("role") == "quantitative":
+                return True
+    return False
+
+
+def _view_name(repeat_table: str, join_cols: List[str]) -> str:
+    """Deterministic, collision-safe synthesized-view name.
+
+    ``auto_<repeat_leaf>__<joincols>`` — leaf of the repeat table key + the
+    joined main columns, all slugified, so the same join always yields the same
+    name (idempotent re-runs)."""
+    leaf = _slugify(str(repeat_table).split("/")[-1].split("__")[-1])
+    joins = "_".join(_slugify(c) for c in join_cols) or "main"
+    return f"auto_{leaf}__{joins}"
+
+
+def resolve_sources(proposals: List[Proposal], profile: Dict) -> List[Dict]:
+    """Resolve each data proposal's ``source`` deterministically (no LLM).
+
+    Mutates proposals in place — stamping ``spec["source"]`` (single-table /
+    view), attaching a synthesized ``view`` dict (join case), or setting
+    ``status``/``reason`` (stuck) — and returns the list of synthesized view
+    dicts (de-duped by name) for ``/api/template/apply`` to persist.
+    """
+    profile = profile or {}
+    synthesized: List[Dict] = []
+    synthesized_by_name: Dict[str, Dict] = {}
+
+    for prop in proposals:
+        kind = prop.get("kind", "chart")
+        if kind not in _DATA_KINDS:
+            continue
+        spec = prop.get("spec") or {}
+        cols = _referenced_columns(spec)
+        if not cols:
+            continue
+
+        # Map each referenced column to the tables that contain it.
+        located = {c: _tables_containing(profile, c) for c in cols}
+        missing = [c for c, tabs in located.items() if not tabs]
+        if missing:
+            prop["status"] = "needs_attention"
+            prop["reason"] = (
+                f"column '{missing[0]}' not found in any table "
+                f"({', '.join(sorted(profile))})"
+            )
+            continue
+
+        in_main = [c for c in cols if "main" in located[c]]
+        non_main = [c for c in cols if "main" not in located[c]]
+
+        # All referenced columns are in main → leave source as-is.
+        if not non_main:
+            continue
+
+        # Candidate non-main tables: those holding at least one non-main column.
+        candidate_tables = set()
+        for c in non_main:
+            candidate_tables.update(located[c])
+        candidate_tables.discard("main")
+
+        if not in_main:
+            # All columns live in non-main tables. Pick the single table holding
+            # the most of them; a genuine tie with no majority is flagged.
+            table, ties = _pick_table(profile, candidate_tables, cols)
+            if table is None:
+                prop["status"] = "needs_attention"
+                prop["reason"] = (
+                    f"column '{non_main[0]}' is ambiguous — present in "
+                    f"{', '.join(ties)}; specify a source"
+                )
+                continue
+            # Every referenced column must be reachable from the picked table.
+            table_cols = _table_columns(profile, table)
+            unreachable = [c for c in cols if c not in table_cols]
+            if unreachable:
+                prop["status"] = "needs_attention"
+                prop["reason"] = (
+                    f"columns span multiple tables; '{unreachable[0]}' not in "
+                    f"'{table}'"
+                )
+                continue
+            spec["source"] = table
+            continue
+
+        # Span a repeat table + main → synthesize a join view. Pick the repeat
+        # table holding the most of the non-main columns.
+        table, ties = _pick_table(profile, candidate_tables, non_main)
+        if table is None:
+            prop["status"] = "needs_attention"
+            prop["reason"] = (
+                f"column '{non_main[0]}' is ambiguous — present in "
+                f"{', '.join(ties)}; specify a source"
+            )
+            continue
+        # The repeat table must hold all non-main columns to be the join source.
+        table_cols = _table_columns(profile, table)
+        unreachable = [c for c in non_main if c not in table_cols]
+        if unreachable:
+            prop["status"] = "needs_attention"
+            prop["reason"] = (
+                f"columns span multiple tables; '{unreachable[0]}' not in "
+                f"'{table}'"
+            )
+            continue
+
+        name = _view_name(table, in_main)
+        view = synthesized_by_name.get(name)
+        if view is None:
+            view = {"name": name, "source": table, "join_parent": list(in_main)}
+            if _is_aggregated_chart(kind, spec, profile):
+                view["group_by"] = spec.get("group_by")
+                view["question"] = (spec.get("questions") or [None])[0]
+                view["agg"] = spec.get("agg", "sum")
+            synthesized_by_name[name] = view
+            synthesized.append(view)
+        spec["source"] = name
+        prop["view"] = dict(view)
+
+    return synthesized
+
+
+# =========================================================================== #
 # XTF-3 — Apply: persist config + resolve template.
 # =========================================================================== #
 # ``apply_inference(approved, cfg, template_path) -> (cfg, resolved_path)``
