@@ -1,7 +1,6 @@
 """Filesystem-backed Storage — keys map to files under a base directory. For tests
 and isolated unit testing."""
 import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -38,12 +37,6 @@ class LocalStorage(Storage):
         dest = Path(dest_path)
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(p, dest)
-
-    def last_modified(self, key: str) -> datetime:
-        p = self._path(key)
-        if not p.is_file():
-            raise KeyError(key)
-        return datetime.fromtimestamp(p.stat().st_mtime)
 
     def list(self, prefix: str) -> List[str]:
         keys = []
