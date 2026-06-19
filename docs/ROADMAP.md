@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 18 | 16 / 18 |
+| [Express Template Fill](#express-template-fill) | 18 | 17 / 18 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1298,7 +1298,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-17 — Searchable split-by dropdown in the build options**
+- [x] **XTF-17 — Searchable split-by dropdown in the build options**
 
   The split-by control (`frontend/src/components/BuildOptions.jsx`) is a plain `<select>`. For
   forms with many main-table columns it's hard to scan. Make it a **searchable/filterable**
