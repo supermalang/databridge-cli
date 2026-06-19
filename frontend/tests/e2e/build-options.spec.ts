@@ -177,3 +177,38 @@ test.describe('XTF-13 — build options: split-by (main-table only) + sample pre
     await expect(control).toHaveScreenshot('build-options.png');
   });
 });
+
+test.describe('XTF-15 — single "Build report" control (rail Quick Action removed)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+  });
+
+  test('the Reports page has exactly one "Build report" button — the BuildOptions build-run control', async ({ page }) => {
+    await gotoReports(page);
+
+    // AC: the Reports page has exactly ONE "Build report" control. Currently TWO match:
+    //   (1) the Quick Actions rail action (Reports.jsx ~127, run('build-report'))
+    //   (2) the XTF-13 BuildOptions build-run button (default label "Build report")
+    // After the rail action is removed, only (2) survives.
+    const buildButtons = page.getByRole('button', { name: /build report/i });
+    await expect(buildButtons).toHaveCount(1);
+
+    // AC: the single survivor is the BuildOptions build-run control, NOT the rail action.
+    // The rail action is a `.rail-action` button with no data-testid; build-run carries it.
+    await expect(buildButtons).toHaveAttribute('data-testid', 'build-run');
+
+    // The same element is reachable via its testid, and is the only "Build report" match.
+    await expect(page.getByTestId('build-run')).toHaveText(/build report/i);
+  });
+
+  test('the Quick Actions rail drops "Build report" but keeps "Compare periods"', async ({ page }) => {
+    await gotoReports(page);
+
+    // AC: the Quick Actions rail no longer contains a "Build report" action…
+    const railActions = page.locator('.rail-action');
+    await expect(railActions.filter({ hasText: /build report/i })).toHaveCount(0);
+
+    // …while the remaining rail actions (e.g. Compare periods) are unchanged and still present.
+    await expect(railActions.filter({ hasText: /compare periods/i })).toHaveCount(1);
+  });
+});

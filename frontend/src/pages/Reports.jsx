@@ -124,8 +124,6 @@ export default function Reports() {
               sub: sessions?.length ? 'available to build from' : 'run download first' },
           ]} />
           <QuickActionsCard actions={[
-            { icon: RailIcons.doc, label: 'Build report', onClick: () => run('build-report'),
-              disabled: !buildReady, title: buildTitle },
             { icon: RailIcons.copy, label: 'Compare periods', onClick: () => { setSelected([]); setShowCompare(true); },
               title: 'Build a comparison report across periods' },
           ]} />

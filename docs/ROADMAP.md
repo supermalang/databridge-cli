@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 14 | 14 / 14 |
+| [Express Template Fill](#express-template-fill) | 15 | 15 / 15 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1205,6 +1205,52 @@ A card is startable only when all of the following hold:
   3. Confirm View-logs still toggles the terminal and the alert still names the active command.
 
   **Verify:** `cd frontend && npx playwright test run-alert.spec.ts`
+
+---
+
+- [x] **XTF-15 — Remove the redundant rail "Build report" Quick Action on the Reports page**
+
+  Follow-up from XTF-13/14 review. The Reports page now shows TWO "Build report" buttons: the
+  Quick Actions rail action (`Reports.jsx` ~127, `run('build-report')` with no options) and the
+  XTF-13 BuildOptions control's `build-run` button (split-by + sample). The BuildOptions entry
+  supersedes the rail one ("Build all groups (default)" == the rail's no-option build), and two
+  identically-labelled buttons on one page is a UX smell (it also caused the ambiguous-locator
+  regression repaired in XTF-14). Remove the rail "Build report" Quick Action; keep the other
+  rail actions (e.g. Compare periods). Depends on **XTF-13** (BuildOptions) + **XTF-1–14**
+  (shipped).
+
+  **Files:** `frontend/src/pages/Reports.jsx` (drop the "Build report" entry from the
+  `QuickActionsCard` actions ~127) · `frontend/tests/e2e/build-options.spec.ts` (assert a single
+  build control) · `frontend/tests/e2e/reports-delete-all.spec.ts` + `run-alert.spec.ts` +
+  `terminal-collapse.spec.ts` (refresh the Reports-page baselines the rail change affects)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - The Reports page has exactly ONE "Build report" control — the BuildOptions `build-run`
+    button; the Quick Actions rail no longer contains a "Build report" action
+  - The remaining Quick Actions (e.g. Compare periods) are unchanged and still work
+  - Building from the BuildOptions control is unaffected (still calls `run('build-report', opts)`)
+  - Impeccable audit/critique clean on the updated Reports header/rail (no orphaned spacing)
+
+  **Unit tests:** N/A (frontend-only markup removal; Vitest not installed — asserted by the
+  Playwright E2E below, consistent with prior UI cards).
+
+  **E2E:** `frontend/tests/e2e/build-options.spec.ts` (extend) + visual (impeccable audit/critique
+  + `toHaveScreenshot`) — on the Reports page, assert `getByRole('button', {name:/build report/i})`
+  resolves to EXACTLY ONE element (the `build-run` control) and the Quick Actions rail does not
+  contain a "Build report" action. Refresh the affected Reports-page baselines (the
+  `reports-delete-all.png` and the run-state baselines that screenshot the Reports rail —
+  `run-alert.png`, `terminal-collapse` — change because the rail loses a button) at all three
+  viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human re-approves them.
+
+  **UAT:**
+  1. Open Deliver → Reports. Confirm there is a single "Build a report" entry (the Build options
+     panel) and the Quick Actions rail no longer has a separate "Build report" button.
+  2. Confirm the other Quick Actions (Compare periods) are still present and work.
+  3. Build from the Build options panel and confirm a report is produced as before.
+
+  **Verify:** `cd frontend && npx playwright test build-options.spec.ts reports-delete-all.spec.ts`
 
 ---
 
