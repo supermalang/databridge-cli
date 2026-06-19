@@ -1842,6 +1842,16 @@ async def download_report(filename: str, request: Request):
     return FileResponse(path=path, filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
+@app.delete("/api/reports")
+async def delete_all_reports(request: Request):
+    _require(request, "editor")
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    deleted = 0
+    for f in REPORTS_DIR.glob("*.docx"):
+        f.unlink()
+        deleted += 1
+    return {"ok": True, "deleted": deleted}
+
 @app.delete("/api/reports/{filename}")
 async def delete_report(filename: str, request: Request):
     _require(request, "editor")
