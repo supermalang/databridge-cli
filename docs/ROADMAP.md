@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 15 | 14 / 15 |
+| [Express Template Fill](#express-template-fill) | 15 | 15 / 15 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1208,7 +1208,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-15 — Remove the redundant rail "Build report" Quick Action on the Reports page**
+- [x] **XTF-15 — Remove the redundant rail "Build report" Quick Action on the Reports page**
 
   Follow-up from XTF-13/14 review. The Reports page now shows TWO "Build report" buttons: the
   Quick Actions rail action (`Reports.jsx` ~127, `run('build-report')` with no options) and the
