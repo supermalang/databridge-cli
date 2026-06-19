@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 18 | 18 / 18 |
+| [Express Template Fill](#express-template-fill) | 23 | 23 / 23 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -488,6 +488,12 @@ A card is startable only when all of the following hold:
 >
 > Cards are dependency-ordered: XTF-2 depends on XTF-1; XTF-3 depends on XTF-1+XTF-2; XTF-4
 > depends on XTF-1–XTF-3; XTF-5 depends on XTF-1–XTF-4.
+>
+> **Follow-up fix batch (XTF-19–XTF-23):** post-ship fixes to the Express fill flow and the
+> report pipeline behind it, designed in
+> [docs/superpowers/specs/2026-06-19-express-fill-fixes-design.md](superpowers/specs/2026-06-19-express-fill-fixes-design.md)
+> (root causes, chosen approach, file paths, per-issue Tests). They are independent of each other
+> and depend on XTF-1–XTF-18 (shipped).
 
 ---
 
@@ -1250,7 +1256,7 @@ A card is startable only when all of the following hold:
   2. Confirm the other Quick Actions (Compare periods) are still present and work.
   3. Build from the Build options panel and confirm a report is produced as before.
 
-  **Verify:** `cd frontend && npx playwright test build-options.spec.ts reports-delete-all.spec.ts`
+  **Verify:** `cd frontend && npx playwright test build-options.spec.ts`
 
 ---
 
@@ -1387,6 +1393,280 @@ A card is startable only when all of the following hold:
   3. Manually open the terminal during an express build and confirm it stays open (not auto-collapsed).
 
   **Verify:** `cd frontend && npx playwright test terminal-collapse.spec.ts`
+
+---
+
+- [x] **XTF-19 — Storage push mirrors output categories (fixes split-preview leaving stale reports)**
+
+  Bug from the follow-up batch (issue ① in the spec). `push_outputs`
+  (`web/storage/workspace.py` ~64–72) is **merge-only**: a split preview that builds 2 reports into
+  the run tempdir uploads those 2 but never deletes the ~24 prior report objects already in durable
+  storage. `_persist_run_outputs` (`web/main.py` ~1683–1697) then `pull_workspace`s **everything**
+  back into the local mirror, so the old reports reappear — durable storage acts as an un-pruned
+  cache. `build-report`'s run inputs are `["processed","templates"]` (NOT `reports`), so the tempdir
+  already holds exactly this run's outputs. Fix: add a per-command **output** category map and make
+  the push **mirror-delete** (delete storage objects under a category's prefix that are absent from
+  the tempdir set) **only for the command's declared output categories**; every other category stays
+  merge-only. This MUST avoid the footgun where `download` (which hydrates neither `reports` nor
+  `templates`) wipes them. Independent of XTF-20/21/22. Depends on **XTF-1–XTF-18** (shipped).
+
+  **Files:** `web/storage/workspace.py` (new `RUN_OUTPUTS` map e.g.
+  `{"build-report":["reports"], "run-all":["reports"], "generate-template":["templates"],
+  "ai-generate-template":["templates"], "download":["processed"]}`; teach `push_outputs` to
+  mirror-delete the declared output categories using `store.list(prefix)` + single-key
+  `delete_project_file`/`store.delete`, leaving undeclared categories merge-only) · `web/main.py`
+  (`_persist_run_outputs` accepts/forwards the run `command` so the push knows which categories to
+  mirror; thread the command through from the run path that calls it) · `tests/test_workspace.py`
+
+  **Config/schema impact:** None. Reports/templates/processed are regenerable run outputs; a run
+  replaces its own declared categories.
+
+  **Acceptance criteria**
+  - A per-command `RUN_OUTPUTS` map declares the output categories each command produces
+    (`build-report`/`run-all` → `reports`; `generate-template`/`ai-generate-template` → `templates`;
+    `download` → `processed`); commands with no declared outputs prune nothing
+  - For a command's declared output categories, the push deletes durable-storage objects under that
+    category prefix that are NOT present in the local/tempdir set (mirror-delete), then uploads the
+    current set
+  - All categories NOT declared as outputs for that command stay **merge-only** (no deletes) — in
+    particular `download` never touches `reports`/`templates` storage objects
+  - After the push + a subsequent `pull_workspace`, the local mirror for a mirrored category equals
+    exactly the tempdir's set (no resurrected stale files)
+  - Only `store.list(prefix)` + single-key delete are used (no new S3 calls / no `delete_prefix`
+    blanket wipe)
+
+  **Unit tests:** `tests/test_workspace.py` (using the local/fake storage backend the existing
+  workspace tests use) — (1) `test_push_mirrors_build_report_reports`: seed durable storage with 26
+  stale `reports` objects, build a tempdir holding exactly 2 report `.docx`, run the push for command
+  `build-report`, and assert durable storage AND a subsequent `pull_workspace` mirror end with
+  exactly those 2. (2) `test_download_push_leaves_reports_and_templates`: with existing `reports`
+  and `templates` objects in storage, run the push for command `download` (declares only
+  `processed`) and assert the `reports`/`templates` objects are untouched (regression guard against
+  the wipe footgun). (3) `test_generate_template_push_mirrors_only_templates`: a `generate-template`
+  push mirrors `templates` to the tempdir set and leaves existing `reports` objects untouched.
+
+  **E2E:** N/A (back-end storage behavior — no UI surface of its own; the Reports list just reflects
+  durable storage. Human gate is the unit tests + the verifier + PR review).
+
+  **UAT:** N/A (back-end fix; verified via the Verify command, unit tests, the verifier, and PR
+  review — UAT moves in lockstep with E2E).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_workspace.py`
+
+---
+
+- [x] **XTF-20 — Reports listing shows storage build-time (with local-mtime fallback)**
+
+  Bug from the follow-up batch (issue ② in the spec, read/listing half). `GET /api/reports`
+  (`web/main.py` ~1826–1835) reports each file's **local mtime**, but `pull_workspace`'s S3
+  `download_file` resets local mtime to pull-time — so every pulled report shows "today" regardless
+  of when it was built. Fix: the listing surfaces each file's **storage object last-modified**
+  (push/build time), falling back to local mtime in pure-local mode when there is no storage object
+  (the filename's `_YYYYMMDD` is already correct and unchanged). Needs a storage last-modified
+  accessor: the `Storage` base currently has no `last_modified`/stat method — add one to the
+  abstraction and the local + S3 backends. Durable deletes are the separate XTF-23 deliverable; this
+  card is read/listing only. Shares no blocking dependency with XTF-23. Independent of XTF-21/22.
+  Depends on **XTF-1–XTF-18** (shipped).
+
+  **Files:** `web/main.py` (`list_reports` ~1826 surfaces storage last-modified with a local-mtime
+  fallback) · `web/storage/base.py` (add a `last_modified(key)` / stat accessor to the `Storage`
+  abstraction) · `web/storage/*` backends (implement `last_modified` on the local + S3 backends) ·
+  `tests/test_reports_api.py` (existing reports-API test file; extend it)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - `GET /api/reports` returns, for each report, a `modified` timestamp sourced from the **storage
+    object's last-modified** (push/build time), not the reset local mtime
+  - When no storage object exists for a file (pure-local mode), the listing falls back to local
+    mtime without erroring
+  - A `Storage.last_modified(key)` (or equivalent stat) accessor exists on the abstraction and the
+    local + S3 backends and returns the object's last-modified time
+
+  **Unit tests:** `tests/test_reports_api.py` — (1) `test_list_reports_uses_storage_modified`: with
+  a fake/spy storage backend returning a known last-modified for a report key (distinct from the
+  local file's reset mtime), assert the listing's `modified` reflects the STORAGE value, not the
+  local mtime. (2) `test_list_reports_local_fallback`: a file with no storage object falls back to
+  local mtime without error. (3) `test_storage_last_modified_implemented`: assert
+  `Storage.last_modified(key)` is implemented on BOTH the local and S3 backends and returns the
+  object's last-modified time.
+
+  **E2E:** N/A (back-end API behavior, no UI surface of its own — consistent with XTF-8; the Reports
+  tab consumes the value but the change is back-end. Human gate is the unit tests + the verifier + PR
+  review).
+
+  **UAT:** N/A (back-end fix; verified via the Verify command, unit tests, the verifier, and PR
+  review — UAT moves in lockstep with E2E).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_reports_api.py`
+
+---
+
+- [x] **XTF-21 — Express split-by dropdown no longer clipped (CSS stacking)**
+
+  Bug from the follow-up batch (issue ③ in the spec). In the Express review panel (shown after
+  Infer), the "Split by" combobox menu is clipped/hidden behind sibling content when opened:
+  `.express-review-panel { overflow: hidden }` (`frontend/src/styles.css` ~925) clips the
+  absolutely-positioned `.build-combo__list` (`position:absolute; z-index:30`,
+  `frontend/src/styles.css` ~1014–1020). Fix: let the menu escape its container — preferred remove
+  `overflow: hidden` from `.express-review-panel` (it's there for border-radius cosmetics; verify
+  nothing depends on it) and ensure the combo list stacks above sibling rows; fallback if rounded
+  corners regress, keep overflow but raise `.build-combo` into its own stacking context / render the
+  menu so it is not clipped. UI-facing. Depends on **XTF-17** (the searchable combo) +
+  **XTF-1–XTF-18** (shipped). Independent of XTF-19/20/22.
+
+  **Files:** `frontend/src/styles.css` (`.express-review-panel`, `.build-combo` /
+  `.build-combo__list`) · possibly `frontend/src/components/BuildOptions.jsx` (only if a structural
+  tweak is needed to lift the menu out of the clipping context) ·
+  `frontend/tests/e2e/express-template-fill.spec.ts` (extend with the open-dropdown assertion +
+  baselines)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - After Infer, opening the Express "Split by" combobox shows the full options listbox, not clipped
+    by the review panel (the listbox extends beyond the panel's rounded-corner bounds when needed)
+  - The open listbox stacks above the sibling rows/content of the review panel (correct z-order)
+  - The `.express-review-panel` retains its rounded corners (border-radius unchanged) and clips no
+    other content — verified by the desktop `toHaveScreenshot` baseline of the closed-panel state
+  - Keyboard/typeahead behavior of the combobox (from XTF-17) is unchanged
+  - Impeccable audit/critique clean on the open-dropdown state in the Express panel
+
+  **Unit tests:** N/A (frontend-only CSS/stacking change; Vitest is not installed — the fix is
+  asserted by the Playwright E2E below, consistent with XTF-5/XTF-7/XTF-17).
+
+  **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` (extend) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) — drive the Express flow to the review panel (after Infer),
+  open the "Split by" combobox, and assert the listbox is visible and **not clipped** by the panel
+  (e.g. its bounding box extends past the panel's clip bound / it is fully visible above sibling
+  rows). Capture a `toHaveScreenshot` baseline of the OPEN-dropdown state AND the closed-panel state
+  (to prove rounded corners are retained) at all three viewports (mobile 390×844, tablet 820×1180,
+  desktop 1440×900); a human approves the new baselines.
+
+  **UAT:**
+  1. Templates tab → "In a hurry?" Express fill. Upload a `.docx` with placeholders and click Infer.
+     Expected: the review panel appears with per-placeholder rows.
+  2. At desktop width (~1440px) click the "Split by" field. Expected: the dropdown opens and every
+     option row is fully readable, with the bottom-most option rendered below the panel's lower edge
+     (not sliced by the panel border).
+  3. Type into the field to filter (XTF-17 typeahead). Expected: the list narrows and stays fully
+     visible above the rows beneath it.
+  4. Narrow the window to ~390px (mobile) and repeat step 2. Expected: the open list is still fully
+     visible and not clipped; panel corners remain rounded.
+  5. Close the dropdown. Expected: the panel returns to its rounded-corner state with no visual
+     artifact.
+
+  **Verify:** `cd frontend && npx playwright test express-template-fill.spec.ts`
+
+---
+
+- [x] **XTF-22 — Deterministic auto-modeling resolver for cross-table columns**
+
+  Feature from the follow-up batch (issue ④ in the spec). Infer rejects placeholders whose column
+  lives in a repeat-group base table because validation defaults `source` to `"main"`
+  (`src/reports/ask_engine.py` ~79–116; `src/reports/template_inference.py` ~306–327) — even though
+  the inference catalog already includes ALL tables and `builder._pick_df`
+  (`src/reports/builder.py` ~34–71) already auto-selects the right table at build time. Add a
+  deterministic pass `resolve_sources(proposals, profile)` (plain Python, no extra LLM tokens) that
+  runs AFTER `infer_specs` and BEFORE `annotate_proposals`. For each data proposal, collect the
+  referenced columns (`questions` + `group_by`) and map each to the profile table(s) containing it:
+  all-in-`main` → leave as-is; all-in-one-non-main-table → stamp `source: <table>` (use the
+  `_pick_df` most-columns-match heuristic when a column appears in several tables); spans a repeat
+  table + `main` (join case) → synthesize a persisted view
+  `{name, source:<repeat_table>, join_parent:[<main cols>]}` carrying `group_by`/`question`/`agg`
+  only when the chart is inherently aggregated, and point the spec's `source` at the new view;
+  stuck (column in no table, or genuine tie) → keep `needs_attention` with a reason naming the
+  candidate tables. Synthesized views are persisted into `config.yml` `views:` on **apply**
+  (`/api/template/apply`), NOT on infer; view names are deterministic + collision-safe (e.g.
+  `auto_<repeat_leaf>__<joincols>`, de-duped against existing `views:`) so re-running Infer is
+  idempotent. Validation already validates against the resolved `source` once stamped. Back-end
+  (the express UI flow is already covered by XTF-5/6). Depends on **XTF-1–XTF-18** (shipped).
+  Independent of XTF-19/20/21.
+
+  **Files:** `src/reports/template_inference.py` (new `resolve_sources`, or a small new module it
+  imports) · `web/main.py` (`/api/template/infer` runs `resolve_sources` between `infer_specs` and
+  `annotate_proposals`; `/api/template/apply` persists any synthesized views into config `views:`) ·
+  `tests/test_template_inference.py` (resolver unit cases) · `tests/test_template_api.py` (the
+  apply-persists-view API case)
+
+  **Config/schema impact:** None to the schema. Synthesized entries use the existing `views:` shape
+  (`name`, `source`, `join_parent`, optional `group_by`/`question`/`agg`); on apply they are appended
+  to `config["views"]` de-duped by name.
+
+  **Acceptance criteria**
+  - `resolve_sources(proposals, profile)` runs after `infer_specs` and before `annotate_proposals`
+    and resolves each data proposal's `source` deterministically (no LLM call)
+  - A proposal whose referenced columns all live in a single repeat-group table gets `source`
+    stamped to that table and validates clean (no `needs_attention`)
+  - A proposal referencing a repeat-group column + a `main` column yields a synthesized view
+    `{source:<repeat_table>, join_parent:[<main col>]}` and the spec's `source` points at the view
+  - Synthesized view names are deterministic and collision-safe (de-duped against existing `views:`),
+    so re-running the resolver on the same proposals is idempotent (no duplicate view names)
+  - A column present in NO table stays `needs_attention` with a reason that no table contains it; a
+    genuine multi-table tie stays `needs_attention` with a reason naming both candidate tables
+  - `/api/template/apply` persists any synthesized views into the config `views:` section (appended,
+    de-duped); `/api/template/infer` returns proposals carrying the resolved `source` (+ any pending
+    synthesized-view definitions)
+
+  **Unit tests:** `tests/test_template_inference.py` — (1) `test_resolve_single_repeat_column`: a
+  chart referencing one repeat-group column gets `source` stamped to that table and `annotate_proposals`
+  returns `status: ok` (no `needs_attention`). (2) `test_resolve_join_synthesizes_view`: a chart
+  referencing a repeat column + a main column yields a synthesized view with `source` = repeat table
+  and `join_parent` = `[main col]`, and the spec sources the view. (3) `test_resolve_idempotent`:
+  running the resolver twice produces no duplicate synthesized-view names. (4)
+  `test_resolve_unknown_column_flagged`: a column in no table stays `needs_attention` with a reason
+  saying no table contains it. (5) `test_resolve_tie_flagged`: a genuine multi-table tie stays
+  `needs_attention` with both candidate tables named. Plus `tests/test_template_api.py` —
+  `test_apply_persists_synthesized_view`: `/api/template/apply` with a proposal carrying a synthesized
+  view writes that view into `config["views"]` (appended, de-duped).
+
+  **E2E:** N/A (back-end inference logic — no UI surface of its own; the express UI flow is covered by
+  XTF-5/XTF-6. Human gate is the unit/API tests + the verifier + PR review).
+
+  **UAT:** N/A (back-end fix; verified via the Verify command, unit tests, the verifier, and PR
+  review — UAT moves in lockstep with E2E).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py tests/test_template_api.py`
+
+---
+
+- [x] **XTF-23 — DELETE /api/reports (all + single) deletes durable storage objects**
+
+  Bug from the follow-up batch (issue ② in the spec, durable-delete half). `DELETE /api/reports`
+  (`web/main.py` ~1848) and `DELETE /api/reports/{filename}` (~1858) only `unlink` local files, so a
+  delete is undone by the next run's `pull_workspace` (the durable storage object survives and is
+  re-pulled). Fix: both handlers also delete the corresponding `reports` storage object(s) via
+  `delete_project_file` (resolved for the caller's active org/project) so manual cleanup is durable.
+  Shares the durable-delete primitive (`delete_project_file`) with XTF-19 but does **not** block on
+  it — coordinate so whichever merges second rebases cleanly. Independent of XTF-20/21/22. Depends on
+  **XTF-1–XTF-18** (shipped).
+
+  **Files:** `web/main.py` (`delete_all_reports` ~1848 and `delete_report` ~1858 also
+  `delete_project_file` the matching `reports` storage object(s), resolving the caller's org/project)
+  · `tests/test_reports_api.py`
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - `DELETE /api/reports` removes both the local `.docx` files AND the corresponding `reports`
+    storage objects (resolved for the caller's active org/project), so a subsequent `pull_workspace`
+    restores nothing
+  - `DELETE /api/reports/{filename}` removes the matching local file AND only that file's storage
+    object (other report objects untouched)
+
+  **Unit tests:** `tests/test_reports_api.py` — (1) `test_delete_all_reports_durable`: `DELETE
+  /api/reports` removes both local files and storage objects — assert (via a spy storage backend)
+  `delete_project_file` was called for each `reports` object and a follow-up `pull_workspace` restores
+  nothing. (2) `test_delete_one_report_durable`: single-file DELETE removes only the matching storage
+  object, leaving the others.
+
+  **E2E:** N/A (back-end API, no UI surface — consistent with XTF-8; the Reports tab triggers the
+  delete but the change is back-end. Human gate is the unit tests + the verifier + PR review).
+
+  **UAT:** N/A (back-end fix; verified via the Verify command, unit tests, the verifier, and PR
+  review — UAT moves in lockstep with E2E).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_reports_api.py`
 
 ---
 
