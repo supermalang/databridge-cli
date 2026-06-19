@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 24 | 23 / 24 |
+| [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1670,7 +1670,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-24 — Restrict split-by dropdown to select_one columns**
+- [x] **XTF-24 — Restrict split-by dropdown to select_one columns**
 
   The "Split by" combobox in `BuildOptions` (`frontend/src/components/BuildOptions.jsx`, the
   `splitCols` useMemo ~46–52) currently lists EVERY main-table column (any question with no
