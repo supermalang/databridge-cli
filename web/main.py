@@ -1680,11 +1680,12 @@ async def run_command(command: str, payload: RunPayload, request: Request):
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
-def _persist_run_outputs(org_id: str, project_id: str, dest) -> None:
+def _persist_run_outputs(org_id: str, project_id: str, dest, command=None) -> None:
     """After a successful tempdir run: push outputs to Minio, sync a changed config.yml
-    back to the DB, and refresh the active project's BASE_DIR read-mirror."""
+    back to the DB, and refresh the active project's BASE_DIR read-mirror. The run
+    ``command`` tells the push which output categories to mirror (prune-stale)."""
     import uuid as _uuid
-    storage_workspace.push_outputs(org_id, project_id, base=dest)
+    storage_workspace.push_outputs(org_id, project_id, base=dest, command=command)
     cfg_path = Path(dest) / "config.yml"
     parsed = (yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}) if cfg_path.exists() else {}
     with db_session.SessionLocal() as db:
@@ -1741,7 +1742,7 @@ async def _stream(run_id: str, command: str, cmd: list, run_ctx=None) -> AsyncGe
 
     if status == "success" and run_ctx is not None:
         try:
-            _persist_run_outputs(run_ctx[0], run_ctx[1], work_dir)
+            _persist_run_outputs(run_ctx[0], run_ctx[1], work_dir, command=command)
         except Exception as e:   # CLI work already succeeded; persistence failure must not crash
             yield _sse("log", {"line": f"Warning: failed to persist outputs to storage: {e}", "level": "error"})
     if work_dir:
