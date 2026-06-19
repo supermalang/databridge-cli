@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 23 | 23 / 23 |
+| [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1667,6 +1667,71 @@ A card is startable only when all of the following hold:
   review — UAT moves in lockstep with E2E).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_reports_api.py`
+
+---
+
+- [x] **XTF-24 — Restrict split-by dropdown to select_one columns**
+
+  The "Split by" combobox in `BuildOptions` (`frontend/src/components/BuildOptions.jsx`, the
+  `splitCols` useMemo ~46–52) currently lists EVERY main-table column (any question with no
+  `repeat_group` + an `export_label`), regardless of type — so notes, usernames, numbers, dates,
+  multi-selects etc. all appear, and splitting on them produces garbage (one report per number / per
+  free-text note). Restrict the option set further to **single-select columns only**: questions whose
+  kobo `type` starts with `select_one` (covers `select_one` and `select_one_from_file`; EXCLUDES
+  `select_multiple*`, `integer`/`decimal`/`range`, `text`/`note`, `gps`/`geo*`, `date*`, and
+  undefined). The `type` field is present on every question reaching BuildOptions (both the Express
+  review panel via `frontend/src/pages/Templates.jsx` and the normal Reports build via
+  `frontend/src/pages/Reports.jsx` source `questions` from `/api/config`, which preserves `type`), so
+  the single change to `splitCols` covers BOTH surfaces. **Frontend only** — the backend
+  `build-report --split-by` keeps accepting any column (it already warns + falls back to a single
+  report for an unusable split column); the dropdown is the guardrail. The "No split — one combined
+  report" option stays first. Depends on **XTF-13** (BuildOptions) + **XTF-17** (searchable combo) +
+  **XTF-1–XTF-23** (shipped). Independent of the other XTF cards.
+
+  **Files:** `frontend/src/components/BuildOptions.jsx` (extend the `splitCols` filter ~46–52 to also
+  require `q.type` startsWith `select_one`) · `frontend/tests/e2e/build-options.spec.ts` (extend — the
+  existing spec already builds a typed `config.yml`; seed a mix of question types and assert the
+  restricted option set)
+
+  **Config/schema impact:** None — reads the existing question `type` field already present on each
+  question object.
+
+  **Acceptance criteria**
+  - The split-by dropdown lists ONLY columns whose question `type` starts with `select_one` (i.e.
+    `select_one` and `select_one_from_file`)
+  - `select_multiple*`, `integer`/`decimal`/`range`, `text`, `note`, `gps`/`geo*`, and `date*`
+    columns are NOT offered as split-by options (even though they are main-table columns)
+  - The "No split — one combined report" option remains FIRST in the list and still clears `split_by`
+  - The restriction applies identically in the Express review panel (Templates.jsx) and the regular
+    Reports build path (Reports.jsx) — both render the same `BuildOptions`
+  - The XTF-17 typeahead filter still works over the restricted (select_one-only) option set
+  - The downstream build contract is unchanged (a chosen `split_by`/`split_sample` is still forwarded)
+  - Impeccable audit/critique clean on the restricted combobox
+
+  **Unit tests:** N/A (frontend-only filter change; Vitest is not installed — the gate is asserted by
+  the Playwright E2E below, consistent with XTF-7/XTF-17/XTF-21).
+
+  **E2E:** `frontend/tests/e2e/build-options.spec.ts` (extend) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — seed the mocked `config.yml` with a mix of main-table question types: a
+  `select_one` column, a `select_multiple` column, an `integer` column, a `text` column, and a `note`
+  column (all without `repeat_group`). Open the split-by combobox and assert ONLY the `select_one`
+  column appears as a `build-split-option` (assert each of the `select_multiple`/`integer`/`text`/
+  `note` columns is absent), and assert the "No split" option is present and first. Capture a
+  `toHaveScreenshot` baseline of the open dropdown showing the restricted list at all three viewports
+  (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves the new baselines.
+
+  **UAT:**
+  1. With downloaded data on a form that has a mix of question types, open the Build options (Reports
+     → Build, or Express review panel) and click the "Split by" field.
+     Expected: the dropdown opens and "No split — one combined report" is the first entry.
+  2. Scan the listed options. Expected: only single-select (select_one) columns are listed — number,
+     date, free-text/note, username, and multi-select questions are NOT present.
+  3. Type part of a select_one column name (XTF-17 typeahead). Expected: the list narrows to matching
+     select_one columns; no excluded-type column ever appears regardless of the filter text.
+  4. Pick a select_one column and build. Expected: the report splits by that single-select column as
+     before.
+
+  **Verify:** `cd frontend && npx playwright test build-options.spec.ts`
 
 ---
 
