@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 14 | 11 / 14 |
+| [Express Template Fill](#express-template-fill) | 14 | 12 / 14 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1034,7 +1034,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-12 — Reports page: "Delete all reports" + bulk-delete endpoint**
+- [x] **XTF-12 — Reports page: "Delete all reports" + bulk-delete endpoint**
 
   `Reports.jsx` deletes reports one at a time (`deleteReport`, ~82) against
   `DELETE /api/reports/{filename}` (web/main.py ~1845, editor-gated). There is no bulk delete. Add a
