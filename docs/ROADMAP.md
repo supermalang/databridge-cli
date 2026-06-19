@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 23 | 21 / 23 |
+| [Express Template Fill](#express-template-fill) | 23 | 22 / 23 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1560,7 +1560,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-22 — Deterministic auto-modeling resolver for cross-table columns**
+- [x] **XTF-22 — Deterministic auto-modeling resolver for cross-table columns**
 
   Feature from the follow-up batch (issue ④ in the spec). Infer rejects placeholders whose column
   lives in a repeat-group base table because validation defaults `source` to `"main"`
