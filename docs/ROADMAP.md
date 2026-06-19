@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 23 | 19 / 23 |
+| [Express Template Fill](#express-template-fill) | 23 | 20 / 23 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1455,7 +1455,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-20 — Reports listing shows storage build-time (with local-mtime fallback)**
+- [x] **XTF-20 — Reports listing shows storage build-time (with local-mtime fallback)**
 
   Bug from the follow-up batch (issue ② in the spec, read/listing half). `GET /api/reports`
   (`web/main.py` ~1826–1835) reports each file's **local mtime**, but `pull_workspace`'s S3
