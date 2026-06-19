@@ -20,6 +20,8 @@ from web.db import bootstrap as db_bootstrap
 from web.db import session as db_session, repository as db_repo, provision as db_provision
 from web.db import bridge as db_bridge
 from web.storage import workspace as storage_workspace
+from web.storage import factory as storage_factory
+from web.storage.base import storage_key
 from web.netguard import validate_public_url, SSRFError
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
@@ -1828,11 +1830,37 @@ async def get_state():
 async def list_reports(request: Request):
     _require_view(request)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    # Resolve the active project's storage backend so each report's "modified" reflects
+    # the durable object's build/push time, not the local mtime (which pull_workspace's
+    # download resets to download time). Falls back to local mtime in pure-local mode.
+    store = org_id = project_id = None
+    try:
+        with db_session.SessionLocal() as db:
+            _user, project = _active_project(request, db)
+        if project is not None:
+            org_id, project_id = str(project.org_id), str(project.id)
+            store = storage_factory.get_storage()
+    except Exception:
+        store = org_id = project_id = None
+
+    def _modified(f):
+        if store is not None:
+            try:
+                return store.last_modified(storage_key(org_id, project_id, "reports", f.name))
+            except KeyError:
+                pass
+            except Exception:
+                pass
+        return datetime.fromtimestamp(f.stat().st_mtime)
+
     files = []
     for f in sorted(REPORTS_DIR.glob("*.docx"), key=lambda x: x.stat().st_mtime, reverse=True):
         s = f.stat()
+        mod = _modified(f)
+        if not isinstance(mod, datetime):
+            mod = datetime.fromtimestamp(float(mod))
         files.append({"name": f.name, "size_kb": round(s.st_size/1024,1),
-                       "modified": datetime.fromtimestamp(s.st_mtime).strftime("%Y-%m-%d %H:%M")})
+                       "modified": mod.strftime("%Y-%m-%d %H:%M")})
     return {"files": files}
 
 @app.get("/api/reports/download/{filename}")
