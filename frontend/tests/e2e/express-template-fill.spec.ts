@@ -417,3 +417,187 @@ test.describe('XTF-9 — Express banner is gated on questions + data', () => {
     await expect(page.getByTestId('express-upload')).toBeAttached();
   });
 });
+
+/**
+ * XTF-18 — Fix: the express **Apply & build** flow must auto-collapse the terminal
+ * on the SAME ~5s timing as the regular build (XTF-11), and still auto-expand on error.
+ *
+ * The regular-build collapse is asserted in terminal-collapse.spec.ts: App.jsx
+ * `onStatus` opens the BottomTerminal on a `running` status, then after
+ * `window.__TERM_COLLAPSE_MS ?? 5000` ms auto-collapses it to the bar WHILE the run
+ * keeps streaming (App.jsx ~184-199 + the `userOverrodeTermRef` guard ~119-123).
+ *
+ * The bug under test: when the build is launched from the express **Apply & build**
+ * flow (Templates.jsx `applyAndBuild` ~129-150 → `await fetch('/api/template/apply')`
+ * then `await run('build-report', buildOpts)`), the terminal opens but does NOT
+ * collapse after the delay — it stays `data-open="true"` past the configured delay.
+ *
+ * Technique (combines the two existing harnesses):
+ *   - the express mocks from stubBootstrap()/stubExpress() drive upload→infer→approve
+ *     →Apply&build, EXCEPT we override `/api/run/build-report` with the controllable,
+ *     long-lived SSE stream pattern from terminal-collapse.spec.ts so the build stays
+ *     `running` (we never close the stream) across the collapse delay;
+ *   - `window.__TERM_COLLAPSE_MS` is pinned tiny (50 ms) via addInitScript BEFORE boot
+ *     so the E2E never waits the real ~5s.
+ *
+ * The build run's SSE body is served by a fetch monkeypatch (addInitScript) parked on
+ * `window.__runStream` — the stream stays open until the test calls `.close()`. The
+ * express infer/apply routes still go through `page.route` (the wrapper delegates every
+ * non-build URL to the real fetch, which Playwright routing then intercepts), so the
+ * approve→Apply&build path is unchanged from the XTF-5/6 tests above.
+ */
+const EXPRESS_COLLAPSE_MS = 50;
+
+// Init: monkeypatch fetch so /api/run/build-report returns a controllable long-lived
+// SSE stream (parked on window.__runStream); every other URL delegates to the real
+// fetch (and thus to the page.route express mocks). Mirrors terminal-collapse.spec.ts.
+const EXPRESS_RUN_STREAM_INIT = `
+  (() => {
+    const enc = new TextEncoder();
+    let controller = null;
+    const stream = new ReadableStream({ start(c) { controller = c; } });
+    window.__runStream = {
+      push(obj) {
+        const ev = obj.event || 'message';
+        const data = JSON.stringify(obj);
+        controller.enqueue(enc.encode('event: ' + ev + '\\ndata: ' + data + '\\n\\n'));
+      },
+      close() { try { controller.close(); } catch (e) {} },
+    };
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : (input && input.url) || '';
+      if (url.includes('/api/run/build-report')) {
+        window.__buildTriggered = true;
+        return Promise.resolve(new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }));
+      }
+      return realFetch(input, init);
+    };
+  })();
+`;
+
+const EXPRESS_COLLAPSE_DELAY_INIT = `window.__TERM_COLLAPSE_MS = ${EXPRESS_COLLAPSE_MS};`;
+
+const term = (page: Page) => page.locator('.bottom-term');
+
+// Drive upload → infer → resolve the flagged row → Apply & build. Returns once the
+// chained `run('build-report')` has fired (the long-lived SSE mock is wired).
+async function driveExpressApplyAndBuild(page: Page) {
+  await page.getByTestId('express-banner').first().click();
+  await page.getByTestId('express-upload').setInputFiles({
+    name: 'report.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: Buffer.from('PK fake docx'),
+  });
+  await page.getByTestId('express-infer').click();
+
+  // Resolve the flagged row so Apply & build enables.
+  const flagged = page.locator('[data-testid="express-row"][data-status="needs_attention"]');
+  await flagged.getByTestId('express-row-drop').click();
+  const applyBtn = page.getByTestId('express-apply-build');
+  await expect(applyBtn).toBeEnabled();
+
+  // Apply & build → POST /api/template/apply (mocked ok) then chained run('build-report').
+  await applyBtn.click();
+
+  // SANITY: the express build actually started — so a later "did not collapse" red is
+  // about the missing auto-collapse, NOT a build that never ran. Both the apply success
+  // affordance and the long-lived build SSE mock must be wired.
+  await expect(page.getByTestId('express-success')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__buildTriggered === true))
+    .toBe(true);
+}
+
+test.describe('XTF-18 — express Apply & build auto-collapses the terminal like the regular build', () => {
+  test.beforeEach(async ({ page }) => {
+    // Pin the overridable collapse delay + install the controllable build SSE BEFORE boot.
+    await page.addInitScript(EXPRESS_COLLAPSE_DELAY_INIT);
+    await page.addInitScript(EXPRESS_RUN_STREAM_INIT);
+    await stubBootstrap(page);
+    await stubExpress(page);
+    await page.goto('http://localhost:51730/');
+  });
+
+  test('terminal opens on the express build, then auto-collapses to the bar while still running, and auto-expands on error', async ({ page }) => {
+    // SANITY: the real SPA mounted logged-in with the active project, so a later
+    // failure is the missing XTF-18 timing — not a broken render / bad mock.
+    await expect(page.getByText('Test Project')).toBeVisible();
+
+    // The terminal starts collapsed.
+    await expect(term(page)).toHaveAttribute('data-open', 'false');
+
+    // Drive upload → infer → resolve → Apply & build. `applyAndBuild` awaits
+    // /api/template/apply then chains `run('build-report')`; that run synchronously
+    // emits a `running` status into App.onStatus, opening the terminal + arming the
+    // auto-collapse timer (window.__TERM_COLLAPSE_MS = 50 ms here).
+    await driveExpressApplyAndBuild(page);
+
+    // Mirror terminal-collapse.spec.ts exactly: push a `running` status frame over the
+    // (held-open) build SSE so the running state is unambiguous and re-arms the timer
+    // right before we sample — otherwise the 50 ms timer can collapse the terminal
+    // before Playwright's first poll, hiding the transient open.
+    await page.evaluate(() => {
+      (window as any).__runStream.push({ event: 'log', line: 'building report', level: 'info' });
+      (window as any).__runStream.push({ event: 'status', command: 'build-report', status: 'running' });
+    });
+
+    // SANITY (correct-red guard): the terminal OPENS on the express build's `running`.
+    // If this fails the express run never reached App.onStatus — not the bug under test.
+    await expect(term(page)).toHaveAttribute('data-open', 'true');
+
+    // AC: after the configured (tiny test) delay it auto-collapses to the bar EVEN
+    // THOUGH the build is still streaming (the SSE stream is held open) — the SAME
+    // behavior as the regular build (terminal-collapse.spec.ts).
+    //   This is the assertion that must FAIL if the reported bug is present: the express
+    //   Apply & build opens the terminal but it stays data-open="true" past the delay.
+    await expect(term(page)).toHaveAttribute('data-open', 'false');
+
+    // Visual baseline of the express-build collapsed-during-run state (3 viewports).
+    await expect(page).toHaveScreenshot('express-terminal-collapsed.png');
+
+    // AC: the express build subsequently ends in error — the terminal auto-expands so
+    // the failure log is visible. Stream stays open through the error frame.
+    await page.evaluate(() => {
+      (window as any).__runStream.push({ event: 'log', line: 'build failed', level: 'error' });
+      (window as any).__runStream.push({ event: 'status', command: 'build-report', status: 'error' });
+      (window as any).__runStream.close();
+    });
+    await expect(term(page)).toHaveAttribute('data-open', 'true');
+  });
+
+  test('manual open during an express build is not auto-collapsed', async ({ page }) => {
+    // Use a comfortably long collapse delay so the assertion is about the user override
+    // winning over the timer, not a race between the timer and the manual clicks.
+    await page.addInitScript('window.__TERM_COLLAPSE_MS = 4000;');
+    // Re-navigate so the larger delay (added after beforeEach's goto) takes effect.
+    await page.goto('http://localhost:51730/');
+
+    await expect(page.getByText('Test Project')).toBeVisible();
+    await expect(term(page)).toHaveAttribute('data-open', 'false');
+
+    await driveExpressApplyAndBuild(page);
+
+    // Terminal opened on the express build's `running`.
+    await expect(term(page)).toHaveAttribute('data-open', 'true');
+
+    // The user collapses then re-opens the terminal by hand — taking manual control.
+    // App.setTermOpenManual sets userOverrodeTermRef = true, which must CANCEL the
+    // pending auto-collapse. (Two clicks: collapse, then re-open → ends user-opened.)
+    await page.locator('.bottom-term__bar').click();
+    await expect(term(page)).toHaveAttribute('data-open', 'false');
+    await page.locator('.bottom-term__bar').click();
+    await expect(term(page)).toHaveAttribute('data-open', 'true');
+
+    // AC: a user-opened terminal is NOT auto-collapsed during an express build. With the
+    // 4 s delay, if the override were ignored it would still collapse; assert it does not
+    // by re-checking after a window comfortably past any (50 ms) default-ish timer.
+    await expect(term(page)).toHaveAttribute('data-open', 'true');
+    await expect(term(page)).toHaveAttribute('data-open', 'true');
+
+    await page.evaluate(() => { (window as any).__runStream.close(); });
+  });
+});

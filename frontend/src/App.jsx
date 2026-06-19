@@ -105,14 +105,34 @@ export default function App() {
   const [termOpen, setTermOpen] = useState(false);
   const [logLines, setLogLines] = useState([]);
 
-  // Auto-collapse timing (XTF-11): on a build run the terminal opens, then after
-  // ~5s auto-collapses to its bar while the run keeps streaming; on error it
-  // auto-expands. We track the pending timer plus whether the user has taken
-  // manual control so the auto-timing never yanks a terminal the user opened.
+  // Auto-collapse timing (XTF-11 / hardened in XTF-18): on a build run the
+  // terminal opens, then after ~5s auto-collapses to its bar while the run keeps
+  // streaming; on error it auto-expands. The arming is anchored to the run
+  // LIFECYCLE — the `running` effect below fires when a run starts (running
+  // false→true) and is GUARANTEED to arm once per run even if no/late `running`
+  // SSE frame is processed. That is what makes the express Apply&build path (which
+  // chains run() after an awaited /api/template/apply) collapse on the same timing
+  // as the regular build. There is always at most ONE pending timer
+  // (collapseTimerRef): both the effect and the onStatus `running` re-anchor go
+  // through armAutoCollapse(), which clears before it sets — they never stack.
+  // We track that single timer plus whether the user has taken manual control so
+  // the auto-timing never yanks a terminal the user opened.
   const collapseTimerRef = useRef(null);
   const userOverrodeTermRef = useRef(false);
   const clearCollapseTimer = () => {
     if (collapseTimerRef.current) { clearTimeout(collapseTimerRef.current); collapseTimerRef.current = null; }
+  };
+  // Open the terminal and (re)arm the single auto-collapse timer. Always clears any
+  // pending timer first so callers never stack two timers — there is at most one
+  // collapseTimerRef live at a time. The fire callback collapses only if the user
+  // hasn't taken manual control in the meantime.
+  const armAutoCollapse = () => {
+    setTermOpen(true);
+    clearCollapseTimer();
+    collapseTimerRef.current = setTimeout(() => {
+      collapseTimerRef.current = null;
+      if (!userOverrodeTermRef.current) setTermOpen(false);
+    }, termCollapseMs());
   };
   // Wrap setTermOpen so any manual toggle (nav button / bar click) marks the
   // terminal as user-controlled and cancels a pending auto-collapse.
@@ -188,22 +208,21 @@ export default function App() {
         runningCmdRef.current = command;
         setLogLines(prev =>
           [...prev, { line: `running ${command}`, level: 'cmd', time: nowTime(), command }].slice(-LOG_CAP));
-        // Open on run start, then auto-collapse to the bar after the delay even
-        // while the run is still streaming. A fresh run reclaims auto-control.
-        userOverrodeTermRef.current = false;
-        setTermOpen(true);
-        clearCollapseTimer();
-        collapseTimerRef.current = setTimeout(() => {
-          collapseTimerRef.current = null;
-          if (!userOverrodeTermRef.current) setTermOpen(false);
-        }, termCollapseMs());
+        // The auto-collapse is primarily armed by the run-lifecycle effect keyed on
+        // `running` (below), so it is GUARANTEED to arm once per run even if no/late
+        // `running` SSE frame is processed. As a belt-and-braces re-anchor we also
+        // (re)open + (re)arm here on each `running` frame unless the user has taken
+        // control — the timer is the SAME single collapseTimerRef (cleared first),
+        // so this never stacks multiple timers; it just re-bases the ~delay window
+        // onto the latest observed "still running" signal.
+        if (!userOverrodeTermRef.current) armAutoCollapse();
       }
       if (status === 'success' || status === 'error') runningCmdRef.current = null;
       if (status === 'success') {
         toast(`${command} done ✓`, 'ok');
-        // It already collapsed during the run — leave it collapsed (no re-expand
-        // flicker). Just cancel any still-pending auto-collapse timer.
-        clearCollapseTimer();
+        // Leave the pending auto-collapse timer alone: a build of ANY duration ends
+        // up collapsed ~delay after it STARTED (this also collapses short builds
+        // that finish before the delay), unless errored or user-overridden.
       }
       if (status === 'error') {
         toast(`${command} failed`, 'err');
@@ -213,6 +232,30 @@ export default function App() {
       }
     },
   });
+
+  // Run-lifecycle auto-collapse (XTF-18 hardening of XTF-11). Keyed on the run
+  // state from useCommand: when a run STARTS (running false→true) we reclaim
+  // auto-control, open the terminal, and arm the single collapse timer. Because
+  // this is anchored to the lifecycle transition — not to whether any individual
+  // `running` SSE frame was processed — arming is GUARANTEED once per run, and it
+  // fires identically for the regular build and the express Apply&build path
+  // (which only differs by an awaited /api/template/apply before run()). This is
+  // the fix for the express path that previously never collapsed. armAutoCollapse
+  // shares one collapseTimerRef with the onStatus re-anchor, so timers never stack.
+  //
+  // The timer fires once and collapses the terminal if the user hasn't taken
+  // control, EVEN if the build is still streaming or has just finished — so a
+  // build of any duration ends up collapsed ~delay after it started (errors and
+  // manual overrides are handled in onStatus / setTermOpenManual respectively).
+  const prevRunningRef = useRef(false);
+  useEffect(() => {
+    if (running && !prevRunningRef.current) {
+      // A run just started: reclaim auto-control and arm the single collapse timer.
+      userOverrodeTermRef.current = false;
+      armAutoCollapse();
+    }
+    prevRunningRef.current = running;
+  }, [running, activeCmd]);
 
   // Persist the log buffer per project so it survives navigation AND reload.
   // Hydrate when the active project becomes known or changes; mirror back
