@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 14 | 10 / 14 |
+| [Express Template Fill](#express-template-fill) | 14 | 11 / 14 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -982,7 +982,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **XTF-11 — Terminal: show ~5s during a build then auto-collapse; auto-expand on error**
+- [x] **XTF-11 — Terminal: show ~5s during a build then auto-collapse; auto-expand on error**
 
   Today `onStatus` (App.jsx ~146–166) opens the terminal on `running`, and on `success` collapses it
   after a fixed 1400 ms; on `error` it forces it open. Change the build behavior so the terminal
