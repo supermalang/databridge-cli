@@ -20,8 +20,6 @@ from web.db import bootstrap as db_bootstrap
 from web.db import session as db_session, repository as db_repo, provision as db_provision
 from web.db import bridge as db_bridge
 from web.storage import workspace as storage_workspace
-from web.storage import factory as storage_factory
-from web.storage.base import storage_key
 from web.netguard import validate_public_url, SSRFError
 
 BASE_DIR      = Path(__file__).resolve().parent.parent
@@ -1682,12 +1680,11 @@ async def run_command(command: str, payload: RunPayload, request: Request):
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
-def _persist_run_outputs(org_id: str, project_id: str, dest, command=None) -> None:
+def _persist_run_outputs(org_id: str, project_id: str, dest) -> None:
     """After a successful tempdir run: push outputs to Minio, sync a changed config.yml
-    back to the DB, and refresh the active project's BASE_DIR read-mirror. The run
-    ``command`` tells the push which output categories to mirror (prune-stale)."""
+    back to the DB, and refresh the active project's BASE_DIR read-mirror."""
     import uuid as _uuid
-    storage_workspace.push_outputs(org_id, project_id, base=dest, command=command)
+    storage_workspace.push_outputs(org_id, project_id, base=dest)
     cfg_path = Path(dest) / "config.yml"
     parsed = (yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}) if cfg_path.exists() else {}
     with db_session.SessionLocal() as db:
@@ -1744,7 +1741,7 @@ async def _stream(run_id: str, command: str, cmd: list, run_ctx=None) -> AsyncGe
 
     if status == "success" and run_ctx is not None:
         try:
-            _persist_run_outputs(run_ctx[0], run_ctx[1], work_dir, command=command)
+            _persist_run_outputs(run_ctx[0], run_ctx[1], work_dir)
         except Exception as e:   # CLI work already succeeded; persistence failure must not crash
             yield _sse("log", {"line": f"Warning: failed to persist outputs to storage: {e}", "level": "error"})
     if work_dir:
@@ -1830,37 +1827,11 @@ async def get_state():
 async def list_reports(request: Request):
     _require_view(request)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    # Resolve the active project's storage backend so each report's "modified" reflects
-    # the durable object's build/push time, not the local mtime (which pull_workspace's
-    # download resets to download time). Falls back to local mtime in pure-local mode.
-    store = org_id = project_id = None
-    try:
-        with db_session.SessionLocal() as db:
-            _user, project = _active_project(request, db)
-        if project is not None:
-            org_id, project_id = str(project.org_id), str(project.id)
-            store = storage_factory.get_storage()
-    except Exception:
-        store = org_id = project_id = None
-
-    def _modified(f):
-        if store is not None:
-            try:
-                return store.last_modified(storage_key(org_id, project_id, "reports", f.name))
-            except KeyError:
-                pass
-            except Exception:
-                pass
-        return datetime.fromtimestamp(f.stat().st_mtime)
-
     files = []
     for f in sorted(REPORTS_DIR.glob("*.docx"), key=lambda x: x.stat().st_mtime, reverse=True):
         s = f.stat()
-        mod = _modified(f)
-        if not isinstance(mod, datetime):
-            mod = datetime.fromtimestamp(float(mod))
         files.append({"name": f.name, "size_kb": round(s.st_size/1024,1),
-                       "modified": mod.strftime("%Y-%m-%d %H:%M")})
+                       "modified": datetime.fromtimestamp(s.st_mtime).strftime("%Y-%m-%d %H:%M")})
     return {"files": files}
 
 @app.get("/api/reports/download/{filename}")
@@ -1874,41 +1845,13 @@ async def download_report(filename: str, request: Request):
     return FileResponse(path=path, filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
-def _active_org_project_ids(request: Request):
-    """Resolve the caller's active project's (org_id, project_id) — same pattern as
-    list_reports (XTF-20). Returns (None, None) when no active project resolves so
-    durable-delete degrades to local-only without crashing."""
-    try:
-        with db_session.SessionLocal() as db:
-            _user, project = _active_project(request, db)
-        if project is not None:
-            return str(project.org_id), str(project.id)
-    except Exception:
-        pass
-    return None, None
-
-
-def _delete_report_storage_object(org_id, project_id, name) -> None:
-    """Best-effort durable delete of a report's storage object — never raises (the
-    object may already be gone; LocalStorage.delete uses unlink(missing_ok=True))."""
-    if org_id is None or project_id is None:
-        return
-    try:
-        storage_workspace.delete_project_file(org_id, project_id, "reports", name)
-    except Exception:
-        pass
-
-
 @app.delete("/api/reports")
 async def delete_all_reports(request: Request):
     _require(request, "editor")
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    org_id, project_id = _active_org_project_ids(request)
     deleted = 0
     for f in REPORTS_DIR.glob("*.docx"):
-        name = f.name
         f.unlink()
-        _delete_report_storage_object(org_id, project_id, name)
         deleted += 1
     return {"ok": True, "deleted": deleted}
 
@@ -1920,9 +1863,7 @@ async def delete_report(filename: str, request: Request):
     path = REPORTS_DIR / filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found")
-    org_id, project_id = _active_org_project_ids(request)
     path.unlink()
-    _delete_report_storage_object(org_id, project_id, filename)
     return {"ok": True}
 
 @app.get("/api/reports/download-zip")
@@ -2601,12 +2542,6 @@ async def api_template_infer(request: Request):
         prof = profile_dataset(cfg, df, repeats)
         catalog = ask_engine.build_catalog(prof, cfg)
         proposals = ti.infer_specs(nl_tokens, catalog, ai_cfg)
-        # Deterministic auto-modeling: resolve each data proposal's `source`
-        # (single-table) or attach a synthesized join view (repeat + main) BEFORE
-        # validation, so cross-table columns no longer falsely flag as "not in
-        # main". Synthesized views ride along on each proposal under `view` and
-        # are persisted into config `views:` on apply (XTF-22).
-        ti.resolve_sources(proposals, prof)
         proposals = ti.annotate_proposals(proposals, prof)
     except Exception as e:  # noqa: BLE001 — an AI failure re-locks the AI buttons
         _invalidate_ai(request)
@@ -2651,21 +2586,6 @@ async def api_template_apply(payload: TemplateApplyPayload, request: Request):
             detail=("Could not resolve the template — it was not found in storage. "
                     "Re-run Infer to upload the template again."),
         )
-
-    # Persist any synthesized auto-modeling views (XTF-22) the resolver attached
-    # to approved proposals into config `views:`, appended and de-duped by name so
-    # build-report can resolve the join. Idempotent: a view name already present
-    # (in config or among the approved set) is written exactly once.
-    views = cfg.setdefault("views", [])
-    if not isinstance(views, list):
-        views = []
-        cfg["views"] = views
-    view_names = {v.get("name") for v in views if isinstance(v, dict)}
-    for prop in approved:
-        view = prop.get("view")
-        if isinstance(view, dict) and view.get("name") and view["name"] not in view_names:
-            views.append(view)
-            view_names.add(view["name"])
     # apply_inference returns the ABSOLUTE resolved .docx (saved next to the upload,
     # i.e. under TEMPLATES_DIR for a stored/uploaded template). Push it to durable
     # storage so a later run's hydrate_run_dir pulls it into its isolated tempdir,

@@ -1,5 +1,4 @@
 """S3/Minio-backed Storage via a boto3 client. get_* map missing keys to KeyError."""
-from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -43,20 +42,6 @@ class S3Storage(Storage):
             if _is_missing(e):
                 raise KeyError(key) from e
             raise
-
-    def last_modified(self, key: str) -> datetime:
-        try:
-            resp = self.client.head_object(Bucket=self.bucket, Key=key)
-        except ClientError as e:
-            if _is_missing(e):
-                raise KeyError(key) from e
-            raise
-        lm = resp["LastModified"]
-        # Normalize the tz-aware UTC LastModified to a naive local datetime so the
-        # rendered "modified" string matches the local backend (datetime.fromtimestamp).
-        if lm.tzinfo is not None:
-            lm = datetime.fromtimestamp(lm.timestamp())
-        return lm
 
     def list(self, prefix: str) -> List[str]:
         keys: List[str] = []
