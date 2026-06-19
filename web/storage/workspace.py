@@ -61,11 +61,38 @@ def delete_project_file(org_id: str, project_id: str, category: str, name: str) 
     get_storage().delete(storage_key(org_id, project_id, category, name))
 
 
-def push_outputs(org_id: str, project_id: str, base=".") -> int:
-    """Upload the local mirror dirs to Minio under the project prefix. Returns #files."""
+# command -> output categories the command REPLACES wholesale. For these
+# categories the push mirror-deletes (prunes durable objects absent from the
+# run's tempdir set) so a run owns its outputs; every other category stays
+# merge-only — e.g. download declares only `processed`, so it never touches the
+# durable reports/templates a prior run produced.
+RUN_OUTPUTS = {
+    "build-report": ["reports"],
+    "run-all": ["reports"],
+    "generate-template": ["templates"],
+    "ai-generate-template": ["templates"],
+    "download": ["processed"],
+}
+
+
+def push_outputs(org_id: str, project_id: str, base=".", command=None) -> int:
+    """Upload the local mirror dirs to Minio under the project prefix. Returns #files.
+
+    For the categories ``command`` declares as outputs (RUN_OUTPUTS), the push
+    mirror-deletes first: durable objects under that category's prefix that are
+    absent from the local/tempdir set are removed (via list + single-key delete),
+    so the durable set ends equal to the tempdir set. With ``command is None`` (or
+    a command with no declared outputs) the push is merge-only (legacy behavior)."""
     store = get_storage()
+    mirrored = set(RUN_OUTPUTS.get(command, [])) if command else set()
     n = 0
     for category, files in project_files(org_id, project_id, base).items():
+        if category in mirrored:
+            local_names = {f.name for f in files}
+            prefix = storage_key(org_id, project_id, category, "")
+            for key in store.list(prefix):
+                if key[len(prefix):] not in local_names:
+                    store.delete(key)
         for f in files:
             store.put_file(storage_key(org_id, project_id, category, f.name), f)
             n += 1

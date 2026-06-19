@@ -3,6 +3,7 @@
 No web.db import — keys are built from plain string IDs so storage stays decoupled
 from the data model."""
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import List
 
 CATEGORIES = ("raw", "processed", "charts", "reports", "templates")
@@ -28,6 +29,11 @@ class Storage(ABC):
 
     @abstractmethod
     def get_file(self, key: str, dest_path) -> None: ...
+
+    @abstractmethod
+    def last_modified(self, key: str) -> datetime:
+        """Return the stored object's last-modified time. Raise KeyError if absent."""
+        ...
 
     @abstractmethod
     def list(self, prefix: str) -> List[str]:
