@@ -1,3 +1,5 @@
+import { ExpressBanner } from './Templates.jsx';
+
 // The five ordered workflow stages. Each card deep-links into its stage (and a
 // specific sub-page). `navigate(stageId, subId)` is provided by App.
 const STAGE_CARDS = [
@@ -52,13 +54,7 @@ export default function Home({ navigate }) {
 
   return (
     <div className="page">
-      <button type="button" className="express-banner" data-testid="express-banner" onClick={openExpress}>
-        <span className="express-banner__icon" aria-hidden="true">⚡</span>
-        <span className="express-banner__text">
-          In a hurry? Upload a template and let AI fill it
-        </span>
-        <span className="express-banner__arrow" aria-hidden="true">→</span>
-      </button>
+      <ExpressBanner onOpen={openExpress} />
 
       <div className="home-head">
         <div style={{ flex: 1, minWidth: 0 }}>

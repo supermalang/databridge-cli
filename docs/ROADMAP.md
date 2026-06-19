@@ -42,7 +42,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
-| [Express Template Fill](#express-template-fill) | 7 | 7 / 7 |
+| [Express Template Fill](#express-template-fill) | 14 | 14 / 14 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -829,6 +829,382 @@ A card is startable only when all of the following hold:
   3. Confirm the "In a hurry?" banner still opens the Express flow even when AI is untested.
 
   **Verify:** `cd frontend && npx playwright test express-template-fill.spec.ts`
+
+---
+
+- [x] **XTF-8 — Fix: Express apply persists the resolved template to durable storage + a relative `report.template`**
+
+  Bug found in review: `api_template_apply` (web/main.py ~2562) sets
+  `cfg["report"]["template"]` to the **absolute** resolved path and never `put_project_file`s the
+  resolved `.docx`. Web runs hydrate `templates/` from Minio into an isolated tempdir
+  (`hydrate_run_dir`, `web/storage/workspace.py` ~145), so build-report can't find the file — and
+  `sanitize_run_config` (~121) pins `export`/`report` output dirs but not `report.template`, so the
+  absolute host-mirror path is read stale ("cached"). Fix: apply writes the resolved `.docx` under
+  `TEMPLATES_DIR`, sets `report.template` to a **relative** `templates/<name>.resolved.docx`, and
+  pushes it to durable storage via `storage_workspace.put_project_file(org_id, project_id,
+  "templates", path)` — mirroring `set_active_template` (~2078). `delete_template` (~2054) clears /
+  repoints `report.template` when the deleted file is the active one. Priority card; XTF-13 depends
+  on it. Independent of XTF-9–XTF-12. Depends on **XTF-1–XTF-7** (shipped).
+
+  **Files:** `web/main.py` (`api_template_apply` ~2532, `delete_template` ~2054) ·
+  `web/storage/workspace.py` (`sanitize_run_config` — pin `report.template` to its relative form) ·
+  `tests/test_template_api.py`
+
+  **Config/schema impact:** None to the schema. `report.template` is now stored as a relative
+  `templates/<name>` ref (the shape `set_active_template` already writes), not an absolute path.
+
+  **Acceptance criteria**
+  - After `/api/template/apply`, `cfg["report"]["template"]` is a **relative** path of the form
+    `templates/<name>.resolved.docx` (no absolute path, no `..`)
+  - The resolved `.docx` exists under `TEMPLATES_DIR` **and** has been pushed to durable storage via
+    `put_project_file(... "templates" ...)` (so a subsequent run's `hydrate_run_dir` pulls it)
+  - `sanitize_run_config` leaves the relative `report.template` intact (does not blank or absolutize
+    it) so the hydrated tempdir resolves the same file build-report loads
+  - `delete_template` on the file currently referenced by `report.template` clears or repoints the
+    ref (no dangling absolute/relative path left in config)
+  - The `/api/template/apply` response still returns `{ok, template, n_written}`; `template` is the
+    relative ref
+
+  **Unit tests:** `tests/test_template_api.py` — (1) `test_apply_persists_relative_template`: with
+  `apply_inference` real (only the LLM/`infer_specs` seam mocked), POST approved proposals to
+  `/api/template/apply` and assert `report.template` in the written config is relative
+  (`templates/…`, not absolute) AND the resolved file was pushed to storage (assert via a fake/spy
+  storage backend that `put_project_file` was called with category `"templates"` and the resolved
+  filename). (2) `test_sanitize_run_config_keeps_relative_template`: `sanitize_run_config` on a cfg
+  with `report.template: templates/x.resolved.docx` returns the same relative value. (3)
+  `test_delete_active_template_clears_ref`: set `report.template` to a template, `DELETE
+  /api/templates/<name>`, assert `report.template` is cleared/repointed (not dangling).
+
+  **E2E:** N/A (back-end persistence/path fix — no UI surface of its own; the express UI flow is
+  covered by XTF-5/XTF-6; human gate is the un-mocked integration test + PR review).
+
+  **UAT:** N/A (back-end fix; verified via the Verify command, unit tests, the verifier, and PR
+  review — UAT moves in lockstep with E2E).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py -k "apply or sanitize or delete"`
+
+---
+
+- [x] **XTF-9 — Gate the "In a hurry?" Express banner on questions + data**
+
+  The `ExpressBanner` (frontend/src/pages/Templates.jsx ~14) always renders enabled, but inference
+  can't validate proposals without real columns — `/api/template/infer` returns the
+  `EXPRESS_NO_DATA_MESSAGE` precondition when no data is downloaded. Disable the banner with a hint
+  until `has_questions` **and** `has_data` are both true, reusing the readiness flags from
+  `GET /api/state` (web/main.py ~1790–1821, already returning `has_questions`/`has_data`). Depends on
+  **XTF-1–XTF-7** (shipped). Independent of XTF-8.
+
+  **Files:** `frontend/src/pages/Templates.jsx` (`ExpressBanner` — fetch/consume `/api/state`
+  readiness, disabled state + hint) · `frontend/src/pages/Dashboard.jsx` (the Dashboard surface of
+  the banner, if it renders one) · `frontend/tests/e2e/express-template-fill.spec.ts`
+
+  **Config/schema impact:** None — reuses the existing `/api/state` readiness flags.
+
+  **Acceptance criteria**
+  - When `/api/state` reports `has_questions:false` OR `has_data:false`, the Express banner is
+    disabled (not actionable) and shows a hint explaining what's needed first (e.g. "Download data
+    and configure questions before using Express fill")
+  - When both flags are `true`, the banner is enabled and opens the Express flow exactly as today
+  - The banner's `data-testid="express-banner"` is preserved; disabled state is exposed
+    accessibly (`disabled` / `aria-disabled` + the hint reachable to assistive tech)
+  - Impeccable audit/critique clean on the gated banner (disabled affordance reads as intentionally
+    unavailable, not broken)
+
+  **Unit tests:** N/A (frontend-only gating; Vitest is not installed — the gate is asserted by the
+  Playwright E2E below, consistent with XTF-7's gating coverage).
+
+  **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` (extend) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) — mock `/api/state` → `{has_questions:false, has_data:false}`
+  and assert the banner is disabled with the hint visible and does not open the flow on click; then
+  mock `{has_questions:true, has_data:true}` and assert the banner is enabled and opens the Express
+  flow. Capture a `toHaveScreenshot` baseline of the gated (disabled+hint) state at all three
+  viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
+
+  **UAT:**
+  1. In a project with no downloaded data, open Templates. Confirm the "In a hurry?" banner is
+     visibly disabled and shows a hint telling you to download data / configure questions first, and
+     clicking it does nothing.
+  2. Configure questions and run Download. Return to Templates and confirm the banner is now enabled.
+  3. Click the enabled banner and confirm the Express flow opens.
+
+  **Verify:** `cd frontend && npx playwright test express-template-fill.spec.ts`
+
+---
+
+- [x] **XTF-10 — Replace the run badge with a fixed "report building…" alert + stop/cancel**
+
+  Today an active run shows a small `run-indicator` button in the top nav (App.jsx ~323–329) that
+  only toggles the terminal — there is no way to cancel a run from the UI even though
+  `POST /api/stop/{run_id}` (web/main.py ~1773) and `useCommand`'s `stop` (with `runIdRef` from the
+  SSE `run_id`, frontend/src/hooks/useCommand.js ~95) already exist. `lib/run.js`'s `RunContext` and
+  App's `RunProvider` (App.jsx ~366) currently expose only `{run, running, activeCmd}` — `stop` is
+  dropped. Replace the badge with a fixed, prominent alert shown whenever a run is active, carrying a
+  stop/cancel control wired to the stop endpoint. Applies to express **and** normal runs. Depends on
+  **XTF-1–XTF-7** (shipped). Independent of XTF-8/9.
+
+  **Files:** `frontend/src/App.jsx` (destructure `stop` from `useCommand`; render the fixed alert in
+  place of `run-indicator`; pass `stop` through `RunProvider`) · `frontend/src/lib/run.js`
+  (add `stop` to the `RunContext` default + provider contract) · `frontend/src/hooks/useCommand.js`
+  (already returns `stop` — no behavior change expected) · `frontend/src/styles.css` (alert styles) ·
+  `frontend/tests/e2e/express-template-fill.spec.ts` (or a small new spec for the alert)
+
+  **Config/schema impact:** None — reuses `POST /api/stop/{run_id}`.
+
+  **Acceptance criteria**
+  - Whenever `running` is true, a fixed alert (e.g. a top-of-app banner) is shown reading the active
+    command (e.g. "Building report…"); the old `run-indicator` nav badge is removed
+  - The alert has a visible Stop/Cancel control; clicking it calls `useCommand.stop()`, which POSTs
+    to `/api/stop/{run_id}` (falling back to `/api/stop` when no `run_id` yet)
+  - `stop` is exposed through `RunContext`/`RunProvider` so any run trigger (express Apply&build and
+    the normal Build report) is cancellable from the same alert
+  - When the run ends (success or error) the alert disappears
+  - The alert is accessible (`role="status"` or `role="alert"` as appropriate; the stop button is a
+    real `<button>` with an accessible label)
+  - Impeccable audit/critique clean on the alert + stop control
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — covered by the Playwright E2E below).
+
+  **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` (extend, or a new
+  `frontend/tests/e2e/run-alert.spec.ts`) + visual (impeccable audit/critique + `toHaveScreenshot`) —
+  mock `/api/run/build-report` to stream a long-lived SSE `running` status (including a `run_id`),
+  trigger a build, and assert the fixed alert + Stop button are visible (and the old nav badge is
+  gone); click Stop and assert `POST /api/stop/{run_id}` is called with that id; then emit a terminal
+  status and assert the alert disappears. Capture a `toHaveScreenshot` baseline of the active-run
+  alert at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
+
+  **UAT:**
+  1. Start a build (Reports → Build report, or Express Apply&build). Confirm a prominent fixed alert
+     appears reading that a report is building, with a Stop/Cancel button (no small nav badge).
+  2. Click Stop and confirm the run is cancelled (terminal shows it stopped) and the alert clears.
+  3. Start another build and let it finish normally; confirm the alert disappears on completion.
+
+  **Verify:** `cd frontend && npx playwright test express-template-fill.spec.ts`
+
+---
+
+- [x] **XTF-11 — Terminal: show ~5s during a build then auto-collapse; auto-expand on error**
+
+  Today `onStatus` (App.jsx ~146–166) opens the terminal on `running`, and on `success` collapses it
+  after a fixed 1400 ms; on `error` it forces it open. Change the build behavior so the terminal
+  opens when a build run starts, stays visible for a short delay (default ~5s), then auto-collapses to
+  its minimized bar **while the run continues** — and if the run ENDS IN ERROR, auto-expands again so
+  the failure log is visible. Applies to express **and** normal builds. The delay MUST be testable
+  without a real 5s wait (e.g. a module-level constant overridable via a test hook / Playwright fake
+  timers — note this in the implementation). Depends on **XTF-1–XTF-7** (shipped). Independent of
+  XTF-8/9/10.
+
+  **Files:** `frontend/src/App.jsx` (`onStatus` open/collapse timing; replace the 1400 ms success
+  collapse with the open→~5s→collapse-on-running behavior + auto-expand on error; expose the delay as
+  an overridable constant) · `frontend/src/components/BottomTerminal.jsx` (collapse-to-bar /
+  expand affordance hooks if needed) · `frontend/tests/e2e/express-template-fill.spec.ts` (or a new
+  terminal spec)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - On a build run starting, the terminal opens; after the configured delay (default ~5s) it
+    auto-collapses to the minimized bar **even though the run is still running**
+  - If the run subsequently ends in **error**, the terminal auto-expands to show the failure
+  - On a clean **success**, the terminal stays collapsed (it already collapsed during the run); no
+    second flicker
+  - The delay is driven by an overridable constant so tests can set it to a few ms — no real 5s wait
+    in the E2E
+  - Manual toggling (the nav terminal button / clicking the bar) still works and is not overridden by
+    the auto-timing while the user has it open
+
+  **Unit tests:** N/A (frontend-only timing; Vitest is not installed — covered by the Playwright E2E
+  below using a short test-config delay / fake timers).
+
+  **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` (extend, or a new
+  `frontend/tests/e2e/terminal-collapse.spec.ts`) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — with the auto-collapse delay set to a few ms (test hook), drive a mocked
+  long-running build: assert the terminal is open right after `running`, then assert it has collapsed
+  to the bar (`[data-open="false"]`) after the delay while the run is still streaming; then emit an
+  `error` status and assert the terminal auto-expands (`[data-open="true"]`). Capture a
+  `toHaveScreenshot` baseline of both the collapsed-during-run state and the auto-expanded error state
+  at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
+
+  **UAT:**
+  1. Start a build. Confirm the terminal opens and shows the run starting.
+  2. Wait ~5 seconds and confirm it collapses to the slim bottom bar while the build keeps running.
+  3. Trigger a build that fails (e.g. no charts configured) and confirm the terminal auto-expands so
+     you can read the error.
+
+  **Verify:** `cd frontend && npx playwright test express-template-fill.spec.ts`
+
+---
+
+- [x] **XTF-12 — Reports page: "Delete all reports" + bulk-delete endpoint**
+
+  `Reports.jsx` deletes reports one at a time (`deleteReport`, ~82) against
+  `DELETE /api/reports/{filename}` (web/main.py ~1845, editor-gated). There is no bulk delete. Add a
+  bulk `DELETE /api/reports` endpoint (same editor/admin RBAC as the single delete) and a "Delete all
+  reports" button on the Reports page with a confirm dialog. Depends on **XTF-1–XTF-7** (shipped).
+  Independent of XTF-8–XTF-11.
+
+  **Files:** `web/main.py` (new `DELETE /api/reports` bulk handler near ~1845, `_require(request,
+  "editor")`) · `frontend/src/pages/Reports.jsx` (a "Delete all" button + confirm, reusing the
+  existing `confirm` dialog pattern at ~82–84; hidden/disabled for viewers via the existing `canEdit`
+  gate) · `tests/test_reports_api.py` (new) · `frontend/tests/e2e/reports-delete-all.spec.ts` (new,
+  or extend an existing reports spec)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - `DELETE /api/reports` deletes **all** `.docx` files in `REPORTS_DIR` and returns a count (e.g.
+    `{ok: true, deleted: N}`); deleting an empty reports dir is a non-error no-op (`deleted: 0`)
+  - The endpoint enforces editor/admin RBAC via `_require(request, "editor")` (a viewer gets 403),
+    matching the single-file delete
+  - Reports page shows a "Delete all reports" button that is hidden/disabled for viewers (existing
+    `canEdit` gate) and prompts a confirm before deleting
+  - After confirming, the report list empties and the empty-state copy shows
+  - Impeccable audit/critique clean on the new control (destructive styling + clear confirm copy)
+
+  **Unit tests:** `tests/test_reports_api.py` — (1) `test_delete_all_reports_removes_files`: seed
+  `REPORTS_DIR` with two `.docx` files, `DELETE /api/reports` as editor, assert 200 with
+  `deleted:2` and the dir is empty afterward. (2) `test_delete_all_reports_empty_noop`: with no
+  reports, assert 200 with `deleted:0` and no error. (3) `test_delete_all_reports_rbac`: a viewer
+  caller gets 403 and files are untouched.
+
+  **E2E:** `frontend/tests/e2e/reports-delete-all.spec.ts` (new) + visual (impeccable audit/critique
+  + `toHaveScreenshot`) — mock `/api/reports` to list two reports, mock `DELETE /api/reports` to
+  succeed; click "Delete all reports", confirm in the dialog, and assert the list empties and the
+  empty-state appears; assert the bulk `DELETE /api/reports` was called once. Capture a
+  `toHaveScreenshot` baseline of the populated list with the "Delete all" button and of the confirm
+  dialog at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
+
+  **UAT:**
+  1. Build two or more reports so the Reports list is populated. Confirm a "Delete all reports"
+     button is visible (as an editor/admin).
+  2. Click it, confirm the warning dialog, and confirm all reports disappear and the empty-state
+     message shows.
+  3. As a viewer, confirm the "Delete all reports" control is hidden or disabled.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_reports_api.py` ·
+  `cd frontend && npx playwright test reports-delete-all.spec.ts`
+
+---
+
+- [x] **XTF-13 — Build options for Express & regular build: split-by (main-table columns) + sample preview (`--split-sample`)**
+
+  Expose two build options on both build surfaces: a **split-by** selector populated with
+  **main-table `export_label`s only** (not repeat-group columns) and a "build all (default) vs first
+  N groups" sample-preview option mapping to `--split-sample N`, with discoverability copy so users
+  know they can preview before a full split build. Both must reach (a) the Express Apply&build chain
+  (Templates.jsx `applyAndBuild` ~87 → `/api/template/apply` then `run('build-report')` ~103) and
+  (b) the regular build trigger (`Reports.jsx` ~115 `onClick: () => run('build-report')`). **Two
+  gaps to fix:** `--split-sample` is NOT in `ALLOWED_COMMANDS["build-report"]` (web/main.py ~474 —
+  currently `["--sample","--split-by","--session","--period","--compare"]`) and `useCommand.run`
+  (frontend/src/hooks/useCommand.js ~26–33) does not forward a `split_sample` opt, so both must be
+  added (CLI flag `--split-sample` already exists in `src/data/make.py` ~323 and `RunPayload` needs a
+  `split_sample` field, web/main.py ~480). **Depends on XTF-8** (clean relative template resolution
+  is required for the Express build to actually run) and **XTF-1–XTF-7** (shipped). The express and
+  regular surfaces are similar enough (both call `run('build-report')` / `/api/run/build-report`) to
+  ship as one deliverable behind a shared "build options" control; not split.
+
+  **Files:** `web/main.py` (`ALLOWED_COMMANDS["build-report"]` add `--split-sample`; `RunPayload`
+  add `split_sample`; map it into the build-report arg list) · `frontend/src/hooks/useCommand.js`
+  (forward `opts.split_sample` into the request body) · `frontend/src/pages/Templates.jsx`
+  (`ExpressFlow` — split-by + sample-preview control; pass to apply chain's `run('build-report',
+  opts)`) · `frontend/src/pages/Reports.jsx` (build-options control on the regular Build trigger ~115)
+  · a small shared options component if warranted · `tests/test_run_api.py` (new, or extend
+  `tests/test_template_api.py`) · `frontend/tests/e2e/express-template-fill.spec.ts`
+
+  **Config/schema impact:** None to `config.yml`. Adds `--split-sample` to the build-report
+  whitelist and a `split_sample` field on `RunPayload` (already a CLI flag).
+
+  **Acceptance criteria**
+  - The split-by selector is populated **only** with main-table `export_label`s (questions whose
+    `group` is the main table — repeat-group columns are excluded), sourced from the questions/config
+    or an existing catalog endpoint
+  - A sample-preview control offers "Build all groups (default)" vs "First N groups", mapping the
+    chosen N to `--split-sample N`; discoverability copy explains it previews before a full build
+  - `ALLOWED_COMMANDS["build-report"]` includes `--split-sample`; `RunPayload.split_sample` is
+    accepted and forwarded into the build-report command line
+  - `useCommand.run('build-report', {split_by, split_sample})` includes both in the POST body
+  - The Express Apply&build chain passes the selected `split_by`/`split_sample` into its
+    `run('build-report', …)` call; the regular Build trigger does the same
+  - Selecting no split-by / "build all" produces the current behavior (no `--split-by`/no
+    `--split-sample`)
+  - Impeccable audit/critique clean on the new options control
+
+  **Unit tests:** `tests/test_run_api.py` (or extend `tests/test_template_api.py`) — (1) assert
+  `"--split-sample"` is in `ALLOWED_COMMANDS["build-report"]`. (2) `test_build_report_split_sample_forwarded`:
+  POST `/api/run/build-report` with `{split_by: "Site", split_sample: 2}` (run seam mocked) and
+  assert the constructed command carries `--split-by Site` and `--split-sample 2`. (3) assert a
+  request omitting both yields neither flag.
+
+  **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` (extend) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) — open the build-options control (express and/or regular),
+  assert the split-by list contains only main-table labels (mock the catalog/config with one
+  main-table and one repeat-group column; assert the repeat-group one is absent), select a split-by
+  and "First 2 groups", trigger the build, and assert the `/api/run/build-report` request body carries
+  `split_by` and `split_sample: 2`. Capture a `toHaveScreenshot` baseline of the build-options control
+  at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
+
+  **UAT:**
+  1. With downloaded data, open the build options (Express Apply&build and/or Reports → Build).
+     Confirm the split-by dropdown lists only main-table columns (no repeat-group fields).
+  2. Pick a split-by column and choose "First 2 groups", then build. Confirm only two split reports
+     are produced (preview), and the copy made clear this was a preview.
+  3. Repeat with "Build all groups" and confirm a report is produced for every group.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_run_api.py -k "split"` ·
+  `cd frontend && npx playwright test express-template-fill.spec.ts`
+
+---
+
+- [x] **XTF-14 — Reposition the run alert in-page (below the title, content width) + icon Stop**
+
+  Refinement of XTF-10. The run alert currently renders as a fixed bar pinned above the top
+  nav (App.jsx ~265, outside the page). Move it to flow **inside the page content** — below the
+  top nav and the page title/header, immediately before the page's main container — constrained
+  to the main-container width with top + bottom margin (not a full-bleed fixed bar). Replace the
+  text "Stop" button with a compact **icon button** (X / stop icon) carrying an accessible label.
+  All other XTF-10 behavior (shown while `running`, reads the active command, View-logs link,
+  `stop` via `/api/stop/{run_id}`, clears on terminal status, `role="status"`) is preserved.
+  Depends on **XTF-10** (shipped). Independent of XTF-11/12/13.
+
+  **Files:** `frontend/src/App.jsx` (render the alert inside the content column — below the
+  nav/page header, before the active pane — instead of the fixed top bar) ·
+  `frontend/src/styles.css` (in-flow `.run-alert` layout: content-width, vertical margins; icon
+  stop button) · `frontend/tests/e2e/run-alert.spec.ts` (update placement + icon-stop assertions
+  and refresh the baseline)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - While `running`, the alert renders **in the page content flow** (below the top nav + page
+    title, before the main container), at the content/main-container width with visible top and
+    bottom margin — NOT a fixed full-width bar pinned to the viewport top
+  - The Stop control is an **icon button** (e.g. X or a stop glyph), not a text button, with an
+    accessible label (`aria-label`) and visible focus ring; it still calls `useCommand.stop()`
+    (→ `POST /api/stop/{run_id}`, fallback `/api/stop`)
+  - All preserved XTF-10 behavior still holds: `data-testid="run-alert"` + `run-stop`; shows the
+    active command; View-logs toggles the terminal; alert clears on a terminal status;
+    `role="status"`
+  - Impeccable audit/critique clean on the repositioned alert + icon button
+
+  **Unit tests:** N/A (frontend-only placement/markup change; Vitest not installed — asserted by
+  the Playwright E2E below, consistent with XTF-9/10).
+
+  **E2E:** `frontend/tests/e2e/run-alert.spec.ts` (update) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — drive the mocked running build; assert `run-alert` is present in the
+  page content (e.g. it is NOT the viewport-pinned fixed bar — assert it scrolls with / sits
+  within the content column, and appears after the page header) and that `run-stop` is an icon
+  button (no visible "Stop" text; has an `aria-label`) that still POSTs `/api/stop/{run_id}`;
+  alert clears on terminal status. Refresh the `run-alert.png` baseline to the new in-page layout
+  at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
+
+  **UAT:**
+  1. Start a build. Confirm the alert now appears inside the page (below the title, above the
+     main content), spanning the content width with margin above and below — not a bar stuck to
+     the very top of the window.
+  2. Confirm the Stop control is a small icon (X/stop) with a tooltip/label; click it and confirm
+     the run cancels and the alert clears.
+  3. Confirm View-logs still toggles the terminal and the alert still names the active command.
+
+  **Verify:** `cd frontend && npx playwright test run-alert.spec.ts`
 
 ---
 

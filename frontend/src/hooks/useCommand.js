@@ -26,6 +26,7 @@ export function useCommand({ onLog, onStatus } = {}) {
     const body = {};
     if (opts.sample) body.sample = opts.sample;
     if (opts.split_by) body.split_by = opts.split_by;
+    if (opts.split_sample) body.split_sample = opts.split_sample;
     if (opts.session) body.session = opts.session;
     if (opts.random_sample) body.random_sample = opts.random_sample;
     if (opts.user_request) body.user_request = opts.user_request;

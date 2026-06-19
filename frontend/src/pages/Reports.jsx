@@ -8,6 +8,7 @@ import { usePerms } from '../lib/perms.js';
 import { useRun } from '../lib/run.js';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 import { loadConfig } from '../lib/config.js';
+import BuildOptions from '../components/BuildOptions.jsx';
 
 export default function Reports() {
   const toast = useToast();
@@ -86,6 +87,17 @@ export default function Reports() {
     loadReports();
   };
 
+  const deleteAllReports = async () => {
+    if (!await confirm({
+      title: 'Delete all reports?',
+      message: 'Every generated .docx report will be permanently deleted. This can’t be undone.',
+      confirmLabel: 'Delete all',
+    })) return;
+    const res = await fetch('/api/reports', { method: 'DELETE' });
+    toast(res.ok ? 'Deleted all reports' : 'Delete failed', res.ok ? 'ok' : 'err');
+    loadReports();
+  };
+
   const deleteSession = async (sid) => {
     if (!await confirm({ title: 'Delete data session?', message: `All files from session ${sid} will be permanently deleted. This can’t be undone.` })) return;
     const res = await fetch(`/api/data/sessions/${encodeURIComponent(sid)}`, { method: 'DELETE' });
@@ -121,15 +133,39 @@ export default function Reports() {
       }>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
+        {/* ─── Build ─── */}
+        <div className="form-section">
+          <div className="form-section-title">
+            Build a report
+            <span>Render a Word report from the latest data</span>
+          </div>
+          <BuildOptions
+            questions={cfg?.questions || []}
+            disabled={!buildReady}
+            buildTitle={buildTitle}
+            onBuild={(opts) => run('build-report', opts)}
+          />
+        </div>
+
         {/* ─── Reports ─── */}
         <div className="form-section">
           <div className="form-section-title">
             Reports
             <span>Generated .docx files</span>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <button className="btn btn-ghost btn-sm" onClick={() => { setSelected([]); setShowCompare(true); }}>
                 Compare periods
               </button>
+              {reports?.length > 0 && (
+                <button
+                  className="btn btn-danger btn-sm"
+                  data-testid="reports-delete-all"
+                  onClick={deleteAllReports}
+                  disabled={!canEdit}
+                  title={canEdit ? 'Permanently delete every generated report' : 'Viewer access — deleting requires an editor or admin role'}>
+                  Delete all reports
+                </button>
+              )}
               <button className="btn btn-ghost btn-sm" onClick={loadReports}>↺ Refresh</button>
             </div>
           </div>

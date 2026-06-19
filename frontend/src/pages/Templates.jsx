@@ -6,20 +6,58 @@ import { useToast } from '../components/Toast.jsx';
 import { usePerms } from '../lib/perms.js';
 import { useRun } from '../lib/run.js';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
+import BuildOptions from '../components/BuildOptions.jsx';
+import { loadConfig } from '../lib/config.js';
 
 const KINDS = ['chart', 'indicator', 'summary', 'table', 'narrative', 'metadata'];
 
+// What the user must do before Express fill can validate proposals.
+const EXPRESS_GATE_HINT = 'Download data and configure questions before using Express fill.';
+
 // Discoverability banner — present on the Dashboard (Home) and the Templates tab.
 // Clicking it opens the express flow. On Home it also navigates to Templates.
+//
+// Gated on /api/state readiness: inference can't validate proposals without real
+// columns, so the banner stays disabled + non-actionable (with an accessible
+// hint) until BOTH has_questions AND has_data are true (XTF-9).
 export function ExpressBanner({ onOpen }) {
+  const [ready, setReady] = useState(null);   // null = unknown (treat as not-ready)
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/state')
+      .then(r => (r.ok ? r.json() : {}))
+      .then(s => { if (alive) setReady(!!(s.has_questions && s.has_data)); })
+      .catch(() => { if (alive) setReady(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const gated = ready !== true;
+
   return (
-    <button type="button" className="express-banner" data-testid="express-banner" onClick={onOpen}>
-      <span className="express-banner__icon" aria-hidden="true">⚡</span>
-      <span className="express-banner__text">
-        In a hurry? Upload a template and let AI fill it
-      </span>
-      <span className="express-banner__arrow" aria-hidden="true">→</span>
-    </button>
+    <div className="express-banner-wrap">
+      <button
+        type="button"
+        className="express-banner"
+        data-testid="express-banner"
+        onClick={() => { if (!gated) onOpen(); }}
+        disabled={gated}
+        aria-disabled={gated || undefined}
+        aria-describedby={gated ? 'express-hint' : undefined}
+        title={gated ? EXPRESS_GATE_HINT : undefined}
+      >
+        <span className="express-banner__icon" aria-hidden="true">⚡</span>
+        <span className="express-banner__text">
+          In a hurry? Upload a template and let AI fill it
+        </span>
+        <span className="express-banner__arrow" aria-hidden="true">→</span>
+      </button>
+      {gated && (
+        <p id="express-hint" className="express-hint" data-testid="express-hint">
+          {EXPRESS_GATE_HINT}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -40,6 +78,10 @@ function ExpressFlow({ onClose }) {
   // The infer endpoint persists the upload and returns a resolvable ref; we carry
   // that into apply so a freshly-uploaded .docx survives the round-trip (XTF-6).
   const [templateRef, setTemplateRef] = useState(null);
+  // config.questions feeds the build-options split-by selector (main-table columns).
+  const [questions, setQuestions] = useState([]);
+  const [buildOpts, setBuildOpts] = useState({});
+  useEffect(() => { loadConfig().then(c => setQuestions(c?.questions || [])); }, []);
 
   const onPick = (e) => {
     setFile(e.target.files?.[0] || null);
@@ -84,7 +126,7 @@ function ExpressFlow({ onClose }) {
   const flagged = (rows || []).some(r => r.status === 'needs_attention');
   const canApply = rows && rows.length > 0 && !flagged && !applied && !running;
 
-  const applyAndBuild = async () => {
+  const applyAndBuild = async (buildOpts = {}) => {
     if (!canApply) return;
     const proposals = rows.map(({ _key, ...p }) => p);  // strip the local key
     try {
@@ -100,7 +142,8 @@ function ExpressFlow({ onClose }) {
       setResolved(data.template);
       setApplied(true);
       // Chain into the existing build-report run; logs stream into the terminal.
-      await run('build-report');
+      // Forward the selected split-by / sample-preview options (XTF-13).
+      await run('build-report', buildOpts);
     } catch (err) {
       setError(err.message || 'Network error');
     }
@@ -209,6 +252,15 @@ function ExpressFlow({ onClose }) {
               </div>
             ))}
 
+            {!flagged && (
+              <BuildOptions
+                questions={questions}
+                hideTrigger
+                disabled={!canApply}
+                onChange={setBuildOpts}
+              />
+            )}
+
             <div className="express-review-foot">
               {flagged
                 ? <span className="express-foot-hint">Resolve or drop the flagged row(s) to continue.</span>
@@ -216,7 +268,7 @@ function ExpressFlow({ onClose }) {
               <button
                 className="btn btn-primary"
                 data-testid="express-apply-build"
-                onClick={applyAndBuild}
+                onClick={() => applyAndBuild(buildOpts)}
                 disabled={!canApply}
                 title={flagged ? 'Resolve the flagged rows first' : ''}
               >

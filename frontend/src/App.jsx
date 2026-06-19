@@ -23,6 +23,25 @@ import { RunProvider } from './lib/run.js';
 import { DirtyProvider } from './lib/dirty.js';
 import { AiStatusProvider } from './lib/aiStatus.js';
 
+// Human-friendly verbs for the active run alert. Falls back to a generic phrasing.
+const RUN_LABELS = {
+  'build-report': 'Building report…',
+  'run-all': 'Building report…',
+  download: 'Downloading data…',
+  'fetch-questions': 'Fetching questions…',
+  'generate-template': 'Generating template…',
+};
+const runLabel = (cmd) => RUN_LABELS[cmd] || (cmd ? `Running ${cmd}…` : 'Running…');
+
+// How long the terminal stays open at the start of a run before auto-collapsing
+// to its bar (the run keeps going). Overridable via window.__TERM_COLLAPSE_MS so
+// the E2E can drive the timing in a few ms instead of waiting the real ~5s.
+const DEFAULT_TERM_COLLAPSE_MS = 5000;
+const termCollapseMs = () => {
+  const v = typeof window !== 'undefined' ? window.__TERM_COLLAPSE_MS : undefined;
+  return Number.isFinite(v) ? v : DEFAULT_TERM_COLLAPSE_MS;
+};
+
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
 const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'pii'];
@@ -85,9 +104,28 @@ export default function App() {
   const { confirm, confirmDialog } = useConfirm();
   const [termOpen, setTermOpen] = useState(false);
   const [logLines, setLogLines] = useState([]);
+
+  // Auto-collapse timing (XTF-11): on a build run the terminal opens, then after
+  // ~5s auto-collapses to its bar while the run keeps streaming; on error it
+  // auto-expands. We track the pending timer plus whether the user has taken
+  // manual control so the auto-timing never yanks a terminal the user opened.
+  const collapseTimerRef = useRef(null);
+  const userOverrodeTermRef = useRef(false);
+  const clearCollapseTimer = () => {
+    if (collapseTimerRef.current) { clearTimeout(collapseTimerRef.current); collapseTimerRef.current = null; }
+  };
+  // Wrap setTermOpen so any manual toggle (nav button / bar click) marks the
+  // terminal as user-controlled and cancels a pending auto-collapse.
+  const setTermOpenManual = (next) => {
+    userOverrodeTermRef.current = true;
+    clearCollapseTimer();
+    setTermOpen(next);   // accepts a value or a functional updater (o => !o)
+  };
   const [formAlias, setFormAlias] = useState('');
   const [me, setMe] = useState(null);
   useEffect(() => { fetchMe().then(setMe); }, []);
+  // Clear any pending auto-collapse timer on unmount.
+  useEffect(() => () => clearCollapseTimer(), []);
 
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
@@ -140,7 +178,7 @@ export default function App() {
   // ref because onLog's closure would otherwise see a stale value.
   const LOG_CAP = 1500;
   const runningCmdRef = useRef(null);
-  const { run, running, activeCmd } = useCommand({
+  const { run, stop, running, activeCmd } = useCommand({
     onLog: (line, level) => setLogLines(prev =>
       [...prev, { line, level, time: nowTime(), command: runningCmdRef.current }].slice(-LOG_CAP)),
     onStatus: ({ command, status }) => {
@@ -150,18 +188,28 @@ export default function App() {
         runningCmdRef.current = command;
         setLogLines(prev =>
           [...prev, { line: `running ${command}`, level: 'cmd', time: nowTime(), command }].slice(-LOG_CAP));
+        // Open on run start, then auto-collapse to the bar after the delay even
+        // while the run is still streaming. A fresh run reclaims auto-control.
+        userOverrodeTermRef.current = false;
         setTermOpen(true);
+        clearCollapseTimer();
+        collapseTimerRef.current = setTimeout(() => {
+          collapseTimerRef.current = null;
+          if (!userOverrodeTermRef.current) setTermOpen(false);
+        }, termCollapseMs());
       }
       if (status === 'success' || status === 'error') runningCmdRef.current = null;
       if (status === 'success') {
         toast(`${command} done ✓`, 'ok');
-        // Collapse the terminal once a task succeeds — but only after a short beat so
-        // the final log + result is visible, and only if no new run has started.
-        setTimeout(() => { if (!runningCmdRef.current) setTermOpen(false); }, 1400);
+        // It already collapsed during the run — leave it collapsed (no re-expand
+        // flicker). Just cancel any still-pending auto-collapse timer.
+        clearCollapseTimer();
       }
       if (status === 'error') {
         toast(`${command} failed`, 'err');
-        setTermOpen(true);   // keep it open on failure so the user can read the log
+        // Auto-expand so the failure log is visible, unless the user is in control.
+        clearCollapseTimer();
+        if (!userOverrodeTermRef.current) setTermOpen(true);
       }
     },
   });
@@ -249,6 +297,34 @@ export default function App() {
     return () => { clearInterval(id); window.removeEventListener('databridge:data-changed', bump); };
   }, []);
 
+  // The in-page run alert (XTF-14): rendered in the content flow, below the top
+  // nav and the page header, at the content width. Shown whenever a run is live.
+  const runAlert = running ? (
+    <div className="run-alert" data-testid="run-alert" role="status" aria-live="polite">
+      <span className="run-alert__dot" aria-hidden="true" />
+      <span className="run-alert__label">{runLabel(activeCmd)}</span>
+      <button
+        type="button"
+        className="run-alert__logs"
+        onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}
+      >
+        View logs
+      </button>
+      <button
+        type="button"
+        className="run-alert__stop"
+        data-testid="run-stop"
+        aria-label="Stop the running task"
+        title="Stop the running task"
+        onClick={() => stop()}
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+          <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor" />
+        </svg>
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div className="layout">
       <header>
@@ -320,13 +396,6 @@ export default function App() {
               </div>
             )}
           </div>
-          {running && (
-            <button className="run-indicator" title={`Running ${activeCmd}… — click to view logs`}
-                    onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
-              <span className="status-dot running" />
-              <span className="run-indicator__label">Running {activeCmd}…</span>
-            </button>
-          )}
           <button className="iconbtn" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
           </button>
@@ -363,10 +432,11 @@ export default function App() {
       )}
 
       <PermsProvider value={{ role: activeRole, isSuperadmin }}>
-        <RunProvider value={{ run, running, activeCmd }}>
+        <RunProvider value={{ run, stop, running, activeCmd }}>
          <DirtyProvider value={dirtyRef}>
           <AiStatusProvider>
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
+              {runAlert}
               {panes
                 .filter(p => visited.has(p.key) || p.key === activeKey)
                 .map(p => (
@@ -392,7 +462,7 @@ export default function App() {
         cmd={activeCmd}
         lines={logLines}
         open={termOpen}
-        setOpen={setTermOpen}
+        setOpen={setTermOpenManual}
       />
 
       {projectForm && (

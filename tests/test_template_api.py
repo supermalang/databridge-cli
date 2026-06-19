@@ -43,6 +43,43 @@ def client():
     return TestClient(wm.app)
 
 
+@pytest.fixture
+def dev_active_project():
+    """Guarantee the dev user has a real active project for the duration of the test.
+
+    The XTF-8 apply/delete tests exercise the org/project resolution in require_role
+    so apply can push the resolved .docx to durable storage. They must not depend on
+    suite order: an earlier module (test_projects_api -> delete_project) sets
+    User.active_project_id = None, tearing down the session-shared active project.
+
+    This fixture re-establishes (or provisions) an active project per-test by setting
+    User.active_project_id via the repository, restoring whatever it was afterwards.
+    """
+    with wm.db_session.SessionLocal() as db:
+        dev = wm.db_repo.get_user_by_sub(db, "dev-local")
+        if dev is None:
+            dev = wm.db_provision.ensure_dev_user(db)
+        prev = dev.active_project_id
+        if dev.active_project_id is None:
+            projects = wm.db_repo.list_projects_for_user(db, dev)
+            if not projects:
+                # No project at all (another module deleted it) — provision a fresh one.
+                from web.db import bootstrap as _bootstrap
+                proj = _bootstrap.import_legacy_config(db, owner=dev)
+                if proj is None:
+                    proj = wm.db_repo.create_project(db, user=dev, name="Test active project")
+                projects = [proj]
+            wm.db_repo.set_active_project(db, dev, projects[0].id)
+        active_id = dev.active_project_id
+    yield active_id
+    # Restore the prior active_project_id so we don't perturb later tests.
+    with wm.db_session.SessionLocal() as db:
+        dev = wm.db_repo.get_user_by_sub(db, "dev-local")
+        if dev is not None:
+            dev.active_project_id = prev
+            db.commit()
+
+
 # --------------------------------------------------------------------------- #
 # Precondition payloads (AC: friendly messages, never a crash)
 # --------------------------------------------------------------------------- #
@@ -220,20 +257,25 @@ def _real_docx_bytes(placeholder="[bar chart of Region]"):
     return buf.getvalue()
 
 
-def test_infer_apply_roundtrip_real(monkeypatch, client, tmp_path):
+def test_infer_apply_roundtrip_real(monkeypatch, api_client, tmp_path, dev_active_project):
     """Real infer→apply round-trip: the upload must survive into apply.
 
-    AC (XTF-6):
+    AC (XTF-6, contract updated by XTF-8):
     - infer persists the uploaded .docx and returns a resolvable `template` ref;
     - the same ref is carried into apply, which resolves the persisted file and
       runs the REAL `apply_inference` against it;
-    - the resolved .docx exists on disk, config gained the chart spec, and the
+    - apply returns a RELATIVE templates/<name>.resolved.docx ref, the physical
+      .docx exists at TEMPLATES_DIR, config gained the chart spec, and the
       response is {ok, template, n_written}.
 
     Only the LLM seam (`infer_specs`) is mocked; `extract_placeholders` and
-    `apply_inference` run for real. This is the test the network-mocked XTF-5
-    suite could not catch.
+    `apply_inference` run for real. The dev user has a real active project (the
+    `dev_active_project` fixture) — NOT a mocked-away `_require` — because the
+    relative-ref / storage-push branch in apply only fires once require_role
+    resolves a real org/project; mocking `_require` would silently keep the old
+    absolute-path behavior and make the test order-dependent.
     """
+    client = api_client
     import src.reports.template_inference as ti
 
     # Isolate template storage so we never touch the repo's templates/ dir.
@@ -245,7 +287,6 @@ def test_infer_apply_roundtrip_real(monkeypatch, client, tmp_path):
     cfg = {"charts": [], "questions": [{"export_label": "Region", "category": "categorical"}],
            "ai": {"provider": "openai", "api_key": "sk-x"}}
     saved = {}
-    monkeypatch.setattr(wm, "_require", lambda *a, **k: None)
     monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
     monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
     monkeypatch.setattr(wm, "load_processed_data", lambda *a, **k: (_df(), {}))
@@ -292,9 +333,20 @@ def test_infer_apply_roundtrip_real(monkeypatch, client, tmp_path):
     resolved = apply_body.get("template")
     assert resolved, "apply must return the resolved template path"
 
-    # AC: the resolved .docx exists on disk (apply_inference saved a real file).
+    # AC (updated by XTF-8): apply returns a RELATIVE templates/<name>.resolved.docx
+    # ref (not an absolute host-mirror path), and the physical file lives at
+    # TEMPLATES_DIR / <name>.resolved.docx (pushed to storage for later runs).
     import os
-    assert os.path.isfile(resolved), f"resolved template should exist on disk: {resolved}"
+    from pathlib import Path as _Path
+    assert not os.path.isabs(resolved), \
+        f"resolved template must be relative, got absolute: {resolved!r}"
+    assert _Path(resolved).parts[0] == "templates", \
+        f"resolved template must live under templates/, got: {resolved!r}"
+    assert ".." not in _Path(resolved).parts, \
+        f"resolved template must not contain '..': {resolved!r}"
+    on_disk = templates_dir / _Path(resolved).name
+    assert on_disk.is_file(), \
+        f"resolved template should exist on disk at TEMPLATES_DIR: {on_disk}"
 
     # AC: config gained the chart spec.
     written = saved.get("cfg") or cfg
@@ -335,3 +387,188 @@ def test_apply_unresolvable_ref_returns_clear_error(monkeypatch, client, tmp_pat
     body = resp.json()
     detail = (body.get("detail") or body.get("message") or "")
     assert detail, "the error response should carry a human-readable message"
+
+
+# --------------------------------------------------------------------------- #
+# XTF-8 — Apply must persist the resolved template to durable storage AND write
+# a RELATIVE report.template ref (the shape set_active_template already writes),
+# so a subsequent web run's hydrate_run_dir pulls the resolved .docx from Minio
+# into its isolated tempdir instead of reading a stale absolute host-mirror path.
+#
+# These run apply for real (only the LLM `infer_specs` seam is mocked) against a
+# real uploaded/stored .docx, and they do NOT mock `_require` / `require_role`:
+# the dev user has a real active project (conftest), so apply can resolve the
+# org/project it needs to push the resolved file to storage — exactly the seam
+# under test.
+# --------------------------------------------------------------------------- #
+import os  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from web.storage import workspace as _ws  # noqa: E402
+
+
+def test_apply_persists_relative_template(monkeypatch, api_client, tmp_path, dev_active_project):
+    """Apply writes a RELATIVE templates/… ref AND pushes the resolved .docx to storage.
+
+    AC (XTF-8):
+    - after /api/template/apply, cfg["report"]["template"] is a RELATIVE path of the
+      form templates/<name>.resolved.docx (no absolute path, no "..");
+    - the resolved .docx is pushed to durable storage via
+      put_project_file(... "templates" ...) so a later run's hydrate_run_dir pulls it.
+
+    Today this is RED: apply sets report.template to the ABSOLUTE resolved path
+    returned by apply_inference and never calls put_project_file.
+    """
+    import src.reports.template_inference as ti
+
+    # Isolate template storage so we never touch the repo's templates/ dir.
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(wm, "TEMPLATES_DIR", templates_dir)
+
+    cfg = {"charts": [],
+           "questions": [{"export_label": "Region", "category": "categorical"}],
+           "ai": {"provider": "openai", "api_key": "sk-x"}}
+    saved = {}
+    # Real active project (no _require / require_role mocking) so apply can resolve
+    # the org/project it pushes under. Only config IO is stubbed for determinism.
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+    monkeypatch.setattr(wm, "load_processed_data", lambda *a, **k: (_df(), {}))
+    monkeypatch.setattr(wm, "profile_dataset", lambda *a, **k: {})
+    monkeypatch.setattr(wm.ask_engine, "build_catalog", lambda *a, **k: {})
+
+    # Spy on the durable-storage push. Wrap the real function so the file still lands
+    # in the local backend, but record every (org, project, category, path) call.
+    pushes = []
+    _real_put = _ws.put_project_file
+
+    def _spy_put(org_id, project_id, category, local_path):
+        pushes.append({"org_id": org_id, "project_id": project_id,
+                       "category": category, "path": str(local_path)})
+        return _real_put(org_id, project_id, category, local_path)
+
+    monkeypatch.setattr(wm.storage_workspace, "put_project_file", _spy_put)
+
+    # One real chart proposal for the single NL placeholder; LLM seam mocked only.
+    proposal = {
+        "token_index": 0, "kind": "chart", "name": "by_region",
+        "spec": {"name": "by_region", "title": "By region", "type": "bar",
+                 "questions": ["Region"]},
+        "confidence": 0.95, "reason": "ok", "status": "ok",
+    }
+    monkeypatch.setattr(ti, "infer_specs", lambda *a, **k: [dict(proposal)])
+    monkeypatch.setattr(ti, "annotate_proposals",
+                        lambda props, *a, **k: [{**p, "status": "ok", "reason": "ok"} for p in props])
+
+    # Infer the real uploaded .docx so apply resolves a genuinely-stored file.
+    files = {"file": ("fresh_upload.docx", _real_docx_bytes(),
+                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    infer_resp = api_client.post("/api/template/infer", files=files)
+    assert infer_resp.status_code == 200, infer_resp.text
+    infer_body = infer_resp.json()
+    ref = infer_body.get("template")
+    assert ref, "infer must return a resolvable template ref"
+    approved = [dict(p) for p in infer_body["proposals"]]
+
+    # Drop the infer-time uploads so we only inspect the apply-time push below.
+    pushes.clear()
+
+    apply_resp = api_client.post("/api/template/apply",
+                             json={"proposals": approved, "template": ref})
+    assert apply_resp.status_code == 200, apply_resp.text
+    apply_body = apply_resp.json()
+    assert apply_body.get("ok") is True
+    assert apply_body.get("n_written") == 1
+
+    # (a) report.template in the WRITTEN config is a RELATIVE templates/… ref.
+    written = saved.get("cfg") or cfg
+    tref = (written.get("report") or {}).get("template")
+    assert tref, "apply must write report.template"
+    assert not os.path.isabs(tref), f"report.template must be relative, got absolute: {tref!r}"
+    assert ".." not in Path(tref).parts, f"report.template must not contain '..': {tref!r}"
+    assert Path(tref).parts[0] == "templates", \
+        f"report.template must live under templates/, got: {tref!r}"
+    assert Path(tref).name.endswith(".resolved.docx"), \
+        f"report.template must point at the resolved .docx, got: {tref!r}"
+    # The response 'template' is the same relative ref.
+    assert apply_body.get("template") == tref
+
+    # (b) the resolved .docx was pushed to durable storage under category 'templates'.
+    template_pushes = [p for p in pushes if p["category"] == "templates"]
+    assert template_pushes, \
+        "apply must put_project_file the resolved .docx under category 'templates'"
+    pushed_names = [Path(p["path"]).name for p in template_pushes]
+    assert any(n.endswith(".resolved.docx") for n in pushed_names), \
+        f"the pushed file must be the resolved .docx, pushed: {pushed_names}"
+    # The pushed filename matches the relative ref written into config.
+    assert Path(tref).name in pushed_names, \
+        f"pushed file {pushed_names} must match report.template {tref!r}"
+
+
+def test_sanitize_run_config_keeps_relative_template():
+    """sanitize_run_config leaves a relative report.template intact.
+
+    AC (XTF-8): sanitize_run_config does not blank or absolutize the relative
+    report.template, so a hydrated run resolves the same file build-report loads.
+
+    NOTE: this is a REGRESSION GUARD — sanitize_run_config currently does not
+    touch report.template, so this may already pass today. It locks the AC that
+    sanitize must keep the relative ref intact when XTF-8 changes that function.
+    """
+    cfg = {"report": {"template": "templates/x.resolved.docx", "output_dir": "x"},
+           "export": {"output_dir": "y"}}
+    out = _ws.sanitize_run_config(cfg)
+    assert out["report"]["template"] == "templates/x.resolved.docx", \
+        "sanitize must keep the relative report.template unchanged"
+    # And it must not mutate the caller's dict.
+    assert cfg["report"]["template"] == "templates/x.resolved.docx"
+
+
+def test_delete_active_template_clears_ref(monkeypatch, api_client, tmp_path, dev_active_project):
+    """Deleting the template referenced by report.template clears/repoints the ref.
+
+    AC (XTF-8): delete_template on the file currently referenced by report.template
+    clears or repoints the ref — no dangling path left in config.
+
+    Today this is RED: delete_template unlinks the file and removes it from storage
+    but never touches report.template, leaving a dangling reference.
+    """
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(wm, "TEMPLATES_DIR", templates_dir)
+    target = templates_dir / "foo.docx"
+    target.write_bytes(b"PK")
+
+    # Active config references the template we're about to delete.
+    cfg = {"report": {"template": "templates/foo.docx"}}
+    saved = {}
+
+    # delete_template reads/writes the file at wm.CONFIG_PATH (async aiofiles). Point
+    # it at a throwaway config so we observe the post-delete report.template.
+    cfg_path = tmp_path / "config.yml"
+    import yaml as _yaml
+    cfg_path.write_text(_yaml.safe_dump(cfg), encoding="utf-8")
+    monkeypatch.setattr(wm, "CONFIG_PATH", cfg_path)
+    monkeypatch.setattr(wm, "_sync_active_project_from_file", lambda *a, **k: None)
+    # Don't depend on the file-vs-DB config sync; just capture any write helper used.
+    if hasattr(wm, "load_config"):
+        monkeypatch.setattr(wm, "load_config", lambda *a, **k: dict(cfg))
+    if hasattr(wm, "write_config"):
+        monkeypatch.setattr(wm, "write_config", lambda c, p=None: saved.update({"cfg": c}))
+
+    resp = api_client.delete("/api/templates/foo.docx")
+    assert resp.status_code == 200, resp.text
+
+    # Read back whatever the endpoint persisted (file and/or via write_config).
+    final = {}
+    try:
+        final = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    except FileNotFoundError:
+        final = {}
+    written = saved.get("cfg") or final
+    tref = (written.get("report") or {}).get("template")
+
+    # The reference must NOT still point at the deleted file.
+    assert tref in (None, "", ) or Path(str(tref)).name != "foo.docx", \
+        f"report.template still points at the deleted template: {tref!r}"
