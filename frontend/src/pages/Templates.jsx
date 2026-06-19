@@ -6,6 +6,8 @@ import { useToast } from '../components/Toast.jsx';
 import { usePerms } from '../lib/perms.js';
 import { useRun } from '../lib/run.js';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
+import BuildOptions from '../components/BuildOptions.jsx';
+import { loadConfig } from '../lib/config.js';
 
 const KINDS = ['chart', 'indicator', 'summary', 'table', 'narrative', 'metadata'];
 
@@ -76,6 +78,10 @@ function ExpressFlow({ onClose }) {
   // The infer endpoint persists the upload and returns a resolvable ref; we carry
   // that into apply so a freshly-uploaded .docx survives the round-trip (XTF-6).
   const [templateRef, setTemplateRef] = useState(null);
+  // config.questions feeds the build-options split-by selector (main-table columns).
+  const [questions, setQuestions] = useState([]);
+  const [buildOpts, setBuildOpts] = useState({});
+  useEffect(() => { loadConfig().then(c => setQuestions(c?.questions || [])); }, []);
 
   const onPick = (e) => {
     setFile(e.target.files?.[0] || null);
@@ -120,7 +126,7 @@ function ExpressFlow({ onClose }) {
   const flagged = (rows || []).some(r => r.status === 'needs_attention');
   const canApply = rows && rows.length > 0 && !flagged && !applied && !running;
 
-  const applyAndBuild = async () => {
+  const applyAndBuild = async (buildOpts = {}) => {
     if (!canApply) return;
     const proposals = rows.map(({ _key, ...p }) => p);  // strip the local key
     try {
@@ -136,7 +142,8 @@ function ExpressFlow({ onClose }) {
       setResolved(data.template);
       setApplied(true);
       // Chain into the existing build-report run; logs stream into the terminal.
-      await run('build-report');
+      // Forward the selected split-by / sample-preview options (XTF-13).
+      await run('build-report', buildOpts);
     } catch (err) {
       setError(err.message || 'Network error');
     }
@@ -245,6 +252,15 @@ function ExpressFlow({ onClose }) {
               </div>
             ))}
 
+            {!flagged && (
+              <BuildOptions
+                questions={questions}
+                hideTrigger
+                disabled={!canApply}
+                onChange={setBuildOpts}
+              />
+            )}
+
             <div className="express-review-foot">
               {flagged
                 ? <span className="express-foot-hint">Resolve or drop the flagged row(s) to continue.</span>
@@ -252,7 +268,7 @@ function ExpressFlow({ onClose }) {
               <button
                 className="btn btn-primary"
                 data-testid="express-apply-build"
-                onClick={applyAndBuild}
+                onClick={() => applyAndBuild(buildOpts)}
                 disabled={!canApply}
                 title={flagged ? 'Resolve the flagged rows first' : ''}
               >
