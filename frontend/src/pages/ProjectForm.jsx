@@ -4,6 +4,7 @@ import { useToast } from '../components/Toast.jsx';
 import ProjectMembersPanel from '../components/ProjectMembersPanel.jsx';
 import { createProject, updateProject, archiveProject } from '../lib/projects.js';
 import { deleteProject as apiDeleteProject } from '../lib/members.js';
+import { tabProps, panelProps, makeTabKeydown } from '../lib/tabs.js';
 
 const LANGS = ['English', 'French', 'Spanish', 'Portuguese', 'Arabic'];
 const COLORS = ['#0EA5E9', '#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#14B8A6', '#64748B'];
@@ -73,6 +74,13 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
   };
 
   const membersDisabled = !proj;   // create mode before first save
+  // Ordered ids of the tabs that are actually navigable (disabled Members is
+  // skipped in the roving order), used by the arrow-key handler.
+  const pfTabIds = [
+    'details',
+    ...(membersDisabled ? [] : ['members']),
+    ...(editing && canAdmin ? ['danger'] : []),
+  ];
 
   return (
     <div className="project-form">
@@ -83,19 +91,32 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
         </h2>
       </div>
 
-      <div className="project-form__tabs">
-        <button className={`pf-tab ${tab === 'details' ? 'active' : ''}`} onClick={() => setTab('details')}>Details</button>
-        <button className={`pf-tab ${tab === 'members' ? 'active' : ''} ${membersDisabled ? 'disabled' : ''}`}
+      <div
+        className="project-form__tabs"
+        role="tablist"
+        aria-label="Project settings sections"
+        data-tab-group="projectform"
+        onKeyDown={makeTabKeydown('projectform', pfTabIds, tab, setTab)}
+      >
+        <button type="button" className={`pf-tab ${tab === 'details' ? 'active' : ''}`}
+                {...tabProps('projectform', 'details', tab === 'details')}
+                onClick={() => setTab('details')}>Details</button>
+        <button type="button"
+                className={`pf-tab ${tab === 'members' ? 'active' : ''} ${membersDisabled ? 'disabled' : ''}`}
+                {...tabProps('projectform', 'members', tab === 'members')}
+                aria-disabled={membersDisabled ? 'true' : undefined}
                 onClick={() => !membersDisabled && setTab('members')}
                 title={membersDisabled ? 'Create the project first' : ''}>Members</button>
         {editing && canAdmin && (
-          <button className={`pf-tab ${tab === 'danger' ? 'active' : ''}`} onClick={() => setTab('danger')}>Danger zone</button>
+          <button type="button" className={`pf-tab ${tab === 'danger' ? 'active' : ''}`}
+                  {...tabProps('projectform', 'danger', tab === 'danger')}
+                  onClick={() => setTab('danger')}>Danger zone</button>
         )}
       </div>
 
       <div className="project-form__body">
         {tab === 'details' && (
-          <div className="pf-panel">
+          <div className="pf-panel" {...panelProps('projectform', 'details')}>
             <div className="profile-field"><label>Name *</label>
               <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Q3 Monitoring" /></div>
             <div className="profile-field"><label>Description</label>
@@ -130,11 +151,11 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
         )}
 
         {tab === 'members' && proj && (
-          <div className="pf-panel"><ProjectMembersPanel project={proj} /></div>
+          <div className="pf-panel" {...panelProps('projectform', 'members')}><ProjectMembersPanel project={proj} /></div>
         )}
 
         {tab === 'danger' && editing && canAdmin && (
-          <div className="pf-panel">
+          <div className="pf-panel" {...panelProps('projectform', 'danger')}>
             <div className="pf-danger">
               <div>
                 <div className="pf-danger__title">{proj.is_archived ? 'Restore project' : 'Archive project'}</div>

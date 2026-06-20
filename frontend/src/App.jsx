@@ -22,6 +22,7 @@ import { PermsProvider } from './lib/perms.js';
 import { RunProvider } from './lib/run.js';
 import { DirtyProvider } from './lib/dirty.js';
 import { AiStatusProvider } from './lib/aiStatus.js';
+import { tabProps, panelProps, panelId, makeTabKeydown } from './lib/tabs.js';
 
 // Human-friendly verbs for the active run alert. Falls back to a generic phrasing.
 const RUN_LABELS = {
@@ -447,29 +448,45 @@ export default function App() {
         </div>
       </header>
 
-      <nav className="tabs-bar">
+      <nav
+        className="tabs-bar"
+        role="tablist"
+        aria-label="Workflow stages"
+        data-tab-group="primary"
+        onKeyDown={makeTabKeydown('primary', STAGES.map(s => s.id), stageId, (id) => navigate(id))}
+      >
         {STAGES.map(s => (
-          <div
+          <button
             key={s.id}
+            type="button"
             className={`tab ${stageId === s.id ? 'active' : ''}`}
             data-tab={s.id}
+            {...tabProps('primary', s.id, stageId === s.id)}
             onClick={() => navigate(s.id)}
           >
             {s.label}
-          </div>
+          </button>
         ))}
       </nav>
 
       {showSubBar && (
-        <nav className="subtabs-bar">
+        <nav
+          className="subtabs-bar"
+          role="tablist"
+          aria-label={`${stage.label} sections`}
+          data-tab-group="sub"
+          onKeyDown={makeTabKeydown('sub', subs.map(sub => sub.id), activeSub?.id, (id) => setSubId(id))}
+        >
           {subs.map(sub => (
-            <div
+            <button
               key={sub.id}
+              type="button"
               className={`subtab ${activeSub?.id === sub.id ? 'active' : ''}`}
+              {...tabProps('sub', sub.id, activeSub?.id === sub.id)}
               onClick={() => setSubId(sub.id)}
             >
               {sub.label}
-            </div>
+            </button>
           ))}
         </nav>
       )}
@@ -482,18 +499,32 @@ export default function App() {
               {runAlert}
               {panes
                 .filter(p => visited.has(p.key) || p.key === activeKey)
-                .map(p => (
-                  <div
-                    key={`${p.key}@${activeProjectId ?? 'none'}#${keyEpoch[p.key] ?? epoch}`}
-                    className="tab-content"
-                    style={{
-                      flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
-                      display: p.key === activeKey ? 'flex' : 'none',
-                    }}
-                  >
-                    {p.render()}
-                  </div>
-                ))}
+                .map(p => {
+                  const isActive = p.key === activeKey;
+                  // The visible pane is the tabpanel controlled by the active
+                  // primary tab (aria-controls → panelId('primary', stageId));
+                  // when a sub-tab strip is shown it is ALSO the panel controlled
+                  // by the active sub tab, so it carries both id refs (primary id
+                  // on the wrapper, sub id on the inner content).
+                  const wrapperPanel = isActive ? panelProps('primary', stageId) : {};
+                  const subPanel = isActive && showSubBar ? panelProps('sub', activeSub?.id) : {};
+                  return (
+                    <div
+                      key={`${p.key}@${activeProjectId ?? 'none'}#${keyEpoch[p.key] ?? epoch}`}
+                      className="tab-content"
+                      {...wrapperPanel}
+                      tabIndex={isActive ? 0 : undefined}
+                      style={{
+                        flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
+                        display: isActive ? 'flex' : 'none',
+                      }}
+                    >
+                      {showSubBar
+                        ? <div {...subPanel} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>{p.render()}</div>
+                        : p.render()}
+                    </div>
+                  );
+                })}
             </div>
           </AiStatusProvider>
          </DirtyProvider>

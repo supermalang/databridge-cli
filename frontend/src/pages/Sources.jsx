@@ -191,6 +191,7 @@ export default function Sources({ section = 'setup' } = {}) {
       {view === 'yaml' ? (
         <div className="src-card">
           <textarea
+            aria-label="config.yml YAML editor"
             spellCheck={false}
             value={yamlText}
             onChange={e => setYamlText(e.target.value)}
@@ -320,14 +321,21 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
         </div>
         <div className="platform-pick">
           {PLATFORMS.map(p => (
-            <div key={p.id} className="platform-card" data-selected={platform === p.id} onClick={() => onPick(p.id)}>
+            <button
+              key={p.id}
+              type="button"
+              className="platform-card"
+              data-selected={platform === p.id}
+              aria-pressed={platform === p.id}
+              onClick={() => onPick(p.id)}
+            >
               <div className="platform-card__logo">{p.name[0]}</div>
               <div>
                 <div className="platform-card__name">{p.name}</div>
                 <div className="platform-card__sub">{p.tag}</div>
               </div>
               {platform === p.id && <span className="platform-card__check">✓</span>}
-            </div>
+            </button>
           ))}
         </div>
       </div>
@@ -337,6 +345,7 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
           <div className="src-field__hint">Token is the Django REST token — fetch from your profile.</div>
         </div>
         <input
+          aria-label="API Base URL"
           className="src-input src-input--mono"
           value={cfg.api?.url || ''}
           placeholder={PLATFORMS.find(p => p.id === platform)?.defaultUrl}
@@ -353,6 +362,7 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
           <>
             <div className="token-field">
               <input
+                aria-label="API Token"
                 type={showToken ? 'text' : 'password'}
                 value={cfg.api?.token || ''}
                 placeholder="paste token or env:KOBO_TOKEN"
@@ -391,14 +401,14 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
         <div className="src-field__label">Form UID
           <div className="src-field__hint">Identifier from {platform === 'ona' ? 'Ona / INFORM' : 'Kobo'}.</div>
         </div>
-        <input className="src-input src-input--mono" value={cfg.form?.uid || ''} placeholder="aAbBcCdDeEfFgGhH" onChange={e => set('form.uid')(e.target.value)} />
+        <input aria-label="Form UID" className="src-input src-input--mono" value={cfg.form?.uid || ''} placeholder="aAbBcCdDeEfFgGhH" onChange={e => set('form.uid')(e.target.value)} />
       </div>
 
       <div className="src-field">
         <div className="src-field__label">Alias
           <div className="src-field__hint">Slug used for file outputs and the URL.</div>
         </div>
-        <input className="src-input src-input--mono" value={cfg.form?.alias || ''} placeholder="monitoring_survey" onChange={e => set('form.alias')(e.target.value)} />
+        <input aria-label="Alias" className="src-input src-input--mono" value={cfg.form?.alias || ''} placeholder="monitoring_survey" onChange={e => set('form.alias')(e.target.value)} />
       </div>
 
       <div className="src-field">
@@ -514,7 +524,7 @@ function AINarrativeCard({ cfg, set }) {
         <div className="src-field__label">Provider
           <div className="src-field__hint">OpenAI-compatible providers (Gemini, OpenRouter, Groq, DeepSeek…) auto-fill the right Base URL.</div>
         </div>
-        <select className="src-input" value={preset} onChange={e => onPresetChange(e.target.value)}>
+        <select aria-label="AI provider" className="src-input" value={preset} onChange={e => onPresetChange(e.target.value)}>
           {AI_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
@@ -522,6 +532,7 @@ function AINarrativeCard({ cfg, set }) {
         <div className="src-field__label">Model</div>
         <div className="src-field__stack">
         <select
+          aria-label="AI model"
           className="src-input src-input--mono"
           value={showCustomModel ? '__custom__' : model}
           onChange={e => onModelSelect(e.target.value)}
@@ -532,6 +543,7 @@ function AINarrativeCard({ cfg, set }) {
         </select>
         {showCustomModel && (
           <input
+            aria-label="Custom AI model id"
             className="src-input src-input--mono"
             style={{ marginTop: 6 }}
             value={model}
@@ -549,6 +561,7 @@ function AINarrativeCard({ cfg, set }) {
           <>
             <div className="token-field">
               <input
+                aria-label="AI API key"
                 type={showKey ? 'text' : 'password'}
                 value={ai.api_key || ''}
                 placeholder="paste key or env:OPENAI_API_KEY"
@@ -589,17 +602,17 @@ function AINarrativeCard({ cfg, set }) {
               <div className="src-field__hint">Auto-filled for {presetDef.name}. Edit only if your endpoint differs.</div>
             )}
           </div>
-          <input className="src-input src-input--mono" value={ai.base_url || ''} placeholder="https://api.openai.com/v1" onChange={e => set('ai.base_url')(e.target.value)} />
+          <input aria-label="AI Base URL" className="src-input src-input--mono" value={ai.base_url || ''} placeholder="https://api.openai.com/v1" onChange={e => set('ai.base_url')(e.target.value)} />
         </div>
       )}
       <div className="src-field">
         <div className="src-field__label">Language</div>
-        <input className="src-input" value={ai.language || ''} placeholder="English" onChange={e => set('ai.language')(e.target.value)} />
+        <input aria-label="Language" className="src-input" value={ai.language || ''} placeholder="English" onChange={e => set('ai.language')(e.target.value)} />
       </div>
       <div className="src-field">
         <div className="src-field__label">Max tokens</div>
         <div className="slider-row">
-          <input type="range" min="100" max="8000" step="100" value={maxTok} onChange={e => set('ai.max_tokens')(parseInt(e.target.value, 10))} />
+          <input aria-label="Max tokens" type="range" min="100" max="8000" step="100" value={maxTok} onChange={e => set('ai.max_tokens')(parseInt(e.target.value, 10))} />
           <span className="slider-row__value">{maxTok}</span>
           <span className="slider-row__limit">limit</span>
         </div>
@@ -742,6 +755,7 @@ function OutputCard({ cfg, set }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <input
+            aria-label="Split by"
             className="src-input src-input--mono"
             list="split-by-options"
             value={rep.split_by || ''}
@@ -761,6 +775,7 @@ function OutputCard({ cfg, set }) {
           <div className="src-field__hint">Base name for generated reports. Period and split suffixes are appended automatically.</div>
         </div>
         <input
+          aria-label="Export file name"
           className="src-input src-input--mono"
           value={exportName}
           placeholder={cfg.form?.alias || 'project'}
@@ -858,25 +873,25 @@ function PeriodRangeField({ cfg, set }) {
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {mode !== 'custom' && (
-            <select className="src-input" style={{ width: 110 }} value={year} onChange={e => setYear(+e.target.value)}>
+            <select aria-label="Reporting period year" className="src-input" style={{ width: 110 }} value={year} onChange={e => setYear(+e.target.value)}>
               {yearOpts.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           )}
           {mode === 'quarter' && (
-            <select className="src-input" style={{ width: 120 }} value={quarter} onChange={e => setQuarter(+e.target.value)}>
+            <select aria-label="Reporting period quarter" className="src-input" style={{ width: 120 }} value={quarter} onChange={e => setQuarter(+e.target.value)}>
               {[1, 2, 3, 4].map(q => <option key={q} value={q}>Q{q}</option>)}
             </select>
           )}
           {mode === 'month' && (
-            <select className="src-input" style={{ width: 120 }} value={month} onChange={e => setMonth(+e.target.value)}>
+            <select aria-label="Reporting period month" className="src-input" style={{ width: 120 }} value={month} onChange={e => setMonth(+e.target.value)}>
               {MONTHS.map((mn, i) => <option key={mn} value={i + 1}>{mn}</option>)}
             </select>
           )}
           {mode === 'custom' && (
             <>
-              <input type="date" className="src-input" style={{ width: 160 }} value={start} onChange={e => setStart(e.target.value)} />
+              <input aria-label="Reporting period start date" type="date" className="src-input" style={{ width: 160 }} value={start} onChange={e => setStart(e.target.value)} />
               <span style={{ color: 'var(--ink-3)' }}>→</span>
-              <input type="date" className="src-input" style={{ width: 160 }} value={end} onChange={e => setEnd(e.target.value)} />
+              <input aria-label="Reporting period end date" type="date" className="src-input" style={{ width: 160 }} value={end} onChange={e => setEnd(e.target.value)} />
             </>
           )}
           <button className="btn btn-sm" onClick={apply} disabled={!preview.label}>Set period</button>

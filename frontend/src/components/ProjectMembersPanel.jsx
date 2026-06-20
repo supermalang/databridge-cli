@@ -57,6 +57,10 @@ export default function ProjectMembersPanel({ project }) {
   };
 
   if (!data) return <p style={{ color: 'var(--muted)' }}>Loading…</p>;
+  // Tolerate a malformed/partial payload so a bad /members response can't crash
+  // the whole form (A11Y-2: the Members tab must render when reached by keyboard).
+  const members = Array.isArray(data.members) ? data.members : [];
+  const invitations = Array.isArray(data.invitations) ? data.invitations : [];
   return (
     <>
       <table className="members-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -68,7 +72,7 @@ export default function ProjectMembersPanel({ project }) {
           </tr>
         </thead>
         <tbody>
-          {data.members.map(m => (
+          {members.map(m => (
             <tr key={m.user_id} style={{ borderTop: '1px solid var(--border)' }}>
               <td style={{ padding: '8px 4px' }}>
                 {m.email || m.name || m.user_id}
@@ -77,7 +81,7 @@ export default function ProjectMembersPanel({ project }) {
               </td>
               <td style={{ padding: '8px 4px' }}>
                 {isAdmin && !locked(m) ? (
-                  <select value={m.role} onChange={e => setRoleFor(m, e.target.value)}>
+                  <select aria-label={`Role for ${m.email || m.name || m.user_id}`} value={m.role} onChange={e => setRoleFor(m, e.target.value)}>
                     {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 ) : <span>{m.role}</span>}
@@ -92,10 +96,10 @@ export default function ProjectMembersPanel({ project }) {
         </tbody>
       </table>
 
-      {data.invitations.length > 0 && (
+      {invitations.length > 0 && (
         <div style={{ marginTop: 12 }}>
           <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4 }}>Pending invites</div>
-          {data.invitations.map(i => (
+          {invitations.map(i => (
             <div key={i.email} style={{ fontSize: 13, padding: '2px 0' }}>
               {i.email} — <strong>{i.role}</strong> <span style={{ color: 'var(--muted)' }}>({i.status})</span>
             </div>
@@ -107,9 +111,9 @@ export default function ProjectMembersPanel({ project }) {
         <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
           <div style={{ fontWeight: 600, marginBottom: 8 }}>Invite someone</div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input type="email" placeholder="email@example.com" value={email}
+            <input aria-label="Invite email address" type="email" placeholder="email@example.com" value={email}
                    onChange={e => setEmail(e.target.value)} style={{ flex: 1 }} />
-            <select value={role} onChange={e => setRole(e.target.value)}>
+            <select aria-label="Invite role" value={role} onChange={e => setRole(e.target.value)}>
               {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
             <button className="btn btn-primary btn-sm" disabled={busy} onClick={invite}>
