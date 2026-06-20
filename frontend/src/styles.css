@@ -46,8 +46,9 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 @keyframes db-spin{to{transform:rotate(360deg)}}
 @keyframes ai-msg-in{from{opacity:.25}to{opacity:1}}
 .tabs-bar{background:var(--bg);border-bottom:1px solid var(--border);display:flex;padding:0 28px;gap:2px;flex-shrink:0}
-.tab{display:flex;align-items:center;gap:8px;padding:0 14px;height:48px;cursor:pointer;border-bottom:2px solid transparent;font-size:13.5px;font-weight:500;color:var(--ink-2);transition:color .12s;user-select:none;letter-spacing:-.005em}
+.tab{display:flex;align-items:center;gap:8px;padding:0 14px;height:48px;cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;font-family:inherit;font-size:13.5px;font-weight:500;color:var(--ink-2);transition:color .12s;user-select:none;letter-spacing:-.005em}
 .tab:hover{color:var(--ink)}.tab.active{color:var(--accent);font-weight:600;border-bottom-color:var(--accent)}
+.tab:focus-visible,.subtab:focus-visible,.pf-tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:3px}
 .tab__num{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-3);background:var(--bg-2);border-radius:4px;padding:1px 5px;font-weight:500;line-height:1.5}
 .tab.active .tab__num{color:var(--accent);background:var(--accent-soft)}
 .tab-content{display:none;overflow:hidden}.tab-content.active{display:flex;flex-direction:column;flex:1;min-height:0}
@@ -409,7 +410,7 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 
 /* ── Secondary sub-tab strip (stages with >1 page) ──────────────────────── */
 .subtabs-bar{background:var(--bg-2);border-bottom:1px solid var(--border);display:flex;padding:0 28px;gap:4px;flex-shrink:0}
-.subtab{display:flex;align-items:center;padding:0 12px;height:38px;cursor:pointer;border-bottom:2px solid transparent;font-size:12.5px;font-weight:500;color:var(--ink-3);transition:color .12s;user-select:none}
+.subtab{display:flex;align-items:center;padding:0 12px;height:38px;cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;font-family:inherit;font-size:12.5px;font-weight:500;color:var(--ink-3);transition:color .12s;user-select:none}
 .subtab:hover{color:var(--ink-2)}
 .subtab.active{color:var(--accent);font-weight:600;border-bottom-color:var(--accent)}
 
