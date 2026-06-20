@@ -42,11 +42,21 @@ export default function BuildOptions({
   const comboRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Main-table columns only: a question is main-table when it has no repeat_group.
+  // Single-select main-table columns only (XTF-24): a question qualifies when it has no
+  // repeat_group, an export_label, AND a kobo `type` starting with `select_one` (covers
+  // select_one + select_one_from_file; excludes select_multiple*, numbers, text/note,
+  // gps/geo*, date*, and undefined types). Splitting on anything else produces garbage.
   const splitCols = useMemo(
     () =>
       (questions || [])
-        .filter((q) => q && !q.repeat_group && q.export_label)
+        .filter(
+          (q) =>
+            q
+            && !q.repeat_group
+            && q.export_label
+            && typeof q.type === 'string'
+            && q.type.startsWith('select_one'),
+        )
         .map((q) => q.export_label),
     [questions],
   );

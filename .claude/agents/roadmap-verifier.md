@@ -1,6 +1,6 @@
 ---
 name: roadmap-verifier
-description: Use to gate a roadmap task's COMPLETION against the Definition of Done before it's marked done — adversarially checks every Acceptance criterion traces to a passing test, impeccable is clean, no scope creep, and UAT is recorded. Read-only; returns a DONE/NOT-DONE verdict.
+description: Use to gate a roadmap task's COMPLETION against the Definition of Done before it's marked done — adversarially checks every Acceptance criterion traces to a passing test, impeccable is clean, no scope creep, UAT is recorded, and the security-audit + dep-audit + code-review gate is clean (or justified N/A). Read-only; returns a DONE/NOT-DONE verdict.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -30,6 +30,15 @@ Files) and the diff/commits for the task.
    (or is explicitly queued for the human, in which case verdict is NOT-DONE-pending-UAT). For
    non-UI/CLI cards UAT is `N/A` — do not require a sign-off; the human gate is the PR review,
    so confirm the Verify command + tests pass instead.
+7. **Security & dependency review** — the change has been audited by the `security-audit` agent
+   (OWASP Top 10 + this project's absolute rules) with verdict `SECURITY: CLEAR` (or a justified
+   `SECURITY: N/A` for cards with genuinely no auth/data/secret/tenant/PII surface). An open
+   Critical/High security finding is a FAIL. If the diff changed `requirements*.txt` or
+   `frontend/package.json`, confirm the `dep-audit` gate ran and surfaced no unresolved
+   high/critical CVE — an unrun dep-audit on a dependency change is a FAIL. Confirm a
+   `/code-review` (or equivalent diff review) was performed and its blockers resolved. A card may
+   mark this gate `N/A (reason)` only when there is no security/dependency surface — verify that
+   claim against the diff yourself; do not take it on faith.
 
 ## Output
 `DONE` or `NOT-DONE`. For NOT-DONE, list each failed check with the specific gap and what would

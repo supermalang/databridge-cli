@@ -279,7 +279,9 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
   resolved, scoped, on a derived branch. `guard-ready` blocks the marker otherwise.
 - **Definition of Done (exit gate).** Unit + E2E green · visual baseline approved · impeccable
   audit/critique clean · UAT signed (UI-facing cards only; non-UI/CLI cards are `N/A`, gated by
-  PR review) · committed. `roadmap-verifier` gates it before a card flips `- [x]`.
+  PR review) · **security & dependency review clean** (`security-audit` → `SECURITY: CLEAR`;
+  `dep-audit` when deps changed; `/code-review` no blockers — or `N/A` with no security surface) ·
+  committed. `roadmap-verifier` gates it before a card flips `- [x]`.
 - **Roadmap edits go through `/roadmap`** (whole-file rewrite; `guard-roadmap` validates the
   template — header `## Definition of Ready` + `## Definition of Done` + `## Global status`;
   each card carries the literal labels `Acceptance criteria`, `Unit tests`, `E2E`, `UAT`).
@@ -299,7 +301,8 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
 ### Agents (`.claude/agents/`)
 `roadmap-planner` (decompose → cards) · `roadmap-card-reviewer` (DoR + template) ·
 `roadmap-test-author` (AC-derived tests, red-first) · `roadmap-task-implementer` (frozen-tests
-impl) · `roadmap-verifier` (DoD exit gate).
+impl) · `roadmap-verifier` (DoD exit gate) · `security-audit` (OWASP + absolute-rules gate,
+report-only) · `dep-audit` (SCA / vulnerable + outdated deps).
 
 ### Process skills (superpowers — keep)
 review → `/code-review`, `/security-review`, requesting/receiving-code-review · debug →
