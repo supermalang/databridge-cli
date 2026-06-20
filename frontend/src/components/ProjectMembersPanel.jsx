@@ -57,6 +57,10 @@ export default function ProjectMembersPanel({ project }) {
   };
 
   if (!data) return <p style={{ color: 'var(--muted)' }}>Loading…</p>;
+  // Tolerate a malformed/partial payload so a bad /members response can't crash
+  // the whole form (A11Y-2: the Members tab must render when reached by keyboard).
+  const members = Array.isArray(data.members) ? data.members : [];
+  const invitations = Array.isArray(data.invitations) ? data.invitations : [];
   return (
     <>
       <table className="members-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -68,7 +72,7 @@ export default function ProjectMembersPanel({ project }) {
           </tr>
         </thead>
         <tbody>
-          {data.members.map(m => (
+          {members.map(m => (
             <tr key={m.user_id} style={{ borderTop: '1px solid var(--border)' }}>
               <td style={{ padding: '8px 4px' }}>
                 {m.email || m.name || m.user_id}
@@ -92,10 +96,10 @@ export default function ProjectMembersPanel({ project }) {
         </tbody>
       </table>
 
-      {data.invitations.length > 0 && (
+      {invitations.length > 0 && (
         <div style={{ marginTop: 12 }}>
           <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4 }}>Pending invites</div>
-          {data.invitations.map(i => (
+          {invitations.map(i => (
             <div key={i.email} style={{ fontSize: 13, padding: '2px 0' }}>
               {i.email} — <strong>{i.role}</strong> <span style={{ color: 'var(--muted)' }}>({i.status})</span>
             </div>
