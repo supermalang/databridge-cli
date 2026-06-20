@@ -362,3 +362,121 @@ test.describe('XTF-17 — searchable split-by combobox (typeahead, main-table on
     await expect(control).toHaveScreenshot('build-split-by-open.png');
   });
 });
+
+// --- XTF-24 — restrict split-by to single-select (select_one) columns -----------------
+//
+// Config with a MIX of main-table question types (none have a repeat_group, so they all
+// currently appear in the split-by combobox). Only the `select_one`-family columns
+// (select_one + select_one_from_file) may be offered as split-by options; every other
+// type (select_multiple*, integer/decimal/range, text/note, gps/geo*, date*) is a valid
+// main-table column but must be EXCLUDED, because splitting on it produces garbage.
+const X24_SELECT_ONE = 'Region';            // type: select_one             → SHOULD appear
+const X24_SELECT_ONE_FILE = 'District';     // type: select_one_from_file   → SHOULD appear
+const X24_SELECT_MULTI = 'Skills';          // type: select_multiple        → must NOT appear
+const X24_INTEGER = 'Age';                  // type: integer                → must NOT appear
+const X24_TEXT = 'Respondent';              // type: text                   → must NOT appear
+const X24_NOTE = 'Intro';                   // type: note                   → must NOT appear
+
+// The full set of excluded main-table labels, all currently listed by the (unfixed) combo.
+const X24_EXCLUDED = [X24_SELECT_MULTI, X24_INTEGER, X24_TEXT, X24_NOTE];
+// The only labels the restricted dropdown may offer (plus the leading "No split" option).
+const X24_ALLOWED = [X24_SELECT_ONE, X24_SELECT_ONE_FILE];
+const NO_SPLIT_LABEL = 'No split — one combined report';
+
+const x24Question = (label: string, type: string) => [
+  `  - kobo_key: ${label}`,
+  `    label: ${label}`,
+  `    type: ${type}`,
+  `    export_label: ${label}`,
+  '    repeat_group: null',
+];
+const X24_CONFIG_YML = [
+  'api:',
+  '  url: https://kobo.example.test',
+  '  token: env:KOBO_TOKEN',
+  'form:',
+  '  alias: test',
+  'report:',
+  '  template: templates/report_template.docx',
+  'questions:',
+  ...x24Question(X24_SELECT_ONE, 'select_one'),
+  ...x24Question(X24_SELECT_ONE_FILE, 'select_one_from_file'),
+  ...x24Question(X24_SELECT_MULTI, 'select_multiple'),
+  ...x24Question(X24_INTEGER, 'integer'),
+  ...x24Question(X24_TEXT, 'text'),
+  ...x24Question(X24_NOTE, 'note'),
+  '',
+].join('\n');
+
+test.describe('XTF-24 — split-by restricted to single-select (select_one) columns', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    // Override the bootstrap /api/config with the mixed-type config. Registered AFTER
+    // stubBootstrap, so it wins (Playwright matches routes in reverse registration order).
+    await page.route('**/api/config', (r) => r.fulfill({ json: { content: X24_CONFIG_YML } }));
+  });
+
+  test('the open dropdown offers ONLY select_one columns plus "No split"', async ({ page }) => {
+    await gotoReports(page);
+
+    // Open the combobox. The leading "No split" option is always present (and first).
+    await openSplitBy(page);
+    const visible = await visibleOptionTexts(page);
+
+    // AC: "No split — one combined report" stays FIRST.
+    expect(visible[0]).toBe(NO_SPLIT_LABEL);
+
+    // AC: ONLY select_one-family columns are offered — the list is EXACTLY
+    // ["No split …", "Region", "District"]. On current code every typed column is listed,
+    // so this exact-set assertion fails → the correct red.
+    expect(visible).toEqual([NO_SPLIT_LABEL, ...X24_ALLOWED]);
+  });
+
+  test('excluded-type main-table columns are absent from the dropdown', async ({ page }) => {
+    await gotoReports(page);
+
+    const { options } = await openSplitBy(page);
+
+    // AC: the select_one + select_one_from_file columns ARE offered.
+    await expect(options.filter({ hasText: X24_SELECT_ONE })).toHaveCount(1);
+    await expect(options.filter({ hasText: X24_SELECT_ONE_FILE })).toHaveCount(1);
+
+    // AC: select_multiple, integer, text, note columns are NOT offered, even though they
+    // are main-table columns (no repeat_group). On current code each is listed → red.
+    for (const label of X24_EXCLUDED) {
+      await expect(options.filter({ hasText: label })).toHaveCount(0);
+    }
+  });
+
+  test('XTF-17 typeahead still filters within the restricted (select_one) set', async ({ page }) => {
+    await gotoReports(page);
+
+    // Typing "reg" narrows to the single select_one match, "Region".
+    await typeFilter(page, 'reg');
+    await expect.poll(() => visibleOptionTexts(page)).toContain(X24_SELECT_ONE);
+    let visible = await visibleOptionTexts(page);
+    expect(visible).not.toContain(X24_SELECT_ONE_FILE);
+    for (const label of X24_EXCLUDED) expect(visible).not.toContain(label);
+
+    // A substring that only matches an EXCLUDED column ("age" → integer "Age") must yield
+    // no column option — the excluded type never surfaces regardless of the filter text.
+    await page.getByTestId('build-split-by').fill('');
+    await typeFilter(page, 'age');
+    visible = await visibleOptionTexts(page);
+    expect(visible).not.toContain(X24_INTEGER);
+  });
+
+  test('visual baseline of the open dropdown with the restricted list', async ({ page }) => {
+    await gotoReports(page);
+
+    // Open the combobox so the screenshot captures the restricted (select_one-only) listbox.
+    await openSplitBy(page);
+    await expect.poll(() => visibleOptionTexts(page)).toContain(X24_SELECT_ONE);
+
+    // One assertion → one baseline per viewport (mobile/tablet/desktop) via
+    // playwright.config.ts. The implementer produces the baselines for human approval.
+    const control = page.getByTestId('build-options');
+    await expect(control).toBeVisible();
+    await expect(control).toHaveScreenshot('build-options-split-by-select-one-open.png');
+  });
+});

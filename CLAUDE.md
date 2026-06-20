@@ -282,6 +282,9 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
   PR review) · **security review clean** (OWASP Top 10 + project absolute rules; no Critical/High
   — `security-audit` agent / `/security-review`) · committed. `roadmap-verifier` gates it before a
   card flips `- [x]`.
+  PR review) · **security & dependency review clean** (`security-audit` → `SECURITY: CLEAR`;
+  `dep-audit` when deps changed; `/code-review` no blockers — or `N/A` with no security surface) ·
+  committed. `roadmap-verifier` gates it before a card flips `- [x]`.
 - **Roadmap edits go through `/roadmap`** (whole-file rewrite; `guard-roadmap` validates the
   template — header `## Definition of Ready` + `## Definition of Done` + `## Global status`;
   each card carries the literal labels `Acceptance criteria`, `Unit tests`, `E2E`, `UAT`).
@@ -311,6 +314,8 @@ card to an open PR: DoR check → branch + active-task marker → `roadmap-test-
 parallel `security-audit` + `dep-audit` → `roadmap-verifier` (DoD) → marks `[x]` + opens PR →
 **develop**. Human touchpoints only: DoR failure, tests still red after auto-fix, review blockers,
 and final UAT + review + merge on the PR.
+impl) · `roadmap-verifier` (DoD exit gate) · `security-audit` (OWASP + absolute-rules gate,
+report-only) · `dep-audit` (SCA / vulnerable + outdated deps).
 
 ### Process skills (superpowers — keep)
 review → `/code-review`, `/security-review`, requesting/receiving-code-review · debug →
