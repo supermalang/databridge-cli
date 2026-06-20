@@ -782,11 +782,11 @@ function Header({ questionCount, sections = ALL_SECTIONS, onSave, dirty }) {
   const viewsOnly = has('views') && !has('charts');
   return (
     <PageHeader
-      eyebrow={viewsOnly ? 'Step 3 of 5 · Derived views' : 'Step 4 of 5 · Compose'}
-      title={viewsOnly ? 'Build your' : 'Shape your'}
-      accent={viewsOnly ? 'views.' : 'composition.'}
+      eyebrow={viewsOnly ? 'Step 3 of 5 · Combine data' : 'Step 4 of 5 · Compose'}
+      title={viewsOnly ? 'Combine your' : 'Shape your'}
+      accent={viewsOnly ? 'data.' : 'composition.'}
       sub={viewsOnly
-        ? 'Virtual data tables — computed once and reused by charts, summaries, and indicators downstream.'
+        ? 'Link related answers together and group them into combined tables (for example, totals per region) that your charts, summaries, and indicators can reuse.'
         : <>Define what shows up in the report — charts, indicators, and summaries. Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
       actions={
         <button className={`btn ${dirty ? 'btn-primary' : ''}`} onClick={onSave} disabled={!dirty}
@@ -1250,8 +1250,8 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onPreview }) {
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
-          <div className="comp-card__title">Views</div>
-          <div className="comp-card__sub">Virtual data tables — computed once, reused by charts, summaries, and indicators.</div>
+          <div className="comp-card__title">Combined tables (views)</div>
+          <div className="comp-card__sub">Link related answers and group them into combined tables — for example, totals per region — that your charts, summaries, and indicators can reuse.</div>
         </div>
         <div className="comp-card__head-actions">
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add view</button>

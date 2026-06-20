@@ -336,7 +336,12 @@ export default function Questions() {
           <th style={{ width: '20%' }}>Name</th>
           <th style={{ width: '12%' }}>Type</th>
           <th style={{ width: '30%' }}>Label (from form)</th>
-          <th style={{ width: '30%' }}>Export label · used in charts &amp; template</th>
+          <th style={{ width: '30%' }}>
+            Report column name
+            <span style={{ display: 'block', marginTop: 3, fontFamily: 'var(--font-sans)', fontSize: 11, fontWeight: 400, letterSpacing: 0, textTransform: 'none', color: 'var(--ink-3)' }}>
+              This is the name shown in your report, spreadsheet, and charts.
+            </span>
+          </th>
           <th style={{ width: '8%' }}></th>
         </tr>
       </thead>
@@ -363,7 +368,7 @@ export default function Questions() {
               <td>
                 <input
                   className="q-export-input"
-                  aria-label={`Export label for ${q.label || bareName(q) || q.kobo_key}`}
+                  aria-label={`Report column name for ${q.label || bareName(q) || q.kobo_key}`}
                   data-dirty={dirty}
                   data-dup={liveDup || undefined}
                   title={liveDup ? 'Duplicate export label — rename so it is unique' : undefined}
@@ -608,7 +613,7 @@ function Header({ total, groups }) {
       eyebrow={`Step 2 of 5 · Questions · ${total} fields · ${groups} groups`}
       title="Rename what shows up"
       accent="in the report."
-      sub="Each row is a survey question. Edit the Export label to change how that column appears in charts, indicators, and Word placeholders — no YAML required."
+      sub="Each row is a survey question. Edit the report column name to change how that column appears in your charts, indicators, and Word report — no YAML required."
     />
   );
 }
