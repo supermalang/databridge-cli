@@ -49,7 +49,7 @@ A card is startable only when all of the following hold:
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
-| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 5 | 0 / 5 |
+| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 5 | 1 / 5 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 5 | 0 / 5 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
@@ -383,7 +383,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **A11Y-1 — Keyboard-operable non-button controls (P0)**
+- [x] **A11Y-1 — Keyboard-operable non-button controls (P0)**
 
   Several primary controls are implemented as non-interactive elements that keyboard users
   cannot reach or activate (WCAG 2.1.1 Keyboard, 4.1.2 Name/Role/Value). The data-source
