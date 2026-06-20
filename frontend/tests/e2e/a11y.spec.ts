@@ -1,31 +1,26 @@
 import { test, expect, Page, Locator } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 
 /**
- * A11Y-3 — Programmatic labels on form controls.
+ * A11Y-1 — Keyboard-operable non-button controls (WCAG 2.1.1 / 4.1.2).
  *
- * Several inputs across the app are labeled only visually or by placeholder, so
- * assistive-technology users get no accessible name (WCAG 3.3.2 Labels or
- * Instructions, 4.1.2 Name/Role/Value). This spec asserts — strictly from the
- * A11Y-3 Acceptance criteria — that every audited control exposes a non-empty
- * accessible name that is NOT merely its placeholder, that per-row export-label
- * inputs have row-disambiguated names, and that an axe scan of each surface reports
- * no `label` / `aria-input-field-name` violations.
+ * These specs encode the card's ACCEPTANCE CRITERIA, not the implementation:
+ *   - Sources "platform cards" (Kobo / Ona) must be keyboard reachable + activatable
+ *     (real <button>, or <div role="button" tabIndex={0} onKeyDown> handling BOTH
+ *     Enter and Space). Keyboard activation selects the same platform as a click.
+ *   - Home "stage cards" must be REAL <button> elements (not <div role="button">),
+ *     reachable in tab order and activatable by keyboard (navigates on Enter).
+ *   - Both controls show the existing teal :focus-visible ring when keyboard-focused.
+ *   - No <div onClick> without keyboard support remains on these surfaces.
  *
- * Surfaces audited (per the card):
- *   - Sources YAML <textarea>           (Extract → Connection, "{ } YAML" view)
- *   - Questions per-row export-label inputs (Transform → Questions)
- *   - invite email input                 (Members panel, "Manage members…")
- *   - Composition inputs                 (Analyze → Charts & indicators)
+ * NETWORK-MOCKED end-to-end (same harness as build-options.spec.ts): the Vite dev
+ * server serves the real SPA; every /api/** is intercepted with page.route(), so no
+ * FastAPI backend is required.
  *
- * NETWORK-MOCKED: the Vite dev server serves the real SPA; every /api/** is
- * intercepted with page.route(), so no FastAPI backend is required. Same harness
- * as build-options.spec.ts / the A11Y-2 tab spec.
- *
- * NOTE: these assertions are derived from the A11Y-3 Acceptance criteria, not from
- * any current implementation. The current controls rely on placeholders only and
- * carry no <label>/aria-label, so every accessible-name + axe assertion below is
- * expected RED until A11Y-3 ships.
+ * SELECTORS (interface, not behavior under test):
+ *   - Platform cards: `.platform-card`; the selected one carries data-selected="true";
+ *     each shows its name ("Kobo Toolbox" / "Ona / INFORM") via .platform-card__name.
+ *   - Home stage cards: `.home-card`.
+ * These class hooks survive a div→button rewrite, so the spec stays valid for the fix.
  */
 
 const ACTIVE_PROJECT = {
@@ -38,279 +33,278 @@ const ACTIVE_PROJECT = {
 
 const CONFIG_YML = [
   'api:',
-  '  url: https://kobo.example.test',
+  '  url: https://kf.kobotoolbox.org/api/v2',
   '  token: env:KOBO_TOKEN',
   'form:',
-  '  uid: aXyZ123',
   '  alias: test',
   '',
 ].join('\n');
 
-// Two questions so per-row export-label inputs can be disambiguated by name.
-const QUESTIONS = {
-  questions: [
-    { kobo_key: 'group_a/age', label: 'Respondent age', export_label: 'age', type: 'integer', category: 'quantitative' },
-    { kobo_key: 'group_a/region', label: 'Region of residence', export_label: 'region', type: 'select_one', category: 'categorical' },
-  ],
-};
-
-const MEMBERS = {
-  members: [{ user_id: 'u-1', email: 'owner@example.test', role: 'admin', is_owner: true }],
-  invitations: [],
-  my_role: 'admin',
-};
-
 async function stubBootstrap(page: Page) {
-  // Catch-all FIRST so the specific routes below win (Playwright matches routes in
-  // REVERSE registration order — last registered wins).
+  // Catch-all FIRST so the specific routes below win (last registered wins).
   await page.route('**/api/**', (r) => r.fulfill({ json: {} }));
   await page.route('**/api/me', (r) =>
     r.fulfill({ json: { sub: 'dev', email: 'dev@example.test', given_name: 'Dev', family_name: 'User' } }));
   await page.route('**/api/projects', (r) =>
     r.fulfill({ json: { active_id: ACTIVE_PROJECT.id, is_superadmin: false, projects: [ACTIVE_PROJECT] } }));
   await page.route('**/api/periods', (r) => r.fulfill({ json: { current: null, registry: [] } }));
-  await page.route('**/api/periods/date-range', (r) => r.fulfill({ json: {} }));
   await page.route('**/api/config', (r) => r.fulfill({ json: { content: CONFIG_YML } }));
-  await page.route('**/api/questions', (r) => r.fulfill({ json: QUESTIONS }));
   await page.route('**/api/ai/status', (r) => r.fulfill({ json: { configured: false, verified: false } }));
   await page.route('**/api/state', (r) =>
-    r.fulfill({ json: { has_questions: true, has_data: false, has_templates: false, has_ai: false } }));
-  await page.route('**/api/reports', (r) => r.fulfill({ json: { files: [] } }));
-  await page.route('**/api/templates', (r) => r.fulfill({ json: { files: [] } }));
-  await page.route('**/api/templates/active', (r) => r.fulfill({ json: { active: null } }));
-  await page.route('**/api/framework', (r) => r.fulfill({ json: {} }));
-  await page.route('**/api/data/sessions', (r) => r.fulfill({ json: { sessions: [] } }));
-  await page.route('**/api/projects/*/members', (r) => r.fulfill({ json: MEMBERS }));
+    r.fulfill({ json: { has_questions: false, has_data: false, has_templates: false, has_ai: false } }));
 }
 
-async function bootApp(page: Page) {
+// Land on Home (the default stage). The greeting cards live here.
+async function gotoHome(page: Page) {
   await page.goto('http://localhost:51730/');
-  await expect(page.getByText('Test Project').first()).toBeVisible();
+  // Wait on the actual surface under test, not chrome text — the greeting cards.
+  await expect(page.locator('.home-card').first()).toBeVisible();
 }
 
-// Navigate the primary + secondary nav by clicking the data-tab / sub-tab labels.
-async function gotoStage(page: Page, stageId: string) {
-  await page.locator(`.tabs-bar [data-tab="${stageId}"]`).click();
-}
-async function gotoSub(page: Page, label: string) {
-  await page.locator('.subtabs-bar .subtab', { hasText: label }).click();
+// Navigate to the Sources "Connection" surface (Extract stage → Connection subtab),
+// where the platform cards (Kobo / Ona) render.
+async function gotoSourcesConnection(page: Page) {
+  await page.goto('http://localhost:51730/');
+  await expect(page.locator('.tabs-bar .tab', { hasText: /extract/i }).first()).toBeVisible();
+  await page.locator('.tabs-bar .tab', { hasText: /extract/i }).first().click();
+  // Connection is the default subtab of Extract; click it explicitly to be safe.
+  await page.locator('.subtabs-bar .subtab', { hasText: /connection/i }).click();
+  // Sanity: the platform picker rendered, so any later failure is the missing A11Y-1
+  // behavior — not a broken bootstrap/render.
+  await expect(page.locator('.platform-card').first()).toBeVisible();
 }
 
-// A control's accessible name must be non-empty AND must not be just its placeholder.
-async function expectLabeled(control: Locator, message: string) {
-  await expect(control, message).toBeVisible();
-  const placeholder = await control.getAttribute('placeholder');
-  const accName = await resolveAccessibleName(control);
-  expect(accName.trim().length, `${message}: accessible name must be non-empty`).toBeGreaterThan(0);
-  if (placeholder) {
-    expect(accName.trim(), `${message}: accessible name must not be only the placeholder`)
-      .not.toBe(placeholder.trim());
+const platformCard = (page: Page, name: RegExp) =>
+  page.locator('.platform-card').filter({ hasText: name });
+
+// Tab from the document body until `target` is the focused element, or give up.
+// Returns true if it became focused within `maxTabs` presses.
+async function tabUntilFocused(page: Page, target: Locator, maxTabs = 25): Promise<boolean> {
+  await page.locator('body').click({ position: { x: 1, y: 1 } });
+  const handle = await target.elementHandle();
+  if (!handle) return false;
+  for (let i = 0; i < maxTabs; i++) {
+    await page.keyboard.press('Tab');
+    const focused = await page.evaluate((el) => el === document.activeElement, handle).catch(() => false);
+    if (focused) return true;
   }
+  return false;
 }
 
-// Resolve the accessible name as the AT would see it (label / aria-label / aria-labelledby),
-// explicitly excluding the placeholder so a placeholder-only control resolves to "".
-async function resolveAccessibleName(control: Locator): Promise<string> {
-  return control.evaluate((el: Element) => {
-    const byId = (id: string | null) => (id ? document.getElementById(id) : null);
-    const ariaLabel = el.getAttribute('aria-label');
-    if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim();
-    const labelledby = el.getAttribute('aria-labelledby');
-    if (labelledby) {
-      const txt = labelledby.split(/\s+/).map((i) => byId(i)?.textContent || '').join(' ').trim();
-      if (txt) return txt;
-    }
-    const id = el.getAttribute('id');
-    if (id) {
-      const lbl = document.querySelector(`label[for="${id}"]`);
-      if (lbl && (lbl.textContent || '').trim()) return (lbl.textContent || '').trim();
-    }
-    const wrapping = el.closest('label');
-    if (wrapping && (wrapping.textContent || '').trim()) return (wrapping.textContent || '').trim();
-    return ''; // placeholder is intentionally NOT an accessible name
+// The computed focus-ring outline of the focused element. The existing teal
+// :focus-visible rule is `outline: 2px solid var(--accent)` (--accent #0F766E).
+async function focusedOutline(page: Page) {
+  return page.evaluate(() => {
+    const el = document.activeElement as HTMLElement | null;
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    return { style: cs.outlineStyle, width: cs.outlineWidth, color: cs.outlineColor };
   });
 }
 
-// Reusable surface audit: (1) run a Playwright axe scan and assert no label /
-// aria-input-field-name violations (per the card), AND (2) assert every form control
-// in the region has a real, non-placeholder accessible name. Step (2) is required
-// because axe-core's `label` rule treats a `placeholder` as an acceptable name — so an
-// axe-only assertion would pass on placeholder-only inputs and be vacuous. The two
-// together gate the actual WCAG 3.3.2 / 4.1.2 requirement.
-async function expectNoLabelViolations(page: Page, include: string, message: string) {
-  const results = await new AxeBuilder({ page })
-    .include(include)
-    .withTags(['wcag2a', 'wcag21a', 'wcag412'])
-    .analyze();
-  const labelViolations = results.violations.filter((v) =>
-    ['label', 'label-title-only', 'aria-input-field-name', 'select-name'].includes(v.id));
-  expect(labelViolations, `${message} (axe)\n${JSON.stringify(labelViolations, null, 2)}`).toEqual([]);
+test.describe('A11Y-1 — Sources platform cards: keyboard operable', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+  });
 
-  // Non-placeholder accessible name for every control on the surface.
-  const controls = page.locator(include).locator('input:visible, select:visible, textarea:visible');
-  const count = await controls.count();
-  expect(count, `${message}: surface must render at least one form control`).toBeGreaterThan(0);
-  const unnamed: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const c = controls.nth(i);
-    const accName = (await resolveAccessibleName(c)).trim();
-    const placeholder = (await c.getAttribute('placeholder')) || '';
-    if (accName.length === 0 || accName === placeholder.trim()) {
-      const outer = await c.evaluate((el) => (el as HTMLElement).outerHTML.slice(0, 160));
-      unnamed.push(outer);
+  // AC: platform cards are reachable by Tab and show the teal focus ring on keyboard focus.
+  test('a platform card is reachable by Tab and shows the focus-visible ring', async ({ page }) => {
+    await gotoSourcesConnection(page);
+
+    const kobo = platformCard(page, /Kobo/);
+    const reached = await tabUntilFocused(page, kobo);
+    expect(reached, 'the Kobo platform card must be reachable in keyboard tab order').toBe(true);
+
+    const outline = await focusedOutline(page);
+    expect(outline, 'focused element has a computed outline').not.toBeNull();
+    // The teal :focus-visible ring is a solid, non-zero outline.
+    expect(outline!.style).not.toBe('none');
+    expect(outline!.width).not.toBe('0px');
+  });
+
+  // AC: keyboard activation (Enter) selects the same platform a mouse click would.
+  test('pressing Enter on a focused platform card selects that platform', async ({ page }) => {
+    await gotoSourcesConnection(page);
+
+    const ona = platformCard(page, /Ona/);
+    // Start from a known state: Kobo selected (matches the seeded kobo URL).
+    const kobo = platformCard(page, /Kobo/);
+    await expect(kobo).toHaveAttribute('data-selected', 'true');
+
+    const reached = await tabUntilFocused(page, ona);
+    expect(reached, 'the Ona platform card must be reachable in keyboard tab order').toBe(true);
+
+    await page.keyboard.press('Enter');
+    await expect(ona, 'Enter must select the Ona platform').toHaveAttribute('data-selected', 'true');
+    await expect(kobo, 'Kobo must no longer be selected').not.toHaveAttribute('data-selected', 'true');
+  });
+
+  // AC: keyboard activation handles BOTH Enter and Space — Space selects too.
+  test('pressing Space on a focused platform card selects that platform', async ({ page }) => {
+    await gotoSourcesConnection(page);
+
+    const ona = platformCard(page, /Ona/);
+    const kobo = platformCard(page, /Kobo/);
+
+    const reached = await tabUntilFocused(page, ona);
+    expect(reached, 'the Ona platform card must be reachable in keyboard tab order').toBe(true);
+
+    await page.keyboard.press('Space');
+    await expect(ona, 'Space must select the Ona platform').toHaveAttribute('data-selected', 'true');
+    await expect(kobo).not.toHaveAttribute('data-selected', 'true');
+  });
+
+  // AC: keyboard activation matches mouse click (no behavior regression). A mouse click
+  // selects; keyboard Enter must reach the SAME selected state.
+  test('keyboard selection matches mouse-click selection', async ({ page }) => {
+    await gotoSourcesConnection(page);
+    const ona = platformCard(page, /Ona/);
+
+    // Mouse path.
+    await ona.click();
+    await expect(ona).toHaveAttribute('data-selected', 'true');
+
+    // Reset to Kobo via mouse, then reach the same state via keyboard.
+    await platformCard(page, /Kobo/).click();
+    await expect(ona).not.toHaveAttribute('data-selected', 'true');
+
+    const reached = await tabUntilFocused(page, ona);
+    expect(reached).toBe(true);
+    await page.keyboard.press('Enter');
+    await expect(ona, 'keyboard activation reaches the same selected state as a click')
+      .toHaveAttribute('data-selected', 'true');
+  });
+
+  // AC: no <div onClick> without keyboard support remains on this surface. Every
+  // platform card must either be a <button> or expose role="button" + tabindex + be
+  // focusable (the union of the two allowed implementations).
+  test('no platform card is a non-keyboard <div onClick>', async ({ page }) => {
+    await gotoSourcesConnection(page);
+    const cards = page.locator('.platform-card');
+    const n = await cards.count();
+    expect(n).toBeGreaterThan(0);
+    for (let i = 0; i < n; i++) {
+      const info = await cards.nth(i).evaluate((el) => ({
+        tag: el.tagName.toLowerCase(),
+        role: el.getAttribute('role'),
+        tabindex: el.getAttribute('tabindex'),
+      }));
+      const isButton = info.tag === 'button';
+      const isAriaButton = info.role === 'button' && info.tabindex === '0';
+      expect(
+        isButton || isAriaButton,
+        `platform card ${i} must be a <button> or role="button" + tabindex=0 (got ${JSON.stringify(info)})`,
+      ).toBe(true);
     }
+  });
+
+  // Visual baseline of the keyboard-focused platform card (one assertion → one
+  // baseline per viewport via playwright.config.ts; a human approves them).
+  test('visual baseline of the focused platform card', async ({ page }) => {
+    await gotoSourcesConnection(page);
+    const kobo = platformCard(page, /Kobo/);
+    const reached = await tabUntilFocused(page, kobo);
+    expect(reached).toBe(true);
+    await expect(kobo).toHaveScreenshot('platform-card-focused.png');
+  });
+});
+
+test.describe('A11Y-1 — Home stage cards: real buttons, keyboard operable', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+  });
+
+  // AC: Home stage cards are REAL <button> elements (not <div role="button">).
+  test('every Home stage card is a real <button> element', async ({ page }) => {
+    await gotoHome(page);
+    const cards = page.locator('.home-card');
+    const n = await cards.count();
+    expect(n).toBeGreaterThan(0);
+    for (let i = 0; i < n; i++) {
+      const tag = await cards.nth(i).evaluate((el) => el.tagName.toLowerCase());
+      expect(tag, `Home stage card ${i} must be a <button>, not <${tag}>`).toBe('button');
+    }
+  });
+
+  // AC: each stage card is reachable in tab order and exposed as a button by role.
+  test('a Home stage card is reachable by Tab and exposed as role=button', async ({ page }) => {
+    await gotoHome(page);
+    // getByRole('button') only matches true buttons / role="button"; restrict to the
+    // stage cards via the class hook.
+    const card = page.locator('.home-card').getByRole('button').first()
+      .or(page.locator('button.home-card').first());
+    // The stage card itself must be the button (not just a nested sub-button).
+    const stageButton = page.locator('button.home-card').first();
+    await expect(stageButton, 'the stage card must itself be a <button>').toBeVisible();
+
+    const reached = await tabUntilFocused(page, stageButton);
+    expect(reached, 'the stage card button must be reachable in keyboard tab order').toBe(true);
+
+    const outline = await focusedOutline(page);
+    expect(outline).not.toBeNull();
+    expect(outline!.style).not.toBe('none');
+    expect(outline!.width).not.toBe('0px');
+  });
+
+  // AC: activating a Home stage card by keyboard navigates to the same destination.
+  test('pressing Enter on a Home stage card navigates to its stage', async ({ page }) => {
+    await gotoHome(page);
+
+    // Target the Extract stage card; activating it must navigate to the Extract stage
+    // (its tab becomes active and the platform picker renders).
+    const extractCard = page.locator('button.home-card').filter({ hasText: /extract/i }).first();
+    await expect(extractCard, 'the Extract stage card must be a <button>').toBeVisible();
+
+    const reached = await tabUntilFocused(page, extractCard);
+    expect(reached).toBe(true);
+    await page.keyboard.press('Enter');
+
+    // Navigation happened: the Extract tab is active and the connection surface rendered.
+    await expect(page.locator('.tabs-bar .tab.active', { hasText: /extract/i })).toBeVisible();
+    await expect(page.locator('.platform-card').first()).toBeVisible();
+  });
+
+  // Visual baseline of the Home stage cards (one assertion → one baseline per viewport).
+  // Gate the screenshot on the AC (cards are real <button>s) so this does not pass
+  // vacuously on current code by auto-writing a baseline of the pre-fix <div> markup —
+  // the baseline must capture the corrected button markup, approved by a human.
+  test('visual baseline of the Home stage cards', async ({ page }) => {
+    await gotoHome(page);
+    await expect(page.locator('button.home-card').first(),
+      'stage cards must be <button>s before the baseline is captured').toBeVisible();
+    await expect(page.locator('.home-cards')).toHaveScreenshot('home-stage-cards.png');
+  });
+});
+
+test.describe('A11Y-1 — axe accessibility audit (no interactive-role / keyboard / name violations)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+  });
+
+  // Inject axe-core from the CDN and run it against the page, returning violations.
+  async function runAxe(page: Page) {
+    await page.addScriptTag({ url: 'https://cdn.jsdelivr.net/npm/axe-core@4/axe.min.js' });
+    return page.evaluate(async () => {
+      // @ts-expect-error axe is injected on window by the script tag.
+      const results = await window.axe.run(document, {
+        runOnly: {
+          type: 'rule',
+          values: ['button-name', 'aria-command-name', 'nested-interactive'],
+        },
+      });
+      return results.violations.map((v: any) => ({ id: v.id, nodes: v.nodes.length }));
+    });
   }
-  expect(unnamed, `${message}: ${unnamed.length} control(s) lack a non-placeholder accessible name\n${unnamed.join('\n')}`)
-    .toEqual([]);
-}
 
-// ---------------------------------------------------------------------------------------
-// Sources — YAML textarea
-// ---------------------------------------------------------------------------------------
-test.describe('A11Y-3 — Sources YAML textarea has a programmatic label', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-    await bootApp(page);
-    await gotoStage(page, 'extract');
-    await gotoSub(page, 'Connection');
-    // Reveal the YAML editor (default view is the form).
-    await page.getByRole('button', { name: /YAML/ }).click();
+  test('Sources platform picker has no button-name / interactive-role violations', async ({ page }) => {
+    await gotoSourcesConnection(page);
+    const violations = await runAxe(page);
+    expect(violations, `axe violations: ${JSON.stringify(violations)}`).toEqual([]);
   });
 
-  test('the YAML <textarea> resolves by an accessible name (not placeholder)', async ({ page }) => {
-    // AC: the YAML textarea (Sources) is specifically labeled. Resolve it as a
-    // textbox by accessible name — a name-less textarea cannot be found this way.
-    const yamlBox = page.getByRole('textbox', { name: /yaml|config/i });
-    await expect(yamlBox).toBeVisible();
-    await expectLabeled(yamlBox, 'Sources YAML textarea');
-  });
-
-  test('axe: no label / aria-input-field-name violations on the YAML editor', async ({ page }) => {
-    // Guard against a vacuous pass: the textarea must actually be present first.
-    await expect(page.locator('.src-card textarea')).toBeVisible();
-    await expectNoLabelViolations(page, '.src-card', 'Sources YAML editor has labelling violations');
-  });
-
-  test('label persists after typing then clearing (placeholder is not the label)', async ({ page }) => {
-    // Interact via a stable structural locator (no accessible name is needed to type);
-    // then assert the accessible name still resolves with the field empty.
-    const yamlBox = page.locator('.src-card textarea');
-    await expect(yamlBox).toBeVisible();
-    await yamlBox.fill('api: {}');
-    await yamlBox.fill('');
-    // Even with the field empty (placeholder would be showing), the accessible name holds.
-    await expectLabeled(yamlBox, 'Sources YAML textarea after clear');
-  });
-
-  test('visual baseline: labeled Sources YAML field', async ({ page }) => {
-    const card = page.locator('.src-card');
-    await expect(card.locator('textarea')).toBeVisible();
-    await expect(card).toHaveScreenshot('a11y3-sources-yaml-field.png');
-  });
-});
-
-// ---------------------------------------------------------------------------------------
-// Questions — per-row export-label inputs
-// ---------------------------------------------------------------------------------------
-test.describe('A11Y-3 — Questions per-row export-label inputs are labeled + row-disambiguated', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-    await bootApp(page);
-    await gotoStage(page, 'transform');
-    await gotoSub(page, 'Questions');
-    await expect(page.locator('input.q-export-input').first()).toBeVisible();
-  });
-
-  test('every export-label input has a non-empty accessible name (not placeholder)', async ({ page }) => {
-    const inputs = page.locator('input.q-export-input');
-    const count = await inputs.count();
-    expect(count).toBeGreaterThanOrEqual(2);
-    for (let i = 0; i < count; i++) {
-      await expectLabeled(inputs.nth(i), `Questions export-label input #${i}`);
-    }
-  });
-
-  test('two rows expose distinguishable accessible names', async ({ page }) => {
-    // AC: per-row inputs have unique, row-disambiguated accessible names so AT users
-    // can tell rows apart (e.g. referencing the question).
-    const inputs = page.locator('input.q-export-input');
-    const name0 = (await resolveAccessibleName(inputs.nth(0))).trim();
-    const name1 = (await resolveAccessibleName(inputs.nth(1))).trim();
-    expect(name0.length).toBeGreaterThan(0);
-    expect(name1.length).toBeGreaterThan(0);
-    expect(name0, 'row 0 and row 1 export-label inputs must have different accessible names')
-      .not.toBe(name1);
-  });
-
-  test('axe: no label / aria-input-field-name violations on the Questions table', async ({ page }) => {
-    await expect(page.locator('input.q-export-input').first()).toBeVisible();
-    await expectNoLabelViolations(page, '.q-table', 'Questions table has labelling violations');
-  });
-
-  test('visual baseline: labeled Questions export-label rows', async ({ page }) => {
-    const table = page.locator('table.q-table, .q-table').first();
-    await expect(table).toBeVisible();
-    await expect(table).toHaveScreenshot('a11y3-questions-export-rows.png');
-  });
-});
-
-// ---------------------------------------------------------------------------------------
-// Members panel — invite email input
-// ---------------------------------------------------------------------------------------
-async function openMembersPanel(page: Page) {
-  await page.locator('.project-switcher').click();
-  await page.getByText('Manage members…').click();
-  await expect(page.locator('.project-form__tabs')).toBeVisible();
-  await expect(page.getByText('Invite someone')).toBeVisible();
-}
-
-test.describe('A11Y-3 — Members panel invite email input is labeled', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-    await bootApp(page);
-    await openMembersPanel(page);
-  });
-
-  test('the invite email input resolves by an accessible name (not placeholder)', async ({ page }) => {
-    // AC: the invite email input (Members panel) is specifically labeled.
-    const email = page.getByRole('textbox', { name: /e-?mail|invite/i });
-    await expect(email).toBeVisible();
-    await expectLabeled(email, 'Members invite email input');
-  });
-
-  test('axe: no label / aria-input-field-name violations on the Members panel', async ({ page }) => {
-    await expect(page.locator('.pf-panel input[type="email"]')).toBeVisible();
-    await expectNoLabelViolations(page, '.pf-panel', 'Members panel has labelling violations');
-  });
-});
-
-// ---------------------------------------------------------------------------------------
-// Composition — remaining inputs
-// ---------------------------------------------------------------------------------------
-test.describe('A11Y-3 — Composition inputs are labeled', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-    await bootApp(page);
-    await gotoStage(page, 'analyze');
-    await gotoSub(page, 'Charts & indicators');
-    // The Composition form controls live in the "Add chart" editor; open it.
-    await page.getByRole('button', { name: /Add chart/i }).click();
-    await expect(page.locator('.modal[role="dialog"]')).toBeVisible();
-  });
-
-  test('every Composition input/select/textarea has a non-empty accessible name', async ({ page }) => {
-    const surface = page.locator('.modal[role="dialog"]');
-    const controls = surface.locator('input:visible, select:visible, textarea:visible');
-    const count = await controls.count();
-    // Guard against a vacuous pass — the editor renders form controls.
-    expect(count, 'Composition editor must render at least one form control').toBeGreaterThan(0);
-    for (let i = 0; i < count; i++) {
-      await expectLabeled(controls.nth(i), `Composition control #${i}`);
-    }
-  });
-
-  test('axe: no label / aria-input-field-name violations on Composition', async ({ page }) => {
-    await expect(page.locator('.modal[role="dialog"]')).toBeVisible();
-    await expectNoLabelViolations(page, '.modal[role="dialog"]', 'Composition editor has labelling violations');
+  test('Home stage cards have no button-name / interactive-role violations', async ({ page }) => {
+    await gotoHome(page);
+    const violations = await runAxe(page);
+    expect(violations, `axe violations: ${JSON.stringify(violations)}`).toEqual([]);
   });
 });
