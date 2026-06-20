@@ -565,6 +565,7 @@ export default function Composition({ sections } = {}) {
             hint="Free-text guidance the AI will prioritise. Leave blank to let it choose freely from your questions."
           >
             <textarea
+              aria-label={`Guidance for AI ${suggestSpec[suggestKind].plural} suggestions`}
               className="src-input"
               rows={5}
               value={suggestText}
@@ -997,16 +998,16 @@ function FrameworkCard() {
           width={520}
         >
           <ModalField label="ID" hint="Short opaque identifier (e.g. OP1.1)">
-            <input className="src-input" value={editing.draft.id}
+            <input aria-label={`${editing.level} ID`} className="src-input" value={editing.draft.id}
                    onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, id: e.target.value } }))} />
           </ModalField>
           <ModalField label="Label">
-            <input className="src-input" value={editing.draft.label}
+            <input aria-label={`${editing.level} label`} className="src-input" value={editing.draft.label}
                    onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, label: e.target.value } }))} />
           </ModalField>
           {editing.level === 'output' && (
             <ModalField label="Parent outcome">
-              <select className="src-input" value={editing.draft.parent || ''}
+              <select aria-label="Parent outcome" className="src-input" value={editing.draft.parent || ''}
                       onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, parent: e.target.value } }))}>
                 <option value="">(pick one)</option>
                 {(fw.outcomes || []).map(oc => <option key={oc.id} value={oc.id}>{oc.id} — {oc.label}</option>)}
@@ -1454,14 +1455,16 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
       <ModalError>{err}</ModalError>
       <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
       <ModalField label="Title"><input className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Overall satisfaction" /></ModalField>
+      <ModalField label="Name"><input aria-label="Chart name" className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="satisfaction_overview" /></ModalField>
+      <ModalField label="Title"><input aria-label="Chart title" className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Overall satisfaction" /></ModalField>
       <ModalField label="Type" hint={CHART_REQS[type] ? `Needs: ${CHART_REQS[type]}` : undefined}>
-        <select className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+        <select aria-label="Chart type" className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
       </ModalField>
       <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name">
-        <ColumnPicker value={cols} onChange={setCols} options={columns} placeholder="Search columns…" />
+        <ColumnPicker ariaLabel="Chart columns" value={cols} onChange={setCols} options={columns} placeholder="Search columns…" />
       </ModalField>
       <ModalField label="Options" hint="YAML, optional (e.g. top_n: 10)">
-        <textarea value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
+        <textarea aria-label="Chart options (YAML)" value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
       </ModalField>
     </Modal>
   );
@@ -1501,8 +1504,13 @@ function IndicatorModal({ initial, columns = [], onClose, onSave }) {
       <ModalField label="Stat"><select className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{INDICATOR_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
       <ModalField label="Column"><ColumnPicker value={question} onChange={setQuestion} options={columns} multi={false} placeholder="Number of Students" /></ModalField>
       <ModalField label="Format" hint="Python format string"><input className="src-input" value={format} onChange={e => setFormat(e.target.value)} placeholder="{:,.0f}" /></ModalField>
+      <ModalField label="Name" hint="Becomes {{ ind_<name> }} in the template"><input aria-label="Indicator name" className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="total_beneficiaries" /></ModalField>
+      <ModalField label="Label"><input aria-label="Indicator label" className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
+      <ModalField label="Stat"><select aria-label="Indicator stat" className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{INDICATOR_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
+      <ModalField label="Column"><ColumnPicker ariaLabel="Indicator column" value={question} onChange={setQuestion} options={columns} multi={false} placeholder="Number of Students" /></ModalField>
+      <ModalField label="Format" hint="Python format string"><input aria-label="Indicator format" className="src-input" value={format} onChange={e => setFormat(e.target.value)} placeholder="{:,.0f}" /></ModalField>
       <ModalField label="Compare to" hint="Optional. Set 'baseline' to compute delta + percent change from the baseline period.">
-        <select className="src-input" value={compareTo} onChange={e => setCompareTo(e.target.value)}>
+        <select aria-label="Indicator compare to" className="src-input" value={compareTo} onChange={e => setCompareTo(e.target.value)}>
           <option value="">(no comparison)</option>
           <option value="baseline">Baseline</option>
         </select>
@@ -1511,7 +1519,7 @@ function IndicatorModal({ initial, columns = [], onClose, onSave }) {
         <FrameworkPicker value={frameworkRef} onChange={v => setFrameworkRef(v || '')} />
       </ModalField>
       <ModalField label="Disaggregate by" hint="Optional. Computes the stat per group; adds {{ ind_<name>_breakdown }} + {{ ind_<name>_table }}.">
-        <ColumnPicker value={disagg} onChange={setDisagg} options={columns} placeholder="Region, Sex" />
+        <ColumnPicker ariaLabel="Disaggregate by" value={disagg} onChange={setDisagg} options={columns} placeholder="Region, Sex" />
       </ModalField>
       <ModalField label="Primary" hint="Optional. Marks this as the framework node's headline indicator — drives the node's achievement % in the logframe.">
         <label className="run-opt" style={{ paddingTop: 6 }}>
@@ -1551,10 +1559,15 @@ function SummaryModal({ initial, columns = [], onClose, onSave }) {
       <ModalField label="Stat"><select className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{SUMMARY_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
       <ModalField label="Columns"><ColumnPicker value={cols} onChange={setCols} options={columns} /></ModalField>
       {(stat === 'distribution' || stat === 'crosstab') && <ModalField label="Top N"><input className="src-input" type="number" value={topN} onChange={e => setTopN(e.target.value)} /></ModalField>}
+      <ModalField label="Name"><input aria-label="Summary name" className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
+      <ModalField label="Label"><input aria-label="Summary label" className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
+      <ModalField label="Stat"><select aria-label="Summary stat" className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{SUMMARY_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
+      <ModalField label="Columns"><ColumnPicker ariaLabel="Summary columns" value={cols} onChange={setCols} options={columns} /></ModalField>
+      {(stat === 'distribution' || stat === 'crosstab') && <ModalField label="Top N"><input aria-label="Summary top N" className="src-input" type="number" value={topN} onChange={e => setTopN(e.target.value)} /></ModalField>}
       {stat === 'trend' && (
-        <ModalField label="Frequency"><select className="src-input" value={freq} onChange={e => setFreq(e.target.value)}>{['', 'day', 'week', 'month', 'year'].map(f => <option key={f} value={f}>{f || '—'}</option>)}</select></ModalField>
+        <ModalField label="Frequency"><select aria-label="Summary frequency" className="src-input" value={freq} onChange={e => setFreq(e.target.value)}>{['', 'day', 'week', 'month', 'year'].map(f => <option key={f} value={f}>{f || '—'}</option>)}</select></ModalField>
       )}
-      {stat === 'ai' && <ModalField label="Prompt"><textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={4} className="src-input" style={{ height: 'auto', padding: 10 }} /></ModalField>}
+      {stat === 'ai' && <ModalField label="Prompt"><textarea aria-label="Summary prompt" value={prompt} onChange={e => setPrompt(e.target.value)} rows={4} className="src-input" style={{ height: 'auto', padding: 10 }} /></ModalField>}
     </Modal>
   );
 }
@@ -1581,6 +1594,9 @@ function TableModal({ initial, columns = [], onClose, onSave }) {
       <ModalField label="Name" hint="Used as {{ table_<name> }} in the template" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} /></ModalField>
       <ModalField label="Title"><input className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
       <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name."><ColumnPicker value={cols} onChange={setCols} options={columns} /></ModalField>
+      <ModalField label="Name" hint="Used as {{ table_<name> }} in the template"><input aria-label="Table name" className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
+      <ModalField label="Title"><input aria-label="Table title" className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
+      <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name."><ColumnPicker ariaLabel="Table columns" value={cols} onChange={setCols} options={columns} /></ModalField>
     </Modal>
   );
 }
@@ -1676,7 +1692,7 @@ function ViewModal({ initial, onClose, onSave }) {
           ✨ Describe the view <span style={{ fontWeight: 400, color: 'var(--ink-3)' }}>— let AI fill the form below</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input className="src-input" style={{ flex: 1 }} value={describeText}
+          <input aria-label="Describe the view" className="src-input" style={{ flex: 1 }} value={describeText}
                  onChange={e => setDescribeText(e.target.value)}
                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (aiReady && !describing && describeText.trim()) build(); } }}
                  disabled={!aiReady || describing}
@@ -1691,14 +1707,17 @@ function ViewModal({ initial, onClose, onSave }) {
       <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="villages_with_dept" /></ModalField>
       <ModalField label="Source table" hint="Which base table this view draws from" error={fe.errorFor('source')} errorId={fe.errorId('source')}>
         <ColumnPicker value={source} onChange={(v) => { setSource(v); if ((v || '').trim()) fe.clearError('source'); }} options={tableNames} multi={false} placeholder="main, or a repeat table…" />
+      <ModalField label="Name"><input aria-label="View name" className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="villages_with_dept" /></ModalField>
+      <ModalField label="Source table" hint="Which base table this view draws from">
+        <ColumnPicker ariaLabel="View source table" value={source} onChange={setSource} options={tableNames} multi={false} placeholder="main, or a repeat table…" />
       </ModalField>
       {parentName && (
         <ModalField label="Join from parent" hint={`Columns to bring down from "${parentName}"`}>
-          <ColumnPicker value={joinParent} onChange={setJoinParent} options={parentCols} placeholder="Search parent columns…" />
+          <ColumnPicker ariaLabel="Join from parent" value={joinParent} onChange={setJoinParent} options={parentCols} placeholder="Search parent columns…" />
         </ModalField>
       )}
       <ModalField label="Columns" hint="Which columns to keep — leave blank for all">
-        <ColumnPicker value={columns} onChange={setColumns} options={sourceCols} placeholder="Search columns…" />
+        <ColumnPicker ariaLabel="View columns" value={columns} onChange={setColumns} options={sourceCols} placeholder="Search columns…" />
       </ModalField>
       <ModalField label="Filter" hint="pandas query syntax, e.g. Age > 18 and Region == 'North'"
                   error={filterErr || fe.errorFor('filter')} errorId={fe.errorId('filter')}>
@@ -1708,6 +1727,10 @@ function ViewModal({ initial, onClose, onSave }) {
                onChange={e => { setFilter(e.target.value); fe.clearError('filter'); }}
                placeholder="Age > 18 and Region == 'North'"
                style={(filterErr || fe.errorFor('filter')) ? { borderColor: 'var(--rose)' } : undefined} />
+      <ModalField label="Filter" hint="pandas query syntax, e.g. Age > 18 and Region == 'North'">
+        <input aria-label="View filter" className="src-input" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Age > 18 and Region == 'North'"
+               style={filterErr ? { borderColor: 'var(--rose)' } : undefined} />
+        {filterErr && <div style={{ color: 'var(--rose)', fontSize: 11.5, marginTop: 4 }}>{filterErr}</div>}
       </ModalField>
       <ModalField label="Aggregate">
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
@@ -1723,7 +1746,7 @@ function ViewModal({ initial, onClose, onSave }) {
           <ModalField label="Aggregate column">
             <ColumnPicker value={question} onChange={setQuestion} options={sourceCols} multi={false} placeholder="Numeric column to aggregate…" />
           </ModalField>
-          <ModalField label="Function"><select className="src-input" value={agg} onChange={e => setAgg(e.target.value)}>{['sum', 'mean', 'count', 'max', 'min'].map(a => <option key={a} value={a}>{a}</option>)}</select></ModalField>
+          <ModalField label="Function"><select aria-label="Aggregate function" className="src-input" value={agg} onChange={e => setAgg(e.target.value)}>{['sum', 'mean', 'count', 'max', 'min'].map(a => <option key={a} value={a}>{a}</option>)}</select></ModalField>
         </>
       )}
     </Modal>
@@ -1743,7 +1766,7 @@ function ModalError({ children }) {
 // Searchable column picker. `value` is a comma-separated string (multi) or a
 // single column name; `options` are known export labels. Free-text is allowed
 // (Enter adds the typed value) so repeat/derived columns still work.
-function ColumnPicker({ value, onChange, options = [], multi = true, placeholder }) {
+function ColumnPicker({ value, onChange, options = [], multi = true, placeholder, ariaLabel }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const wrapRef = useRef(null);
@@ -1781,6 +1804,7 @@ function ColumnPicker({ value, onChange, options = [], multi = true, placeholder
         ))}
         <input
           className="colpick__input"
+          aria-label={ariaLabel || placeholder || 'Search columns…'}
           value={multi ? query : (open ? query : (value || ''))}
           placeholder={selected.length ? '' : (placeholder || 'Search columns…')}
           onFocus={() => { setOpen(true); if (!multi) setQuery(value || ''); }}
@@ -1849,6 +1873,7 @@ function ColumnHeader({ column, renamed, onDrop, onRename }) {
         {editing ? (
           <input
             autoFocus
+            aria-label={`Rename column ${column.name}`}
             className="src-input"
             value={draft}
             onChange={e => setDraft(e.target.value)}

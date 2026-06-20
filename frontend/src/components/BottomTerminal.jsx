@@ -90,26 +90,26 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
 
   return (
     <div className="bottom-term" data-open={open ? 'true' : 'false'}>
-      <div
-        className="bottom-term__bar"
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        aria-label={`Terminal — ${cmd ? `running ${cmd}` : 'idle'}. ${open ? 'Collapse' : 'Expand'}.`}
-        onClick={() => setOpen(!open)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open); } }}
-      >
-        <span className="dot" style={{ background: cmd ? 'var(--warm)' : 'var(--green)' }} />
-        <span className="sr-only">{cmd ? 'Running' : 'Idle'}</span>
-        <span className="bottom-term__bar-title">terminal</span>
-        <span className="bottom-term__bar-sep">·</span>
-        <span>{project}</span>
-        {cmd && <>
+      <div className="bottom-term__bar">
+        <button
+          type="button"
+          className="bottom-term__bar-toggle"
+          aria-expanded={open}
+          aria-label={`Terminal — ${cmd ? `running ${cmd}` : 'idle'}. ${open ? 'Collapse' : 'Expand'}.`}
+          onClick={() => setOpen(!open)}
+        >
+          <span className="dot" style={{ background: cmd ? 'var(--warm)' : 'var(--green)' }} />
+          <span className="sr-only">{cmd ? 'Running' : 'Idle'}</span>
+          <span className="bottom-term__bar-title">terminal</span>
           <span className="bottom-term__bar-sep">·</span>
-          <span className="bottom-term__bar-cmd">databridge run --{cmd}</span>
-        </>}
-        <div className="bottom-term__bar-actions" onClick={(e) => e.stopPropagation()}>
-          <button title={open ? 'Close' : 'Open'} onClick={() => setOpen(!open)}>
+          <span>{project}</span>
+          {cmd && <>
+            <span className="bottom-term__bar-sep">·</span>
+            <span className="bottom-term__bar-cmd">databridge run --{cmd}</span>
+          </>}
+        </button>
+        <div className="bottom-term__bar-actions">
+          <button title={open ? 'Close' : 'Open'} aria-label={open ? 'Close terminal' : 'Open terminal'} onClick={() => setOpen(!open)}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               {open ? <><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></>
                     : <><polyline points="4 10 8 6 12 10"/></>}

@@ -363,6 +363,7 @@ export default function Questions() {
               <td>
                 <input
                   className="q-export-input"
+                  aria-label={`Export label for ${q.label || bareName(q) || q.kobo_key}`}
                   data-dirty={dirty}
                   data-dup={liveDup || undefined}
                   title={liveDup ? 'Duplicate export label — rename so it is unique' : undefined}
@@ -463,7 +464,7 @@ export default function Questions() {
         <>
           <div className="q-search">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>
-            <input placeholder="Search by name or label..." value={search} onChange={e => { setSearch(e.target.value); exitReveal(); }} />
+            <input aria-label="Search questions" placeholder="Search by name or label..." value={search} onChange={e => { setSearch(e.target.value); exitReveal(); }} />
           </div>
           <div className="config-view-toggle">
             <button className={`view-btn ${filter === 'all' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('all'); exitReveal(); }}>All</button>

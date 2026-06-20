@@ -170,8 +170,13 @@ export default function Reports() {
           {reports === null && <p className="empty-state" style={{ padding: 12 }}>Loading…</p>}
           {reports?.length === 0 && <p className="empty-state" style={{ padding: 12 }}>No reports yet — run <b>build-report</b> from the Dashboard.</p>}
           {reports?.length > 1 && (
-            <a href="/api/reports/download-zip" download="reports.zip" style={{ marginBottom: 12, display: 'inline-block' }}>
-              <button className="btn btn-primary btn-sm">↓ Download all as ZIP ({reports.length} files)</button>
+            <a
+              className="btn btn-primary btn-sm"
+              href="/api/reports/download-zip"
+              download="reports.zip"
+              aria-label={`Download all ${reports.length} reports as ZIP`}
+              style={{ marginBottom: 12 }}>
+              ↓ Download all as ZIP ({reports.length} files)
             </a>
           )}
           {reports?.length > 0 && (
@@ -184,8 +189,12 @@ export default function Reports() {
               rows={reports}
               actions={r => (
                 <>
-                  <a href={`/api/reports/download/${encodeURIComponent(r.name)}`} download>
-                    <button className="btn btn-primary btn-sm">↓ Download</button>
+                  <a
+                    className="btn btn-primary btn-sm"
+                    href={`/api/reports/download/${encodeURIComponent(r.name)}`}
+                    download
+                    aria-label={`Download ${r.name}`}>
+                    ↓ Download
                   </a>
                   <button className="btn btn-danger btn-sm" onClick={() => deleteReport(r.name)}
                           disabled={!canEdit}
@@ -219,8 +228,12 @@ export default function Reports() {
               rows={sessions}
               actions={s => (
                 <>
-                  <a href={`/api/data/sessions/${encodeURIComponent(s.session_id)}/download`} download>
-                    <button className="btn btn-primary btn-sm">↓ Download ZIP</button>
+                  <a
+                    className="btn btn-primary btn-sm"
+                    href={`/api/data/sessions/${encodeURIComponent(s.session_id)}/download`}
+                    download
+                    aria-label={`Download data session ${s.label} as ZIP`}>
+                    ↓ Download ZIP
                   </a>
                   <button className="btn btn-danger btn-sm" onClick={() => deleteSession(s.session_id)}
                           disabled={!canEdit}
