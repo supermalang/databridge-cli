@@ -279,6 +279,9 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
   resolved, scoped, on a derived branch. `guard-ready` blocks the marker otherwise.
 - **Definition of Done (exit gate).** Unit + E2E green · visual baseline approved · impeccable
   audit/critique clean · UAT signed (UI-facing cards only; non-UI/CLI cards are `N/A`, gated by
+  PR review) · **security review clean** (OWASP Top 10 + project absolute rules; no Critical/High
+  — `security-audit` agent / `/security-review`) · committed. `roadmap-verifier` gates it before a
+  card flips `- [x]`.
   PR review) · **security & dependency review clean** (`security-audit` → `SECURITY: CLEAR`;
   `dep-audit` when deps changed; `/code-review` no blockers — or `N/A` with no security surface) ·
   committed. `roadmap-verifier` gates it before a card flips `- [x]`.
@@ -301,6 +304,16 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
 ### Agents (`.claude/agents/`)
 `roadmap-planner` (decompose → cards) · `roadmap-card-reviewer` (DoR + template) ·
 `roadmap-test-author` (AC-derived tests, red-first) · `roadmap-task-implementer` (frozen-tests
+impl) · `security-audit` (OWASP + project-rules review of the task diff; report-only) ·
+`dep-audit` (SCA scan) · `roadmap-verifier` (DoD exit gate).
+
+### Orchestrator
+`/ship-task <TASK-ID>` (`.claude/skills/ship-task/`) — autonomous Workflow pipeline that takes ONE
+card to an open PR: DoR check → branch + active-task marker → `roadmap-test-author` (RED) →
+`roadmap-task-implementer` (GREEN + impeccable + Playwright screenshots, bounded self-repair) →
+parallel `security-audit` + `dep-audit` → `roadmap-verifier` (DoD) → marks `[x]` + opens PR →
+**develop**. Human touchpoints only: DoR failure, tests still red after auto-fix, review blockers,
+and final UAT + review + merge on the PR.
 impl) · `roadmap-verifier` (DoD exit gate) · `security-audit` (OWASP + absolute-rules gate,
 report-only) · `dep-audit` (SCA / vulnerable + outdated deps).
 
@@ -318,5 +331,23 @@ layer. Its skill tree is gitignored — re-install with `npx impeccable skills i
 
 `.claude/settings.json` allowlists the pytest commands and registers the PreToolUse guard hooks
 (`guard-roadmap`, `guard-coding`, `guard-ready`, `guard-git-flow`, `guard-branch`). Skills:
-`/roadmap`, `/impeccable`. Agents live in `.claude/agents/`. Run the suite with
+`/roadmap`, `/impeccable`, `/ship-task`. Agents live in `.claude/agents/`. Run the suite with
 `PYTHONPATH=. MPLBACKEND=Agg python -m pytest`.
+
+## Design Context
+
+Strategic + visual design intent lives in two root files, read by `/impeccable` and useful for
+any UI work:
+
+- **[`PRODUCT.md`](PRODUCT.md)** (who/what/why) — **register: product**. Users: M&E officers +
+  field coordinators (mixed/low technical skill). Outcome: **self-serve for non-experts**.
+  Personality: **clear · neutral · institutional**. A11y target: **WCAG 2.1 AA + low-bandwidth/
+  field**. Anti-references: engineer-only tools, consumer/playful SaaS, generic AI-template slop.
+- **[`DESIGN.md`](DESIGN.md)** + `.impeccable/design.json` (how it looks) — North Star **"The
+  Clear Workbench"**. Cool-slate neutrals + one rationed **Deep Field Teal** (`#0F766E`) accent;
+  Inter + JetBrains Mono; flat-by-default elevation (1px borders carry structure).
+
+Design principles (from PRODUCT.md): **Guide don't gate · Plain language over jargon · Make the
+safe path the default · Credible over clever · Respect the field.** Core doctrines (DESIGN.md):
+**The One Voice Rule** (teal is the only action color), **The Mono-Means-Literal Rule** (mono =
+machine-truth only), **The Flat-By-Default Rule** (shadows respond to state, never ambient).

@@ -33,6 +33,7 @@ A card is startable only when all of the following hold:
 - UAT signed off by a human reviewer following the card's UAT steps — required for **UI-facing
   cards** (those with a real E2E); non-UI/CLI cards mark `UAT: N/A` and rely on the Verify
   command + unit tests + the verifier + PR review as the human gate
+- Security review clean — OWASP Top 10 + this repo's absolute rules (RBAC membership scoping, fail-closed PII gate, `env:` secret resolution, the `ALLOWED_COMMANDS` SSE whitelist, no raw-SQL interpolation); no Critical/High findings, via the `security-audit` agent (or `/security-review`)
 - **Security & dependency review clean** — the `security-audit` agent (OWASP Top 10 + project
   absolute rules: tenant isolation, PII fail-closed, `env:` secrets, command whitelist) returns
   `SECURITY: CLEAR` with no open Critical/High finding; `dep-audit` (SCA) has run with no
@@ -48,9 +49,12 @@ A card is startable only when all of the following hold:
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
+| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 5 | 0 / 5 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 5 | 0 / 5 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
+| [Internationalization (i18n)](#internationalization-i18n) | 2 | 0 / 2 |
 | [Performance](#performance) | 2 | 1 / 2 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -362,6 +366,587 @@ A card is startable only when all of the following hold:
   1. Switch to a project that has a large workspace (several data files). Confirm a loading indicator appears immediately after clicking the project row.
   2. Confirm the indicator disappears once the dashboard is ready and no content is missing.
   3. Switch projects rapidly in succession and confirm no visual glitch or double-hydration occurs.
+
+---
+
+## Accessibility (WCAG 2.1 AA)
+
+> App-wide accessibility remediation derived from the **2026-06-20 impeccable audit** of the
+> React frontend (`frontend/src`). The project's accessibility target is now documented in
+> `PRODUCT.md` / `DESIGN.md` as **WCAG 2.1 AA + low-bandwidth/field**. These cards cover the
+> rest of the surface; the project-switcher / project-form a11y fixes are tracked separately as
+> **UX-2** and **UX-8** (do not duplicate them here). Every card here is UI-facing, so E2E + UAT
+> are real (not `N/A`); each E2E adds an explicit Playwright accessibility-audit (axe) assertion
+> alongside the three-viewport `toHaveScreenshot` baselines. Vitest is **not** installed in this
+> repo (see XTF-7), so frontend-only a11y assertions are covered by the Playwright E2E rather
+> than a Vitest target. Ordered by priority (A11Y-1 P0 first).
+
+---
+
+- [ ] **A11Y-1 — Keyboard-operable non-button controls (P0)**
+
+  Several primary controls are implemented as non-interactive elements that keyboard users
+  cannot reach or activate (WCAG 2.1.1 Keyboard, 4.1.2 Name/Role/Value). The data-source
+  **platform cards** are `<div onClick>` with no `role`/`tabIndex`/key handler
+  (`frontend/src/pages/Sources.jsx` ~323), so a keyboard user cannot pick Kobo vs Ona. The
+  **Home stage cards** use `<div role="button">` (`frontend/src/pages/Home.jsx` ~77–98) and
+  should be real `<button>`s. P0 because it blocks the very first step of the pipeline for
+  keyboard/AT users.
+
+  **Files:** `frontend/src/pages/Sources.jsx` (platform/source cards ~323) ·
+  `frontend/src/pages/Home.jsx` (stage cards ~77–98) ·
+  `frontend/src/styles.css` (only if the existing `:focus-visible` ring needs to apply to the
+  new `<button>` elements) · `frontend/tests/e2e/a11y.spec.ts` (new)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - The Sources platform cards (Kobo / Ona) are real `<button>`s (or `<div>`s with
+    `role="button"` + `tabIndex={0}` + an `onKeyDown` handling **both** Enter and Space) — the
+    selection action that currently fires on click also fires on keyboard activation
+  - The Home stage cards are real `<button>` elements (not `<div role="button">`); each is
+    reachable in DOM/tab order and activatable by keyboard
+  - Both controls are reachable by Tab in a logical order and show the existing teal
+    `:focus-visible` ring when focused via keyboard
+  - Activating a platform card by keyboard selects the same platform as a mouse click (no
+    behavior regression); activating a Home stage card navigates to the same destination
+  - No `<div onClick>` without keyboard support remains on these surfaces
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — keyboard reachability/activation
+  and roles are asserted by the Playwright E2E below, consistent with XTF-7's coverage approach).
+
+  **E2E:** `frontend/tests/e2e/a11y.spec.ts` (new) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — on the Sources tab, Tab to a platform card and assert it receives focus
+  with the visible focus ring; press Enter and assert the platform is selected; press Space on
+  the other card and assert it selects; on Home, Tab to a stage card and assert it is a
+  `<button>` (`getByRole('button')`) that navigates on Enter. Run a Playwright axe accessibility
+  audit on both surfaces and assert no `button-name` / `keyboard` / interactive-role violations.
+  Capture `toHaveScreenshot` baselines of the focused platform card and the Home stage cards at
+  all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. On the Sources tab, using only the keyboard, press Tab until a platform card (Kobo/Ona) is
+     focused. Confirm a visible focus ring appears.
+  2. Press Enter on one card and Space on the other. Confirm each selects its platform exactly as
+     a mouse click would.
+  3. On the Home page, Tab to a stage card and press Enter. Confirm it activates/navigates.
+  4. With a screen reader on, confirm each card is announced as a button with its accessible name.
+
+  **Verify:** `cd frontend && npx playwright test a11y.spec.ts`
+
+---
+
+- [ ] **A11Y-2 — ARIA roles + roving keyboard nav on tab interfaces (P1)**
+
+  The app's several tab strips render as plain `<button>`s with no tab-interface semantics
+  (WCAG 4.1.2; ARIA Authoring Practices tabs pattern): the primary six-tab nav, the secondary
+  sub-tab strip, the **ProjectForm** tabs (`frontend/src/pages/ProjectForm.jsx` ~86), and the
+  **profile-form** tabs. None expose `role="tablist"/"tab"/"tabpanel"`, `aria-selected`,
+  `aria-controls`, or roving arrow-key navigation, so AT users can't tell which tab is active or
+  move between tabs with the arrow keys. DESIGN.md's sidecar tab-nav snippet shows the target
+  ARIA shape.
+
+  **Files:** `frontend/src/App.jsx` (primary six-tab nav + secondary sub-tab strip) ·
+  `frontend/src/pages/ProjectForm.jsx` (form tabs ~86) · the profile-form tab strip ·
+  a small shared tab-strip helper if warranted ·
+  `frontend/src/styles.css` (only if focus/selected styling must follow the new roles) ·
+  `frontend/tests/e2e/a11y.spec.ts` (extend)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - Each tab group exposes a `role="tablist"` container; every tab has `role="tab"`,
+    `aria-selected` (`true` on the active tab, `false` otherwise), and `aria-controls` pointing
+    at its panel
+  - Each tab panel has `role="tabpanel"` and an id referenced by its tab's `aria-controls`
+  - Roving tabindex: only the active tab is in the Tab order (`tabindex=0`); Left/Right (and
+    Home/End) arrow keys move selection between tabs and update `aria-selected` + focus
+  - Applies to all four tab groups: primary six-tab nav, secondary sub-tab strip, ProjectForm
+    tabs, profile-form tabs
+  - Switching tabs by keyboard shows the same panel as a mouse click (no behavior regression)
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — ARIA roles and arrow-key roving
+  are asserted by the Playwright E2E below, consistent with XTF-7's coverage approach).
+
+  **E2E:** `frontend/tests/e2e/a11y.spec.ts` (extend) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — for the primary tab nav and the ProjectForm tabs: assert the container
+  has `role="tablist"` and tabs have `role="tab"` with `aria-selected` reflecting the active
+  one; focus a tab, press ArrowRight and assert focus + `aria-selected` move to the next tab and
+  the corresponding `role="tabpanel"` (via `aria-controls`) is shown; press Home/End and assert
+  first/last tab activate. Run a Playwright axe audit on a tabbed view and assert no ARIA tab
+  violations. Capture `toHaveScreenshot` baselines of a tablist with the second tab active at all
+  three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. With a screen reader, navigate to the primary tab strip. Confirm it is announced as a tab
+     list and the active tab is announced as "selected".
+  2. Focus a tab and press the Right arrow. Confirm focus and selection move to the next tab and
+     its panel is shown; press Home and End and confirm they jump to the first/last tab.
+  3. Repeat for the ProjectForm tabs and the profile-form tabs and confirm the same behavior.
+
+  **Verify:** `cd frontend && npx playwright test a11y.spec.ts`
+
+---
+
+- [ ] **A11Y-3 — Programmatic labels on form controls (P1)**
+
+  Several inputs are labeled only visually or by placeholder, so AT users get no accessible name
+  (WCAG 3.3.2 Labels or Instructions, 4.1.2 Name/Role/Value): the YAML `<textarea>`
+  (`frontend/src/pages/Sources.jsx` ~193), the invite email input
+  (`frontend/src/components/ProjectMembersPanel.jsx` ~110), per-row export-label inputs
+  (`frontend/src/pages/Questions.jsx` ~364), and other unlabeled inputs across
+  Composition/Sources. Placeholders disappear on input and are not a substitute for a label.
+
+  **Files:** `frontend/src/pages/Sources.jsx` (YAML textarea ~193 + any other unlabeled inputs) ·
+  `frontend/src/components/ProjectMembersPanel.jsx` (invite email input ~110) ·
+  `frontend/src/pages/Questions.jsx` (per-row export-label inputs ~364) ·
+  `frontend/src/pages/Composition.jsx` (remaining unlabeled inputs) ·
+  `frontend/tests/e2e/a11y.spec.ts` (extend)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - Every `<input>`, `<select>`, and `<textarea>` on the audited surfaces has an associated
+    `<label>` (via `htmlFor`/`id`) **or** an `aria-label`/`aria-labelledby`
+  - No control relies on a `placeholder` as its only label (placeholders may remain as
+    supplementary hint text, never as the accessible name)
+  - Specifically labeled: the YAML textarea (Sources), the invite email input (Members panel),
+    each per-row export-label input (Questions), and the remaining Composition/Sources inputs
+  - Per-row inputs (export-label) have unique, row-disambiguated accessible names (e.g.
+    referencing the question) so AT users can tell rows apart
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — accessible-name presence is
+  asserted by the Playwright E2E below, consistent with XTF-7's coverage approach).
+
+  **E2E:** `frontend/tests/e2e/a11y.spec.ts` (extend) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — on Sources, Questions, Members panel, and Composition, resolve each
+  audited control via `getByLabel(...)` / `getByRole('textbox', {name})` and assert it has a
+  non-empty accessible name; run a Playwright axe audit on each surface and assert no `label` /
+  `aria-input-field-name` violations. Capture `toHaveScreenshot` baselines of the labeled Sources
+  YAML field and the Questions export-label rows at all three viewports (mobile 390×844, tablet
+  820×1180, desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. With a screen reader, Tab through the Sources YAML editor, the Questions export-label inputs,
+     the invite email field, and Composition inputs. Confirm each control announces a descriptive
+     name (not silence and not just its placeholder).
+  2. Type into and then clear a field that previously relied on a placeholder; confirm the
+     control still has a visible/announced label after the placeholder disappears.
+  3. In Questions, confirm two different rows' export-label inputs announce distinguishable names.
+
+  **Verify:** `cd frontend && npx playwright test a11y.spec.ts`
+
+---
+
+- [ ] **A11Y-4 — Valid interactive semantics & icon-button names (P1/P2)**
+
+  Two defects: (1) report download links nest interactive elements —
+  `<a><button>…</button></a>` (`frontend/src/pages/Reports.jsx` ~187) — which is invalid HTML
+  and unpredictable for AT (WCAG 4.1.1 Parsing / nested-interactive). (2) Icon-only buttons rely
+  on `title` alone and have no accessible name (`frontend/src/pages/Validate.jsx` ~140–153, and
+  similar icon buttons elsewhere) (WCAG 4.1.2). Fix by collapsing the download to a single
+  styled `<a download>` and giving every icon-only button an `aria-label`.
+
+  **Files:** `frontend/src/pages/Reports.jsx` (download link ~187 → single styled `<a download>`) ·
+  `frontend/src/pages/Validate.jsx` (icon-only buttons ~140–153) · other icon-only buttons that
+  rely on `title` alone (e.g. across Composition/Reports/Sources) ·
+  `frontend/src/styles.css` (only if a link needs button-like styling) ·
+  `frontend/tests/e2e/a11y.spec.ts` (extend)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - The report download is a single `<a download href=…>` styled like a button — no `<button>`
+    nested inside an `<a>` (and no other nested-interactive pairs on the audited surfaces)
+  - The download link has an accessible name describing the action/target (e.g. "Download
+    <report name>") and still downloads the file
+  - Every icon-only button has an `aria-label` (the `title` may remain as a tooltip but is no
+    longer the only accessible name); specifically the Validate icon buttons (~140–153)
+  - A Playwright axe audit reports no `nested-interactive` and no `button-name` violations on the
+    Reports and Validate surfaces
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — markup validity and accessible
+  names are asserted by the Playwright E2E below, consistent with XTF-7's coverage approach).
+
+  **E2E:** `frontend/tests/e2e/a11y.spec.ts` (extend) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — on Reports, assert the download resolves as a link
+  (`getByRole('link', {name})`) with no nested `<button>` (assert no `button` descendant inside
+  the anchor); on Validate, resolve each icon button via `getByRole('button', {name})` and assert
+  a non-empty accessible name. Run a Playwright axe audit on both surfaces and assert zero
+  `nested-interactive` and `button-name` violations. Capture `toHaveScreenshot` baselines of the
+  Reports download control and the Validate icon-button row at all three viewports (mobile
+  390×844, tablet 820×1180, desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. On the Reports tab, with a screen reader, navigate to a report's download control. Confirm it
+     is announced as a single link with a descriptive name and that activating it downloads the
+     `.docx` (no double-focus / no nested button).
+  2. On the Validate tab, Tab to each icon-only button and confirm it announces a meaningful name
+     (not "button" with no label).
+  3. With the browser accessibility inspector, confirm no element reports nested interactive
+     content on these pages.
+
+  **Verify:** `cd frontend && npx playwright test a11y.spec.ts`
+
+---
+
+- [ ] **A11Y-5 — Accessible form-validation messaging (P2)**
+
+  Modal field errors in Composition (and other forms) are rendered visually but are not linked to
+  their inputs, so screen readers don't announce them when a field is invalid (WCAG 3.3.1 Error
+  Identification, 3.3.3 Error Suggestion, 4.1.2/4.1.3). Invalid fields need `aria-invalid` and an
+  `aria-describedby` pointing at their error text.
+
+  **Files:** `frontend/src/pages/Composition.jsx` (modal field-error wiring) · other forms with
+  inline field errors (e.g. ProjectForm's inline name error from UX-6, and any Sources/Questions
+  field errors) · a small shared field-error helper if warranted ·
+  `frontend/tests/e2e/a11y.spec.ts` (extend)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - When a field is invalid, the input sets `aria-invalid="true"` and `aria-describedby`
+    referencing the id of its error message element; when valid, `aria-invalid` is removed/`false`
+    and the describedby link is cleared
+  - Each error message element has a stable id and is programmatically associated with exactly its
+    field (no shared/ambiguous ids across rows)
+  - The error text is reachable by assistive tech (announced when focus is on the field, e.g. via
+    `aria-describedby`; a live-region / `role="alert"` is acceptable where the error appears
+    asynchronously)
+  - Applies to the Composition modal field errors and the other forms listed above
+  - A Playwright axe audit on the Composition modal in an invalid state reports no
+    `aria-valid-attr` / `aria-describedby`-target violations
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — `aria-invalid`/`aria-describedby`
+  wiring is asserted by the Playwright E2E below, consistent with XTF-7's coverage approach).
+
+  **E2E:** `frontend/tests/e2e/a11y.spec.ts` (extend) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — open the Composition modal, submit/trigger a validation error on a field,
+  and assert the input has `aria-invalid="true"` and an `aria-describedby` whose target element
+  contains the error text; correct the field and assert `aria-invalid` clears. Run a Playwright
+  axe audit on the invalid-state modal and assert no relevant violations. Capture
+  `toHaveScreenshot` baselines of the modal in its invalid (error-shown) state at all three
+  viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. Open a Composition modal (e.g. add/edit a chart) and submit it with a required field empty or
+     invalid. Confirm an inline error appears.
+  2. With a screen reader, move focus onto the invalid field. Confirm the error message is
+     announced (the field is marked invalid and its description is read).
+  3. Correct the field and confirm the invalid state and announced error clear.
+
+  **Verify:** `cd frontend && npx playwright test a11y.spec.ts`
+
+---
+
+## Product UX — non-expert self-serve
+
+> Findings from the **2026-06-20 HCD / product critique** of the React frontend. `PRODUCT.md`
+> defines the users as **M&E officers + field coordinators (mixed / low technical skill)** with
+> the outcome **self-serve for non-experts**, under the design principles *Guide don't gate ·
+> Plain language over jargon · Make the safe path the default · Credible over clever · Respect
+> the field*. The critique scored the app **28/40** (Good, lower end); the two weakest Nielsen
+> heuristics were **Match between system & real world (2/4)** and **Help & documentation (2/4)**.
+> Core theme: the product is built like an analyst's instrument but is meant for non-expert field
+> staff. Every card here is UI-facing, so E2E + UAT are real (not `N/A`). Vitest is **not**
+> installed in this repo (see XTF-7), so frontend-only assertions are covered by the Playwright
+> E2E rather than a Vitest target; cards touching a Python web endpoint add a real pytest target.
+> Ordered by priority (PUX-1 P1, the chosen first priority, first).
+
+---
+
+- [ ] **PUX-1 — Plain-language relabeling of data-engineering vocabulary (P1)**
+
+  The Home workflow stages and several field labels use analyst / data-engineering terms the
+  target non-expert users don't understand (fails *Match system ↔ real world*, 2/4). Examples:
+  Home stage 03 **"Model"** is described as *"Build derived views — virtual tables of joins and
+  aggregates, computed once and reused downstream"* (`frontend/src/pages/Home.jsx` `STAGE_CARDS`
+  ~18–23); stage 02 is **"Transform"**; field-level terms include `export_label` (currently
+  surfaced as "Report column name") and `kobo_key`. This card is **copy/label only — no behavior
+  change**: rename/reword the user-facing stage names + descriptions and the most jargon-heavy
+  field labels to outcome-oriented plain language, adding a one-line inline definition wherever a
+  domain term is genuinely unavoidable. This is the priority card.
+
+  **Files:** `frontend/src/pages/Home.jsx` (`STAGE_CARDS` labels + `desc` strings ~5–36) ·
+  `frontend/src/pages/Composition.jsx` (jargon labels, e.g. "views" / "derived views" copy) ·
+  `frontend/src/pages/Questions.jsx` (per-column labels — `export_label` / `kobo_key` user-facing
+  copy + a one-line inline definition) · any shared label/string constants those pages import
+
+  **Config/schema impact:** None — relabel only; the underlying config keys (`export_label`,
+  `kobo_key`, `views`, stage ids) are unchanged, only their human-facing text.
+
+  **Acceptance criteria**
+  - The Home stage card currently labelled **"Model"** no longer uses the word "Model" or the
+    phrase "virtual tables of joins and aggregates" in its visible label/description; it reads in
+    outcome-oriented plain language (e.g. a "Combine / link your data" framing) understandable to
+    a non-expert
+  - The Home stage card currently labelled **"Transform"** is reworded to plain-language,
+    outcome-oriented copy (no bare "Transform" jargon as the only label)
+  - The field currently labelled for `export_label` reads as a plain-language report-friendly
+    name with a one-line inline hint explaining it in user terms; the raw token `kobo_key` is
+    never shown to the user without a one-line plain-language explanation alongside it
+  - Wherever a domain term is genuinely unavoidable, a single-line inline definition accompanies
+    it (no undefined jargon left standing on the audited surfaces)
+  - **No behavior change**: stage ids, navigation targets, config keys, and saved values are
+    byte-for-byte unchanged — only displayed text differs (the existing E2E flows still pass with
+    updated expected copy)
+
+  **Unit tests:** N/A (frontend-only copy change; Vitest is not installed — the relabeled strings
+  and unchanged behavior are asserted by the Playwright E2E below, consistent with XTF-7's
+  coverage approach).
+
+  **E2E:** `frontend/tests/e2e/plain-language.spec.ts` (new) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — load Home and assert the third stage card does NOT contain the text
+  "Model" / "virtual tables" / "joins and aggregates" and DOES contain the new plain-language
+  copy; navigate into that stage and assert the destination is unchanged (same sub-page loads);
+  on Questions, assert the export-label field shows the new plain-language label + inline hint and
+  that any `kobo_key` display is accompanied by an explanatory line. Capture `toHaveScreenshot`
+  baselines of the relabeled Home cards and the relabeled Questions row at all three viewports
+  (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. As a first-time M&E officer with no data-engineering background, open Home and read the five
+     stage cards top to bottom. Confirm you can explain, in your own words, what each stage does —
+     in particular that the third card no longer mentions "Model", "virtual tables", or "joins and
+     aggregates".
+  2. Click into that third stage and confirm it lands on the same page it always did (nothing
+     moved — only the words changed).
+  3. Open Questions and find the column that sets the report column name. Confirm its label and the
+     one-line hint beside it tell you, in plain words, what it controls — and that any raw field
+     code (`kobo_key`) is explained rather than shown bare.
+
+  **Verify:** `cd frontend && npx playwright test plain-language.spec.ts`
+
+---
+
+- [ ] **PUX-2 — First-run / empty-state onboarding with a single recommended next action (P1)**
+
+  On first load the Home screen presents five equal-weight stage cards with no "start here"
+  guidance (`frontend/src/pages/Home.jsx` `home-cards` ~75–100) — a confused first-timer has no
+  recommended path (fails *Make the safe path the default* + *Help & documentation*, 2/4). Give a
+  first-run / empty state that names the **single** recommended next action and de-emphasizes the
+  rest until their prerequisites are met; returning users (who already have a connected form /
+  downloaded data) see the normal five-card view unchanged.
+
+  **Files:** `frontend/src/pages/Home.jsx` (first-run/empty-state branch + de-emphasis of
+  not-yet-actionable cards) · `frontend/src/App.jsx` (any onboarding/readiness state — reuse the
+  existing `/api/state` `has_questions`/`has_data` readiness flags already consumed elsewhere) ·
+  `frontend/src/styles.css` (de-emphasis / call-to-action styling if needed)
+
+  **Config/schema impact:** None — reuses the existing `/api/state` readiness flags
+  (`has_questions`, `has_data`); no new state persisted.
+
+  **Acceptance criteria**
+  - When the project has no connected form / no downloaded data (per `/api/state` readiness), Home
+    shows a first-run state with ONE primary recommended next action ("Connect your form →") that
+    navigates to the Extract → Connection sub-page
+  - In that first-run state the remaining stage cards are visibly de-emphasized (dimmed /
+    secondary) and the recommended action is the clear focal point — exactly one primary CTA
+  - Once prerequisites are met (form connected / data present), Home shows the normal full
+    five-card view with no first-run overlay (returning-user path unchanged)
+  - The de-emphasized cards remain reachable (not removed / not disabled to the point of being
+    inaccessible) — guide, don't gate; the primary CTA is a real `<button>`/link with an
+    accessible name and visible focus ring
+  - Impeccable audit/critique clean on the first-run state
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the first-run branch and CTA are
+  asserted by the Playwright E2E below, consistent with XTF-9's readiness-gating coverage).
+
+  **E2E:** `frontend/tests/e2e/onboarding-firstrun.spec.ts` (new) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) — mock `/api/state` → `{has_questions:false,
+  has_data:false}` and assert Home shows the single "Connect your form →" primary CTA, that the
+  other stage cards carry the de-emphasized class, and that clicking the CTA navigates to Extract →
+  Connection; then mock `{has_questions:true, has_data:true}` and assert the normal five equal
+  cards render with no first-run overlay. Capture `toHaveScreenshot` baselines of both the
+  first-run state and the returning-user state at all three viewports (mobile 390×844, tablet
+  820×1180, desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. Open a brand-new project (nothing connected, no data) and land on Home. Confirm there is one
+     obvious, prominent next step ("Connect your form") and the other stages are clearly dimmed /
+     secondary so you know where to start.
+  2. Click the recommended action and confirm it takes you straight to connecting a form.
+  3. Connect a form and download some data, then return to Home. Confirm the dimming is gone and
+     all five stages are presented normally.
+
+  **Verify:** `cd frontend && npx playwright test onboarding-firstrun.spec.ts`
+
+---
+
+- [ ] **PUX-3 — Reduce Composition cognitive load via progressive disclosure (P1)**
+
+  The Composition surface (`frontend/src/pages/Composition.jsx`) presents 6+ construct types at
+  once — charts, indicators, tables, summaries, views, framework — a wall of options at exactly
+  the step non-experts most need scaffolding (fails *Make the safe path the default*). Lead with a
+  recommended starter path and collapse the advanced constructs behind progressive disclosure; no
+  construct is removed.
+
+  **Files:** `frontend/src/pages/Composition.jsx` (recommended starter path + progressive-
+  disclosure / "Advanced" affordance grouping the advanced constructs) ·
+  `frontend/src/styles.css` (disclosure / "Advanced" section styling if needed) · the existing
+  Ask entry point and `--auto-charts` starter-chart affordance (reused, not re-implemented)
+
+  **Config/schema impact:** None — UI grouping/disclosure only; all construct types and their
+  config shapes are unchanged.
+
+  **Acceptance criteria**
+  - On first view, Composition leads with a recommended starter path: the Ask entry point plus a
+    small auto-generated starter chart set (leveraging the existing `--auto-charts` capability) —
+    presented as the suggested way to begin
+  - The advanced constructs (at minimum **views** and **framework**) are collapsed behind a
+    progressive-disclosure / "Advanced" affordance rather than shown expanded by default
+  - No construct type is removed: expanding the "Advanced" affordance reveals views, framework
+    (and any other advanced constructs) with their full existing functionality intact
+  - The disclosure control is keyboard-operable (real `<button>` with `aria-expanded`, accessible
+    name, visible focus ring) and its expanded/collapsed state is exposed to assistive tech
+  - Charts/indicators/summaries/tables remain editable as today (no behavior regression on the
+    primary constructs)
+  - Impeccable audit/critique clean on the restructured surface
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the starter path, disclosure
+  state, and that no construct is removed are asserted by the Playwright E2E below, consistent
+  with XTF-7's coverage approach).
+
+  **E2E:** `frontend/tests/e2e/composition-progressive.spec.ts` (new) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) — load Composition and assert the recommended starter path
+  (Ask + starter charts affordance) is visible and that the advanced constructs (views, framework)
+  are NOT expanded by default (their `aria-expanded` is `false` / their content is hidden); click
+  the "Advanced" disclosure and assert views + framework become visible and editable; assert the
+  disclosure toggles `aria-expanded`. Capture `toHaveScreenshot` baselines of the collapsed
+  (starter) state and the expanded (Advanced) state at all three viewports (mobile 390×844, tablet
+  820×1180, desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. As a non-expert, open Composition for a project with downloaded data. Confirm the page leads
+     with a clear, low-effort starting point (ask a question / a few starter charts) rather than a
+     wall of construct types.
+  2. Confirm advanced things (views, results framework) are tucked behind an "Advanced" control
+     and are not in your face by default.
+  3. Click "Advanced" and confirm views and framework appear and still work exactly as before
+     (nothing was taken away).
+
+  **Verify:** `cd frontend && npx playwright test composition-progressive.spec.ts`
+
+---
+
+- [ ] **PUX-4 — In-app contextual help per stage (P2)**
+
+  Help currently lives only in repo docs (`docs/reference/*`); non-expert field staff won't leave
+  the app to read them (this is the **Help & documentation** heuristic, scored 2/4). Each stage /
+  tab should expose concise contextual help in-app, reachable without leaving the current context,
+  and link to the relevant docs/reference page for the curious.
+
+  **Files:** `frontend/src/pages/Home.jsx` · `frontend/src/pages/Sources.jsx` ·
+  `frontend/src/pages/Questions.jsx` · `frontend/src/pages/Composition.jsx` ·
+  `frontend/src/pages/Reports.jsx` · `frontend/src/pages/Templates.jsx` (the six page
+  components — add inline hints + a help affordance per stage) ·
+  `frontend/src/components/StageHelp.jsx` (new shared help component) ·
+  `frontend/src/styles.css` (help affordance / popover styling)
+
+  **Config/schema impact:** None — additive UI help; static copy + links to existing
+  `docs/reference/*` pages.
+
+  **Acceptance criteria**
+  - Each of the six stage pages exposes a concise contextual-help affordance (e.g. a "?" /
+    "Help" control) that reveals stage-specific guidance **without navigating away** from the
+    current page (inline panel / popover, not a hard link-out)
+  - Each page's help also includes a link to the relevant `docs/reference/*` page for deeper
+    reading (opening it does not lose the user's place — e.g. new tab or returnable)
+  - Concise inline hints accompany the help affordance so a user gets oriented without even
+    opening the full help
+  - The help affordance is a real keyboard-operable `<button>` with an accessible name, visible
+    focus ring, and (for a popover) `aria-expanded` / proper disclosure semantics; help content is
+    reachable by assistive tech
+  - The help is implemented via a shared `StageHelp` component so the six pages stay consistent
+  - Impeccable audit/critique clean on the help affordance + revealed content
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the help affordance, in-context
+  reveal, and docs link are asserted by the Playwright E2E below, consistent with XTF-7's coverage
+  approach).
+
+  **E2E:** `frontend/tests/e2e/stage-help.spec.ts` (new) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — on each stage page, locate the help affordance via
+  `getByRole('button', {name:/help/i})`, activate it, and assert stage-specific help content
+  appears in-context (the page URL/active pane is unchanged) with `aria-expanded` flipping to
+  `true`; assert a link to the matching `docs/reference/*` page is present in the revealed help.
+  Capture `toHaveScreenshot` baselines of an opened help panel on at least two representative
+  stages at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human
+  approves them.
+
+  **UAT:**
+  1. On each stage (Home, Sources/Extract, Questions, Composition, Reports, Templates), find and
+     click the in-app help control. Confirm helpful, stage-specific guidance appears right there
+     without leaving the page you're on.
+  2. Confirm a short inline hint is also visible on the stage so you get oriented without even
+     opening the help.
+  3. Click the "learn more" / docs link in the help and confirm it opens the matching reference
+     page without losing your place in the app.
+
+  **Verify:** `cd frontend && npx playwright test stage-help.spec.ts`
+
+---
+
+- [ ] **PUX-5 — Reduce setup-before-value friction (demo / sample path) (P2)**
+
+  Today an API token **and** an AI key are required before any value appears — a steep wall for a
+  non-expert evaluating the tool (fails *Make the safe path the default*; compounds *Help &
+  documentation*). Provide a no-credentials "try it / sample dataset" path (or, at minimum, a
+  clearly guided token-acquisition help) so a new user can reach a finished report without first
+  having credentials; the normal connect flow stays unchanged. This card touches a Python web
+  endpoint (to serve the sample dataset / drive the demo path), so it carries a real pytest
+  target in addition to the E2E.
+
+  **Files:** `frontend/src/pages/Sources.jsx` (a "Try with sample data" affordance / guided
+  token-acquisition help alongside the existing connect flow) · `web/main.py` (a new endpoint that
+  loads/serves the bundled sample dataset into the active project's workspace so downstream stages
+  have data without credentials) · supporting bundled sample-data asset (see Config/schema impact)
+  · `tests/test_sample_dataset_api.py` (new pytest target)
+
+  **Config/schema impact:** Adds a **bundled sample-dataset asset** (a small fixture
+  submissions/questions set shipped with the app) and a new web endpoint that materializes it into
+  the active project's workspace; no change to the `config.yml` schema itself (the sample populates
+  the existing `questions`/data shapes).
+
+  **Acceptance criteria**
+  - The Sources page offers a no-credentials "Try with sample data" path (or an equivalently clear
+    guided affordance) that does NOT require a Kobo/Ona token or an AI key to start
+  - Invoking it loads the bundled sample dataset into the active project so the downstream stages
+    (Questions/Composition/Reports) have real columns + rows to work with
+  - From the sample-data state, a non-expert can reach a **finished report** without ever entering
+    a credential (the build path runs against the sample data)
+  - The normal connect flow (entering a real token / AI key) is unchanged and still works
+  - The new web endpoint is RBAC-consistent with the other mutating endpoints (editor-gated, per
+    the existing `_require(request, "editor")` pattern) and scoped to the caller's active project
+  - Impeccable audit/critique clean on the new affordance
+
+  **Unit tests:** `tests/test_sample_dataset_api.py` (new) — (1) `test_load_sample_dataset_populates_workspace`:
+  POST the new sample-dataset endpoint as an editor and assert it materializes the bundled sample
+  questions + submissions into the active project's workspace (data present, no token/AI key
+  required). (2) `test_load_sample_dataset_rbac`: a viewer caller gets 403 and nothing is written.
+  (3) `test_load_sample_dataset_idempotent`: invoking it twice leaves a single coherent sample set
+  (no duplication / no error).
+
+  **E2E:** `frontend/tests/e2e/sample-data-path.spec.ts` (new) + visual (impeccable audit/critique
+  + `toHaveScreenshot`) — with NO credentials configured, click "Try with sample data" on Sources
+  (mock the sample-dataset endpoint to succeed), assert the app advances into a data-present state
+  (Questions/Composition now show sample columns), and that the connect flow's normal token/AI
+  inputs are still present and unchanged; assert the affordance is keyboard-operable. Capture a
+  `toHaveScreenshot` baseline of the Sources sample-data affordance and the resulting data-present
+  state at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human
+  approves them.
+
+  **UAT:**
+  1. As a brand-new user with NO Kobo token and NO AI key, open the Sources/Extract page. Confirm
+     there is an obvious "Try with sample data" option that does not ask for any credentials.
+  2. Click it and confirm the app loads example data, so the Questions and Composition stages now
+     show real-looking columns and rows.
+  3. Continue through to building a report and confirm you can produce a finished report end-to-end
+     without ever entering a token or AI key.
+  4. Confirm the normal "connect your real form" flow (token + AI key fields) is still present and
+     usable for when you're ready.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_sample_dataset_api.py` ·
+  `cd frontend && npx playwright test sample-data-path.spec.ts`
 
 ---
 
@@ -1803,6 +2388,165 @@ A card is startable only when all of the following hold:
 
 ---
 
+## Internationalization (i18n)
+
+> Interface localization so French-speaking M&E officers + field coordinators (per `PRODUCT.md` /
+> `DESIGN.md`, many of whom work in French) can use the app in their language. Scope is exactly
+> **two languages — English (default) and French** — covering the **whole interface**. Users pick
+> a language in their profile and may switch it at any time; the choice persists per user and
+> applies live (no reload). No i18n framework exists yet, so this area introduces one. Every card
+> is UI-facing → real three-viewport `toHaveScreenshot` E2E + impeccable audit/critique + numbered
+> UAT. Cards touching a Python web endpoint / DB carry a real pytest target (Vitest is **not**
+> installed in this repo — frontend-only assertions are covered by Playwright E2E, per the XTF-7
+> precedent). The plain-language principle (PUX area) governs the *wording* of both bundles; this
+> area governs the *mechanism* + *coverage*. **I18N-2 depends on I18N-1.**
+
+---
+
+- [ ] **I18N-1 — i18n framework + language switcher + persisted profile preference (P1)**
+
+  Stand up the localization mechanism end to end: introduce an i18n library (e.g. `react-i18next`
+  + `i18next`) wrapping the React app with an `en` (default) and `fr` resource bundle and a
+  translation hook; add a per-user **interface language** preference (a new profile column +
+  read/write API) and expose a language switcher in the Profile page (and/or the top ribbon) with
+  exactly the two options English / French. The selection persists per user, is applied on app
+  load from the saved preference, and switches **live without a reload**. This is the foundation
+  card — it ships the plumbing + the switcher with a small initial set of strings wired through the
+  bundles; the exhaustive string coverage is the separate I18N-2 deliverable. Touches a Python web
+  endpoint + the app DB, so it carries a real pytest target alongside the E2E.
+
+  **Files:** `frontend/package.json` (add `react-i18next` + `i18next` deps) ·
+  `frontend/src/lib/i18n.js` (new — i18next init: `en`/`fr` resources, default `en`, the
+  language-detection/persistence wiring) · `frontend/src/locales/en.json` +
+  `frontend/src/locales/fr.json` (new — initial resource bundles) · `frontend/src/main.jsx` (or
+  `App.jsx`) (wrap the app with the i18n provider; apply the user's saved language on load) ·
+  `frontend/src/pages/Profile.jsx` + `frontend/src/pages/ProfileForm.jsx` (language switcher
+  control bound to the profile preference) · `web/db/models.py` (new `language` column on the user
+  profile, default `"en"`) · `web/db/repository.py` (read/write the language preference) ·
+  `web/main.py` (extend the profile GET/PATCH endpoints to return + accept `language`) · an Alembic
+  migration adding the column · `tests/test_profile_language.py` (new pytest target) ·
+  `frontend/tests/e2e/i18n-switch.spec.ts` (new Playwright spec)
+
+  **Config/schema impact:** **New profile `language` column** on the user/profile table
+  (`web/db/models.py`), nullable or defaulting to `"en"`, with an **Alembic migration** (runs on
+  FastAPI startup; SQLite test path via `DATABRIDGE_SKIP_MIGRATIONS=1`). No `config.yml` schema
+  change.
+
+  **Acceptance criteria**
+  - The app is wrapped by an i18n provider exposing a translation function; `en` is the default
+    language and `fr` is the only other available language (exactly two options — no others
+    selectable)
+  - The Profile page exposes a language switcher with English + French; choosing French updates a
+    known set of already-wired interface strings (e.g. the Profile page's own labels + the primary
+    nav tab labels) **live, without a page reload**, and choosing English reverts them
+  - The selected language is persisted to the user's profile via the profile API (`language`
+    column) and is re-applied automatically on the next app load and after re-login (survives
+    reload + relogin)
+  - When a user has no saved preference (new user / null column), the interface defaults to English
+  - The profile GET endpoint returns the user's `language`; the profile update endpoint accepts and
+    persists `language` and rejects any value other than `en`/`fr` (validation), scoped to the
+    authenticated caller (a user can only set their own language)
+  - The switcher control is keyboard-operable with an accessible name and visible focus ring
+  - Impeccable audit/critique clean on the Profile language switcher
+
+  **Unit tests:** `tests/test_profile_language.py` (new) — (1) `test_profile_returns_language_default_en`:
+  a profile with no stored language returns `language: "en"` from the profile GET endpoint. (2)
+  `test_update_profile_language_persists`: PATCH the profile with `language: "fr"` as the
+  authenticated user, then GET and assert it returns `"fr"` (persisted across the round-trip). (3)
+  `test_update_profile_language_rejects_unknown`: PATCH with `language: "de"` (or any non-en/fr
+  value) returns a 4xx validation error and does not change the stored value. (4)
+  `test_update_profile_language_scoped_to_caller`: a caller cannot set another user's language (the
+  endpoint writes only the authenticated user's row).
+
+  **E2E:** `frontend/tests/e2e/i18n-switch.spec.ts` (new) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — load the app (mock the profile endpoint → `language: "en"`) and assert a
+  representative wired string (e.g. a Profile label + a primary nav tab label) renders in English;
+  open the Profile language switcher and select French, asserting the same strings switch to their
+  French equivalents **without a navigation/reload** and that the switcher posts `language: "fr"`
+  to the profile update endpoint; reload the page with the profile mock now returning
+  `language: "fr"` and assert the interface comes up in French (preference re-applied on load).
+  Capture `toHaveScreenshot` baselines of the Profile page with the language switcher in both the
+  English and French states at all three viewports (mobile 390×844, tablet 820×1180, desktop
+  1440×900); a human approves them.
+
+  **UAT:**
+  1. Open your Profile page in a fresh session. Confirm the interface is in English by default and
+     a language switcher offers exactly English and French.
+  2. Select French. Confirm the Profile labels and the main navigation tab names change to French
+     immediately, without the page reloading.
+  3. Reload the app (and/or sign out and back in). Confirm the interface comes back up in French —
+     your choice was remembered.
+  4. Switch back to English and confirm the interface returns to English and that choice likewise
+     persists across a reload.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_profile_language.py` ·
+  `cd frontend && npx playwright test i18n-switch.spec.ts`
+
+---
+
+- [ ] **I18N-2 — Full English + French translation coverage of the interface (P1)**
+
+  Build on I18N-1's mechanism to localize the **entire** interface: externalize every user-facing
+  string across the six pages + shared components into the `en`/`fr` resource bundles so no
+  hardcoded UI literal remains, and make both bundles complete and key-aligned (every key present
+  in `en` is present in `fr` and vice-versa, with no empty values). Add a guard (a small test /
+  lint) that fails the build when (a) the two bundles' key sets diverge or a value is empty, and
+  (b) user-facing literal strings remain hardcoded in the audited components. **Depends on
+  I18N-1.**
+
+  **Files:** `frontend/src/locales/en.json` + `frontend/src/locales/fr.json` (complete, key-aligned
+  bundles) · `frontend/src/pages/Home.jsx` · `frontend/src/pages/Sources.jsx` ·
+  `frontend/src/pages/Questions.jsx` · `frontend/src/pages/Composition.jsx` ·
+  `frontend/src/pages/Reports.jsx` · `frontend/src/pages/Templates.jsx` (replace hardcoded
+  user-facing literals with translation-key lookups) · `frontend/src/components/**` (shared
+  components — same externalization) · `frontend/src/App.jsx` (nav / ribbon / shell strings) ·
+  `frontend/scripts/check-i18n.mjs` (new — key-parity + no-empty-values + hardcoded-literal guard) ·
+  `frontend/package.json` (a `check:i18n` script wired into the lint/CI path) ·
+  `frontend/tests/e2e/i18n-coverage.spec.ts` (new Playwright spec)
+
+  **Config/schema impact:** None — additive locale bundles + a check script; no DB / `config.yml`
+  change (the mechanism + the `language` column ship in I18N-1).
+
+  **Acceptance criteria**
+  - Every user-facing string across the six pages (Home, Sources/Extract, Questions, Composition,
+    Reports, Templates) and the shared components/shell is sourced from the `en`/`fr` bundles —
+    no hardcoded user-facing literal remains in the audited components (the guard enforces this)
+  - The `en` and `fr` bundles are **key-aligned**: the set of keys is identical between the two
+    files and no value is empty in either bundle (the guard fails on a missing or extra key or an
+    empty value)
+  - Switching to French translates representative strings on **each** of the six tabs (not just
+    the I18N-1 initial set); switching back to English restores them
+  - A `check:i18n` script exists and (a) fails on en/fr key divergence or empty values and (b)
+    fails when a hardcoded user-facing literal is detected in the audited components; it passes on
+    the completed bundles
+  - No regression to I18N-1 behavior (default English, live switch, persisted preference)
+  - Impeccable audit/critique clean on the translated surfaces (no truncation/overflow from longer
+    French strings at any viewport)
+
+  **Unit tests:** N/A (the coverage gate is the `check:i18n` script + the Playwright E2E below;
+  Vitest is not installed — frontend-only, per the XTF-7 precedent. The key-parity / no-empty /
+  no-hardcoded-literal guard runs via `check:i18n` and is exercised by the Verify command.)
+
+  **E2E:** `frontend/tests/e2e/i18n-coverage.spec.ts` (new) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — with the profile mocked to `language: "fr"`, visit each of the six tabs in
+  turn and assert a representative, known string on each tab renders in French (not the English
+  literal); switch back to English and assert each reverts. Assert no raw translation **key**
+  (e.g. a `foo.bar` token) leaks into the rendered UI on any tab (every referenced key resolves).
+  Capture `toHaveScreenshot` baselines of two representative tabs (e.g. Home + Reports) in French
+  at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves
+  them and confirms no French-length overflow/truncation.
+
+  **UAT:**
+  1. Set your interface language to French. Visit each of the six tabs (Home, Sources/Extract,
+     Questions, Composition, Reports, Templates) and confirm the visible labels, buttons, headings,
+     and helper text are in French — with nothing left in English and no raw key codes showing.
+  2. Switch back to English and confirm every tab reverts fully to English.
+  3. On both languages, confirm no text is cut off or overflowing its control at mobile, tablet,
+     and desktop widths (French strings are typically longer).
+  4. Confirm the language choice still persists across a reload (no regression to I18N-1).
+
+  **Verify:** `cd frontend && npm run check:i18n` ·
+  `cd frontend && npx playwright test i18n-coverage.spec.ts`
 ## Performance
 
 > The web app feels slow (up to ~10s) when navigating between pages because there is **no caching

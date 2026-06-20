@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-20T00:00:00Z",
+  "title": "Design System: databridge-cli (kobo-reporter)",
+  "extensions": {
+    "colorMeta": {
+      "deep-field-teal": {
+        "role": "primary",
+        "displayName": "Deep Field Teal",
+        "canonical": "#0F766E",
+        "tonalRamp": ["#06302C", "#0A463F", "#0D5A52", "#0F766E", "#1E948B", "#5BBDB4", "#9FDDD7", "#CCFBF1"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#0B1220",
+        "tonalRamp": ["#0B1220", "#2A3447", "#3F4A5E", "#5A6473", "#6B7686", "#9AA3B0", "#C7CCD4", "#EEF1F6"]
+      },
+      "bg": {
+        "role": "neutral",
+        "displayName": "Cool Slate Canvas",
+        "canonical": "#F5F7FA",
+        "tonalRamp": ["#B6BFCD", "#D6DBE3", "#E5E8ED", "#EEF1F6", "#F5F7FA", "#FAFBFD", "#FDFDFE", "#FFFFFF"]
+      },
+      "success-green": {
+        "role": "secondary",
+        "displayName": "Success Green",
+        "canonical": "#16A34A",
+        "tonalRamp": ["#06351A", "#0A4E26", "#0F7335", "#16A34A", "#34C766", "#74D99B", "#B0EBC6", "#DCFCE7"]
+      },
+      "caution-amber": {
+        "role": "secondary",
+        "displayName": "Caution Amber",
+        "canonical": "#D97706",
+        "tonalRamp": ["#4A2902", "#6B3B04", "#9C5605", "#D97706", "#F09A2E", "#F6BC73", "#FBDCAE", "#FEF3C7"]
+      },
+      "danger-rose": {
+        "role": "secondary",
+        "displayName": "Danger Rose",
+        "canonical": "#DC2626",
+        "tonalRamp": ["#4C0B0B", "#6E1313", "#A11C1C", "#DC2626", "#EC5A5A", "#F49494", "#FAC4C4", "#FEE2E2"]
+      },
+      "violet": {
+        "role": "tertiary",
+        "displayName": "Survey Violet",
+        "canonical": "#7C3AED",
+        "tonalRamp": ["#2C1257", "#411B80", "#5C28B5", "#7C3AED", "#9B63F2", "#BC95F7", "#DBC7FB", "#F3E8FF"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Page greetings / hero titles; accent word in teal. The loudest the UI gets." },
+      "headline": { "displayName": "Headline", "purpose": "Workflow-landing (Home) title." },
+      "title": { "displayName": "Title", "purpose": "Card and form-section titles — most headings live here." },
+      "body": { "displayName": "Body", "purpose": "Default reading text; sub-text caps ~64ch." },
+      "label": { "displayName": "Label", "purpose": "Uppercase mono eyebrows, rail/table headers, status pills." }
+    },
+    "shadows": [
+      { "name": "rest", "value": "0 1px 0 rgba(11,18,32,.04), 0 1px 2px rgba(11,18,32,.04)", "purpose": "Default card resting shadow — barely visible; border carries structure." },
+      { "name": "lift", "value": "0 1px 0 rgba(11,18,32,.04), 0 4px 14px rgba(11,18,32,.06)", "purpose": "Hover / interactive card / docked terminal." },
+      { "name": "overlay", "value": "0 20px 50px rgba(11,18,32,.18), 0 4px 12px rgba(11,18,32,.08)", "purpose": "Modals and dropdown menus only." },
+      { "name": "focus-ring", "value": "0 0 0 3px #CCFBF1", "purpose": "The single consistent focus glow on every input/control." }
+    ],
+    "motion": [
+      { "name": "ease-fast", "value": "120ms (color/border transitions)", "purpose": "Default state transition for buttons, inputs, cards." },
+      { "name": "press", "value": "transform: translateY(0.5px) over 50ms", "purpose": "The one tactile feedback on button :active." },
+      { "name": "reduced-motion", "value": "all animations/transitions collapsed to ~0ms", "purpose": "Honored via prefers-reduced-motion; required for field/low-end devices." }
+    ],
+    "breakpoints": [
+      { "name": "rail-collapse", "value": "1100px" },
+      { "name": "mobile", "value": "720px" },
+      { "name": "db-grid", "value": "560px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single saturated action. Deep Field Teal fill, white text.",
+      "html": "<button class=\"ds-btn-primary\">Download data</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; justify-content:center; gap:6px; height:34px; padding:0 14px; border-radius:8px; font-size:13px; font-weight:600; letter-spacing:-0.005em; font-family:Inter,system-ui,sans-serif; color:#fff; background:#0F766E; border:1px solid #0F766E; box-shadow:0 1px 2px rgba(15,118,110,.18); cursor:pointer; transition:background .12s, border-color .12s, transform .05s; } .ds-btn-primary:hover { background:#115E59; border-color:#115E59; } .ds-btn-primary:active { transform:translateY(.5px); } .ds-btn-primary:focus-visible { outline:2px solid #fff; outline-offset:2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Default neutral action. White surface, hairline border, ink text.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary { display:inline-flex; align-items:center; justify-content:center; gap:6px; height:34px; padding:0 14px; border-radius:8px; font-size:13px; font-weight:600; letter-spacing:-0.005em; font-family:Inter,system-ui,sans-serif; color:#0B1220; background:#fff; border:1px solid #D6DBE3; cursor:pointer; transition:background .12s, border-color .12s, transform .05s; } .ds-btn-secondary:hover { background:#EEF1F6; border-color:#B6BFCD; } .ds-btn-secondary:active { transform:translateY(.5px); } .ds-btn-secondary:focus-visible { outline:2px solid #0F766E; outline-offset:2px; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Canonical field. Hairline stroke; teal border + soft glow on focus.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Form alias\" aria-label=\"Form alias\" />",
+      "css": ".ds-input { width:100%; height:36px; padding:0 12px; background:#fff; border:1px solid #D6DBE3; border-radius:8px; font-size:13.5px; color:#0B1220; font-family:Inter,system-ui,sans-serif; outline:0; transition:border-color .12s, box-shadow .12s; } .ds-input::placeholder { color:#5A6473; } .ds-input:focus { border-color:#0F766E; box-shadow:0 0 0 3px #CCFBF1; }"
+    },
+    {
+      "name": "Type Badge / Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Soft-fill pill with matching ink. Mono for type/count, sans for status.",
+      "html": "<span class=\"ds-chip\">categorical</span>",
+      "css": ".ds-chip { display:inline-flex; align-items:center; padding:2px 10px; border-radius:999px; font-size:11px; font-weight:600; letter-spacing:.01em; font-family:JetBrains Mono,ui-monospace,monospace; background:#CCFBF1; color:#134E4A; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat-by-default container; rest shadow idle, lift on hover. Never nested.",
+      "html": "<div class=\"ds-card\"><h3 class=\"ds-card__title\">Kobo source</h3><p class=\"ds-card__sub\">Connect a form to fetch its schema.</p></div>",
+      "css": ".ds-card { background:#fff; border:1px solid #E5E8ED; border-radius:12px; padding:20px 22px; box-shadow:0 1px 0 rgba(11,18,32,.04), 0 1px 2px rgba(11,18,32,.04); transition:border-color .12s, box-shadow .12s; } .ds-card:hover { border-color:#B6BFCD; box-shadow:0 1px 0 rgba(11,18,32,.04), 0 4px 14px rgba(11,18,32,.06); } .ds-card__title { font-size:15.5px; font-weight:700; letter-spacing:-0.01em; color:#0B1220; line-height:1.2; } .ds-card__sub { font-size:12.5px; color:#5A6473; margin-top:3px; line-height:1.5; }"
+    },
+    {
+      "name": "Tab Navigation",
+      "kind": "nav",
+      "refersTo": "nav",
+      "description": "Workflow tab strip; active = teal text + 2px teal underline + mono step badge.",
+      "html": "<nav class=\"ds-tabs\" role=\"tablist\"><button class=\"ds-tab\" role=\"tab\">Sources</button><button class=\"ds-tab ds-tab--active\" role=\"tab\" aria-selected=\"true\"><span class=\"ds-tab__num\">2</span>Questions</button><button class=\"ds-tab\" role=\"tab\">Composition</button></nav>",
+      "css": ".ds-tabs { display:flex; gap:2px; padding:0 8px; background:#F5F7FA; border-bottom:1px solid #E5E8ED; } .ds-tab { display:flex; align-items:center; gap:8px; height:48px; padding:0 14px; border:0; background:transparent; border-bottom:2px solid transparent; font-size:13.5px; font-weight:500; color:#2A3447; font-family:Inter,system-ui,sans-serif; cursor:pointer; transition:color .12s; } .ds-tab:hover { color:#0B1220; } .ds-tab--active { color:#0F766E; font-weight:600; border-bottom-color:#0F766E; } .ds-tab__num { font-family:JetBrains Mono,monospace; font-size:10.5px; padding:1px 5px; border-radius:4px; background:#CCFBF1; color:#0F766E; } .ds-tab:focus-visible { outline:2px solid #0F766E; outline-offset:-2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Clear Workbench",
+    "overview": "This is a workbench, not a showcase. A field coordinator or M&E officer arrives with a survey and a deadline, and the interface lays the complex pipeline out flat and legible, one step at a time. Built on cool-slate neutrals with a single rationed Deep Field Teal accent that carries every primary action, active state, and focus ring. Structure comes from hairline borders and spacing, not shadows. Monospace is reserved for machine-truth; sans is for what humans read. It rejects engineer-only density, consumer/playful SaaS, and generic AI-template slop.",
+    "keyCharacteristics": [
+      "Cool-slate neutrals + one rationed teal accent (committed-restrained strategy)",
+      "Flat by default; 1px borders and spacing carry structure, shadows respond to state",
+      "Sans for prose, mono for machine-truth (keys, tokens, counts, logs)",
+      "Pill badges and soft-tinted status colors (teal / green / amber / rose / violet)",
+      "Quiet, precise, institutional — credibility over flourish"
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Deep Field Teal is the only saturated color permitted to signify an action or selection. If a screen has more than one teal primary, one of them is lying. Status colors report state; they never compete for 'click me.'", "section": "colors" },
+      { "name": "The Mono-Means-Literal Rule", "body": "JetBrains Mono is reserved for machine-truth — kobo keys, placeholder tokens, IDs, counts, file sizes, log lines. Never set human-facing prose in mono to look 'technical.'", "section": "colors" },
+      { "name": "The Quiet-Heading Rule", "body": "Headings earn size by importance, not by reflex. Card titles sit at 14–15.5px; only true page-level titles reach Display. A wall of large bold headings is forbidden.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Surfaces are flat at rest with a 1px border. A shadow that isn't responding to hover, focus, or a true overlay (modal/menu) is forbidden. If depth is needed to separate two resting surfaces, change the background tint or add a border — not a shadow.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep Deep Field Teal (#0F766E) as the only action/selection color.",
+      "Do carry structure with 1px borders and spacing; reserve shadows for hover, focus, and true overlays.",
+      "Do use JetBrains Mono only for machine-truth and Inter for everything a human reads.",
+      "Do give every interactive control the teal focus ring and a real <button> / labeled <input>.",
+      "Do write labels, hints, and errors in plain language, not implementation terms.",
+      "Do keep status colors soft-filled with matching ink so they report state without competing for attention."
+    ],
+    "donts": [
+      "Don't build an engineer-only feel — the terminal stays docked and optional, never required.",
+      "Don't drift into consumer/playful SaaS — no decorative gradients, mascots, or emoji-bubbly styling.",
+      "Don't ship generic AI-template slop: no cream/sand backgrounds, no tracked-uppercase eyebrow on every section, no identical card grids.",
+      "Don't nest a card inside a card; use a bordered row or a tinted inset.",
+      "Don't use border-left/right > 1px as a colored accent stripe.",
+      "Don't introduce a second saturated primary.",
+      "Don't add ambient shadows to separate resting surfaces — change the tint or add a border."
+    ]
+  }
+}
