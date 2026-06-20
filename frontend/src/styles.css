@@ -196,8 +196,9 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 /* ─────────── Bottom-sticky terminal ─────────── */
 .bottom-term{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--slate-dark);color:#E6EAF2;border-top:1px solid var(--slate-dark-2);box-shadow:0 -10px 30px rgba(0,0,0,.18);display:flex;flex-direction:column;transition:max-height .25s ease;max-height:42px;overflow:hidden}
 .bottom-term[data-open="true"]{max-height:50vh}
-.bottom-term__bar{height:42px;flex-shrink:0;padding:0 16px;display:flex;align-items:center;gap:14px;cursor:pointer;font-family:var(--font-mono);font-size:12px;color:#9aa6bb;user-select:none;background:var(--slate-dark)}
-.bottom-term__bar:hover{color:#d6dde9}
+.bottom-term__bar{height:42px;flex-shrink:0;padding:0 16px;display:flex;align-items:center;gap:14px;font-family:var(--font-mono);font-size:12px;color:#9aa6bb;user-select:none;background:var(--slate-dark)}
+.bottom-term__bar-toggle{flex:1;min-width:0;height:100%;display:flex;align-items:center;gap:14px;background:transparent;border:0;padding:0;margin:0;cursor:pointer;font-family:inherit;font-size:inherit;color:inherit;text-align:left}
+.bottom-term__bar-toggle:hover{color:#d6dde9}
 .bottom-term__bar .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(22,163,74,.25);flex-shrink:0}
 .bottom-term__bar-title{color:#d6dde9;font-weight:600;letter-spacing:-.005em}
 .bottom-term__bar-sep{color:#5a6473}
