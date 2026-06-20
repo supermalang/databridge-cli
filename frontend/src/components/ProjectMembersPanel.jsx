@@ -81,7 +81,7 @@ export default function ProjectMembersPanel({ project }) {
               </td>
               <td style={{ padding: '8px 4px' }}>
                 {isAdmin && !locked(m) ? (
-                  <select value={m.role} onChange={e => setRoleFor(m, e.target.value)}>
+                  <select aria-label={`Role for ${m.email || m.name || m.user_id}`} value={m.role} onChange={e => setRoleFor(m, e.target.value)}>
                     {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 ) : <span>{m.role}</span>}
@@ -111,9 +111,9 @@ export default function ProjectMembersPanel({ project }) {
         <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
           <div style={{ fontWeight: 600, marginBottom: 8 }}>Invite someone</div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input type="email" placeholder="email@example.com" value={email}
+            <input aria-label="Invite email address" type="email" placeholder="email@example.com" value={email}
                    onChange={e => setEmail(e.target.value)} style={{ flex: 1 }} />
-            <select value={role} onChange={e => setRole(e.target.value)}>
+            <select aria-label="Invite role" value={role} onChange={e => setRole(e.target.value)}>
               {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
             <button className="btn btn-primary btn-sm" disabled={busy} onClick={invite}>
