@@ -74,24 +74,24 @@ export default function Home({ navigate }) {
 
       <div className="home-cards">
         {STAGE_CARDS.map((s, i) => (
-          <div
-            className="home-card"
-            data-tone={s.tone}
-            key={s.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => navigate(s.id, s.subs[0].id)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(s.id, s.subs[0].id); } }}
-          >
-            <div className="home-card__top">
-              <span className="home-card__step">{s.step}</span>
-              <span className="home-card__icon" data-tone={s.tone}>{s.icon}</span>
-            </div>
-            <div className="home-card__label">{s.label}</div>
-            <div className="home-card__desc">{s.desc}</div>
+          <div className="home-card-wrap" key={s.id}>
+            <button
+              type="button"
+              className="home-card"
+              data-tone={s.tone}
+              aria-label={`${s.label} — ${s.desc}`}
+              onClick={() => navigate(s.id, s.subs[0].id)}
+            >
+              <span className="home-card__top">
+                <span className="home-card__step">{s.step}</span>
+                <span className="home-card__icon" data-tone={s.tone}>{s.icon}</span>
+              </span>
+              <span className="home-card__label">{s.label}</span>
+              <span className="home-card__desc">{s.desc}</span>
+            </button>
             <div className="home-card__subs">
               {s.subs.map(sub => (
-                <button key={sub.id} className="home-card__sub" onClick={go(s.id, sub.id)}>{sub.label}</button>
+                <button key={sub.id} type="button" className="home-card__sub" onClick={go(s.id, sub.id)}>{sub.label}</button>
               ))}
             </div>
             {i < STAGE_CARDS.length - 1 && <span className="home-card__arrow" aria-hidden="true">→</span>}
