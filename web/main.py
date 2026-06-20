@@ -19,6 +19,7 @@ from web import runs as _runs
 from web.db import bootstrap as db_bootstrap
 from web.db import session as db_session, repository as db_repo, provision as db_provision
 from web.db import bridge as db_bridge
+from web import perf_cache
 from web.storage import workspace as storage_workspace
 from web.storage import factory as storage_factory
 from web.storage.base import storage_key
@@ -62,6 +63,44 @@ def _active_project(request: Request, db: Session):
     if user is None or user.active_project_id is None:
         return user, None
     return user, db_repo.get_project_for_user(db, user, user.active_project_id)
+
+
+def _data_session_signature() -> str:
+    """Cheap stable signature of the materialized ``data/processed`` mirror.
+
+    Used as the perf-cache's data-session identity: it changes whenever a new
+    download writes fresh processed files (different names / sizes / mtimes), so
+    a post-download read produces a different fingerprint and misses the cache.
+    Returns ``"no-data"`` when nothing is downloaded yet. Only the top-level
+    processed files are scanned (regenerable charts under ``charts/`` are not
+    part of the read endpoints' inputs)."""
+    if not DATA_DIR.is_dir():
+        return "no-data"
+    parts = []
+    for p in sorted(DATA_DIR.iterdir()):
+        if p.is_file():
+            st = p.stat()
+            parts.append(f"{p.name}:{st.st_size}:{int(st.st_mtime_ns)}")
+    return "|".join(parts) if parts else "no-data"
+
+
+def _cache_key(request: Request, cfg, endpoint: str):
+    """Build the perf-cache key for a heavy read endpoint, or ``None`` to skip
+    caching. Returns ``None`` when there's no active project (nothing to namespace
+    by) or no downloaded data on disk (the no-data path is cheap and a missing
+    materialized mirror has no stable data-session identity to fingerprint). The
+    key namespaces by (org, project) + endpoint + config hash + data-session
+    signature so distinct projects / endpoints / data sessions never collide."""
+    signature = _data_session_signature()
+    if signature == "no-data":
+        return None
+    with db_session.SessionLocal() as db:
+        _user, project = _active_project(request, db)
+        if project is None:
+            return None
+        return perf_cache.fingerprint(
+            str(project.org_id), str(project.id), cfg, f"{endpoint}:{signature}"
+        )
 
 
 def _sync_active_project_from_file(request: Request) -> None:
@@ -164,6 +203,9 @@ def save_config(payload: ConfigPayload, request: Request, db: Session = Depends(
     except db_repo.StaleConfigError:
         raise HTTPException(status_code=409, detail="Config changed since you loaded it; reload and retry.")
     db_bridge.materialize_config(project)
+    # New config → drop this project's cached read-endpoint results so the next
+    # /api/profile etc. recomputes rather than serving the pre-save value.
+    perf_cache.invalidate(str(project.org_id), str(project.id))
     return {"ok": True, "saved_at": datetime.now().isoformat(), "version": project.config_version}
 
 
@@ -1698,6 +1740,10 @@ def _persist_run_outputs(org_id: str, project_id: str, dest, command=None) -> No
             db_repo.update_project_config(db, project, parsed)
         db_bridge.materialize_config(project)                              # refresh BASE_DIR/config.yml
         storage_workspace.pull_workspace(org_id, project_id, base=BASE_DIR)  # refresh read mirror
+    # A completed run may have produced new data (download) and/or a changed
+    # config, so drop this project's cached read-endpoint results — post-run reads
+    # must reflect the new data/config, never a stale pre-run value.
+    perf_cache.invalidate(org_id, project_id)
 
 
 async def _stream(run_id: str, command: str, cmd: list, run_ctx=None) -> AsyncGenerator[str, None]:
@@ -2323,33 +2369,38 @@ async def base_tables(request: Request):
     """
     _require_view(request)
     cfg = load_config(CONFIG_PATH)
-    try:
-        df, repeats = load_processed_data(cfg)
-    except FileNotFoundError:
-        return {"tables": [], "message": "No downloaded data. Run download first."}
 
-    def _entry(name, frame, parent):
-        cols = list(frame.columns)
-        return {
-            "name": name,
-            "rows": int(len(frame)),
-            "parent": parent,
-            "columns": [c for c in cols if not c.startswith("_")],
-            "linkage": [c for c in cols if c.startswith("_")],
-        }
+    def _compute():
+        try:
+            df, repeats = load_processed_data(cfg)
+        except FileNotFoundError:
+            return {"tables": [], "message": "No downloaded data. Run download first."}
 
-    # Reloaded repeat tables are keyed by the underscored ("safe") name; derive
-    # the parent table by longest underscored-prefix match, falling back to main.
-    names = list(repeats.keys())
+        def _entry(name, frame, parent):
+            cols = list(frame.columns)
+            return {
+                "name": name,
+                "rows": int(len(frame)),
+                "parent": parent,
+                "columns": [c for c in cols if not c.startswith("_")],
+                "linkage": [c for c in cols if c.startswith("_")],
+            }
 
-    def _parent_of(name):
-        prefixes = [p for p in names if p != name and name.startswith(p + "_")]
-        return max(prefixes, key=lambda p: p.count("_")) if prefixes else "main"
+        # Reloaded repeat tables are keyed by the underscored ("safe") name; derive
+        # the parent table by longest underscored-prefix match, falling back to main.
+        names = list(repeats.keys())
 
-    tables = [_entry("main", df, None)]
-    for name, frame in repeats.items():
-        tables.append(_entry(name, frame, _parent_of(name)))
-    return {"tables": tables}
+        def _parent_of(name):
+            prefixes = [p for p in names if p != name and name.startswith(p + "_")]
+            return max(prefixes, key=lambda p: p.count("_")) if prefixes else "main"
+
+        tables = [_entry("main", df, None)]
+        for name, frame in repeats.items():
+            tables.append(_entry(name, frame, _parent_of(name)))
+        return {"tables": tables}
+
+    key = _cache_key(request, cfg, "base-tables")
+    return _compute() if key is None else perf_cache.get_or_compute(key, _compute)
 
 
 @app.get("/api/profile")
@@ -2358,12 +2409,17 @@ async def data_profile(request: Request):
     session (row counts, per-column stats, correlations, duplicates). Read-only."""
     _require_view(request)
     cfg = load_config(CONFIG_PATH)
-    try:
-        df, repeats = load_processed_data(cfg)
-    except FileNotFoundError:
-        return {"profiles": [], "message": "No downloaded data. Run download first."}
-    profiles = profile_dataset(cfg, df, repeats)
-    return {"profiles": list(profiles.values())}
+
+    def _compute():
+        try:
+            df, repeats = load_processed_data(cfg)
+        except FileNotFoundError:
+            return {"profiles": [], "message": "No downloaded data. Run download first."}
+        profiles = profile_dataset(cfg, df, repeats)
+        return {"profiles": list(profiles.values())}
+
+    key = _cache_key(request, cfg, "profile")
+    return _compute() if key is None else perf_cache.get_or_compute(key, _compute)
 
 
 @app.get("/api/data-quality")
@@ -2375,12 +2431,17 @@ async def data_quality_overview(request: Request):
     from src.reports.data_quality import compute_data_quality
     from src.utils.pii import apply_pii
     cfg = load_config(CONFIG_PATH)
-    try:
-        df, repeats = load_processed_data(cfg)
-    except FileNotFoundError:
-        return {"has_data": False, "rows": [], "message": "No downloaded data. Run download first."}
-    df, repeats = apply_pii(df, repeats, cfg)
-    return compute_data_quality(cfg, df, repeats)
+
+    def _compute():
+        try:
+            df, repeats = load_processed_data(cfg)
+        except FileNotFoundError:
+            return {"has_data": False, "rows": [], "message": "No downloaded data. Run download first."}
+        df, repeats = apply_pii(df, repeats, cfg)
+        return compute_data_quality(cfg, df, repeats)
+
+    key = _cache_key(request, cfg, "data-quality")
+    return _compute() if key is None else perf_cache.get_or_compute(key, _compute)
 
 
 @app.get("/api/periods/date-range")
