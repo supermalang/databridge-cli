@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast.jsx';
 import { useCommand } from '../hooks/useCommand.js';
 import { loadConfig, saveConfigPatch } from '../lib/config.js';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
+import { useFieldErrors } from '../lib/fieldError.js';
 import PageHeader from './PageHeader.jsx';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 import AiThinking from '../components/AiThinking.jsx';
@@ -1438,9 +1439,10 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
   const [cols, setCols]       = useState(csv(initial?.questions || []));
   const [optsY, setOptsY]     = useState(initial?.options ? yaml.dump(initial.options, { indent: 2, lineWidth: -1 }) : '');
   const [err, setErr]         = useState('');
+  const fe = useFieldErrors();
 
   const submit = () => {
-    if (!name.trim()) return setErr('Name is required.');
+    if (!name.trim()) return fe.setError('name', 'Name is required.');
     const item = { name: name.trim(), title: title.trim(), type, questions: fromCsv(cols) };
     if (optsY.trim()) {
       try { const o = yaml.load(optsY); if (o && Object.keys(o).length) item.options = o; }
@@ -1451,6 +1453,8 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
   return (
     <Modal title={initial ? `Edit chart: ${initial.name}` : 'Add chart'} onClose={onClose} onSave={submit} width={560}>
       <ModalError>{err}</ModalError>
+      <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
+      <ModalField label="Title"><input className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Overall satisfaction" /></ModalField>
       <ModalField label="Name"><input aria-label="Chart name" className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="satisfaction_overview" /></ModalField>
       <ModalField label="Title"><input aria-label="Chart title" className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Overall satisfaction" /></ModalField>
       <ModalField label="Type" hint={CHART_REQS[type] ? `Needs: ${CHART_REQS[type]}` : undefined}>
@@ -1479,8 +1483,9 @@ function IndicatorModal({ initial, columns = [], onClose, onSave }) {
       : (initial?.disaggregate_by ? [initial.disaggregate_by] : [])));
   const [primary, setPrimary] = useState(!!initial?.primary);
   const [err, setErr] = useState('');
+  const fe = useFieldErrors();
   const submit = () => {
-    if (!name.trim()) return setErr('Name is required.');
+    if (!name.trim()) return fe.setError('name', 'Name is required.');
     const item = { name: name.trim(), stat };
     if (label.trim()) item.label = label.trim();
     if (question.trim()) item.question = question.trim();
@@ -1494,6 +1499,11 @@ function IndicatorModal({ initial, columns = [], onClose, onSave }) {
   return (
     <Modal title={initial ? `Edit indicator: ${initial.name}` : 'Add indicator'} onClose={onClose} onSave={submit}>
       <ModalError>{err}</ModalError>
+      <ModalField label="Name" hint="Becomes {{ ind_<name> }} in the template" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="total_beneficiaries" /></ModalField>
+      <ModalField label="Label"><input className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
+      <ModalField label="Stat"><select className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{INDICATOR_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
+      <ModalField label="Column"><ColumnPicker value={question} onChange={setQuestion} options={columns} multi={false} placeholder="Number of Students" /></ModalField>
+      <ModalField label="Format" hint="Python format string"><input className="src-input" value={format} onChange={e => setFormat(e.target.value)} placeholder="{:,.0f}" /></ModalField>
       <ModalField label="Name" hint="Becomes {{ ind_<name> }} in the template"><input aria-label="Indicator name" className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="total_beneficiaries" /></ModalField>
       <ModalField label="Label"><input aria-label="Indicator label" className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
       <ModalField label="Stat"><select aria-label="Indicator stat" className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{INDICATOR_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
@@ -1530,8 +1540,9 @@ function SummaryModal({ initial, columns = [], onClose, onSave }) {
   const [freq, setFreq]     = useState(initial?.freq || '');
   const [topN, setTopN]     = useState(initial?.top_n ?? '');
   const [err, setErr]       = useState('');
+  const fe = useFieldErrors();
   const submit = () => {
-    if (!name.trim()) return setErr('Name is required.');
+    if (!name.trim()) return fe.setError('name', 'Name is required.');
     const item = { name: name.trim(), stat };
     if (label.trim()) item.label = label.trim();
     const qs = fromCsv(cols); if (qs.length) item.questions = qs;
@@ -1543,6 +1554,11 @@ function SummaryModal({ initial, columns = [], onClose, onSave }) {
   return (
     <Modal title={initial ? `Edit summary: ${initial.name}` : 'Add summary'} onClose={onClose} onSave={submit} width={560}>
       <ModalError>{err}</ModalError>
+      <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} /></ModalField>
+      <ModalField label="Label"><input className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
+      <ModalField label="Stat"><select className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{SUMMARY_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
+      <ModalField label="Columns"><ColumnPicker value={cols} onChange={setCols} options={columns} /></ModalField>
+      {(stat === 'distribution' || stat === 'crosstab') && <ModalField label="Top N"><input className="src-input" type="number" value={topN} onChange={e => setTopN(e.target.value)} /></ModalField>}
       <ModalField label="Name"><input aria-label="Summary name" className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
       <ModalField label="Label"><input aria-label="Summary label" className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
       <ModalField label="Stat"><select aria-label="Summary stat" className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{SUMMARY_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
@@ -1562,8 +1578,9 @@ function TableModal({ initial, columns = [], onClose, onSave }) {
   const [title, setTitle] = useState(initial?.title || '');
   const [cols, setCols]   = useState(csv(initial?.questions || []));
   const [err, setErr]     = useState('');
+  const fe = useFieldErrors();
   const submit = () => {
-    if (!name.trim()) return setErr('Name is required.');
+    if (!name.trim()) return fe.setError('name', 'Name is required.');
     const item = { name: name.trim(), title: title.trim(), type: 'table', questions: fromCsv(cols) };
     if (initial?.options) item.options = initial.options;
     if (initial?.source) item.source = initial.source;
@@ -1574,6 +1591,9 @@ function TableModal({ initial, columns = [], onClose, onSave }) {
   return (
     <Modal title={initial ? `Edit table: ${initial.name}` : 'Add table'} onClose={onClose} onSave={submit} width={560}>
       <ModalError>{err}</ModalError>
+      <ModalField label="Name" hint="Used as {{ table_<name> }} in the template" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} /></ModalField>
+      <ModalField label="Title"><input className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
+      <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name."><ColumnPicker value={cols} onChange={setCols} options={columns} /></ModalField>
       <ModalField label="Name" hint="Used as {{ table_<name> }} in the template"><input aria-label="Table name" className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
       <ModalField label="Title"><input aria-label="Table title" className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
       <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name."><ColumnPicker ariaLabel="Table columns" value={cols} onChange={setCols} options={columns} /></ModalField>
@@ -1593,6 +1613,7 @@ function ViewModal({ initial, onClose, onSave }) {
   const [question, setQuestion]       = useState(initial?.question || '');
   const [agg, setAgg]                 = useState(initial?.agg || 'sum');
   const [err, setErr]                 = useState('');
+  const fe = useFieldErrors();
 
   // Table catalog from the latest download → powers the source/column dropdowns.
   const [tables, setTables] = useState([]);
@@ -1644,8 +1665,10 @@ function ViewModal({ initial, onClose, onSave }) {
 
   const filterErr = validateFilterExpr(filter);
   const submit = () => {
-    if (!name.trim() || !source.trim()) return setErr('Name and source are required.');
-    if (filterErr) return setErr(`Filter: ${filterErr}`);
+    fe.clearAll();
+    if (!name.trim()) { fe.setError('name', 'Name is required.'); return; }
+    if (!source.trim()) { fe.setError('source', 'Source is required.'); return; }
+    if (filterErr) { fe.setError('filter', filterErr); return; }
     const item = { name: name.trim(), source: source.trim() };
     const jp = fromCsv(joinParent); if (jp.length) item.join_parent = jp;
     if (filter.trim()) item.filter = filter.trim();
@@ -1681,6 +1704,9 @@ function ViewModal({ initial, onClose, onSave }) {
         {describing && <div style={{ marginTop: 8 }}><AiThinking messages={['Reading your description…', 'Matching tables & columns…', 'Composing the view…']} /></div>}
       </div>
 
+      <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="villages_with_dept" /></ModalField>
+      <ModalField label="Source table" hint="Which base table this view draws from" error={fe.errorFor('source')} errorId={fe.errorId('source')}>
+        <ColumnPicker value={source} onChange={(v) => { setSource(v); if ((v || '').trim()) fe.clearError('source'); }} options={tableNames} multi={false} placeholder="main, or a repeat table…" />
       <ModalField label="Name"><input aria-label="View name" className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="villages_with_dept" /></ModalField>
       <ModalField label="Source table" hint="Which base table this view draws from">
         <ColumnPicker ariaLabel="View source table" value={source} onChange={setSource} options={tableNames} multi={false} placeholder="main, or a repeat table…" />
@@ -1693,6 +1719,14 @@ function ViewModal({ initial, onClose, onSave }) {
       <ModalField label="Columns" hint="Which columns to keep — leave blank for all">
         <ColumnPicker ariaLabel="View columns" value={columns} onChange={setColumns} options={sourceCols} placeholder="Search columns…" />
       </ModalField>
+      <ModalField label="Filter" hint="pandas query syntax, e.g. Age > 18 and Region == 'North'"
+                  error={filterErr || fe.errorFor('filter')} errorId={fe.errorId('filter')}>
+        <input className="src-input" value={filter}
+               aria-invalid={(filterErr || fe.errorFor('filter')) ? 'true' : 'false'}
+               aria-describedby={(filterErr || fe.errorFor('filter')) ? fe.errorId('filter') : undefined}
+               onChange={e => { setFilter(e.target.value); fe.clearError('filter'); }}
+               placeholder="Age > 18 and Region == 'North'"
+               style={(filterErr || fe.errorFor('filter')) ? { borderColor: 'var(--rose)' } : undefined} />
       <ModalField label="Filter" hint="pandas query syntax, e.g. Age > 18 and Region == 'North'">
         <input aria-label="View filter" className="src-input" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Age > 18 and Region == 'North'"
                style={filterErr ? { borderColor: 'var(--rose)' } : undefined} />
@@ -1792,14 +1826,29 @@ function ColumnPicker({ value, onChange, options = [], multi = true, placeholder
   );
 }
 
-function ModalField({ label, hint, children }) {
+function ModalField({ label, hint, children, error, errorId }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 12, alignItems: 'start', padding: '8px 0', borderBottom: '1px dashed var(--border)' }}>
       <div style={{ fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 500, paddingTop: 6 }}>
         {label}
         {hint && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, marginTop: 4 }}>{hint}</div>}
       </div>
-      <div>{children}</div>
+      <div>
+        {children}
+        {error && <FieldError id={errorId}>{error}</FieldError>}
+      </div>
+    </div>
+  );
+}
+
+// Per-field validation message, programmatically linked to its input via a stable
+// `id` (the input's aria-describedby target). role="alert" so assistive tech
+// announces it the moment it appears.
+function FieldError({ id, children }) {
+  if (!children) return null;
+  return (
+    <div id={id} role="alert" style={{ color: 'var(--rose)', fontSize: 11.5, marginTop: 4 }}>
+      {children}
     </div>
   );
 }
