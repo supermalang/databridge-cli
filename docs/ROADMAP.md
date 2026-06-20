@@ -44,6 +44,7 @@ A card is startable only when all of the following hold:
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
+| [Performance](#performance) | 1 | 1 / 1 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -1792,6 +1793,84 @@ A card is startable only when all of the following hold:
      the suite FAILS with a visual diff; revert and confirm it passes again.
 
   **Verify:** `cd frontend && npm run test:e2e`
+
+---
+
+## Performance
+
+> The web app feels slow (up to ~10s) when navigating between pages because there is **no caching
+> anywhere**: every page mount refetches its data, and the heavy read-only endpoints
+> (`/api/profile`, `/api/data-quality`, `/api/base-tables`) recompute everything server-side on each
+> call — re-reading CSV/parquet off disk + reflattening repeat groups via `load_processed_data`
+> (`src/data/transform.py`), then running full pandas EDA (`profile_dataset`, `src/data/profile.py`)
+> and the data-quality pass (`compute_data_quality`, `src/reports/data_quality.py`). There is no
+> `lru_cache`/memoization in `src/utils/config.py` or `src/data/flatten.py`. This area adds a
+> server-side cache so identical repeat reads skip the recompute. **Out of scope here** (possible
+> future cards): a client-side query cache in the React app, and background pre-loading/prefetch of
+> the next tab's data — those are separate deliverables and are intentionally not bundled into PERF-1.
+
+---
+
+- [x] **PERF-1 — Cache the expensive read-only server computations on a (data-session + config) fingerprint**
+
+  Add a server-side cache layer in front of the three heavy read-only endpoints (`/api/profile`,
+  `/api/data-quality`, `/api/base-tables`) keyed on a fingerprint of the **active project's data
+  session + config**. Identical repeat requests (the common case when a user navigates back and forth
+  between tabs) return the memoized result instead of re-running `load_processed_data` /
+  `profile_dataset` / `compute_data_quality`. The fingerprint changes — invalidating the cache — when
+  new data is downloaded (download completion) or the config is saved (`POST /api/config`), so a stale
+  result is never served. Caching is **per project** so one project's cached result is never returned
+  for another. This is the server-side caching deliverable only (the client query-cache and
+  background-prefetch ideas are out of scope; see the section intro). Depends on **XTF-1–XTF-24** /
+  **VIS-1** (shipped); independent of the OUT/UX/ME cards.
+
+  **Files:** `web/perf_cache.py` (new — the fingerprint + cache helper: `fingerprint(org_id,
+  project_id, cfg, session)` over the active data-session identity + a config hash; a per-project
+  `get_or_compute(key, compute_fn)` keyed store with an explicit `invalidate(org_id, project_id)`) ·
+  `web/main.py` (the three endpoints `/api/profile` ~2355, `/api/data-quality` ~2369,
+  `/api/base-tables` ~2313 wrap their compute in `perf_cache.get_or_compute`; the `POST /api/config`
+  save handler and the download-completion path call `perf_cache.invalidate` for the active
+  org/project) · `tests/test_perf_cache.py` (new)
+
+  **Config/schema impact:** None — in-process caching only; no `config.yml` field, no DB/schema change.
+
+  **Acceptance criteria**
+  - A cache helper computes a fingerprint from the active project's **data-session identity + a hash
+    of the config**; two requests with the same fingerprint hit the cache, a changed fingerprint
+    misses and recomputes
+  - On a **cold** cache, `/api/profile`, `/api/data-quality`, and `/api/base-tables` each return a
+    result **byte-identical** to the current (un-cached) implementation — correctness is preserved
+  - On a **warm** second call with an unchanged fingerprint, the underlying heavy function
+    (`load_processed_data` / `profile_dataset` / `compute_data_quality`) is **not** invoked again
+    (the memoized value is returned) — provable by a call-count spy on the heavy functions
+  - Saving config via `POST /api/config` invalidates the cache for that project, so the next
+    `/api/profile` (etc.) recomputes rather than serving the pre-save result
+  - Completing a `download` invalidates the cache for that project, so post-download reads reflect the
+    new data, never the pre-download cached result
+  - **Per-project isolation:** a cache entry computed for project A is never returned for a request
+    scoped to project B (distinct fingerprints / namespacing by org+project)
+
+  **Unit tests:** `tests/test_perf_cache.py` — (1) `test_fingerprint_stable_then_changes`: the
+  fingerprint is identical for the same (session, config) and changes when the config hash or the
+  data-session identity changes. (2) `test_warm_call_skips_recompute`: wrap a spy compute fn in
+  `get_or_compute`; first call invokes it once, a second call with the same key returns the cached
+  value WITHOUT invoking the spy again (assert call count == 1). (3) `test_cold_result_matches_uncached`:
+  for each of profile / data-quality / base-tables, the cached path returns a value byte-identical to
+  calling the underlying function directly on a fixture session (correctness preserved). (4)
+  `test_config_save_invalidates`: after `invalidate(org, project)` (the hook `POST /api/config` calls),
+  the next `get_or_compute` re-invokes the compute fn. (5) `test_download_invalidates`: simulate the
+  download-completion invalidation hook and assert the next read recomputes. (6)
+  `test_per_project_isolation`: a value cached under (orgA, projA) is not returned for (orgB, projB) —
+  the second project misses and computes its own. Fixtures use the suite's existing
+  SQLite + local-storage self-provisioning (no Postgres/Minio).
+
+  **E2E:** N/A (no UI surface — server-side caching; the three endpoints' UI consumers are unchanged
+  and already covered elsewhere).
+
+  **UAT:** N/A (back-end performance fix, no UI surface of its own — verified via the Verify command,
+  the unit tests, the verifier, and PR review; UAT moves in lockstep with E2E).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_perf_cache.py`
 
 ---
 
