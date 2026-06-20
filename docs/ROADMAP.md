@@ -44,7 +44,7 @@ A card is startable only when all of the following hold:
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
-| [Performance](#performance) | 1 | 1 / 1 |
+| [Performance](#performance) | 2 | 1 / 2 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -1871,6 +1871,72 @@ A card is startable only when all of the following hold:
   the unit tests, the verifier, and PR review; UAT moves in lockstep with E2E).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_perf_cache.py`
+
+---
+
+- [ ] **PERF-2 — Shared (cross-worker) cache backend for the perf cache**
+
+  Follow-up to PERF-1 (shipped: an in-process dict cache in `web/perf_cache.py` fronting
+  `/api/profile`, `/api/data-quality`, `/api/base-tables`, invalidated on config-save and
+  download-completion). PERF-1's cache is a module-level dict living inside ONE process, so under
+  multi-worker uvicorn (`--workers N`) each worker keeps its own copy: (a) a given view warms up to N
+  times (once per worker) before all workers are fast, and (b) an `invalidate()` only clears the
+  worker that handled the request. **This is a performance/scale improvement, NOT a correctness fix:**
+  (b) is harmless today because the cache key embeds a config+data fingerprint that changes on
+  save/download, so stale entries are simply never looked up again — they are inert until the process
+  restarts. PERF-2 makes the cache backend **pluggable** so it can use a shared out-of-process store
+  (Redis) when configured, falling back to the current in-process dict when not — fewer cold
+  recomputes across workers + global invalidation, with zero new infrastructure for single-worker
+  deployments. Depends on **PERF-1** (shipped); independent of the OUT/UX/ME cards.
+
+  **Files:** `web/perf_cache.py` (introduce a backend abstraction behind the existing
+  `get_or_compute`/`invalidate`/`fingerprint` surface: an in-process dict backend as the default and a
+  shared Redis backend selected when a connection URL is configured) · `tests/test_perf_cache_shared.py`
+  (new) · the new optional env var (`REDIS_URL` / `PERF_CACHE_URL`) added to the env-vars table in
+  `CLAUDE.md` and to `.env.example` · `requirements.txt` (Redis client) and `requirements-dev.txt`
+  (`fakeredis`, dev/test only) if the shared backend / its test double are used. PERF-1's existing
+  `tests/test_perf_cache.py` must keep passing unchanged against the default backend.
+
+  **Config/schema impact:** None to `config.yml`; adds one **optional** env var
+  (`REDIS_URL` / `PERF_CACHE_URL`). When unset, behavior is identical to PERF-1 (in-process dict);
+  no new infrastructure required for single-worker deployments.
+
+  **Acceptance criteria**
+  - `web/perf_cache.py` gains a backend abstraction: the existing in-process dict is the **default**
+    backend; a shared backend (Redis) is selected when a connection is configured via the env var
+    (`REDIS_URL` / `PERF_CACHE_URL`). With the env var unset, behavior is identical to PERF-1
+  - The public surface `get_or_compute` / `invalidate` / `fingerprint` is **unchanged** — only the
+    storage behind it changes; PERF-1's frozen `tests/test_perf_cache.py` still passes against the
+    default backend
+  - With the shared backend configured, a value cached by one worker is readable by another (simulated
+    in tests by two backend instances pointed at the same store, e.g. `fakeredis`), and
+    `invalidate(org, project)` clears it for **all** instances/workers
+  - Per-project namespacing and the config+data fingerprint key are preserved **exactly** (no
+    correctness change to what counts as a cache hit)
+  - **Graceful degradation:** if the shared store is configured but unreachable at request time, the
+    endpoints still serve correct results by computing directly (the cache becomes a no-op) rather than
+    erroring — a cache outage must never take down `/api/profile` etc.
+
+  **Unit tests:** `tests/test_perf_cache_shared.py` — (1) `test_default_backend_matches_perf1`: with
+  no URL set, `get_or_compute`/`invalidate`/`fingerprint` behave identically to PERF-1 (in-process
+  dict; warm call skips recompute, fingerprint stable-then-changes). (2)
+  `test_shared_backend_cross_worker_hit`: two shared-backend instances over one fake store (`fakeredis`
+  or an in-memory double) share reads — a value written by instance A is returned to instance B without
+  recomputing. (3) `test_shared_invalidate_clears_all`: `invalidate(org, project)` on one instance
+  clears the entry seen by the other. (4) `test_namespacing_and_fingerprint_unchanged`: per-project
+  namespacing + the config+data fingerprint key are byte-for-byte the same as PERF-1 (a different
+  project / changed fingerprint misses). (5) `test_shared_store_unreachable_falls_back`: with the store
+  configured but unreachable, `get_or_compute` computes directly and returns the correct value without
+  raising (cache no-ops). Use `fakeredis` (a new dev dependency) or an in-memory double so no real
+  Redis is needed in CI.
+
+  **E2E:** N/A (no UI surface — server-side cache backend; the three endpoints' UI consumers are
+  unchanged and already covered elsewhere).
+
+  **UAT:** N/A (back-end performance/scale change, no UI surface of its own — verified via the Verify
+  command, the unit tests, the verifier, and PR review; UAT moves in lockstep with E2E).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_perf_cache_shared.py`
 
 ---
 
