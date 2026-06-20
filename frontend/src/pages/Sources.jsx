@@ -320,14 +320,21 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
         </div>
         <div className="platform-pick">
           {PLATFORMS.map(p => (
-            <div key={p.id} className="platform-card" data-selected={platform === p.id} onClick={() => onPick(p.id)}>
+            <button
+              key={p.id}
+              type="button"
+              className="platform-card"
+              data-selected={platform === p.id}
+              aria-pressed={platform === p.id}
+              onClick={() => onPick(p.id)}
+            >
               <div className="platform-card__logo">{p.name[0]}</div>
               <div>
                 <div className="platform-card__name">{p.name}</div>
                 <div className="platform-card__sub">{p.tag}</div>
               </div>
               {platform === p.id && <span className="platform-card__check">✓</span>}
-            </div>
+            </button>
           ))}
         </div>
       </div>
