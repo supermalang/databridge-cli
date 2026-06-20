@@ -33,6 +33,13 @@ A card is startable only when all of the following hold:
 - UAT signed off by a human reviewer following the card's UAT steps — required for **UI-facing
   cards** (those with a real E2E); non-UI/CLI cards mark `UAT: N/A` and rely on the Verify
   command + unit tests + the verifier + PR review as the human gate
+- **Security & dependency review clean** — the `security-audit` agent (OWASP Top 10 + project
+  absolute rules: tenant isolation, PII fail-closed, `env:` secrets, command whitelist) returns
+  `SECURITY: CLEAR` with no open Critical/High finding; `dep-audit` (SCA) has run with no
+  unresolved high/critical CVE **when `requirements*.txt` / `frontend/package.json` changed**;
+  and a `/code-review` of the diff has no unresolved blockers. Cards with genuinely no
+  security/dependency surface mark this `N/A (reason)` (same pattern as E2E/UAT) — the verifier
+  validates the claim against the diff
 - All changes committed and merged to the integration branch
 
 ## Global status
