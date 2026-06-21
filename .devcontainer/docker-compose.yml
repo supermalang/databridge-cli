@@ -4,6 +4,15 @@ name: databridge-dev
 # Dockerfile); `db` (Postgres) and `minio` (object storage) are siblings on the default
 # network, reachable from the app as `db:5432` / `minio:9000`. A one-shot `createbucket`
 # job ensures the `databridge` bucket exists. Data persists in named volumes across rebuilds.
+#
+# MEMORY BUDGET — sized for a 4 GB WSL VM running ONE project at a time:
+#   app   2048m  (the IDE lives here: VS Code Server + Pylance + Node + Claude + Playwright)
+#   db     512m
+#   minio  384m
+#   ----------- persistent total ~2944m, leaving ~1.1g for WSL2 + Docker daemon overhead.
+# createbucket (64m) is a one-shot that exits, so it doesn't count against the steady state.
+# NOTE: this does NOT leave room for a second project's stack. Run one at a time
+# (`docker compose stop` the other), or raise the VM to 8 GB to run both live.
 
 services:
   app:
@@ -11,11 +20,10 @@ services:
       context: .
       dockerfile: Dockerfile
     command: sleep infinity
-    # Dev-only memory caps, budgeted for a 3 GB host: the four limits sum to
-    # ~2.5g, leaving ~500m for the host OS + Docker daemon. mem_limit is the
-    # hard ceiling (OOM-kills past it); mem_reservation is a soft floor.
-    mem_limit: 1536m
-    mem_reservation: 512m
+    # mem_limit is the hard ceiling (OOM-kills past it); mem_reservation is the soft floor.
+    # 2 GB because Pylance indexing alone can spike ~0.5–1 GB on top of the rest of the toolchain.
+    mem_limit: 2048m
+    mem_reservation: 1024m
     volumes:
       - ..:/workspaces/databridge-cli:cached
       - npm-global:/home/vscode/.npm-global
