@@ -49,8 +49,8 @@ A card is startable only when all of the following hold:
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
-| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 5 | 1 / 5 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 5 | 1 / 5 |
+| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 6 | 1 / 6 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 1 / 6 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
@@ -639,6 +639,50 @@ A card is startable only when all of the following hold:
 
 ---
 
+- [ ] **A11Y-6 — Full-opacity focus ring on de-emphasized Home stage cards (P2)**
+
+  Follow-up from PUX-2. In the first-run Home state the de-emphasized stage cards use
+  `.home-card-wrap.is-dimmed{opacity:.55}`, and the intended focus restore
+  `.home-card.is-dimmed:focus-visible{opacity:1}` (`frontend/src/styles.css` ~459-461) cannot
+  take effect — opacity on the parent wrap establishes a group, so the focus ring on a dimmed
+  card renders at 55% opacity (WCAG 2.4.7 Focus Visible). Keyboard users get a washed-out focus
+  indicator on exactly the cards PUX-2 added. Note the `:hover` rule already raises the *wrap*
+  opacity; focus needs the same treatment on the wrap.
+
+  **Files:** `frontend/src/styles.css` (`.home-card-wrap.is-dimmed` focus/hover rules ~459-461 —
+  remove the dead `.home-card.is-dimmed:focus-visible{opacity:1}` line and restore opacity on the
+  wrap via `:focus-within`) · `frontend/tests/e2e/pux-2.spec.ts` (extend)
+
+  **Config/schema impact:** None — CSS only.
+
+  **Acceptance criteria**
+  - When a dimmed Home stage card receives keyboard focus, the card **wrap** renders at full
+    opacity (un-dims on `:focus-within`, mirroring the existing `:hover` rule) so the teal
+    `:focus-visible` ring is shown at full strength
+  - The dim (opacity .55) returns once focus leaves the card
+  - No change to mouse/hover behavior, and no change to the returning-user (non-dimmed) cards
+  - A Playwright axe audit on the first-run Home reports no new violations
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — focus opacity/ring is asserted by
+  the Playwright E2E below, consistent with XTF-7's coverage approach).
+
+  **E2E:** `frontend/tests/e2e/pux-2.spec.ts` (extend) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — in the first-run state, Tab to a dimmed stage card and assert the computed
+  opacity of its `.home-card-wrap` is `1` (not `0.55`) while focused and that the focus outline is
+  present; blur and assert the wrap returns to the dimmed opacity. Capture `toHaveScreenshot`
+  baselines of a focused dimmed card at all three viewports (mobile 390×844, tablet 820×1180,
+  desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. Open a brand-new project (first-run Home). Using only the keyboard, Tab to one of the dimmed
+     stage cards. Confirm it brightens to full opacity and shows a clearly visible teal focus ring.
+  2. Tab away and confirm the card dims back to its secondary state.
+  3. Open a returning project (form + data) and confirm its Home cards are unaffected.
+
+  **Verify:** `cd frontend && npx playwright test pux-2.spec.ts`
+
+---
+
 ## Product UX — non-expert self-serve
 
 > Findings from the **2026-06-20 HCD / product critique** of the React frontend. `PRODUCT.md`
@@ -947,6 +991,55 @@ A card is startable only when all of the following hold:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_sample_dataset_api.py` ·
   `cd frontend && npx playwright test sample-data-path.spec.ts`
+
+---
+
+- [ ] **PUX-6 — Harden Home first-run readiness fetch (error + project-switch) (P2)**
+
+  Follow-up from PUX-2. The `/api/state` readiness effect in `frontend/src/App.jsx` (~296-310)
+  has two robustness gaps. (1) `homeReady` is not reset to `null` when `activeProjectId` changes,
+  so switching projects briefly shows the previous project's Home state (first-run vs full view)
+  until the new fetch resolves — defeating the anti-flash guarantee the code comments claim.
+  (2) The fetch does not check `response.ok`, so a non-OK response whose JSON body lacks
+  `has_questions` (a 500 `{"detail":...}`, or the 401 now that `/api/state` is auth-gated) coerces
+  to `ready=false` and shows a returning user the first-run "Connect your form" empty state on a
+  transient error.
+
+  **Files:** `frontend/src/App.jsx` (the `homeReady` `useEffect` ~296-310) ·
+  `frontend/tests/e2e/pux-2.spec.ts` (extend)
+
+  **Config/schema impact:** None — reuses the existing `/api/state` readiness flags.
+
+  **Acceptance criteria**
+  - On `activeProjectId` change, `homeReady` resets to `null` (cards held) before the new
+    `/api/state` resolves, so neither Home state from the previous project flashes during a switch
+  - The `/api/state` fetch checks `response.ok`; a non-OK response (4xx/5xx) does **not** set
+    `ready=false` — readiness stays `null` (cards held), so a returning user is never shown the
+    first-run empty state on a transient/auth error
+  - A malformed / parse-error response is likewise treated as unknown (held), not `ready=false`
+  - No regression on the happy path: a 200 with `{has_questions, has_data}` resolves first-run vs
+    returning exactly as today
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the reset-on-switch and
+  error-handling behavior are asserted by the Playwright E2E below, consistent with XTF-9's
+  readiness-gating coverage).
+
+  **E2E:** `frontend/tests/e2e/pux-2.spec.ts` (extend) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — (a) mock `/api/state` → `500` (and separately `401`) and assert Home shows
+  neither the first-run CTA nor the five-card view (cards held), not the first-run state; (b)
+  simulate switching from a ready project to a not-ready one and assert the full five-card view
+  does not flash before the new readiness resolves. No new baseline needed if the held state
+  matches the existing pre-readiness render; otherwise capture at all three viewports (mobile
+  390×844, tablet 820×1180, desktop 1440×900) with human approval.
+
+  **UAT:**
+  1. With a returning project (form + data), force `/api/state` to fail (server down / offline) and
+     reload Home. Confirm you are NOT shown the first-run "Connect your form" empty state.
+  2. Switch from a project that has data to a brand-new one. Confirm the full five-card view does
+     not briefly flash before the first-run state appears.
+  3. Switch repeatedly between two ready projects and confirm no flicker or wrong state.
+
+  **Verify:** `cd frontend && npx playwright test pux-2.spec.ts`
 
 ---
 
