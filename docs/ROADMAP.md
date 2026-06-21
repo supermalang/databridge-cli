@@ -53,7 +53,7 @@ A card is startable only when all of the following hold:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 1 / 6 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
-| [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
+| [Visual / E2E harness](#visual--e2e-harness) | 2 | 1 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 2 | 0 / 2 |
 | [Performance](#performance) | 2 | 1 / 2 |
 
@@ -2478,6 +2478,57 @@ A card is startable only when all of the following hold:
      the suite FAILS with a visual diff; revert and confirm it passes again.
 
   **Verify:** `cd frontend && npm run test:e2e`
+
+---
+
+- [ ] **VIS-2 — Reconcile drifted visual baselines + stabilize flaky A11Y-4 Validate test**
+
+  Several merged cards' candidate visual baselines drifted stale because later merges changed
+  *shared* surfaces: PUX-1 (plain-language relabel) and PUX-2 (first-run state) modified Home and
+  Questions **after** A11Y-1 / A11Y-3 / PUX-1 captured their baselines, and A11Y-2's ProjectForm
+  baseline drifted too. They were committed as "candidate, awaiting approval" and never reconciled,
+  so the visual suite is currently red on `develop` (A11Y-1 — already `[x]` — plus A11Y-2, A11Y-3,
+  PUX-1, and A11Y-4's visual). Separately, the A11Y-4 Validate "non-empty aria-label" test is flaky
+  (~4/5) because it races the async findings load — the app renders the action buttons correctly at
+  every viewport (confirmed in the trace DOM). Regenerate the drifted baselines against current
+  `develop` and stabilize the A11Y-4 wait so the a11y+pux visual suite is deterministically green.
+  **No application/source behavior change** — this is test-wait + baseline reconciliation only.
+
+  **Files:** `frontend/tests/e2e/a11y-4.spec.ts` (add a deterministic wait on the finding-row action
+  buttons before asserting; kill the race) · regenerated baselines under
+  `frontend/tests/e2e/{a11y-1,a11y-2,a11y-3,a11y-4,pux-1}.spec.ts-snapshots/` (no app source edits —
+  Home/Questions/Validate already render correctly)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - The A11Y-4 "non-empty aria-label" Validate test is deterministic: it waits for the finding-row
+    action buttons to render before asserting, and passes on `--repeat-each=5` at all three viewports
+    with **no** application source change
+  - All drifted baselines (A11Y-1, A11Y-2, A11Y-3, A11Y-4, PUX-1) are regenerated against current
+    `develop` so each `toHaveScreenshot` matches the current rendered UI
+  - The full a11y+pux visual suite (`a11y-1..5`, `pux-1`, `pux-2`) is green at all three viewports
+  - No application/source behavior change — only the A11Y-4 test-wait logic and regenerated baseline
+    PNGs (a human reviews/approves the regenerated baselines as the frozen contract)
+  - A11Y-1 (already `[x]`) is no longer red: its Home-stage-cards baseline reflects the current
+    post-PUX-1/PUX-2 Home
+
+  **Unit tests:** N/A (test-harness + baseline reconciliation; no Python/unit surface).
+
+  **E2E:** the deliverable *is* the E2E suite — `frontend/tests/e2e/a11y-1..5.spec.ts` + `pux-1.spec.ts`
+  (+ `pux-2.spec.ts`) green at all three viewports (mobile 390×844, tablet 820×1180, desktop
+  1440×900) with A11Y-4 stabilized; regenerated `toHaveScreenshot` baselines for the drifted specs,
+  human-approved.
+
+  **UAT:**
+  1. Run `cd frontend && npx playwright test a11y-1 a11y-2 a11y-3 a11y-4 a11y-5 pux-1 pux-2` and
+     confirm the full suite is green (no visual diffs, no flaky failures).
+  2. Re-run the A11Y-4 Validate spec with `--repeat-each=5` at mobile and confirm it passes every
+     time (flakiness gone).
+  3. Review the regenerated baseline PNGs for A11Y-1/-2/-3/-4 and PUX-1 and confirm each shows the
+     correct current UI (no unexpected visual regression).
+
+  **Verify:** `cd frontend && npx playwright test a11y-1 a11y-2 a11y-3 a11y-4 a11y-5 pux-1 pux-2`
 
 ---
 
