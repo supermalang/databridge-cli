@@ -49,7 +49,7 @@ A card is startable only when all of the following hold:
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
-| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 6 | 1 / 6 |
+| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 6 | 2 / 6 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 1 / 6 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
@@ -590,7 +590,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **A11Y-5 — Accessible form-validation messaging (P2)**
+- [x] **A11Y-5 — Accessible form-validation messaging (P2)**
 
   Modal field errors in Composition (and other forms) are rendered visually but are not linked to
   their inputs, so screen readers don't announce them when a field is invalid (WCAG 3.3.1 Error
