@@ -50,7 +50,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 5 | 1 / 5 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 5 | 0 / 5 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 5 | 1 / 5 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 1 | 1 / 1 |
@@ -719,7 +719,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PUX-2 — First-run / empty-state onboarding with a single recommended next action (P1)**
+- [x] **PUX-2 — First-run / empty-state onboarding with a single recommended next action (P1)**
 
   On first load the Home screen presents five equal-weight stage cards with no "start here"
   guidance (`frontend/src/pages/Home.jsx` `home-cards` ~75–100) — a confused first-timer has no
@@ -752,7 +752,7 @@ A card is startable only when all of the following hold:
   **Unit tests:** N/A (frontend-only; Vitest is not installed — the first-run branch and CTA are
   asserted by the Playwright E2E below, consistent with XTF-9's readiness-gating coverage).
 
-  **E2E:** `frontend/tests/e2e/onboarding-firstrun.spec.ts` (new) + visual (impeccable
+  **E2E:** `frontend/tests/e2e/pux-2.spec.ts` (new) + visual (impeccable
   audit/critique + `toHaveScreenshot`) — mock `/api/state` → `{has_questions:false,
   has_data:false}` and assert Home shows the single "Connect your form →" primary CTA, that the
   other stage cards carry the de-emphasized class, and that clicking the CTA navigates to Extract →
@@ -769,7 +769,7 @@ A card is startable only when all of the following hold:
   3. Connect a form and download some data, then return to Home. Confirm the dimming is gone and
      all five stages are presented normally.
 
-  **Verify:** `cd frontend && npx playwright test onboarding-firstrun.spec.ts`
+  **Verify:** `cd frontend && npx playwright test pux-2.spec.ts`
 
 ---
 
