@@ -39,7 +39,7 @@ const STAGE_CARDS = [
 // tab). Home triggers pipeline runs through the hoisted `run`/`running`/
 // `activeCmd` props and toggles the shared terminal via the same event the
 // topbar button uses.
-export default function Home({ navigate, ready = true }) {
+export default function Home({ navigate, ready = null }) {
   const toggleTerminal = () => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'));
 
   // First-run / empty state (PUX-2): until the project has a connected form and
@@ -48,8 +48,12 @@ export default function Home({ navigate, ready = true }) {
   // prerequisites aren't met yet. The recommended path is Extract → Connection,
   // so that stage card stays at full emphasis; the rest are dimmed (but remain
   // real, keyboard-reachable buttons — guide, don't gate). Returning users
-  // (ready) get the unchanged five equal-weight cards.
-  const firstRun = !ready;
+  // (ready) get the unchanged five equal-weight cards. While readiness is still
+  // unknown (`ready === null`) we hold the cards entirely so neither state
+  // flashes before /api/state answers — this also removes the first-paint race
+  // where dimming would briefly be absent.
+  const known = ready !== null;
+  const firstRun = ready === false;
   const RECOMMENDED_STAGE = 'extract';
 
   const go = (stageId, subId) => (e) => { e?.stopPropagation?.(); navigate(stageId, subId); };
@@ -82,6 +86,7 @@ export default function Home({ navigate, ready = true }) {
         </div>
       </div>
 
+      {known && (
       <div className="home-cards">
         {firstRun && (
           <div className="home-firstrun" data-testid="home-firstrun">
@@ -125,6 +130,7 @@ export default function Home({ navigate, ready = true }) {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

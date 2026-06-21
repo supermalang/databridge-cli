@@ -294,7 +294,9 @@ export default function App() {
   // downloaded data. Reuse the existing /api/state readiness flags
   // (has_questions / has_data) consumed elsewhere (Templates XTF-9). Re-fetch on
   // a data change so the first-run state clears once prerequisites are met.
-  const [homeReady, setHomeReady] = useState(true);
+  // null = readiness not yet resolved (avoids flashing either Home state before
+  // /api/state answers; Home holds its card render until this is known).
+  const [homeReady, setHomeReady] = useState(null);
   useEffect(() => {
     let alive = true;
     const load = async () => {
