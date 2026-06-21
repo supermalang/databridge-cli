@@ -39,8 +39,18 @@ const STAGE_CARDS = [
 // tab). Home triggers pipeline runs through the hoisted `run`/`running`/
 // `activeCmd` props and toggles the shared terminal via the same event the
 // topbar button uses.
-export default function Home({ navigate }) {
+export default function Home({ navigate, ready = true }) {
   const toggleTerminal = () => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'));
+
+  // First-run / empty state (PUX-2): until the project has a connected form and
+  // downloaded data (`ready` derived from /api/state has_questions && has_data),
+  // surface a SINGLE recommended next action and de-emphasize the stages whose
+  // prerequisites aren't met yet. The recommended path is Extract → Connection,
+  // so that stage card stays at full emphasis; the rest are dimmed (but remain
+  // real, keyboard-reachable buttons — guide, don't gate). Returning users
+  // (ready) get the unchanged five equal-weight cards.
+  const firstRun = !ready;
+  const RECOMMENDED_STAGE = 'extract';
 
   const go = (stageId, subId) => (e) => { e?.stopPropagation?.(); navigate(stageId, subId); };
 
@@ -73,11 +83,27 @@ export default function Home({ navigate }) {
       </div>
 
       <div className="home-cards">
-        {STAGE_CARDS.map((s, i) => (
-          <div className="home-card-wrap" key={s.id}>
+        {firstRun && (
+          <div className="home-firstrun" data-testid="home-firstrun">
+            <span className="home-firstrun__lead">New here? Start by connecting your form — the rest unlocks once your data is in.</span>
             <button
               type="button"
-              className="home-card"
+              className="home-cta--primary"
+              data-cta="primary"
+              onClick={() => navigate(RECOMMENDED_STAGE, 'connection')}
+            >
+              Connect your form
+              <span aria-hidden="true"> →</span>
+            </button>
+          </div>
+        )}
+        {STAGE_CARDS.map((s, i) => {
+          const dimmed = firstRun && s.id !== RECOMMENDED_STAGE;
+          return (
+          <div className={`home-card-wrap${dimmed ? ' is-dimmed' : ''}`} key={s.id}>
+            <button
+              type="button"
+              className={`home-card${dimmed ? ' is-dimmed' : ''}`}
               data-tone={s.tone}
               aria-label={`${s.label} — ${s.desc}`}
               onClick={() => navigate(s.id, s.subs[0].id)}
@@ -96,7 +122,8 @@ export default function Home({ navigate }) {
             </div>
             {i < STAGE_CARDS.length - 1 && <span className="home-card__arrow" aria-hidden="true">→</span>}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

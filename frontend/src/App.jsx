@@ -289,6 +289,25 @@ export default function App() {
     })();
   }, []);
 
+  // Onboarding readiness (PUX-2): Home shows a first-run / empty state with a
+  // single recommended next action until the project has a connected form AND
+  // downloaded data. Reuse the existing /api/state readiness flags
+  // (has_questions / has_data) consumed elsewhere (Templates XTF-9). Re-fetch on
+  // a data change so the first-run state clears once prerequisites are met.
+  const [homeReady, setHomeReady] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const s = await (await fetch('/api/state')).json();
+        if (alive) setHomeReady(!!(s.has_questions && s.has_data));
+      } catch { /* leave as-is */ }
+    };
+    load();
+    window.addEventListener('databridge:data-changed', load);
+    return () => { alive = false; window.removeEventListener('databridge:data-changed', load); };
+  }, [activeProjectId]);
+
   const navigate = (nextStage, nextSub) => {
     const stage = STAGES.find(s => s.id === nextStage) || STAGES[0];
     setStageId(stage.id);
@@ -305,7 +324,7 @@ export default function App() {
 
   // Keep-alive panes: a tab mounts on first visit (lazy), then stays mounted but
   // hidden when you leave — so its fetched data, edits, and scroll are retained.
-  const panes = [{ key: 'home', render: () => <Home navigate={navigate} run={run} running={running} activeCmd={activeCmd} /> }];
+  const panes = [{ key: 'home', render: () => <Home navigate={navigate} ready={homeReady} run={run} running={running} activeCmd={activeCmd} /> }];
   for (const s of STAGES) {
     if (!s.subs) continue;
     for (const sub of s.subs) panes.push({ key: `${s.id}/${sub.id}`, render: sub.render });
