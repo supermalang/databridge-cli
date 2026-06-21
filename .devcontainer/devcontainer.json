@@ -22,6 +22,12 @@
     "PYTHONUNBUFFERED": "1",
     "PLAYWRIGHT_BROWSERS_PATH": "/home/vscode/.cache/ms-playwright"
   },
+  // Ensure npm global binaries (claude, tsx, vibe-annotations-server, tsc) are on PATH.
+  // They install to /home/vscode/.npm-global/bin via the --prefix below; without this,
+  // postStartCommand's `vibe-annotations-server` and the `claude plugin` calls silently fail.
+  "remoteEnv": {
+    "PATH": "/home/vscode/.npm-global/bin:${containerEnv:PATH}"
+  },
   "forwardPorts": [8000, 51730, 9001, 5432, 9000, 3846, 9323],
   "portsAttributes": {
     "8000": {
@@ -53,7 +59,9 @@
       "onAutoForward": "notify"
     }
   },
-  "postCreateCommand": "pip install -r requirements.txt && npm install -g --prefix=/home/vscode/.npm-global @anthropic-ai/claude-code @playwright/mcp vibe-annotations-server typescript tsx && npx --yes playwright install chromium --with-deps && claude plugin marketplace add https://github.com/obra/superpowers.git && claude plugin marketplace add anthropics/claude-plugins-official && claude plugin install superpowers@superpowers-dev && mkdir -p ~/.claude/skills && ([ -d ~/.claude/skills/superpowers ] || git clone --depth=1 https://github.com/obra/superpowers.git ~/.claude/skills/superpowers) && { [ -d \"$PWD/.claude/skills/impeccable\" ] && ln -sfn \"$PWD/.claude/skills/impeccable\" ~/.claude/skills/impeccable || true; }",
+  // claude-code is installed by the feature above, so it's removed from the npm -g list
+  // to avoid two copies on PATH shadowing each other.
+  "postCreateCommand": "pip install -r requirements.txt && npm install -g --prefix=/home/vscode/.npm-global @playwright/mcp vibe-annotations-server typescript tsx && npx --yes playwright install chromium --with-deps && claude plugin marketplace add https://github.com/obra/superpowers.git && claude plugin marketplace add anthropics/claude-plugins-official && claude plugin install superpowers@superpowers-dev && mkdir -p ~/.claude/skills && ([ -d ~/.claude/skills/superpowers ] || git clone --depth=1 https://github.com/obra/superpowers.git ~/.claude/skills/superpowers) && { [ -d \"$PWD/.claude/skills/impeccable\" ] && ln -sfn \"$PWD/.claude/skills/impeccable\" ~/.claude/skills/impeccable || true; }",
   "postStartCommand": "vibe-annotations-server start >/dev/null 2>&1 & printf '\\n\\xf0\\x9f\\x9a\\x80 Dev container ready\\n   claude                    \\xe2\\x86\\x92 start Claude Code\\n   pytest                    \\xe2\\x86\\x92 run tests\\n   (vibe-annotations on :3846)\\n\\n'",
   "customizations": {
     "vscode": {
@@ -90,7 +98,15 @@
           }
         },
         "python.defaultInterpreterPath": "/usr/local/bin/python",
-        "terminal.integrated.defaultProfile.linux": "zsh"
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        // --- Pylance memory diet (keeps the extension host under the 2 GB app cap) ---
+        // diagnosticMode openFilesOnly + indexing off are the big memory savers; the
+        // trade-off is weaker workspace-wide symbol search / auto-import. Re-enable
+        // indexing if you have headroom and want full project-wide IntelliSense.
+        "python.analysis.diagnosticMode": "openFilesOnly",
+        "python.analysis.indexing": false,
+        "python.analysis.userFileIndexingLimit": 2000,
+        "python.analysis.autoImportCompletions": false
       }
     }
   }

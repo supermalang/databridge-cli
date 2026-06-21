@@ -1840,7 +1840,8 @@ async def stop_command():
     raise HTTPException(status_code=400, detail="Multiple runs active; specify a run_id (/api/stop/{run_id}).")
 
 @app.get("/api/state")
-async def get_state():
+async def get_state(request: Request):
+    _require_view(request)
     has_questions = False
     if CONFIG_PATH.exists():
         try:

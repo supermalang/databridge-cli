@@ -10,14 +10,14 @@ const STAGE_CARDS = [
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 1.5 14 5v6l-6 3.5L2 11V5z"/><path d="M2 5l6 3.5L14 5M8 8.5V15"/></svg>,
   },
   {
-    id: 'transform', step: '02', label: 'Transform', tone: 'green',
-    desc: 'Clean and label questions, hide non-data fields, then profile and validate the dataset.',
+    id: 'transform', step: '02', label: 'Clean & check', tone: 'green',
+    desc: 'Tidy and rename your questions, hide fields you don’t need, then check the data for problems before you use it.',
     subs: [{ id: 'questions', label: 'Questions' }, { id: 'profile', label: 'Profile' }, { id: 'validate', label: 'Validate' }],
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 5h10M3 5l2-2M3 5l2 2"/><path d="M13 11H3M13 11l-2-2M13 11l-2 2"/></svg>,
   },
   {
-    id: 'model', step: '03', label: 'Model', tone: 'violet',
-    desc: 'Build derived views — virtual tables of joins and aggregates, computed once and reused downstream.',
+    id: 'model', step: '03', label: 'Combine data', tone: 'violet',
+    desc: 'Link related answers together and group them into combined tables (for example, totals per region) that your charts and reports can reuse.',
     subs: [{ id: 'views', label: 'Views' }],
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.8 14.2 5 8 8.2 1.8 5z"/><path d="M2 8l6 3.2L14 8"/><path d="M2 11l6 3.2L14 11"/></svg>,
   },
@@ -39,8 +39,22 @@ const STAGE_CARDS = [
 // tab). Home triggers pipeline runs through the hoisted `run`/`running`/
 // `activeCmd` props and toggles the shared terminal via the same event the
 // topbar button uses.
-export default function Home({ navigate }) {
+export default function Home({ navigate, ready = null }) {
   const toggleTerminal = () => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'));
+
+  // First-run / empty state (PUX-2): until the project has a connected form and
+  // downloaded data (`ready` derived from /api/state has_questions && has_data),
+  // surface a SINGLE recommended next action and de-emphasize the stages whose
+  // prerequisites aren't met yet. The recommended path is Extract → Connection,
+  // so that stage card stays at full emphasis; the rest are dimmed (but remain
+  // real, keyboard-reachable buttons — guide, don't gate). Returning users
+  // (ready) get the unchanged five equal-weight cards. While readiness is still
+  // unknown (`ready === null`) we hold the cards entirely so neither state
+  // flashes before /api/state answers — this also removes the first-paint race
+  // where dimming would briefly be absent.
+  const known = ready !== null;
+  const firstRun = ready === false;
+  const RECOMMENDED_STAGE = 'extract';
 
   const go = (stageId, subId) => (e) => { e?.stopPropagation?.(); navigate(stageId, subId); };
 
@@ -72,12 +86,29 @@ export default function Home({ navigate }) {
         </div>
       </div>
 
+      {known && (
       <div className="home-cards">
-        {STAGE_CARDS.map((s, i) => (
-          <div className="home-card-wrap" key={s.id}>
+        {firstRun && (
+          <div className="home-firstrun" data-testid="home-firstrun">
+            <span className="home-firstrun__lead">New here? Start by connecting your form — the rest unlocks once your data is in.</span>
             <button
               type="button"
-              className="home-card"
+              className="home-cta--primary"
+              data-cta="primary"
+              onClick={() => navigate(RECOMMENDED_STAGE, 'connection')}
+            >
+              Connect your form
+              <span aria-hidden="true"> →</span>
+            </button>
+          </div>
+        )}
+        {STAGE_CARDS.map((s, i) => {
+          const dimmed = firstRun && s.id !== RECOMMENDED_STAGE;
+          return (
+          <div className={`home-card-wrap${dimmed ? ' is-dimmed' : ''}`} key={s.id}>
+            <button
+              type="button"
+              className={`home-card${dimmed ? ' is-dimmed' : ''}`}
               data-tone={s.tone}
               aria-label={`${s.label} — ${s.desc}`}
               onClick={() => navigate(s.id, s.subs[0].id)}
@@ -96,8 +127,10 @@ export default function Home({ navigate }) {
             </div>
             {i < STAGE_CARDS.length - 1 && <span className="home-card__arrow" aria-hidden="true">→</span>}
           </div>
-        ))}
+          );
+        })}
       </div>
+      )}
     </div>
   );
 }
