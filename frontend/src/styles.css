@@ -457,7 +457,10 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 /* De-emphasized stage cards: visibly secondary but still real, reachable buttons. */
 .home-card-wrap.is-dimmed{opacity:.55;box-shadow:none}
 .home-card-wrap.is-dimmed:hover{opacity:.85;border-color:var(--border-strong,var(--ink-3));box-shadow:var(--shadow-sm);transform:none}
-.home-card.is-dimmed:focus-visible{opacity:1}
+/* Keyboard focus un-dims the WRAP to full opacity so the teal :focus-visible ring on
+   the inner card renders at full strength (WCAG 2.4.7). Opacity on the wrap is an
+   opacity group, so the restore must live here, not on the inner button. */
+.home-card-wrap.is-dimmed:focus-within{opacity:1}
 
 /* table */
 .q-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
