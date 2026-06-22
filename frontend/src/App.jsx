@@ -299,11 +299,20 @@ export default function App() {
   const [homeReady, setHomeReady] = useState(null);
   useEffect(() => {
     let alive = true;
+    // Reset to unknown on project switch so the previous project's Home state
+    // never flashes during a switch — cards are held until the new /api/state
+    // resolves (PUX-6).
+    setHomeReady(null);
     const load = async () => {
       try {
-        const s = await (await fetch('/api/state')).json();
+        const res = await fetch('/api/state');
+        // A non-OK response (4xx/5xx) must NOT coerce to ready=false — leave
+        // readiness unknown (null → cards held) so a returning user is never
+        // shown the first-run state on a transient/auth error (PUX-6).
+        if (!res.ok) return;
+        const s = await res.json();
         if (alive) setHomeReady(!!(s.has_questions && s.has_data));
-      } catch { /* leave as-is */ }
+      } catch { /* parse error / non-JSON → leave as-is (unknown, held) */ }
     };
     load();
     window.addEventListener('databridge:data-changed', load);
