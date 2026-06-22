@@ -1,4 +1,5 @@
 import { ExpressBanner } from './Templates.jsx';
+import StageHelp from '../components/StageHelp.jsx';
 
 // The five ordered workflow stages. Each card deep-links into its stage (and a
 // specific sub-page). `navigate(stageId, subId)` is provided by App.
@@ -77,6 +78,18 @@ export default function Home({ navigate, ready = null }) {
           <div className="home-head__sub">
             Five stages from raw submissions to a finished report. Jump into any stage below, or run the whole pipeline end to end.
           </div>
+          <StageHelp
+            title="Workflow"
+            hint="New here? Work left to right — each stage hands off to the next."
+            body={
+              <>
+                <p>This is your end-to-end pipeline. Start at <b>Extract</b> to connect a form, then move through the stages in order: clean and check your data, combine it, build charts and indicators, then deliver a Word report. You can run the whole thing at once, or open one stage at a time.</p>
+                <p>Each stage below has its own <b>?&nbsp;Help</b> button with the same kind of guidance, so you are never far from an explanation.</p>
+              </>
+            }
+            docsHref="docs/reference/internals.md"
+            docsLabel="How the pipeline fits together"
+          />
         </div>
         <div className="home-head__actions">
           <button className="btn" onClick={toggleTerminal}>

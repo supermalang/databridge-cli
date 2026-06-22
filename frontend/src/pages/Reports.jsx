@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
+import StageHelp from '../components/StageHelp.jsx';
 import FileTable from '../components/FileTable.jsx';
 import Modal from '../components/Modal.jsx';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
@@ -112,6 +113,18 @@ export default function Reports() {
         title="Browse"
         accent="generated reports."
         sub="Word reports rendered by build-report appear here. Download individual files or grab everything as a zip."
+      />
+      <StageHelp
+        title="Reports"
+        hint="Finished Word reports land here — download one or compare periods."
+        body={
+          <>
+            <p>Every time you build a report, the finished <b>.docx</b> file appears in this list. Download a single report, grab them all as a zip, or build a comparison across two periods to show change over time.</p>
+            <p>If the list is empty, run <b>build-report</b> first — you need downloaded data and a template in place before a report can be generated.</p>
+          </>
+        }
+        docsHref="docs/reference/templates.md"
+        docsLabel="Reports & template placeholders reference"
       />
       <RailLayout rail={
         <>

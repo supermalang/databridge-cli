@@ -3,6 +3,7 @@ import yaml from 'js-yaml';
 import { useToast } from '../components/Toast.jsx';
 import { loadConfig, loadConfigText, saveConfigPatch, saveConfigText } from '../lib/config.js';
 import PageHeader from './PageHeader.jsx';
+import StageHelp from '../components/StageHelp.jsx';
 import { useRun } from '../lib/run.js';
 import { usePerms } from '../lib/perms.js';
 import { useAiStatus } from '../lib/aiStatus.js';
@@ -187,6 +188,34 @@ export default function Sources({ section = 'setup' } = {}) {
           </>
         }
       />
+
+      {section === 'output' ? (
+        <StageHelp
+          title="Output"
+          hint="Choose where your data and reports are written before you run."
+          body={
+            <>
+              <p>Pick one or more export formats (CSV, Excel, JSON, or a database) and where the files should land. Set the active reporting period here too, so charts and reports cover the right dates.</p>
+              <p>You don't have to fill in everything — just the destinations you actually use. The reference covers each format and the matching settings.</p>
+            </>
+          }
+          docsHref="docs/reference/config.md"
+          docsLabel="Output & export settings reference"
+        />
+      ) : (
+        <StageHelp
+          title="Sources"
+          hint="Connect your form first — paste the server URL, token, and form ID."
+          body={
+            <>
+              <p>This stage points the tool at your survey. Choose your platform (Kobo, Ona, or INFORM), paste the server URL and your API token, then enter the form's ID. Once connected, the next stages can pull your questions and data.</p>
+              <p>The AI configuration sub-tab is optional — it only affects the narrative text the tool can draft for you. You can skip it and add it later.</p>
+            </>
+          }
+          docsHref="docs/reference/config.md"
+          docsLabel="Connection & config.yml reference"
+        />
+      )}
 
       {view === 'yaml' ? (
         <div className="src-card">

@@ -9,6 +9,7 @@ import { loadConfig, saveConfigPatch } from '../lib/config.js';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 import { useFieldErrors } from '../lib/fieldError.js';
 import PageHeader from './PageHeader.jsx';
+import StageHelp from '../components/StageHelp.jsx';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 import AiThinking from '../components/AiThinking.jsx';
 
@@ -473,6 +474,33 @@ export default function Composition({ sections } = {}) {
         onSave={saveAll}
         dirty={dirty}
       />
+      {has('views') && !has('charts') ? (
+        <StageHelp
+          title="Combine data"
+          hint="Group related answers into reusable tables — like totals per region."
+          body={
+            <>
+              <p>A view is a saved, combined table built from your data — for example, the number of responses per region, or an average score per site. Once you define a view, your charts, indicators, and summaries can all reuse it.</p>
+              <p>This is optional. If your charts work straight off your questions, you can skip views entirely.</p>
+            </>
+          }
+          docsHref="docs/reference/charts.md"
+          docsLabel="Views & combined tables reference"
+        />
+      ) : (
+        <StageHelp
+          title="Charts & indicators"
+          hint="Add charts, indicators, and summaries — or let AI propose a starter set."
+          body={
+            <>
+              <p>This is where you decide what appears in the report. Add a <b>chart</b> to visualise answers, an <b>indicator</b> to track a single number, or a <b>summary</b> for AI-written narrative. Each one becomes a placeholder your Word template fills in.</p>
+              <p>Not sure where to start? Use the AI suggestion buttons to propose a starter set from your questions, then keep what fits.</p>
+            </>
+          }
+          docsHref="docs/reference/charts.md"
+          docsLabel="Chart types & options reference"
+        />
+      )}
       <RailLayout rail={
         <CompositionRail
           secs={secs}
