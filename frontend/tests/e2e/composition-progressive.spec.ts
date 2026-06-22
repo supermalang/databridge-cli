@@ -297,10 +297,10 @@ test.describe('PUX-3 — Composition progressive disclosure', () => {
     // `.page` nodes exist; target the VISIBLE Composition pane only. The Composition
     // surface is taller than the mobile viewport, so the shot is stitched; the
     // position:fixed terminal bar (.bottom-term) would otherwise ghost across the
-    // stitched frames, so mask it for a stable baseline.
-    await expect(page.locator('.page:visible')).toHaveScreenshot('pux3-composition-collapsed.png', {
-      mask: [page.locator('.bottom-term')],
-    });
+    // stitched frames, so hide it (out of scope for this surface) for a clean, stable
+    // baseline — cleaner than a mask, which paints an opaque band.
+    await page.addStyleTag({ content: '.bottom-term { display: none !important; }' });
+    await expect(page.locator('.page:visible')).toHaveScreenshot('pux3-composition-collapsed.png');
   });
 
   test('visual: expanded (Advanced) state', async ({ page }) => {
@@ -313,9 +313,9 @@ test.describe('PUX-3 — Composition progressive disclosure', () => {
     // `.page` nodes exist; target the VISIBLE Composition pane only. The Composition
     // surface is taller than the mobile viewport, so the shot is stitched; the
     // position:fixed terminal bar (.bottom-term) would otherwise ghost across the
-    // stitched frames, so mask it for a stable baseline.
-    await expect(page.locator('.page:visible')).toHaveScreenshot('pux3-composition-expanded.png', {
-      mask: [page.locator('.bottom-term')],
-    });
+    // stitched frames, so hide it (out of scope for this surface) for a clean, stable
+    // baseline — cleaner than a mask, which paints an opaque band.
+    await page.addStyleTag({ content: '.bottom-term { display: none !important; }' });
+    await expect(page.locator('.page:visible')).toHaveScreenshot('pux3-composition-expanded.png');
   });
 });
