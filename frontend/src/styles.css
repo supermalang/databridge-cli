@@ -529,6 +529,26 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .comp-card__head-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}
 .comp-card__body{padding:6px 0}
 
+/* PUX-3 — recommended starter path: clear, low-effort scaffolding at the top of
+   the Composition surface. Flat by default; the teal primary keeps the One Voice
+   Rule (Ask is the recommended action). */
+.starter-path{display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px 24px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r-lg);padding:16px 20px;box-shadow:var(--shadow-sm)}
+.starter-path__intro{flex:1;min-width:220px}
+.starter-path__title{font-size:14px;font-weight:700;letter-spacing:-.01em;color:var(--ink);line-height:1.25}
+.starter-path__sub{font-size:12.5px;color:var(--ink-3);margin-top:4px;line-height:1.5;max-width:54ch}
+.starter-path__actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+/* PUX-3 — Advanced progressive disclosure for tables + summaries. */
+.comp-advanced{display:flex;flex-direction:column;gap:16px}
+.comp-advanced__toggle{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;padding:8px 12px;background:transparent;border:1px solid var(--border-2);border-radius:8px;font-family:var(--font-sans);font-size:13px;font-weight:600;color:var(--ink-2);cursor:pointer;transition:background .12s,border-color .12s,color .12s}
+.comp-advanced__toggle:hover{background:var(--bg-2);color:var(--ink)}
+.comp-advanced__toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.comp-advanced__chevron{color:var(--ink-3);transition:transform .15s ease}
+.comp-advanced__toggle[aria-expanded="true"] .comp-advanced__chevron{transform:rotate(90deg)}
+.comp-advanced__hint{font-weight:400;font-size:12px;color:var(--ink-3)}
+.comp-advanced__region{display:flex;flex-direction:column;gap:16px}
+.comp-advanced__region[hidden]{display:none}
+
 /* Row inside a comp card */
 .comp-row{display:grid;grid-template-columns:32px 1fr auto;gap:14px;align-items:start;padding:11px 20px;border-bottom:1px solid var(--border)}
 .comp-row:last-child{border-bottom:0}
