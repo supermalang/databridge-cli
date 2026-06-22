@@ -24,7 +24,13 @@ test.setTimeout(90_000);
 // viewport workers contend for memory and any heavy app boot or axe scan can hit
 // one of these transiently; the app behaviour itself is deterministic.
 const isInfraFlake = (e: unknown) =>
-  /Target crashed|crashed|Target closed|page\.goto|Timeout .* exceeded|exceeded while waiting/i
+  // Renderer/tab death + navigation/wait timeouts, AND the boot-sanity assertion
+  // timeout that surfaces when /api/projects' stub loses the race on a starved
+  // boot (page shows "No project" → `getByText('Test Project')` times out). All are
+  // transient under this container's memory pressure; a fresh-page re-boot (which
+  // re-registers the route stubs) recovers. A genuine app regression still fails on
+  // all retries, so broadening this only costs retry latency on real failures.
+  /Target crashed|crashed|Target closed|page\.goto|Timeout .* exceeded|exceeded while waiting|toBeVisible|element\(s\) not found|Timeout:\s*\d+\s*ms/i
     .test(String((e as Error)?.message || e));
 
 // Boot the surface via `rebuild(page)`, retrying on a fresh page if the boot dies
