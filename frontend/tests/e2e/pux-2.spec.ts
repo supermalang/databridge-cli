@@ -1,4 +1,5 @@
 import { test, expect, Page, Locator } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 /**
  * PUX-2 — First-run / empty-state onboarding with a single recommended next action.
@@ -267,6 +268,39 @@ test.describe('PUX-2 — first-run / empty state (no form, no data)', () => {
       Number(opacityAfter),
       'once focus leaves, the de-emphasized card wrap returns to its dimmed ~0.55 opacity',
     ).toBeCloseTo(0.55, 2);
+  });
+
+  // A11Y-6 AC4 — a Playwright axe audit on the first-run Home reports no NEW
+  // violations. The fix is CSS-only (un-dim the WRAP on :focus-within, drop the dead
+  // .home-card.is-dimmed:focus-visible rule) and must introduce no accessibility
+  // violations on exactly the surface PUX-2 added. We focus a dimmed card first so the
+  // audit runs over the focused (un-dimmed) state the fix targets — then scope the scan
+  // to the Home surface `.page` (NOT the global terminal bar) and assert zero
+  // violations for the focus/interactive rules the rest of Home is audited against
+  // (button-name / aria-command-name / nested-interactive — the same set as
+  // a11y-1.spec.ts ~line 305 and a11y-4.spec.ts ~line 67; color-contrast is NOT
+  // included here because the dimmed secondary text fails it independently of this
+  // CSS-only focus-ring change, so it is not a "new" violation under AC4's scope).
+  test('first-run Home reports no axe violations (focus/interactive rules) with a dimmed card focused', async ({ page }) => {
+    // Hold until /api/state resolves (cards rendered) so the scan is deterministic.
+    const dimmedWrap = page.locator('.home-card-wrap.is-dimmed').first();
+    await expect(dimmedWrap, 'first-run state must render at least one de-emphasized stage card').toBeVisible();
+
+    // Exercise the focus state the AC is about: keyboard-focus a dimmed card so the
+    // wrap un-dims and the teal :focus-visible ring is present during the audit.
+    const innerCard = dimmedWrap.locator('.home-card').first();
+    const reached = await tabUntilFocused(page, innerCard);
+    expect(reached, 'the dimmed stage card must be reachable in keyboard tab order').toBe(true);
+
+    const results = await new AxeBuilder({ page })
+      .include('.page')
+      .withRules(['button-name', 'aria-command-name', 'nested-interactive'])
+      .analyze();
+
+    expect(
+      results.violations,
+      `first-run Home must report no axe violations on the focus/interactive rules\n${JSON.stringify(results.violations, null, 2)}`,
+    ).toEqual([]);
   });
 
   // Visual baseline of a focused dimmed card at all three viewports — gate on the AC
