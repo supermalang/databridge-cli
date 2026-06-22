@@ -291,13 +291,31 @@ test.describe('PUX-3 — Composition progressive disclosure', () => {
     // Guard against a vacuous baseline — the starter path must actually render.
     await expect(starterPath(page)).toBeVisible();
     await expect(advancedToggle(page)).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.locator('.page')).toHaveScreenshot('pux3-composition-collapsed.png');
+    // Deterministic scroll anchor so the full-page stitch is stable across runs.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    // App.jsx keeps inactive panes mounted-but-hidden (display:none), so multiple
+    // `.page` nodes exist; target the VISIBLE Composition pane only. The Composition
+    // surface is taller than the mobile viewport, so the shot is stitched; the
+    // position:fixed terminal bar (.bottom-term) would otherwise ghost across the
+    // stitched frames, so mask it for a stable baseline.
+    await expect(page.locator('.page:visible')).toHaveScreenshot('pux3-composition-collapsed.png', {
+      mask: [page.locator('.bottom-term')],
+    });
   });
 
   test('visual: expanded (Advanced) state', async ({ page }) => {
     await advancedToggle(page).click();
     await expect(advancedRegion(page)).toBeVisible();
     await expect(advancedToggle(page)).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.locator('.page')).toHaveScreenshot('pux3-composition-expanded.png');
+    // Deterministic scroll anchor so the full-page stitch is stable across runs.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    // App.jsx keeps inactive panes mounted-but-hidden (display:none), so multiple
+    // `.page` nodes exist; target the VISIBLE Composition pane only. The Composition
+    // surface is taller than the mobile viewport, so the shot is stitched; the
+    // position:fixed terminal bar (.bottom-term) would otherwise ghost across the
+    // stitched frames, so mask it for a stable baseline.
+    await expect(page.locator('.page:visible')).toHaveScreenshot('pux3-composition-expanded.png', {
+      mask: [page.locator('.bottom-term')],
+    });
   });
 });
