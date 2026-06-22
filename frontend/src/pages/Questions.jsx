@@ -7,6 +7,7 @@ import { isHidden, buildGroupTree } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
 import Modal from '../components/Modal.jsx';
 import PageHeader from './PageHeader.jsx';
+import StageHelp from '../components/StageHelp.jsx';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { useRun } from '../lib/run.js';
 import { RailLayout, RailToolbar, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
@@ -501,6 +502,19 @@ export default function Questions() {
   return (
     <div className="page">
       <Header total={questions.length} groups={totalGroups} />
+
+      <StageHelp
+        title="Questions"
+        hint="Edit the report column name to change how a question appears everywhere."
+        body={
+          <>
+            <p>Every row here is one survey question. The most useful thing you can do is rename the <b>report column</b> so it reads cleanly in your charts and Word report — no YAML needed.</p>
+            <p>You can also hide fields you don't need, flag personal data (PII), and set each question's category so the right chart types are offered later. Use <b>Fetch questions</b> to pull the latest form schema; your edits are kept.</p>
+          </>
+        }
+        docsHref="docs/reference/config.md"
+        docsLabel="Questions & categories reference"
+      />
 
       <RailLayout toolbar={toolbar} rail={
         <>

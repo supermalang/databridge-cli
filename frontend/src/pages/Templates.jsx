@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PageHeader from './PageHeader.jsx';
+import StageHelp from '../components/StageHelp.jsx';
 import FileTable from '../components/FileTable.jsx';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -362,6 +363,19 @@ export default function Templates() {
         title="Word"
         accent="templates."
         sub="Manage the .docx templates used by build-report. Each placeholder ({{ chart_x }}, {{ ind_y }}) gets filled at render time."
+      />
+
+      <StageHelp
+        title="Templates"
+        hint="A template is your Word layout with placeholders the report fills in."
+        body={
+          <>
+            <p>A template is a normal Word <b>.docx</b> file with placeholders like <code>{'{{ chart_1 }}'}</code> or <code>{'{{ ind_coverage }}'}</code>. When you build a report, each placeholder is swapped for the real chart, number, or text.</p>
+            <p>The safest path is to let the tool <b>auto-generate</b> a template from your charts — chart placeholders must be unbroken, so typing them by hand often breaks. Upload your own only if you know the layout is sound.</p>
+          </>
+        }
+        docsHref="docs/reference/templates.md"
+        docsLabel="Template placeholders reference"
       />
 
       <ExpressBanner onOpen={() => setExpress(true)} />

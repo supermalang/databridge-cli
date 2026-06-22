@@ -56,6 +56,29 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 .page-greeting em{font-style:normal;color:var(--accent)}
 .page-eyebrow{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
 .page-sub{color:var(--ink-2);font-size:14px;line-height:1.55;max-width:64ch;margin-bottom:0}
+/* ── Stage contextual help (PUX-4): quiet "? Help" affordance + inline hint + disclosure panel.
+   One Voice Rule — the toggle is neutral, never teal, so it never competes with the page's
+   real primary action. Flat-by-default — 1px border; the open panel earns a soft shadow only
+   because it reads as a revealed surface. */
+.stage-help{margin:10px 0 4px;display:flex;flex-direction:column;gap:8px}
+.stage-help__bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.stage-help__hint{display:inline-flex;align-items:center;gap:6px;color:var(--ink-3);font-size:12.5px;line-height:1.4}
+.stage-help__hint::before{content:"";flex-shrink:0;width:6px;height:6px;border-radius:50%;background:var(--border-strong)}
+.stage-help__toggle{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;height:26px;padding:0 10px;border:1px solid var(--border-2);border-radius:999px;background:var(--surface);color:var(--ink-3);font-family:var(--font-sans);font-size:12px;font-weight:600;letter-spacing:-.005em;cursor:pointer;transition:color .12s,border-color .12s,background .12s}
+.stage-help__toggle:hover{color:var(--ink);border-color:var(--border-strong);background:var(--bg-2)}
+.stage-help__toggle:focus-visible,.stage-help__toggle:focus{outline:2px solid var(--accent);outline-offset:2px}
+.stage-help__toggle[aria-expanded="true"]{color:var(--ink);border-color:var(--border-strong);background:var(--bg-2)}
+.stage-help__qmark{display:grid;place-items:center;width:15px;height:15px;border-radius:50%;border:1px solid currentColor;font-size:10px;font-weight:700;line-height:1}
+.stage-help__panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-md);padding:16px 18px;max-width:72ch}
+.stage-help__panel-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;letter-spacing:-.01em}
+.stage-help__body{color:var(--ink-2);font-size:13px;line-height:1.6}
+.stage-help__body p{margin:0 0 8px}
+.stage-help__body p:last-child{margin-bottom:0}
+.stage-help__body code{font-family:var(--font-mono);font-size:11.5px;background:var(--bg-2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--ink-2)}
+.stage-help__docs{display:inline-flex;align-items:center;margin-top:12px;color:var(--accent);font-size:12.5px;font-weight:600;text-decoration:none}
+.stage-help__docs:hover{text-decoration:underline}
+.stage-help__docs:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.stage-help__docs-ext{font-family:var(--font-mono);font-size:11px}
 /* Shared page header (eyebrow + title + sub, with an optional right-aligned actions slot) */
 .page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
 .page-header__text{flex:1;min-width:0}
