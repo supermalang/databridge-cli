@@ -50,7 +50,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 7 / 7 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 3 / 6 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 4 / 6 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
@@ -864,7 +864,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PUX-3 — Reduce Composition cognitive load via progressive disclosure (P1)**
+- [x] **PUX-3 — Reduce Composition cognitive load via progressive disclosure (P1)**
 
   The Composition surface (`frontend/src/pages/Composition.jsx`) presents several construct types at
   once — charts, indicators, tables, summaries — a wall of options at exactly
