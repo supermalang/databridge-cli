@@ -49,8 +49,8 @@ A card is startable only when all of the following hold:
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
-| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 4 / 7 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 2 / 6 |
+| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 7 / 7 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 3 / 6 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
@@ -538,7 +538,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **A11Y-4 — Valid interactive semantics & icon-button names (P1/P2)**
+- [x] **A11Y-4 — Valid interactive semantics & icon-button names (P1/P2)**
 
   Two defects: (1) report download links nest interactive elements —
   `<a><button>…</button></a>` (`frontend/src/pages/Reports.jsx` ~187) — which is invalid HTML
@@ -639,7 +639,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **A11Y-6 — Full-opacity focus ring on de-emphasized Home stage cards (P2)**
+- [x] **A11Y-6 — Full-opacity focus ring on de-emphasized Home stage cards (P2)**
 
   Follow-up from PUX-2. In the first-run Home state the de-emphasized stage cards use
   `.home-card-wrap.is-dimmed{opacity:.55}`, and the intended focus restore
@@ -683,7 +683,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **A11Y-7 — Stabilize the flaky A11Y-4 Validate test (keep-alive findings-visibility race) (P2)**
+- [x] **A11Y-7 — Stabilize the flaky A11Y-4 Validate test (keep-alive findings-visibility race) (P2)**
 
   Carved out of VIS-2. The A11Y-4 "non-empty aria-label" Validate test
   (`frontend/tests/e2e/a11y-4.spec.ts`) is heavily flaky (~50–80% fail, reproducible even at
@@ -1041,7 +1041,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PUX-6 — Harden Home first-run readiness fetch (error + project-switch) (P2)**
+- [x] **PUX-6 — Harden Home first-run readiness fetch (error + project-switch) (P2)**
 
   Follow-up from PUX-2. The `/api/state` readiness effect in `frontend/src/App.jsx` (~296-310)
   has two robustness gaps. (1) `homeReady` is not reset to `null` when `activeProjectId` changes,
