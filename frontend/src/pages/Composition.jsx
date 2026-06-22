@@ -125,6 +125,10 @@ export default function Composition({ sections } = {}) {
   const [templates,  setTemplates] = useState([]);
   const [activeTpl,  setActiveTpl] = useState('');
   const [editing,    setEditing]   = useState(null);
+  // PUX-3: progressive disclosure — tables + summaries are tucked behind an
+  // "Advanced" control, collapsed by default, so the surface leads with the
+  // recommended starter path + the primary constructs (charts + indicators).
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [suggestKind, setSuggestKind] = useState(null); // null | 'chart' | 'view' | 'summary'
   const [suggestText, setSuggestText] = useState('');
   const [suggesting,  setSuggesting]  = useState(null); // null | 'chart' | 'view' | 'summary' (which kind is running)
@@ -480,6 +484,12 @@ export default function Composition({ sections } = {}) {
       }>
         <>
           {has('charts') && (
+            <StarterPath
+              onStarterCharts={() => openSuggestModal('charts')}
+              starterDisabled={!!suggesting}
+            />
+          )}
+          {has('charts') && (
             <ChartsCard
               charts={charts}
               onAdd={() => openEdit('chart', null)}
@@ -497,23 +507,30 @@ export default function Composition({ sections } = {}) {
               onRemove={remove('indicator', setIndicators)}
             />
           )}
-          {has('tables') && (
-            <TablesCard
-              tables={tables}
-              onAdd={() => openEdit('table', null)}
-              onEdit={(i) => openEdit('table', i)}
-              onRemove={remove('table', setTables)}
-              onPreview={openTablePreview}
-            />
-          )}
-          {has('summaries') && (
-            <SummariesCard
-              summaries={summaries}
-              onAdd={() => openEdit('summary', null)}
-              onEdit={(i) => openEdit('summary', i)}
-              onRemove={remove('summary', setSummaries)}
-              onPreview={openSummaryPreview}
-            />
+          {(has('tables') || has('summaries')) && (
+            <AdvancedSection
+              open={advancedOpen}
+              onToggle={() => setAdvancedOpen(o => !o)}
+            >
+              {has('tables') && (
+                <TablesCard
+                  tables={tables}
+                  onAdd={() => openEdit('table', null)}
+                  onEdit={(i) => openEdit('table', i)}
+                  onRemove={remove('table', setTables)}
+                  onPreview={openTablePreview}
+                />
+              )}
+              {has('summaries') && (
+                <SummariesCard
+                  summaries={summaries}
+                  onAdd={() => openEdit('summary', null)}
+                  onEdit={(i) => openEdit('summary', i)}
+                  onRemove={remove('summary', setSummaries)}
+                  onPreview={openSummaryPreview}
+                />
+              )}
+            </AdvancedSection>
           )}
           {has('views') && (
             <ViewsCard
@@ -773,6 +790,86 @@ function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHel
       {showChartHelp && <ChartLibrary />}
       {showChartHelp && <TipsCard />}
     </>
+  );
+}
+
+// ── Starter path (PUX-3) ─────────────────────────────────────────────────────
+// The recommended way to begin: ask a question (reuses the Analyze → Ask flow)
+// or auto-generate a starter chart set (reuses the existing suggest-charts /
+// --auto-charts capability). Presented as low-effort scaffolding for non-experts
+// so the surface no longer opens as a wall of construct types.
+function StarterPath({ onStarterCharts, starterDisabled }) {
+  // Reuse the existing Ask entry point: it's the sibling "Ask" sub-tab on the
+  // Analyze stage. Navigate to it rather than re-implementing Ask here.
+  const goToAsk = () => {
+    const subtabs = document.querySelectorAll('.subtabs-bar .subtab');
+    for (const el of subtabs) {
+      if (/^\s*ask\s*$/i.test(el.textContent || '')) { el.click(); return; }
+    }
+  };
+  return (
+    <div className="starter-path" data-testid="composition-starter-path">
+      <div className="starter-path__intro">
+        <div className="starter-path__title">Not sure where to start?</div>
+        <p className="starter-path__sub">
+          The quickest way in: ask a question in plain language, or let us draft a
+          starter set of charts from your questions. You can refine everything below.
+        </p>
+      </div>
+      <div className="starter-path__actions">
+        <button type="button" className="btn btn-primary" onClick={goToAsk}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M2.5 11.5 2 14l2.5-.5A6 6 0 1 0 2.5 11.5Z" />
+            <circle cx="8" cy="8" r=".6" fill="currentColor" />
+          </svg>
+          Ask a question
+        </button>
+        <button
+          type="button"
+          className="btn"
+          data-testid="composition-starter-charts"
+          onClick={onStarterCharts}
+          disabled={starterDisabled}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="3.5" y1="13" x2="3.5" y2="8" /><line x1="8" y1="13" x2="8" y2="4" /><line x1="12.5" y1="13" x2="12.5" y2="10" />
+          </svg>
+          Suggest starter charts
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Advanced disclosure (PUX-3) ──────────────────────────────────────────────
+// Collapses the less-common constructs (tables + summaries) behind a
+// keyboard-operable native <button> with aria-expanded; collapsed by default.
+function AdvancedSection({ open, onToggle, children }) {
+  return (
+    <div className="comp-advanced">
+      <button
+        type="button"
+        className="comp-advanced__toggle"
+        data-testid="composition-advanced-toggle"
+        aria-expanded={open ? 'true' : 'false'}
+        aria-controls="composition-advanced-region"
+        onClick={onToggle}
+      >
+        <svg className="comp-advanced__chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="6 4 10 8 6 12" />
+        </svg>
+        <span className="comp-advanced__label">Advanced</span>
+        <span className="comp-advanced__hint">Tables &amp; summaries</span>
+      </button>
+      <div
+        id="composition-advanced-region"
+        data-testid="composition-advanced"
+        className="comp-advanced__region"
+        hidden={!open}
+      >
+        {children}
+      </div>
+    </div>
   );
 }
 
