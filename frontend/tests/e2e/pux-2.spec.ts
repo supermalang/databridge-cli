@@ -209,6 +209,79 @@ test.describe('PUX-2 — first-run / empty state (no form, no data)', () => {
     expect(reachable, 'de-emphasized cards must remain keyboard reachable (guide, don\'t gate)').toBe(true);
   });
 
+  // A11Y-6 — Full-opacity focus ring on de-emphasized Home stage cards.
+  //
+  // The dimmed stage cards de-emphasize via `.home-card-wrap.is-dimmed{opacity:.55}`.
+  // Opacity on the WRAP establishes an opacity group, so a `:focus-visible` opacity
+  // restore on the inner `.home-card` button cannot un-dim the ring — the focus ring
+  // would render at 55% opacity (WCAG 2.4.7). The fix must raise the WRAP opacity on
+  // focus (`:focus-within`), mirroring the existing `:hover` rule on the wrap.
+  //
+  // AC: when a dimmed card receives keyboard focus, the card WRAP renders at full
+  // opacity (1, not .55) while the inner card shows its teal focus outline; the dim
+  // returns once focus leaves.
+  test('a focused dimmed card un-dims its wrap to full opacity (focus ring at full strength)', async ({ page }) => {
+    // The dimmed wrap and its inner focusable button (the real keyboard-focus target).
+    const dimmedWrap = page.locator('.home-card-wrap.is-dimmed').first();
+    await expect(dimmedWrap, 'first-run state must render at least one de-emphasized stage card').toBeVisible();
+    const innerCard = dimmedWrap.locator('.home-card').first();
+
+    // Baseline: before focus the wrap is dimmed to ~0.55.
+    const opacityBefore = await dimmedWrap.evaluate((el) => getComputedStyle(el).opacity);
+    expect(Number(opacityBefore), 'a de-emphasized card wrap starts dimmed (~0.55)').toBeCloseTo(0.55, 2);
+
+    // Keyboard-focus the inner card (same helper the rest of the spec uses).
+    const reached = await tabUntilFocused(page, innerCard);
+    expect(reached, 'the dimmed stage card must be reachable in keyboard tab order').toBe(true);
+
+    // The focus ring (teal :focus-visible outline) must be present on the focused card...
+    const outline = await focusedOutline(page);
+    expect(outline, 'focused dimmed card has a computed outline').not.toBeNull();
+    expect(outline!.style, 'focused dimmed card shows a solid focus outline').not.toBe('none');
+    expect(outline!.width, 'focused dimmed card focus outline has non-zero width').not.toBe('0px');
+
+    // ...and the WRAP must render at full opacity so that ring is shown at full
+    // strength — NOT at the dimmed 0.55 (the bug). This is the load-bearing assertion.
+    const opacityFocused = await dimmedWrap.evaluate((el) => getComputedStyle(el).opacity);
+    expect(
+      Number(opacityFocused),
+      'a keyboard-focused dimmed card must un-dim its wrap to full opacity (1, not 0.55) so the focus ring is not washed out (WCAG 2.4.7)',
+    ).toBeCloseTo(1, 2);
+  });
+
+  // AC: the dim (opacity .55) returns once focus leaves the card.
+  test('the dimmed card wrap returns to ~0.55 opacity after focus leaves', async ({ page }) => {
+    const dimmedWrap = page.locator('.home-card-wrap.is-dimmed').first();
+    await expect(dimmedWrap).toBeVisible();
+    const innerCard = dimmedWrap.locator('.home-card').first();
+
+    const reached = await tabUntilFocused(page, innerCard);
+    expect(reached, 'the dimmed stage card must be reachable in keyboard tab order').toBe(true);
+
+    // Blur: move focus off the card entirely.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.locator('body').click({ position: { x: 1, y: 1 } });
+
+    const opacityAfter = await dimmedWrap.evaluate((el) => getComputedStyle(el).opacity);
+    expect(
+      Number(opacityAfter),
+      'once focus leaves, the de-emphasized card wrap returns to its dimmed ~0.55 opacity',
+    ).toBeCloseTo(0.55, 2);
+  });
+
+  // Visual baseline of a focused dimmed card at all three viewports — gate on the AC
+  // (the wrap is un-dimmed under focus) so the baseline captures the fixed state.
+  test('visual baseline of a focused dimmed stage card', async ({ page }) => {
+    const dimmedWrap = page.locator('.home-card-wrap.is-dimmed').first();
+    await expect(dimmedWrap).toBeVisible();
+    const innerCard = dimmedWrap.locator('.home-card').first();
+    const reached = await tabUntilFocused(page, innerCard);
+    expect(reached, 'the dimmed stage card must be reachable in keyboard tab order').toBe(true);
+    await expect(Number(await dimmedWrap.evaluate((el) => getComputedStyle(el).opacity)))
+      .toBeCloseTo(1, 2);
+    await expect(dimmedWrap).toHaveScreenshot('a11y6-focused-dimmed-card.png');
+  });
+
   // Visual baseline of the first-run state. Gate on the AC (the single CTA is present)
   // so the baseline is not captured vacuously from the pre-fix five-equal-cards view.
   test('visual baseline of the first-run state', async ({ page }) => {
