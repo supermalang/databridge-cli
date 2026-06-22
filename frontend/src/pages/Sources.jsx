@@ -294,8 +294,36 @@ function OutputRail({ cfg }) {
 function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConnection, lastCheck, questionCount }) {
   const { run, running, activeCmd } = useRun();
   const { canEdit } = usePerms();
+  const toast = useToast();
+  const [loadingSample, setLoadingSample] = useState(false);
   const fetchQuestions = () => run('fetch-questions');
   const downloadData = () => run('download');
+
+  // No-credentials sample path (PUX-5): load the bundled synthetic dataset into the
+  // active project so the downstream stages have real columns + rows without a token
+  // or an AI key. On success, dispatch the existing data-changed event so App.jsx
+  // refetches /api/state and the app advances into the data-present state.
+  const tryWithSampleData = async () => {
+    if (loadingSample) return;
+    setLoadingSample(true);
+    // Show the "Loading sample…" feedback before the request goes out so the
+    // click gives immediate, visible acknowledgement on slower links.
+    await new Promise((r) => setTimeout(r, 60));
+    try {
+      const resp = await fetch('/api/sample-data', { method: 'POST' });
+      if (!resp.ok) {
+        let msg = 'Could not load the sample data.';
+        try { const j = await resp.json(); if (j?.detail) msg = j.detail; } catch {}
+        throw new Error(msg);
+      }
+      window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'sample-data' } }));
+      toast('Sample data loaded — the next stages now have example questions and rows.', 'ok');
+    } catch (e) {
+      toast(e.message || 'Could not load the sample data.', 'err');
+    } finally {
+      setLoadingSample(false);
+    }
+  };
   const onPick = (id) => {
     set('api.platform')(id);
     // also seed the URL if blank
@@ -473,6 +501,24 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
                                  : 'Viewer access — downloading data requires an editor or admin role'}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
             {running && activeCmd === 'download' ? 'Downloading…' : 'Download data'}
+          </button>
+        </div>
+      </div>
+
+      <div className="src-field src-field--sample">
+        <div className="src-field__label">No token yet?
+          <div className="src-field__hint">Load a small example dataset to explore the next stages — no API token or AI key needed.</div>
+        </div>
+        <div className="inline-status">
+          <button
+            type="button"
+            data-testid="try-sample-data"
+            className="btn btn-primary btn-sm"
+            onClick={tryWithSampleData}
+            disabled={loadingSample || !canEdit}
+            title={canEdit ? 'Load a bundled example dataset so you can try the tool without credentials'
+                           : 'Viewer access — loading sample data requires an editor or admin role'}>
+            {loadingSample ? 'Loading sample…' : 'Try with sample data'}
           </button>
         </div>
       </div>

@@ -50,7 +50,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 7 / 7 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 5 / 6 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 6 / 6 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
@@ -978,7 +978,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PUX-5 — Reduce setup-before-value friction (demo / sample path) (P2)**
+- [x] **PUX-5 — Reduce setup-before-value friction (demo / sample path) (P2)**
 
   Today an API token **and** an AI key are required before any value appears — a steep wall for a
   non-expert evaluating the tool (fails *Make the safe path the default*; compounds *Help &

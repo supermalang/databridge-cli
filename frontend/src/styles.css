@@ -284,6 +284,7 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 /* Two-column field grid: 160px label / value */
 .src-field{display:grid;grid-template-columns:160px 1fr;gap:18px;align-items:start;padding:10px 0;border-bottom:1px dashed var(--border)}
 .src-field:last-child{border-bottom:0}
+.src-field--sample{margin-top:8px;padding-top:18px;border-top:1px solid var(--border)}
 .src-field__label{font-size:13px;font-weight:600;color:var(--ink);padding-top:8px}
 .src-field__hint{font-size:11.5px;color:var(--ink-3);margin-top:4px;font-weight:400;line-height:1.45}
 .src-field__hint code{font-family:var(--font-mono);font-size:11px;background:var(--bg-2);padding:1px 5px;border-radius:4px}

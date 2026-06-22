@@ -525,7 +525,7 @@ export default function App() {
         <RunProvider value={{ run, stop, running, activeCmd }}>
          <DirtyProvider value={dirtyRef}>
           <AiStatusProvider>
-            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
+            <main style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
               {runAlert}
               {panes
                 .filter(p => visited.has(p.key) || p.key === activeKey)
@@ -555,7 +555,7 @@ export default function App() {
                     </div>
                   );
                 })}
-            </div>
+            </main>
           </AiStatusProvider>
          </DirtyProvider>
         </RunProvider>
