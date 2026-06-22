@@ -867,7 +867,7 @@ A card is startable only when all of the following hold:
 - [ ] **PUX-3 — Reduce Composition cognitive load via progressive disclosure (P1)**
 
   The Composition surface (`frontend/src/pages/Composition.jsx`) presents 6+ construct types at
-  once — charts, indicators, tables, summaries, views, framework — a wall of options at exactly
+  once — charts, indicators, tables, summaries, and PII handling — a wall of options at exactly
   the step non-experts most need scaffolding (fails *Make the safe path the default*). Lead with a
   recommended starter path and collapse the advanced constructs behind progressive disclosure; no
   construct is removed.
@@ -884,10 +884,11 @@ A card is startable only when all of the following hold:
   - On first view, Composition leads with a recommended starter path: the Ask entry point plus a
     small auto-generated starter chart set (leveraging the existing `--auto-charts` capability) —
     presented as the suggested way to begin
-  - The advanced constructs (at minimum **views** and **framework**) are collapsed behind a
-    progressive-disclosure / "Advanced" affordance rather than shown expanded by default
-  - No construct type is removed: expanding the "Advanced" affordance reveals views, framework
-    (and any other advanced constructs) with their full existing functionality intact
+  - The less-common constructs already on the Composition surface (**tables**, **summaries**, and
+    the **PII** section) are collapsed behind a progressive-disclosure / "Advanced" affordance rather
+    than shown expanded by default; **charts + indicators** remain the primary, always-visible constructs
+  - No construct type is removed: expanding the "Advanced" affordance reveals tables, summaries, and
+    the PII section with their full existing functionality intact
   - The disclosure control is keyboard-operable (real `<button>` with `aria-expanded`, accessible
     name, visible focus ring) and its expanded/collapsed state is exposed to assistive tech
   - Charts/indicators/summaries/tables remain editable as today (no behavior regression on the
@@ -900,9 +901,9 @@ A card is startable only when all of the following hold:
 
   **E2E:** `frontend/tests/e2e/composition-progressive.spec.ts` (new) + visual (impeccable
   audit/critique + `toHaveScreenshot`) — load Composition and assert the recommended starter path
-  (Ask + starter charts affordance) is visible and that the advanced constructs (views, framework)
+  (Ask + starter charts affordance) is visible and that the advanced constructs (tables, summaries, PII)
   are NOT expanded by default (their `aria-expanded` is `false` / their content is hidden); click
-  the "Advanced" disclosure and assert views + framework become visible and editable; assert the
+  the "Advanced" disclosure and assert tables + summaries become visible and editable; assert the
   disclosure toggles `aria-expanded`. Capture `toHaveScreenshot` baselines of the collapsed
   (starter) state and the expanded (Advanced) state at all three viewports (mobile 390×844, tablet
   820×1180, desktop 1440×900); a human approves them.
@@ -911,9 +912,9 @@ A card is startable only when all of the following hold:
   1. As a non-expert, open Composition for a project with downloaded data. Confirm the page leads
      with a clear, low-effort starting point (ask a question / a few starter charts) rather than a
      wall of construct types.
-  2. Confirm advanced things (views, results framework) are tucked behind an "Advanced" control
+  2. Confirm advanced things (tables, summaries, PII) are tucked behind an "Advanced" control
      and are not in your face by default.
-  3. Click "Advanced" and confirm views and framework appear and still work exactly as before
+  3. Click "Advanced" and confirm tables and summaries appear and still work exactly as before
      (nothing was taken away).
 
   **Verify:** `cd frontend && npx playwright test composition-progressive.spec.ts`
