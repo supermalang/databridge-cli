@@ -325,3 +325,248 @@ test.describe('PUX-2 — returning user (form connected + data present)', () => 
     await expect(page.locator('.home-cards')).toHaveScreenshot('pux2-returning-home.png');
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// PUX-6 — Harden Home first-run readiness fetch (error + project-switch).
+//
+// Extends the PUX-2 suite. Two robustness gaps in the /api/state readiness
+// effect (App.jsx ~300-311):
+//
+//   (a) The fetch does NOT check response.ok, so a non-OK response whose JSON
+//       body lacks `has_questions` (a 500 {"detail":...} or a 401) coerces to
+//       ready=false → a RETURNING user is shown the first-run "Connect your
+//       form" empty state on a transient/auth error. The fix: a non-OK (4xx/5xx)
+//       or parse-error response must leave readiness UNKNOWN (null) → cards HELD,
+//       never the first-run state.
+//
+//   (b) `homeReady` is NOT reset to null when `activeProjectId` changes, so
+//       switching from a ready project to a not-yet-resolved one keeps the
+//       previous project's full five-card view on screen until the new fetch
+//       resolves. The fix: readiness resets to null on switch → cards held
+//       (no five-card flash) until the new /api/state answers.
+//
+// THE HELD STATE (the AC's "cards held"): Home renders neither the first-run
+// CTA / `[data-testid="home-firstrun"]` NOR any `.home-card`. The `.home-cards`
+// container itself is absent while readiness is unknown. We assert on that
+// observable contract, not on the `homeReady` variable.
+// ───────────────────────────────────────────────────────────────────────────
+
+// Like stubBootstrap, but lets a test control the /api/state response (status +
+// body) so we can drive a non-OK error response. Catch-all FIRST; specific
+// routes registered after win (last registered wins).
+async function stubBootstrapWithStateHandler(
+  page: Page,
+  stateHandler: (route: import('@playwright/test').Route) => unknown,
+) {
+  await page.route('**/api/**', (r) => r.fulfill({ json: {} }));
+  await page.route('**/api/me', (r) =>
+    r.fulfill({ json: { sub: 'dev', email: 'dev@example.test', given_name: 'Dev', family_name: 'User' } }));
+  await page.route('**/api/projects', (r) =>
+    r.fulfill({ json: { active_id: ACTIVE_PROJECT.id, is_superadmin: false, projects: [ACTIVE_PROJECT] } }));
+  await page.route('**/api/periods', (r) => r.fulfill({ json: { current: null, registry: [] } }));
+  await page.route('**/api/config', (r) => r.fulfill({ json: { content: CONFIG_YML } }));
+  await page.route('**/api/ai/status', (r) => r.fulfill({ json: { configured: false, verified: false } }));
+  await page.route('**/api/state', (r) => stateHandler(r));
+}
+
+// The first-run empty state, by its two observable surfaces (testid + CTA).
+const firstRunPanel = (page: Page) => page.locator('[data-testid="home-firstrun"]');
+
+// Go to Home WITHOUT waiting on a stage card — the held / error states render no
+// `.home-card`. We wait on the app chrome (the project switcher) instead so the
+// SPA has booted and the readiness effect has had its chance to run.
+async function gotoHomeNoCards(page: Page) {
+  await page.goto('http://localhost:51730/');
+  await expect(page.locator('.project-switcher')).toBeVisible();
+}
+
+test.describe('PUX-6 — /api/state error must not show a returning user the first-run state', () => {
+  // AC: the /api/state fetch checks response.ok; a non-OK response does NOT set
+  // ready=false — readiness stays null (cards held), so a returning user is
+  // never shown the first-run empty state on a transient error.
+  //
+  // RED on current code: the fetch ignores response.ok and parses the 500 body
+  // {"detail":...}, which lacks has_questions → !!(undefined && undefined) ===
+  // false → homeReady=false → the first-run "Connect your form" panel renders.
+  test('a 500 response does not render the first-run "Connect your form" state', async ({ page }) => {
+    await stubBootstrapWithStateHandler(page, (r) =>
+      r.fulfill({ status: 500, json: { detail: 'internal error' } }));
+    await gotoHomeNoCards(page);
+
+    // Give the readiness fetch + any render time to settle.
+    await page.waitForTimeout(500);
+
+    await expect(
+      firstRunPanel(page),
+      'a 500 from /api/state must NOT surface the first-run onboarding panel to a (possibly returning) user',
+    ).toHaveCount(0);
+    await expect(
+      connectCta(page),
+      'a 500 from /api/state must NOT surface the first-run "Connect your form" CTA',
+    ).toHaveCount(0);
+  });
+
+  // AC (companion): on a non-OK response the five-card returning view is also not
+  // shown — readiness is unknown, so cards are HELD (no .home-card rendered).
+  test('a 500 response holds the cards (renders neither first-run nor the five-card view)', async ({ page }) => {
+    await stubBootstrapWithStateHandler(page, (r) =>
+      r.fulfill({ status: 500, json: { detail: 'internal error' } }));
+    await gotoHomeNoCards(page);
+    await page.waitForTimeout(500);
+
+    await expect(
+      page.locator('.home-card'),
+      'an unresolved/error readiness must hold the stage cards (none rendered) — not the first-run state',
+    ).toHaveCount(0);
+  });
+
+  // AC: same guarantee for the 401 now that /api/state is auth-gated.
+  //
+  // RED on current code: 401 body {"detail":"..."} lacks has_questions →
+  // homeReady=false → first-run panel renders for a returning user.
+  test('a 401 response does not render the first-run "Connect your form" state', async ({ page }) => {
+    await stubBootstrapWithStateHandler(page, (r) =>
+      r.fulfill({ status: 401, json: { detail: 'unauthorized' } }));
+    await gotoHomeNoCards(page);
+    await page.waitForTimeout(500);
+
+    await expect(
+      firstRunPanel(page),
+      'a 401 from /api/state must NOT surface the first-run onboarding panel',
+    ).toHaveCount(0);
+    await expect(
+      connectCta(page),
+      'a 401 from /api/state must NOT surface the first-run "Connect your form" CTA',
+    ).toHaveCount(0);
+  });
+
+  // AC: a malformed / parse-error response is likewise treated as unknown
+  // (held), not ready=false.
+  //
+  // RED on current code: a 200 with a non-JSON body throws in .json(); the catch
+  // leaves homeReady at its previous value. But a non-OK malformed body is the
+  // real risk — here we serve a 500 with invalid JSON so .ok is false AND .json()
+  // would throw; readiness must stay null (held), not become false.
+  test('a non-OK malformed (non-JSON) response holds the cards, not the first-run state', async ({ page }) => {
+    await stubBootstrapWithStateHandler(page, (r) =>
+      r.fulfill({ status: 500, contentType: 'application/json', body: 'not-json{' }));
+    await gotoHomeNoCards(page);
+    await page.waitForTimeout(500);
+
+    await expect(
+      firstRunPanel(page),
+      'a malformed error response must NOT surface the first-run onboarding panel',
+    ).toHaveCount(0);
+    await expect(
+      page.locator('.home-card'),
+      'a malformed error response must hold the stage cards (none rendered)',
+    ).toHaveCount(0);
+  });
+});
+
+test.describe('PUX-6 — readiness resets to null on project switch (no stale-state flash)', () => {
+  // Names chosen to NOT collide with the menu's "+ New project" add-item.
+  const READY_PROJECT = { id: 'proj-ready', name: 'Alpha Project', slug: 'alpha', role: 'admin', is_archived: false };
+  const OTHER_PROJECT = { id: 'proj-other', name: 'Bravo Project', slug: 'bravo', role: 'admin', is_archived: false };
+
+  // Exact-text match on the project label inside the active items only — avoids
+  // the strict-mode collision with the "+ New project" add row.
+  const projectMenuItem = (page: Page, name: string) =>
+    page.locator('.project-menu__item:not(.project-menu__add) .project-menu__label', { hasText: name });
+
+  // Shared bootstrap with TWO active projects; proj-ready is active initially.
+  // `stateHandler` controls the per-call /api/state behavior. The readiness
+  // effect runs on mount with activeProjectId=null (before refreshProjects sets
+  // it) AND again after the id resolves, so /api/state can be hit more than once
+  // during initial boot; we therefore gate the "held" behavior on the project
+  // switch having happened (an /activate POST), not on a brittle call counter.
+  async function bootstrapTwoProjects(
+    page: Page,
+    stateHandler: (route: import('@playwright/test').Route) => Promise<void> | void,
+  ) {
+    await page.route('**/api/**', (r) => r.fulfill({ json: {} }));
+    await page.route('**/api/me', (r) =>
+      r.fulfill({ json: { sub: 'dev', email: 'dev@example.test', given_name: 'Dev', family_name: 'User' } }));
+    await page.route('**/api/projects', (r) =>
+      r.fulfill({ json: { active_id: READY_PROJECT.id, is_superadmin: false, projects: [READY_PROJECT, OTHER_PROJECT] } }));
+    await page.route('**/api/periods', (r) => r.fulfill({ json: { current: null, registry: [] } }));
+    await page.route('**/api/config', (r) => r.fulfill({ json: { content: CONFIG_YML } }));
+    await page.route('**/api/ai/status', (r) => r.fulfill({ json: { configured: false, verified: false } }));
+    await page.route('**/api/state', (r) => stateHandler(r));
+  }
+
+  // AC: on activeProjectId change, homeReady resets to null (cards held) before
+  // the new /api/state resolves, so neither Home state from the previous project
+  // flashes during a switch.
+  //
+  // We start on a READY project (5 cards). We HOLD the post-switch /api/state
+  // response open. During that window the fix must have cleared readiness to
+  // null → the five-card view must be GONE (cards held). The bug leaves
+  // homeReady=true (no reset on activeProjectId change) → the five cards persist
+  // until the new fetch resolves.
+  test('switching from a ready project to a not-ready one does not keep the five-card view on screen', async ({ page }) => {
+    let switched = false;
+    let releaseHeld: (() => void) | null = null;
+    const held = new Promise<void>((resolve) => { releaseHeld = resolve; });
+
+    await bootstrapTwoProjects(page, async (r) => {
+      if (switched) {
+        // Post-switch readiness: held open so we can observe the in-flight window.
+        await held;
+        await r.fulfill({ json: { has_questions: false, has_data: false, has_templates: false, has_ai: false } });
+      } else {
+        // Pre-switch (ready project): resolves immediately ready.
+        await r.fulfill({ json: { has_questions: true, has_data: true, has_templates: false, has_ai: false } });
+      }
+    });
+    // Mark the switch the moment the activate POST fires — anything after is the
+    // new project's (held) readiness fetch.
+    await page.route('**/api/projects/*/activate', (r) => { switched = true; return r.fulfill({ json: { ok: true } }); });
+
+    await page.goto('http://localhost:51730/');
+    // Starting state: the ready project shows the full five-card view.
+    await expect(page.locator('.home-card')).toHaveCount(5);
+
+    // Switch to the other project via the existing project switcher.
+    await page.locator('.project-switcher').click();
+    await projectMenuItem(page, OTHER_PROJECT.name).click();
+
+    // The post-switch /api/state is still in flight (held). During this window
+    // the five-card view must NOT remain on screen — readiness reset to null
+    // holds the cards. Load-bearing assertion (RED on the un-reset bug: the five
+    // cards from the ready project persist).
+    await expect(
+      page.locator('.home-card'),
+      'on switch to a not-yet-resolved project, the previous project’s five-card view must not remain/flash (readiness resets to null → cards held)',
+    ).toHaveCount(0, { timeout: 1500 });
+
+    // Release the held response so the test can exit cleanly.
+    releaseHeld?.();
+  });
+
+  // AC (companion): once the new project's readiness resolves NOT-ready, Home
+  // settles on the first-run state — confirming the reset clears to the correct
+  // new-project state (not a stale five-card view).
+  test('after the switch resolves not-ready, Home settles on the first-run state', async ({ page }) => {
+    let switched = false;
+
+    await bootstrapTwoProjects(page, async (r) => {
+      const ready = !switched;
+      await r.fulfill({ json: { has_questions: ready, has_data: ready, has_templates: false, has_ai: false } });
+    });
+    await page.route('**/api/projects/*/activate', (r) => { switched = true; return r.fulfill({ json: { ok: true } }); });
+
+    await page.goto('http://localhost:51730/');
+    await expect(page.locator('.home-card')).toHaveCount(5);
+
+    await page.locator('.project-switcher').click();
+    await projectMenuItem(page, OTHER_PROJECT.name).click();
+
+    // The new project is not ready → first-run state appears.
+    await expect(
+      firstRunPanel(page),
+      'after switching to a not-ready project the first-run onboarding state must appear',
+    ).toBeVisible();
+    await expect(connectCta(page)).toHaveCount(1);
+  });
+});
