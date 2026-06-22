@@ -658,9 +658,17 @@ async def load_sample_data(request: Request):
     # stages already read: ``{alias}_data.csv`` (load_processed_data globs
     # ``{prefix}_data*.csv``). A fixed name (no timestamp) → a second POST
     # overwrites rather than multiplying the data files.
-    alias = (cfg.get("form") or {}).get("alias") or "sample"
+    # Sanitize the alias before using it in a filename: it comes from the
+    # editor-editable config.yml, so an unsanitized value (e.g. "../../etc/x")
+    # would escape DATA_DIR. slugify() reduces it to [a-z0-9_], same guard the
+    # SSE run path applies via sanitize_run_config. Defense-in-depth: confirm the
+    # resolved path stays inside DATA_DIR before writing.
+    from src.utils.periods import slugify
+    alias = slugify(str((cfg.get("form") or {}).get("alias") or "")) or "sample"
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     dest = DATA_DIR / f"{alias}_data.csv"
+    if not dest.resolve().is_relative_to(DATA_DIR.resolve()):
+        raise HTTPException(status_code=400, detail="Invalid form alias")
     async with aiofiles.open(SAMPLE_SUBMISSIONS_PATH, "r", encoding="utf-8") as src:
         data = await src.read()
     async with aiofiles.open(dest, "w", encoding="utf-8") as out:
