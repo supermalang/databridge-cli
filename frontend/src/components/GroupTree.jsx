@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { nodeCounts } from '../lib/questionGroups.js';
 
 // Generic nested-group accordion shared by the Questions, Profile, and Validate
@@ -20,15 +20,41 @@ function Chevron() {
   );
 }
 
+// Collect the paths of every node at depth <= defaultOpenDepth (the nodes that
+// should start expanded).
+function defaultOpenPaths(nodes, defaultOpenDepth, acc = new Set()) {
+  for (const n of (nodes || [])) {
+    if (n.depth <= defaultOpenDepth) acc.add(n.path);
+    defaultOpenPaths(n.children, defaultOpenDepth, acc);
+  }
+  return acc;
+}
+
 export default function GroupTree({ tree, renderVisible, renderHidden, renderPii, renderHeaderExtra, defaultOpenDepth = 0 }) {
-  const [open, setOpen] = useState(() => {
-    const s = new Set();
-    const walk = (nodes) => nodes.forEach(n => { if (n.depth <= defaultOpenDepth) s.add(n.path); walk(n.children); });
-    walk(tree);
-    return s;
-  });
+  const [open, setOpen] = useState(() => defaultOpenPaths(tree, defaultOpenDepth));
   const [openHidden, setOpenHidden] = useState(() => new Set());
   const [openPii, setOpenPii] = useState(() => new Set());
+
+  // The tree can change AFTER mount when its data loads asynchronously (e.g.
+  // Validate's findings build under "Ungrouped" until /api/questions resolves,
+  // then re-group under their real path; Questions/Profile similarly re-key as
+  // questions arrive). The `open` set was seeded once at mount, so a default-open
+  // node that only appears on a LATER tree would render collapsed — hiding its
+  // contents (A11Y-7). Auto-open each default-open node the FIRST time we see it,
+  // tracked in seenRef so a node the user later collapses is not forced back open.
+  const seenRef = useRef(null);
+  if (seenRef.current === null) seenRef.current = new Set(open);
+  useEffect(() => {
+    const wanted = defaultOpenPaths(tree, defaultOpenDepth);
+    const fresh = [...wanted].filter(p => !seenRef.current.has(p));
+    if (fresh.length === 0) return;
+    for (const p of fresh) seenRef.current.add(p);
+    setOpen(prev => {
+      const next = new Set(prev);
+      for (const p of fresh) next.add(p);
+      return next;
+    });
+  }, [tree, defaultOpenDepth]);
 
   const toggle = (setSet, key) => setSet(prev => {
     const next = new Set(prev);
