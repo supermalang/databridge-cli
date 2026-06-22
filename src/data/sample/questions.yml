@@ -1,0 +1,53 @@
+# Bundled synthetic sample questions (PUX-5).
+# Realistic-looking but entirely fake — ships with the app so a new user can
+# try the tool end-to-end without a Kobo/Ona token or an AI key. No PII.
+# Each entry mirrors the fetch-questions schema (kobo_key/label/type/category/
+# export_label/choice_list) so the downstream stages have real, typed columns.
+questions:
+  - kobo_key: demographics/region
+    label: Region
+    export_label: Region
+    type: select_one
+    category: categorical
+    group: demographics
+    choice_list:
+      - North
+      - South
+      - East
+      - West
+  - kobo_key: demographics/age
+    label: Respondent age
+    export_label: Age
+    type: integer
+    category: quantitative
+    group: demographics
+  - kobo_key: feedback/satisfaction
+    label: Overall satisfaction
+    export_label: Satisfaction
+    type: select_one
+    category: categorical
+    group: feedback
+    choice_list:
+      - Very satisfied
+      - Satisfied
+      - Neutral
+      - Dissatisfied
+      - Very dissatisfied
+  - kobo_key: feedback/num_visits
+    label: Number of visits this quarter
+    export_label: Visits
+    type: integer
+    category: quantitative
+    group: feedback
+  - kobo_key: feedback/visit_date
+    label: Date of last visit
+    export_label: VisitDate
+    type: date
+    category: date
+    group: feedback
+  - kobo_key: feedback/comments
+    label: Additional comments
+    export_label: Comments
+    type: text
+    category: qualitative
+    group: feedback
