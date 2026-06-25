@@ -742,6 +742,10 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .project-menu__item { padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
   display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink, #0B1220); }
 .project-menu__item:hover { background: var(--bg-2, #f3f4f6); }
+/* Keyboard focus ring on the menu rows — teal accent, inset so it stays inside
+   the rounded dropdown (the header :focus-visible override is white, which would
+   vanish on this light surface). */
+.project-menu__item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
 .project-menu__item.active { font-weight: 600; background: var(--accent-soft, #E0F2FE); }
 .project-menu__avatar { flex-shrink: 0; width: 22px; height: 22px; border-radius: 5px;
   background: var(--bg-2, #f3f4f6); color: var(--ink-2, #475569);
