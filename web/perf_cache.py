@@ -126,21 +126,24 @@ class _SharedBackend:
         self._client = client
 
     @staticmethod
-    def _conn_error():
-        """The redis connection-error type, imported lazily so the module does
-        not hard-depend on redis being importable."""
+    def _store_error():
+        """The BASE redis error type — covers ConnectionError, TimeoutError,
+        AuthenticationError, ReadOnlyError, pool exhaustion, etc. Imported lazily
+        so the module does not hard-depend on redis being importable. ANY
+        operational store failure must degrade gracefully (compute / no-op) and
+        never surface as a 500 on the read-only endpoints."""
         try:
-            from redis.exceptions import ConnectionError as RedisConnectionError
-            return RedisConnectionError
+            from redis.exceptions import RedisError
+            return RedisError
         except Exception:  # pragma: no cover - redis always present here
             return ()
 
     def get_or_compute(self, key: str, compute_fn: Callable[[], Any]) -> Any:
-        conn_error = self._conn_error()
+        store_error = self._store_error()
         try:
             cached = self._client.get(key)
-        except conn_error:
-            cached = None  # store unreachable → treat as a miss, compute below
+        except store_error:
+            cached = None  # store down/erroring → treat as a miss, compute below
         if cached is not None:
             try:
                 return json.loads(cached)
@@ -148,13 +151,17 @@ class _SharedBackend:
                 pass  # corrupt entry → recompute and overwrite
         value = compute_fn()
         try:
-            self._client.set(key, json.dumps(value, default=str))
-        except conn_error:
-            pass  # store unreachable → cache write is a no-op
+            # 1h TTL: a safety net bounding stale-entry accumulation + memory
+            # growth if an invalidate() is ever missed (e.g. a worker dies between
+            # a data write and its invalidate). Correctness still rests on the
+            # fingerprint key rotating on config/data changes, not on the TTL.
+            self._client.set(key, json.dumps(value, default=str), ex=3600)
+        except store_error:
+            pass  # store down/erroring → cache write is a no-op
         return value
 
     def invalidate(self, org_id: Any, project_id: Any) -> None:
-        conn_error = self._conn_error()
+        store_error = self._store_error()
         prefix = f"{_namespace(org_id, project_id)}{_SEP}"
         try:
             keys = [
@@ -163,8 +170,8 @@ class _SharedBackend:
             ]
             if keys:
                 self._client.delete(*keys)
-        except conn_error:
-            pass  # store unreachable → invalidation is a safe no-op
+        except store_error:
+            pass  # store down/erroring → invalidation is a safe no-op
 
 
 def make_backend(client: Any = None):
