@@ -48,7 +48,7 @@ A card is startable only when all of the following hold:
 | Area | Planned | Progress |
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
-| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 2 / 9 |
+| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 4 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 7 / 7 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 6 / 6 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
@@ -208,7 +208,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **UX-3 — Archived rows look clickable but do nothing**
+- [x] **UX-3 — Archived rows look clickable but do nothing**
 
   Archived project rows reuse active-row styling (hover highlight) but have no row `onClick` —
   only the gear works.
@@ -346,7 +346,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **UX-9 — Global "switching…" feedback**
+- [x] **UX-9 — Global "switching…" feedback**
 
   A brief unified indicator while a project switch hydrates (minor now that `pull_workspace`
   is parallelized).

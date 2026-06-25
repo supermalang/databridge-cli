@@ -17,7 +17,7 @@ import ProfileForm from './pages/ProfileForm.jsx';
 import { useToast } from './components/Toast.jsx';
 import { useCommand } from './hooks/useCommand.js';
 import { fetchMe } from './lib/auth.js';
-import { listProjects, activateProject } from './lib/projects.js';
+import { listProjects, activateProject, archiveProject } from './lib/projects.js';
 import { PermsProvider } from './lib/perms.js';
 import { RunProvider } from './lib/run.js';
 import { DirtyProvider } from './lib/dirty.js';
@@ -195,18 +195,39 @@ export default function App() {
   // Project switch remounts the keep-alive panes (via the epoch bump below),
   // which discards any in-progress edits — so confirm first if a page is dirty.
   const dirtyRef = useRef(false);
+  // UX-9: a single "switching…" indicator covers the activate + hydrate window.
+  // `switching` drives the visible/live-region cue; `switchingRef` coalesces
+  // overlapping switches so exactly one indicator ever shows and it never gets
+  // stuck on — a second click while a switch is in flight is ignored.
+  const [switching, setSwitching] = useState(false);
+  const switchingRef = useRef(false);
   const switchProject = async (id) => {
     if (id === activeProjectId) { setProjMenuOpen(false); return; }
+    if (switchingRef.current) { setProjMenuOpen(false); return; }
     if (dirtyRef.current && !await confirm({
       title: 'Discard unsaved changes?',
       message: 'You have unsaved edits on the current page. Switching projects will discard them.',
       confirmLabel: 'Switch & discard',
     })) { setProjMenuOpen(false); return; }
     dirtyRef.current = false;
-    await activateProject(id);
-    setActiveProjectId(id);
-    setProjMenuOpen(false);
-    window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
+    switchingRef.current = true;
+    setSwitching(true);
+    try {
+      await activateProject(id);
+      setActiveProjectId(id);
+      setProjMenuOpen(false);
+      window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
+    } finally {
+      switchingRef.current = false;
+      setSwitching(false);
+    }
+  };
+
+  // Bring an archived project back to the active group. Archived rows are not
+  // switchable (no body onClick); Unarchive is their only action.
+  const unarchiveProject = async (id) => {
+    await archiveProject(id, false);
+    await refreshProjects();
   };
 
   // Escape closes the open project menu and returns focus to the trigger —
@@ -512,12 +533,21 @@ export default function App() {
                     {archivedProjects.map(p => (
                       <div key={p.id} className="project-menu__item project-menu__archived">
                         <span className="project-menu__label">{p.name}</span>
-                        {(p.role === 'admin' || p.role === 'superadmin' || isSuperadmin) && (
-                          <button className="project-menu__gear" title="Project settings"
-                                  onClick={(e) => { e.stopPropagation(); openProjectForm(p); }}>
-                            ⚙
+                        <span className="project-menu__right">
+                          <button className="project-menu__unarchive"
+                                  type="button"
+                                  data-testid="project-unarchive"
+                                  title="Restore this project to the active list"
+                                  onClick={(e) => { e.stopPropagation(); unarchiveProject(p.id); }}>
+                            Unarchive
                           </button>
-                        )}
+                          {(p.role === 'admin' || p.role === 'superadmin' || isSuperadmin) && (
+                            <button className="project-menu__gear" title="Project settings"
+                                    onClick={(e) => { e.stopPropagation(); openProjectForm(p); }}>
+                              ⚙
+                            </button>
+                          )}
+                        </span>
                       </div>
                     ))}
                   </>
@@ -548,6 +578,13 @@ export default function App() {
               </div>
             )}
           </div>
+          {switching && (
+            <div className="project-switching" data-testid="project-switching"
+                 role="status" aria-live="polite">
+              <span className="project-switching__spinner" aria-hidden="true" />
+              <span className="project-switching__label">Switching project…</span>
+            </div>
+          )}
           <button className="iconbtn" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
           </button>
