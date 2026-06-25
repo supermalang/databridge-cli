@@ -34,6 +34,23 @@ const RUN_LABELS = {
 };
 const runLabel = (cmd) => RUN_LABELS[cmd] || (cmd ? `Running ${cmd}…` : 'Running…');
 
+// Project identity swatch (avatar) styling. The color is user-chosen IDENTITY, not
+// an action color (One Voice Rule: it never competes with teal CTAs). Pick legible
+// text (white vs ink) per-color by WCAG relative luminance so even a light project
+// color keeps the emoji / two-letter fallback readable (AA target).
+const _srgb = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+const swatchTextColor = (hex) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
+  if (!m) return undefined;
+  const n = parseInt(m[1], 16);
+  const L = 0.2126 * _srgb((n >> 16) & 255) + 0.7152 * _srgb((n >> 8) & 255) + 0.0722 * _srgb(n & 255);
+  // Contrast of white (L=1) vs ink (#0B1220, L≈0.0086) against this bg; pick the higher.
+  const cWhite = 1.05 / (L + 0.05);
+  const cInk = (L + 0.05) / (0.0086 + 0.05);
+  return cWhite >= cInk ? '#fff' : '#0B1220';
+};
+const swatchStyle = (color) => (color ? { background: color, color: swatchTextColor(color) } : undefined);
+
 // How long the terminal stays open at the start of a run before auto-collapsing
 // to its bar (the run keeps going). Overridable via window.__TERM_COLLAPSE_MS so
 // the E2E can drive the timing in a few ms instead of waiting the real ~5s.
@@ -413,7 +430,7 @@ export default function App() {
             <button className="project-switcher" title="Switch project" type="button"
                     onClick={() => setProjMenuOpen(o => !o)}>
               <span className="project-switcher__avatar"
-                    style={activeProject?.color ? { background: activeProject.color, color: '#fff' } : undefined}>
+                    style={swatchStyle(activeProject?.color)}>
                 {activeProject?.icon || (activeProject?.name || '?').slice(0, 2).toUpperCase()}
               </span>
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
@@ -429,7 +446,7 @@ export default function App() {
                        className={`project-menu__item ${p.id === activeProjectId ? 'active' : ''}`}
                        onClick={() => switchProject(p.id)}>
                     <span className="project-menu__avatar"
-                          style={p.color ? { background: p.color, color: '#fff' } : undefined}>
+                          style={swatchStyle(p.color)}>
                       {p.icon || (p.name || '?').slice(0, 2).toUpperCase()}
                     </span>
                     <span className="project-menu__label">{p.name}</span>
