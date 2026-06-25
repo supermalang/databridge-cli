@@ -55,7 +55,7 @@ A card is startable only when all of the following hold:
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 2 | 0 / 2 |
-| [Performance](#performance) | 2 | 1 / 2 |
+| [Performance](#performance) | 2 | 2 / 2 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -2815,7 +2815,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PERF-2 — Shared (cross-worker) cache backend for the perf cache**
+- [x] **PERF-2 — Shared (cross-worker) cache backend for the perf cache**
 
   Follow-up to PERF-1 (shipped: an in-process dict cache in `web/perf_cache.py` fronting
   `/api/profile`, `/api/data-quality`, `/api/base-tables`, invalidated on config-save and
