@@ -170,7 +170,7 @@ A card is startable only when all of the following hold:
   - Icon/color shown in the switcher avatar, project-menu rows, and project list
   - Or: drop the pickers if the icon/color aren't wanted
 
-  **Unit tests:** Vitest component test — render the project switcher with a project that has a color and emoji set; assert the avatar element displays the emoji rather than the two-letter fallback; assert the avatar background matches the project color.
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the component behavior is asserted by the Playwright E2E below, consistent with the A11Y/PUX cards' coverage approach).
 
   **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — create a project with a distinctive color and emoji, switch to it, and assert the switcher avatar and menu row both show the icon/color in a baseline screenshot. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
@@ -195,7 +195,7 @@ A card is startable only when all of the following hold:
   - Trigger exposes `aria-expanded`/`aria-haspopup`; `role="menu"` + Escape-to-close
   - Matches the existing `Modal` focus/Escape behavior
 
-  **Unit tests:** Vitest component test — render the switcher, simulate keyboard Tab into the trigger; assert `aria-expanded` toggles on Enter; simulate Escape and assert the dropdown closes; simulate ArrowDown and assert focus moves to the first menu item.
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the component behavior is asserted by the Playwright E2E below, consistent with the A11Y/PUX cards' coverage approach).
 
   **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the project switcher by keyboard, navigate to a project row with ArrowDown, activate with Enter, and assert the project switches; assert Escape closes the dropdown without switching. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
@@ -221,7 +221,7 @@ A card is startable only when all of the following hold:
   - Archived rows have an explicit Unarchive affordance / row action
   - Visually de-emphasized so they don't read as switchable
 
-  **Unit tests:** Vitest component test — render a project list containing an archived project; assert the archived row does not carry the active-row hover class; assert an "Unarchive" button or affordance is present in the row; assert clicking the row body does not trigger a project switch.
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the component behavior is asserted by the Playwright E2E below, consistent with the A11Y/PUX cards' coverage approach).
 
   **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — archive a project, open the project list, and take a baseline screenshot confirming the archived row is visually de-emphasized; click the Unarchive affordance and confirm the project returns to active state. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
@@ -245,7 +245,7 @@ A card is startable only when all of the following hold:
   - Wired into the existing `dirtyRef`/`DirtyProvider` guard used for project switching
   - Back/navigate-away with unsaved edits prompts to confirm
 
-  **Unit tests:** Vitest component test — render `ProjectForm`, change the project name field, then simulate clicking Back; assert the dirty-guard confirmation dialog appears; confirm that accepting the dialog navigates away and rejecting keeps the form open with the edited value.
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the component behavior is asserted by the Playwright E2E below, consistent with the A11Y/PUX cards' coverage approach).
 
   **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — edit a project's name without saving, click Back, and assert a confirmation prompt appears; dismiss it and confirm the form remains with the unsaved change intact. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
@@ -269,7 +269,7 @@ A card is startable only when all of the following hold:
   - Members show email/name, never a UUID
   - A "you" tag marks the current user
 
-  **Unit tests:** Vitest component test — render `ProjectMembersPanel` with a member record that has no email or name (only `user_id`); assert no UUID string is rendered; render with a member that matches the current user and assert a "you" badge is present.
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the component behavior is asserted by the Playwright E2E below, consistent with the A11Y/PUX cards' coverage approach).
 
   **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open a project's Members panel and take a baseline screenshot confirming all rows show a human-readable identifier and the current user's row has a "you" tag. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
@@ -292,7 +292,7 @@ A card is startable only when all of the following hold:
   - An inline error message appears beneath the name field when it is empty
   - The submit button is disabled until the name field contains at least one character
 
-  **Unit tests:** Vitest component test — render `ProjectForm` with an empty name field; assert the submit button has the `disabled` attribute; assert an inline error message is visible; type a character and assert the button becomes enabled and the error disappears.
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the component behavior is asserted by the Playwright E2E below, consistent with the A11Y/PUX cards' coverage approach).
 
   **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the create-project form, clear the name field, and attempt to submit; assert the inline error appears and the form is not submitted; enter a valid name and assert the error clears. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
@@ -313,7 +313,7 @@ A card is startable only when all of the following hold:
   - Helper text "Managed by your sign-in provider" (or equivalent) appears beneath the disabled email field
   - The field remains non-editable
 
-  **Unit tests:** Vitest component test — render `ProfileForm`; assert the email input has the `disabled` attribute; assert helper text containing "sign-in provider" (or the chosen copy) is present in the rendered output.
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the component behavior is asserted by the Playwright E2E below, consistent with the A11Y/PUX cards' coverage approach).
 
   **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the Profile page and take a baseline screenshot confirming the email field is disabled and helper text is visible beneath it. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
@@ -335,7 +335,7 @@ A card is startable only when all of the following hold:
   - The currently selected swatch has `aria-pressed="true"`; all others have `aria-pressed="false"`
   - Icon buttons follow the same pattern
 
-  **Unit tests:** Vitest component test — render the color swatch group; assert each swatch element has a non-empty `aria-label`; select a swatch and assert it gains `aria-pressed="true"` while the previously selected one loses it.
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the component behavior is asserted by the Playwright E2E below, consistent with the A11Y/PUX cards' coverage approach).
 
   **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — open the project form, inspect color swatches with an accessibility audit, and assert no color-name-only violations; select a swatch and assert `aria-pressed` state changes are reflected. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
@@ -358,7 +358,7 @@ A card is startable only when all of the following hold:
   - The indicator disappears once the workspace is ready
   - No double-hydration or flicker when switching rapidly
 
-  **Unit tests:** Vitest component test — mock `pull_workspace` to return a delayed promise; trigger a project switch and assert a loading indicator is rendered; resolve the promise and assert the indicator is gone.
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the component behavior is asserted by the Playwright E2E below, consistent with the A11Y/PUX cards' coverage approach).
 
   **E2E:** Playwright spec + visual (impeccable audit/critique + toHaveScreenshot) — switch between two projects and assert a loading indicator is visible during the transition; take a baseline screenshot of the final settled state. Baselines captured at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900).
 
