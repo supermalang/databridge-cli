@@ -633,16 +633,31 @@ def _export_sql(df: pd.DataFrame, cfg: Dict, dialect: str, repeat_tables: Dict[s
 
     h, p = db.get("host", "localhost"), int(db.get("port", 5432 if dialect == "postgres" else 3306))
     n, u, pw, t = db.get("name"), db.get("user"), db.get("password", ""), db.get("table", "submissions")
+    driver = "psycopg2" if dialect == "postgres" else "pymysql"
     url = (f"postgresql+psycopg2://{u}:{pw}@{h}:{p}/{n}" if dialect == "postgres"
            else f"mysql+pymysql://{u}:{pw}@{h}:{p}/{n}?charset=utf8mb4")
-    engine = create_engine(url)
-    df.to_sql(t, engine, if_exists=if_exists, index=False)
-    log.info(f"Data exported → {dialect}://{h}:{p}/{n}.{t} (if_exists={if_exists})")
-    if repeat_tables:
-        for name, rdf in repeat_tables.items():
-            safe_name = name.replace("/", "_")
-            rdf.to_sql(f"{t}_{safe_name}", engine, if_exists=if_exists, index=False)
-            log.info(f"Repeat group exported → {dialect}://{h}:{p}/{n}.{t}_{safe_name} (if_exists={if_exists})")
+    try:
+        engine = create_engine(url)
+        df.to_sql(t, engine, if_exists=if_exists, index=False)
+        log.info(f"Data exported → {dialect}://{h}:{p}/{n}.{t} (if_exists={if_exists})")
+        if repeat_tables:
+            for name, rdf in repeat_tables.items():
+                safe_name = name.replace("/", "_")
+                rdf.to_sql(f"{t}_{safe_name}", engine, if_exists=if_exists, index=False)
+                log.info(f"Repeat group exported → {dialect}://{h}:{p}/{n}.{t}_{safe_name} (if_exists={if_exists})")
+    except (ModuleNotFoundError, ImportError) as e:
+        label = "PostgreSQL" if dialect == "postgres" else "MySQL"
+        raise RuntimeError(
+            f"{label} export needs the {driver} driver — install it with `pip install {driver}`."
+        ) from e
+    except Exception as e:
+        # Any other failure (connection refused, auth error, schema conflict, …)
+        # surfaces as a clean, credential-safe message. NEVER interpolate `url`,
+        # `u`, or `pw` — those carry the DB password and would leak into the
+        # SSE log stream; reference only host/port/db/table.
+        raise RuntimeError(
+            f"{dialect.upper()} export to {h}:{p}/{n}.{t} failed: {type(e).__name__}: {e}"
+        ) from e
 
 
 def _export_supabase(df: pd.DataFrame, cfg: Dict, repeat_tables: Dict[str, pd.DataFrame] = None) -> None:

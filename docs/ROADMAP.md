@@ -47,7 +47,7 @@ A card is startable only when all of the following hold:
 
 | Area | Planned | Progress |
 |---|---|---|
-| [Output / export formats](#output--export-formats) | 3 | 0 / 3 |
+| [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 7 / 7 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 6 / 6 |
@@ -76,7 +76,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **OUT-1 — JSON export (records array)**
+- [x] **OUT-1 — JSON export (records array)**
 
   Surface JSON in the format chip-tabs and verify the `_export_file` JSON branch end-to-end.
 
@@ -99,7 +99,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **OUT-2 — MySQL remote table export**
+- [x] **OUT-2 — MySQL remote table export**
 
   Enable the MySQL target (credentials in `export.database`) once verified against a live DB.
 
@@ -124,7 +124,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **OUT-3 — PostgreSQL remote table export**
+- [x] **OUT-3 — PostgreSQL remote table export**
 
   Same as OUT-2 for PostgreSQL.
 
