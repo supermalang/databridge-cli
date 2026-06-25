@@ -412,8 +412,9 @@ export default function App() {
           <div style={{ position: 'relative' }}>
             <button className="project-switcher" title="Switch project" type="button"
                     onClick={() => setProjMenuOpen(o => !o)}>
-              <span className="project-switcher__avatar">
-                {(activeProject?.name || '?').slice(0, 2).toUpperCase()}
+              <span className="project-switcher__avatar"
+                    style={activeProject?.color ? { background: activeProject.color, color: '#fff' } : undefined}>
+                {activeProject?.icon || (activeProject?.name || '?').slice(0, 2).toUpperCase()}
               </span>
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
                 <span className="project-switcher__name">{activeProject?.name || 'No project'}</span>
@@ -427,6 +428,10 @@ export default function App() {
                   <div key={p.id}
                        className={`project-menu__item ${p.id === activeProjectId ? 'active' : ''}`}
                        onClick={() => switchProject(p.id)}>
+                    <span className="project-menu__avatar"
+                          style={p.color ? { background: p.color, color: '#fff' } : undefined}>
+                      {p.icon || (p.name || '?').slice(0, 2).toUpperCase()}
+                    </span>
                     <span className="project-menu__label">{p.name}</span>
                     <span className="project-menu__right">
                       {p.role && <span className="project-menu__role">{p.role}</span>}
