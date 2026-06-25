@@ -34,6 +34,23 @@ const RUN_LABELS = {
 };
 const runLabel = (cmd) => RUN_LABELS[cmd] || (cmd ? `Running ${cmd}…` : 'Running…');
 
+// Project identity swatch (avatar) styling. The color is user-chosen IDENTITY, not
+// an action color (One Voice Rule: it never competes with teal CTAs). Pick legible
+// text (white vs ink) per-color by WCAG relative luminance so even a light project
+// color keeps the emoji / two-letter fallback readable (AA target).
+const _srgb = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+const swatchTextColor = (hex) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
+  if (!m) return undefined;
+  const n = parseInt(m[1], 16);
+  const L = 0.2126 * _srgb((n >> 16) & 255) + 0.7152 * _srgb((n >> 8) & 255) + 0.0722 * _srgb(n & 255);
+  // Contrast of white (L=1) vs ink (#0B1220, L≈0.0086) against this bg; pick the higher.
+  const cWhite = 1.05 / (L + 0.05);
+  const cInk = (L + 0.05) / (0.0086 + 0.05);
+  return cWhite >= cInk ? '#fff' : '#0B1220';
+};
+const swatchStyle = (color) => (color ? { background: color, color: swatchTextColor(color) } : undefined);
+
 // How long the terminal stays open at the start of a run before auto-collapsing
 // to its bar (the run keeps going). Overridable via window.__TERM_COLLAPSE_MS so
 // the E2E can drive the timing in a few ms instead of waiting the real ~5s.
@@ -152,6 +169,8 @@ export default function App() {
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [projMenuOpen, setProjMenuOpen] = useState(false);
+  const projSwitcherRef = useRef(null);   // trigger — focus returns here on Escape (mirrors Modal)
+  const projMenuRef = useRef(null);        // dropdown — ArrowDown moves roving focus into here
   const [projectForm, setProjectForm] = useState(null);     // 'create' | project object | null
   const [projectFormTab, setProjectFormTab] = useState('details');   // initial tab for the form
   const [profileOpen, setProfileOpen] = useState(false);    // user profile page overlay
@@ -188,6 +207,42 @@ export default function App() {
     setActiveProjectId(id);
     setProjMenuOpen(false);
     window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
+  };
+
+  // Escape closes the open project menu and returns focus to the trigger —
+  // mirrors the Modal.jsx Escape/focus contract. Document-level so it fires
+  // wherever focus sits inside the menu (rows are focusable but not modal).
+  useEffect(() => {
+    if (!projMenuOpen) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      setProjMenuOpen(false);
+      projSwitcherRef.current?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [projMenuOpen]);
+
+  // ArrowDown from the trigger opens the menu (if needed) and moves roving focus
+  // to the first menu item. Enter/Space open the menu (native <button> activation
+  // also fires onClick, so this only handles ArrowDown specially).
+  const onSwitcherKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setProjMenuOpen(true);
+      // Defer until the menu has rendered, then focus its first item.
+      requestAnimationFrame(() => {
+        projMenuRef.current?.querySelector('.project-menu__item')?.focus();
+      });
+    }
+  };
+
+  // Enter/Space on a focused project row activate it (matches the row onClick).
+  const onRowKeyDown = (id) => (e) => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault();
+      switchProject(id);
+    }
   };
   const nowTime = () => {
     const d = new Date();
@@ -411,9 +466,14 @@ export default function App() {
           <ActivePeriodChip />
           <div style={{ position: 'relative' }}>
             <button className="project-switcher" title="Switch project" type="button"
-                    onClick={() => setProjMenuOpen(o => !o)}>
-              <span className="project-switcher__avatar">
-                {(activeProject?.name || '?').slice(0, 2).toUpperCase()}
+                    ref={projSwitcherRef}
+                    aria-haspopup="menu"
+                    aria-expanded={projMenuOpen}
+                    onClick={() => setProjMenuOpen(o => !o)}
+                    onKeyDown={onSwitcherKeyDown}>
+              <span className="project-switcher__avatar"
+                    style={swatchStyle(activeProject?.color)}>
+                {activeProject?.icon || (activeProject?.name || '?').slice(0, 2).toUpperCase()}
               </span>
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
                 <span className="project-switcher__name">{activeProject?.name || 'No project'}</span>
@@ -422,11 +482,17 @@ export default function App() {
               <span className="project-switcher__chev">▾</span>
             </button>
             {projMenuOpen && (
-              <div className="project-menu">
+              <div className="project-menu" role="menu" ref={projMenuRef}>
                 {activeProjects.map(p => (
                   <div key={p.id}
                        className={`project-menu__item ${p.id === activeProjectId ? 'active' : ''}`}
-                       onClick={() => switchProject(p.id)}>
+                       role="menuitem" tabIndex={0}
+                       onClick={() => switchProject(p.id)}
+                       onKeyDown={onRowKeyDown(p.id)}>
+                    <span className="project-menu__avatar"
+                          style={swatchStyle(p.color)}>
+                      {p.icon || (p.name || '?').slice(0, 2).toUpperCase()}
+                    </span>
                     <span className="project-menu__label">{p.name}</span>
                     <span className="project-menu__right">
                       {p.role && <span className="project-menu__role">{p.role}</span>}
@@ -459,12 +525,24 @@ export default function App() {
                 <div className="project-menu__sep" />
                 {activeProject && (
                   <div className="project-menu__item"
-                       onClick={() => openProjectForm(activeProject, 'members')}>
+                       role="menuitem" tabIndex={0}
+                       onClick={() => openProjectForm(activeProject, 'members')}
+                       onKeyDown={(e) => {
+                         if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+                           e.preventDefault(); openProjectForm(activeProject, 'members');
+                         }
+                       }}>
                     Manage members…
                   </div>
                 )}
                 <div className="project-menu__item project-menu__add"
-                     onClick={() => openProjectForm('create')}>
+                     role="menuitem" tabIndex={0}
+                     onClick={() => openProjectForm('create')}
+                     onKeyDown={(e) => {
+                       if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+                         e.preventDefault(); openProjectForm('create');
+                       }
+                     }}>
                   + New project
                 </div>
               </div>
