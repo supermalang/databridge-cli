@@ -48,7 +48,7 @@ A card is startable only when all of the following hold:
 | Area | Planned | Progress |
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
-| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 0 / 9 |
+| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 2 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 7 / 7 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 6 / 6 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
@@ -157,7 +157,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **UX-1 — Show project color & icon**
+- [x] **UX-1 — Show project color & icon**
 
   The create/edit form collects a color + emoji icon, but they're rendered nowhere — the
   switcher avatar still shows `name.slice(0,2)` and menu rows are text-only.
@@ -181,7 +181,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **UX-2 — Keyboard-accessible project switcher**
+- [x] **UX-2 — Keyboard-accessible project switcher**
 
   Menu rows are `<div onClick>` with no `role`/`tabIndex`/key handlers; the trigger lacks
   `aria-expanded`/`aria-haspopup`; dropdowns don't close on `Escape`.
