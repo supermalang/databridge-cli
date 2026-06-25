@@ -57,9 +57,9 @@ function detectAiPreset(ai) {
 const FORMATS = [
   { id: 'csv',      label: 'CSV',  sub: 'flat' },
   { id: 'xlsx',     label: 'XLSX', sub: 'sheets' },
-  { id: 'json',     label: 'JSON', sub: 'array', soon: true },
-  { id: 'mysql',    label: 'MySQL',              soon: true },
-  { id: 'postgres', label: 'PostgreSQL',         soon: true },
+  { id: 'json',     label: 'JSON', sub: 'array' },
+  { id: 'mysql',    label: 'MySQL',              sub: 'table' },
+  { id: 'postgres', label: 'PostgreSQL',         sub: 'table' },
 ];
 
 export default function Sources({ section = 'setup' } = {}) {
