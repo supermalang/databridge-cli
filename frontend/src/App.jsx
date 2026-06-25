@@ -17,7 +17,7 @@ import ProfileForm from './pages/ProfileForm.jsx';
 import { useToast } from './components/Toast.jsx';
 import { useCommand } from './hooks/useCommand.js';
 import { fetchMe } from './lib/auth.js';
-import { listProjects, activateProject } from './lib/projects.js';
+import { listProjects, activateProject, archiveProject } from './lib/projects.js';
 import { PermsProvider } from './lib/perms.js';
 import { RunProvider } from './lib/run.js';
 import { DirtyProvider } from './lib/dirty.js';
@@ -207,6 +207,13 @@ export default function App() {
     setActiveProjectId(id);
     setProjMenuOpen(false);
     window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
+  };
+
+  // Bring an archived project back to the active group. Archived rows are not
+  // switchable (no body onClick); Unarchive is their only action.
+  const unarchiveProject = async (id) => {
+    await archiveProject(id, false);
+    await refreshProjects();
   };
 
   // Escape closes the open project menu and returns focus to the trigger —
@@ -512,12 +519,21 @@ export default function App() {
                     {archivedProjects.map(p => (
                       <div key={p.id} className="project-menu__item project-menu__archived">
                         <span className="project-menu__label">{p.name}</span>
-                        {(p.role === 'admin' || p.role === 'superadmin' || isSuperadmin) && (
-                          <button className="project-menu__gear" title="Project settings"
-                                  onClick={(e) => { e.stopPropagation(); openProjectForm(p); }}>
-                            ⚙
+                        <span className="project-menu__right">
+                          <button className="project-menu__unarchive"
+                                  type="button"
+                                  data-testid="project-unarchive"
+                                  title="Restore this project to the active list"
+                                  onClick={(e) => { e.stopPropagation(); unarchiveProject(p.id); }}>
+                            Unarchive
                           </button>
-                        )}
+                          {(p.role === 'admin' || p.role === 'superadmin' || isSuperadmin) && (
+                            <button className="project-menu__gear" title="Project settings"
+                                    onClick={(e) => { e.stopPropagation(); openProjectForm(p); }}>
+                              ⚙
+                            </button>
+                          )}
+                        </span>
                       </div>
                     ))}
                   </>
