@@ -24,6 +24,9 @@ psycopg2-binary>=2.9.0
 alembic>=1.13.0
 # Object storage (Minio/S3)
 boto3>=1.34.0
+# Optional shared (cross-worker) backend for the perf cache (PERF-2). Imported
+# lazily only when PERF_CACHE_URL / REDIS_URL is set; unset → in-process dict.
+redis>=5.0.0,<9
 # pymysql>=1.1.0
 # supabase>=2.0.0
 # Uncomment for dot_map with OpenStreetMap basemap (basemap: true):

@@ -264,6 +264,7 @@ purpose + endpoints: [`docs/reference/internals.md`](docs/reference/internals.md
 | `OPENAI_API_KEY` / Anthropic | AI features | LLM provider |
 | `LANGFUSE_PUBLIC_KEY` / `SECRET_KEY` / `HOST` | Prompt mgmt | Langfuse (falls back to seeds) |
 | `SUPERADMIN_EMAILS` / `ZITADEL_API_TOKEN` | Admin | Superadmin bootstrap + invitations |
+| `PERF_CACHE_URL` / `REDIS_URL` | No (optional) | Shared cross-worker perf-cache backend (PERF-2); unset → in-process dict |
 
 ## Development workflow (gated)
 

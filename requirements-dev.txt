@@ -1,3 +1,6 @@
 # Test-only dependencies (pytest itself is pinned in requirements.txt).
 # Install with: pip install -r requirements.txt -r requirements-dev.txt
 responses>=0.25
+# PERF-2: in-memory Redis double for the shared cache-backend tests
+# (tests/test_perf_cache_shared.py). No real Redis needed in CI.
+fakeredis>=2.20
