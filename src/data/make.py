@@ -41,10 +41,16 @@ def cli(ctx, config_path, strict):
 def cmd_fetch_questions(ctx):
     """Fetch form schema from Kobo/Ona and write questions into config.yml."""
     from src.data.extract import get_client
-    from src.data.questions import fetch_and_write_questions
+    from src.data.questions import fetch_and_write_questions, fetch_and_write_forms_questions
     config_path = ctx.obj["config_path"]
     cfg = load_config(config_path)
-    fetch_and_write_questions(get_client(cfg), cfg, config_path)
+    if (cfg.get("api", {}) or {}).get("forms"):
+        # Multi-form: write per-alias question lists into forms_questions.
+        fetch_and_write_forms_questions(
+            cfg, config_path, lambda uid: get_client(cfg, form_uid=uid)
+        )
+    else:
+        fetch_and_write_questions(get_client(cfg), cfg, config_path)
 
 @cli.command("generate-template")
 @click.option("--out", default=None, help="Output path. Defaults to report.template in config.yml.")
@@ -258,14 +264,16 @@ def _run_classify(cfg, config_path, sample=None, rediscover=False):
 @click.pass_context
 def cmd_download(ctx, sample, period, no_redact):
     """Download submissions, apply filters, export to configured destination."""
-    from src.data.extract import get_client
-    from src.data.transform import load_data, apply_filters, apply_computed_columns, export_data
-    from src.utils.pii import PIIConfigError
     from src.utils import lf_client
     config_path = ctx.obj["config_path"]
     strict = ctx.obj["strict"]
     cfg = load_config(config_path)
-    if not cfg.get("questions"):
+    multiform = bool((cfg.get("api", {}) or {}).get("forms"))
+    if multiform:
+        if not cfg.get("forms_questions"):
+            click.echo("No forms_questions in config.yml. Run fetch-questions first.", err=True)
+            sys.exit(1)
+    elif not cfg.get("questions"):
         click.echo("No questions in config.yml. Run fetch-questions first.", err=True)
         sys.exit(1)
     if period:
@@ -276,25 +284,64 @@ def cmd_download(ctx, sample, period, no_redact):
         if not any(e.get("label") == period for e in registry):
             registry.append({"label": period, "slug": slugify(period)})
     with lf_client.command_trace("download"):
-        client = get_client(cfg)
-        log.info("Downloading submissions ...")
-        raw = client.get_submissions(sample_size=sample)
-        log.info("Transforming data ...")
-        df, repeat_tables = load_data(raw, cfg, strict=strict)
-        df, repeat_tables = apply_filters(df, cfg, repeat_tables, strict=strict)
-        df = apply_computed_columns(df, cfg, repeat_tables, strict=strict)
-        log.info(f"Exporting {len(df)} rows ...")
-        if no_redact:
-            log.warning("⚠ RAW export: PII redaction & consent gating SKIPPED (--no-redact).")
-        try:
-            export_data(df, cfg, repeat_tables, redact=not no_redact)
-        except PIIConfigError as e:
-            click.echo(f"PII config error — export aborted: {e}", err=True)
-            sys.exit(1)
+        if multiform:
+            _download_multiform(cfg, strict, sample, no_redact)
+        else:
+            _download_one_form(cfg, cfg, strict, sample, no_redact)
         if period:
             from src.utils.config import write_config
             write_config(cfg, config_path)
-        _run_classify(cfg, config_path, sample=sample)
+        if not multiform:
+            _run_classify(cfg, config_path, sample=sample)
+
+
+def _download_one_form(cfg, run_cfg, strict, sample, no_redact, form_uid=None):
+    """Extract + filter + export a single form's submissions.
+
+    ``cfg`` is the full config (for api/export/pii sections); ``run_cfg`` carries
+    the per-form ``questions`` + ``form.alias`` used for transform + filenames.
+    For single-form, cfg and run_cfg are the same object — behavior unchanged.
+    """
+    from src.data.extract import get_client
+    from src.data.transform import load_data, apply_filters, apply_computed_columns, export_data
+    from src.utils.pii import PIIConfigError
+
+    client = get_client(cfg, form_uid=form_uid)
+    log.info("Downloading submissions ...")
+    raw = client.get_submissions(sample_size=sample)
+    log.info("Transforming data ...")
+    df, repeat_tables = load_data(raw, run_cfg, strict=strict)
+    df, repeat_tables = apply_filters(df, run_cfg, repeat_tables, strict=strict)
+    df = apply_computed_columns(df, run_cfg, repeat_tables, strict=strict)
+    log.info(f"Exporting {len(df)} rows ...")
+    if no_redact:
+        log.warning("⚠ RAW export: PII redaction & consent gating SKIPPED (--no-redact).")
+    try:
+        export_data(df, run_cfg, repeat_tables, redact=not no_redact)
+    except PIIConfigError as e:
+        click.echo(f"PII config error — export aborted: {e}", err=True)
+        sys.exit(1)
+
+
+def _download_multiform(cfg, strict, sample, no_redact):
+    """Download each aliased form into its own ``{alias}_data_*`` files.
+
+    Builds a per-form view of the config so the existing single-form pipeline
+    (transform + export) runs unchanged once per form: the per-form view carries
+    that form's ``questions`` and ``form.alias`` (which drives the filename).
+    """
+    from copy import deepcopy
+    from src.data.extract import iter_forms
+
+    forms_questions = cfg.get("forms_questions", {}) or {}
+    for alias, uid in iter_forms(cfg):
+        log.info(f"=== Form '{alias}' (UID '{uid}') ===")
+        run_cfg = deepcopy(cfg)
+        # Scope the per-form pipeline: its own questions + alias for filenames.
+        run_cfg["questions"] = forms_questions.get(alias, [])
+        run_cfg["form"] = {"alias": alias, "uid": uid}
+        run_cfg.pop("forms_questions", None)
+        _download_one_form(cfg, run_cfg, strict, sample, no_redact, form_uid=uid)
 
 
 @cli.command("list-sessions")

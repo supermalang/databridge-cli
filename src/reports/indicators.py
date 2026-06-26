@@ -65,6 +65,7 @@ def compute_indicators(
     df: pd.DataFrame,
     repeat_tables: Optional[Dict[str, pd.DataFrame]] = None,
     per_period: Optional[Dict[str, Dict]] = None,
+    per_form: Optional[Dict[str, Dict]] = None,
 ) -> Dict[str, str]:
     """Return a dict of {ind_<name>: formatted_value} for all indicators.
 
@@ -75,6 +76,12 @@ def compute_indicators(
         When provided, each indicator is also computed against every period in per_period.
         The result populates `ind_<name>_p_<slug>` placeholders, plus `_delta` and `_pct_change`
         when a baseline period exists.
+
+    per_form (optional, ME-4): {alias: {"df": main_df, "repeat_tables": {...}}}
+        Multi-form bundle. An indicator may carry a `form:` selector naming the
+        alias it reads from (e.g. `form: baseline` vs `form: endline`) — enabling
+        pre/post and difference-in-differences. Absent `form:` (or absent
+        per_form) → the positional ``df`` is used, so single-form is unchanged.
     """
     if repeat_tables is None:
         repeat_tables = {}
@@ -84,8 +91,20 @@ def compute_indicators(
         if not name:
             continue
         try:
+            # ME-4: an indicator may select a form alias from the per_form bundle;
+            # otherwise it reads the positional df (single-form, unchanged).
+            base_df, base_repeats = df, repeat_tables
+            form_alias = ind.get("form")
+            if per_form and form_alias:
+                bundle = per_form.get(form_alias)
+                if bundle is None:
+                    raise ValueError(
+                        f"indicator '{name}' references unknown form '{form_alias}'"
+                    )
+                base_df = bundle["df"]
+                base_repeats = bundle.get("repeat_tables", {})
             # Resolve data source for this indicator
-            ind_df = _resolve_source(ind, df, repeat_tables)
+            ind_df = _resolve_source(ind, base_df, base_repeats)
             value = _compute(ind, ind_df)
             fmt = ind.get("format", "number")
             context[f"ind_{name}"] = _format(value, fmt, ind)

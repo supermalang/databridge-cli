@@ -13,6 +13,32 @@ form:
   uid: aAbBcCdDeEfFgGhH
   alias: monitoring_survey
 
+# --- Multi-form / longitudinal linkage (OPTIONAL — single-form above is the default) ---
+# To connect more than one form (baseline ↔ endline, monitoring ↔ outcome, etc.),
+# list them under api.forms instead of the single top-level `form:` block above.
+# When api.forms is present, the single-form `form:` key is not required.
+#
+#   api:
+#     platform: kobo
+#     url: https://kf.kobotoolbox.org/api/v2
+#     token: env:KOBO_TOKEN
+#     forms:
+#       - {alias: baseline, uid: AAA111}
+#       - {alias: endline,  uid: BBB222}
+#
+# fetch-questions then writes a per-alias question map (instead of flat `questions:`):
+#   forms_questions:
+#     baseline: [ ... ]
+#     endline:  [ ... ]
+#
+# download writes a separate data file per alias: baseline_data_*.csv, endline_data_*.csv
+#
+# Indicators select which form they read from with a `form:` selector — enabling
+# pre/post comparisons and difference-in-differences:
+#   indicators:
+#     - {name: income_base, stat: mean, question: income, form: baseline}
+#     - {name: income_end,  stat: mean, question: income, form: endline}
+
 # Auto-filled by fetch-questions — edit after
 # For free-text (qualitative) questions you can add a classify: block so that
 # `classify-text` clusters responses into themes and writes a *_cluster column:
