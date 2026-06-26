@@ -3,8 +3,6 @@
     "nav": {
       "home": "Home",
       "extract": "Extract",
-      "transform": "Transform",
-      "model": "Model",
       "analyze": "Analyze",
       "deliver": "Deliver"
     },
