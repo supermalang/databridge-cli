@@ -23,13 +23,18 @@ export async function fetchMe() {
   }
 }
 
-// Update the signed-in user's profile (name). Propagates to Zitadel server-side
-// when configured. Returns the updated user dict.
-export async function updateProfile({ given_name, family_name }) {
+// Update the signed-in user's profile. `name` parts propagate to Zitadel
+// server-side when configured; `language` persists the interface-language
+// preference (I18N-1). Only the keys passed are sent. Returns the updated user.
+export async function updateProfile(patch = {}) {
+  const body = {};
+  if (patch.given_name !== undefined) body.given_name = patch.given_name;
+  if (patch.family_name !== undefined) body.family_name = patch.family_name;
+  if (patch.language !== undefined) body.language = patch.language;
   const res = await fetch('/api/me', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ given_name, family_name }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const d = await res.json().catch(() => ({}));

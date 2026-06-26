@@ -54,7 +54,7 @@ A card is startable only when all of the following hold:
 | [M&E capabilities](#me-capabilities) | 5 | 5 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
-| [Internationalization (i18n)](#internationalization-i18n) | 2 | 0 / 2 |
+| [Internationalization (i18n)](#internationalization-i18n) | 2 | 1 / 2 |
 | [Performance](#performance) | 2 | 2 / 2 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -2595,7 +2595,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **I18N-1 — i18n framework + language switcher + persisted profile preference (P1)**
+- [x] **I18N-1 — i18n framework + language switcher + persisted profile preference (P1)**
 
   Stand up the localization mechanism end to end: introduce an i18n library (e.g. `react-i18next`
   + `i18next`) wrapping the React app with an `en` (default) and `fr` resource bundle and a
