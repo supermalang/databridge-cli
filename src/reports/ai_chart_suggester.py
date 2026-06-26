@@ -177,6 +177,8 @@ def _build_variables(cfg: Dict, user_request: str = "") -> Dict:
     if pii_lines:
         pii_block = "PII REDACTION (avoid these columns in chart suggestions — they will be masked or dropped at render time):\n" + "\n".join(pii_lines) + "\n\n"
 
+    language = (cfg.get("ai") or {}).get("language") or "English"
+
     return {
         "header_line": header_line,
         "form_alias": form_alias,
@@ -186,6 +188,7 @@ def _build_variables(cfg: Dict, user_request: str = "") -> Dict:
         "views_block": views_block,
         "pii_block": pii_block,
         "existing_block": existing_block,
+        "language": language,
     }
 
 
