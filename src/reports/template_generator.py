@@ -52,6 +52,7 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
             _meta(doc,label,f"{{{{ ind_{name} }}}}")
             if ind.get("disaggregate_by"):
                 _meta(doc,f"{label} — breakdown",f"{{{{ ind_{name}_table }}}}")
+        _indicator_reference_annex(doc,indicators)
     tables=cfg.get("tables",[])
     if tables:
         _divider(doc); _heading(doc,"Data Tables",1)
@@ -177,6 +178,31 @@ def _chart_ph(doc,ph):
 def _note(doc,text):
     p=doc.add_paragraph(f"i  {text}")
     p.runs[0].font.size=Pt(9); p.runs[0].font.color.rgb=RGBColor(0x88,0x87,0x80); p.runs[0].font.italic=True
+
+def _indicator_reference_annex(doc,indicators):
+    # Donor-style indicator reference annex: one row per indicator, with the
+    # four metadata dimensions labelled as columns. Missing values render as
+    # blank cells so indicators without metadata still generate cleanly.
+    _heading(doc,"Indicator Reference",2)
+    _descriptor(doc,"Reference metadata for each indicator.")
+    cols=[("Indicator","label"),("Unit","unit"),("Source","source"),
+          ("Frequency","frequency"),("Responsible","responsible")]
+    table=doc.add_table(rows=1,cols=len(cols)); table.style="Table Grid"
+    hdr=table.rows[0].cells
+    for cell,(title,_) in zip(hdr,cols):
+        cell.text=title
+        for r in cell.paragraphs[0].runs: r.bold=True; r.font.color.rgb=RGBColor(0xFF,0xFF,0xFF)
+        tc=cell._tc; tcPr=tc.get_or_add_tcPr(); shd=OxmlElement("w:shd")
+        shd.set(qn("w:val"),"clear"); shd.set(qn("w:color"),"auto"); shd.set(qn("w:fill"),"0F6E56")
+        tcPr.append(shd)
+    for ind in indicators:
+        row=table.add_row().cells
+        for cell,(_,key) in zip(row,cols):
+            if key=="label":
+                cell.text=str(ind.get("label",ind.get("name","")))
+            else:
+                cell.text=str(ind.get(key,"") or "")
+    doc.add_paragraph()
 
 def _ref_table(doc,cfg):
     rows=[

@@ -280,6 +280,12 @@ indicators: []
 #     question: Beneficiary_ID   # export_label of the column
 #     stat: count                # count|sum|mean|median|min|max|percent|most_common|count_distinct
 #     format: number             # number|decimal|percent|text
+#     # Optional reference metadata — surfaced in the generated template's
+#     # "Indicator Reference" annex (donor-style). All four are optional.
+#     unit: beneficiaries        # unit of measure
+#     source: Registration form  # data source / means of verification
+#     frequency: Quarterly       # reporting frequency
+#     responsible: M&E Officer   # who is responsible for the indicator
 #
 #   - name: communes_reached
 #     label: Communes reached
