@@ -54,7 +54,7 @@ A card is startable only when all of the following hold:
 | [M&E capabilities](#me-capabilities) | 5 | 5 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
-| [Internationalization (i18n)](#internationalization-i18n) | 2 | 1 / 2 |
+| [Internationalization (i18n)](#internationalization-i18n) | 2 | 2 / 2 |
 | [Performance](#performance) | 2 | 2 / 2 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -2676,7 +2676,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **I18N-2 — Full English + French translation coverage of the interface (P1)**
+- [x] **I18N-2 — Full English + French translation coverage of the interface (P1)**
 
   Build on I18N-1's mechanism to localize the **entire** interface: externalize every user-facing
   string across the six pages + shared components into the `en`/`fr` resource bundles so no
