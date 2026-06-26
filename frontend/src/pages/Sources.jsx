@@ -8,6 +8,7 @@ import StageHelp from '../components/StageHelp.jsx';
 import { useRun } from '../lib/run.js';
 import { usePerms } from '../lib/perms.js';
 import { useAiStatus } from '../lib/aiStatus.js';
+import { SkeletonPanel } from '../components/Skeleton.jsx';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { RailLayout, StatusCard } from '../components/Rail.jsx';
 
@@ -159,7 +160,7 @@ export default function Sources({ section = 'setup' } = {}) {
   };
 
   // ── early states ─────────────────────────────────────────────────────────
-  if (cfg === null) return <div className="page"><p className="empty-state">{t('sources.loadingConfig')}</p></div>;
+  if (cfg === null) return <div className="page"><SkeletonPanel rows={5} rowHeight={48} label={t('sources.loadingConfig')} /></div>;
 
   // ── render ───────────────────────────────────────────────────────────────
   // The "output" section lives under the Deliver stage; setup + ai are Extract.
