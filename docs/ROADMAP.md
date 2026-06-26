@@ -57,7 +57,7 @@ A card is startable only when all of the following hold:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 3 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 3 | 3 / 3 |
-| [Maintenance & hardening](#maintenance--hardening) | 3 | 0 / 3 |
+| [Maintenance & hardening](#maintenance--hardening) | 4 | 0 / 4 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -3688,6 +3688,52 @@ A card is startable only when all of the following hold:
   **UAT:** N/A (verified via the Verify command + the verifier + PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_profile_api.py tests/test_profile_language.py`
+
+---
+
+- [ ] **MNT-4 — Fix Toast crash: i18n `t` shadowed by the toasts.map variable (P1)**
+
+  `frontend/src/components/Toast.jsx` destructures the i18n function as `t`
+  (`const { t } = useTranslation()`), then renders `toasts.map(t => …)` — the map
+  parameter **shadows** the translation function. Inside the map, the dismiss
+  button calls `aria-label={t('components.toast.dismiss')}`, which now invokes the
+  toast object as a function → `TypeError: t is not a function`, crashing
+  `ToastProvider` and blanking the whole app (no error boundary). It triggers
+  whenever **any** toast renders — e.g. "Try with sample data" and "Create project"
+  both fire a success toast. Regression from the i18n toast externalization.
+  Fix: rename the `toasts.map` parameter (e.g. `item`) so `t(...)` resolves to the
+  translation function; no behaviour/markup change otherwise.
+
+  **Files:** `frontend/src/components/Toast.jsx` ·
+  `frontend/tests/e2e/toast-i18n.spec.ts` (new)
+
+  **Config/schema impact:** None — frontend bug fix only.
+
+  **Acceptance criteria**
+  - Rendering one or more toasts does NOT throw; `ToastProvider` mounts and the app
+    stays interactive (no blank page / uncaught `TypeError`)
+  - Each toast's dismiss control has a non-empty accessible name from
+    `components.toast.dismiss` (the i18n `t` resolves correctly inside the map)
+  - Triggering a toast via a real user action (e.g. load sample data, or create a
+    project) shows the toast and leaves the page rendered (root not emptied)
+  - No raw i18n key leaks; en/fr remain key-aligned (`check:i18n` passes)
+  - No change to toast behaviour, styling, timing, or markup beyond the variable rename
+
+  **Unit tests:** N/A (frontend-only; Vitest not installed — asserted by the Playwright E2E below).
+
+  **E2E:** `frontend/tests/e2e/toast-i18n.spec.ts` (new) — load the app (network-mocked,
+  same harness as connection-gating), perform an action that fires a toast, and assert:
+  (a) no `pageerror` occurs, (b) the toast (`[role="status"]`/`[role="alert"]`) is visible,
+  (c) its dismiss button exposes a non-empty accessible name, and (d) the `#root` still has
+  content (app not blanked). A regression guard run against the unpatched component must fail.
+  (No new `toHaveScreenshot` baseline required — behavioural fix, not a visual change.)
+
+  **UAT:**
+  1. Create a new project and confirm the success toast appears and the app does NOT go blank.
+  2. On Extract → Connection, click "Try with sample data" and confirm the toast appears with no crash.
+  3. Confirm the toast's ✕ dismiss button is reachable/announced and dismisses the toast.
+
+  **Verify:** `cd frontend && npx playwright test toast-i18n.spec.ts && npm run check:i18n`
 
 ---
 
