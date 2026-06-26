@@ -52,6 +52,7 @@ Disaggregation (optional):
 """
 import logging
 from typing import Dict, List, Optional
+import numpy as np
 import pandas as pd
 
 log = logging.getLogger(__name__)
@@ -283,6 +284,17 @@ def _compute(ind: Dict, df: pd.DataFrame):
     if stat == "sum":
         return numeric.sum()
     if stat == "mean":
+        weight_col = ind.get("weight_column")
+        if weight_col:
+            if weight_col not in df.columns:
+                raise ValueError(f"weight_column '{weight_col}' not found in data")
+            weights = pd.to_numeric(df[weight_col], errors="coerce")
+            # Align on index and keep only rows where BOTH value and weight are numeric.
+            vals = pd.to_numeric(series, errors="coerce")
+            paired = pd.DataFrame({"v": vals, "w": weights}).dropna()
+            if paired.empty or paired["w"].sum() == 0:
+                raise ValueError(f"no weighted data in column '{question}' with weights '{weight_col}'")
+            return float(np.average(paired["v"], weights=paired["w"]))
         return numeric.mean()
     if stat == "median":
         return numeric.median()

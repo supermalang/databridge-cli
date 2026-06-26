@@ -315,6 +315,10 @@ indicators: []
 #     question: Household_Size
 #     stat: mean
 #     format: decimal
+#     # weight_column: Survey_Weight   # optional: stat: mean becomes a weighted
+#                                      # average (numpy.average) over rows where both
+#                                      # the value and weight are numeric. Also valid
+#                                      # on a chart with value_col + agg: mean.
 #
 #   - name: top_region
 #     label: Most represented region

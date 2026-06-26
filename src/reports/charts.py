@@ -151,12 +151,28 @@ def _grouped_counts(df, category_col, opts):
     value_col = opts.get("value_col")
     if value_col and value_col in df.columns:
         agg_fn = opts.get("agg", "sum")
-        grouped = (
-            pd.to_numeric(df[value_col], errors="coerce")
-            .groupby(df[category_col])
-            .agg(agg_fn)
-            .dropna()
-        )
+        weight_col = opts.get("weight_column")
+        if weight_col and weight_col in df.columns and agg_fn == "mean":
+            vals = pd.to_numeric(df[value_col], errors="coerce")
+            weights = pd.to_numeric(df[weight_col], errors="coerce")
+            paired = pd.DataFrame(
+                {"v": vals, "w": weights, "g": df[category_col]}
+            ).dropna(subset=["v", "w"])
+
+            def _wavg(sub):
+                wsum = sub["w"].sum()
+                if wsum == 0:
+                    return np.nan
+                return np.average(sub["v"], weights=sub["w"])
+
+            grouped = paired.groupby("g").apply(_wavg).dropna()
+        else:
+            grouped = (
+                pd.to_numeric(df[value_col], errors="coerce")
+                .groupby(df[category_col])
+                .agg(agg_fn)
+                .dropna()
+            )
         return _sort(grouped.nlargest(top_n), opts)
     return _sort(_top(df[category_col].dropna(), top_n), opts)
 
