@@ -57,6 +57,12 @@ const ROOT = resolve(HERE, '..');
 const SRC = join(ROOT, 'src');
 
 // ── The audited surfaces (I18N-2 scope). check (C) scans exactly these. ──────
+// Scope: the six primary tabs + the shell + the shared components that render
+// INSIDE those tabs (build options, period/framework pickers, group/table trees,
+// file table, AI spinner, bottom terminal, toasts, user menu). OUT of scope (and
+// deliberately not audited here): the standalone Ask panel, the Validate panel,
+// and ProjectForm/ProjectMembersPanel/ProjectMembersModal — reached from
+// sub-panels/ribbon rather than the six primary tabs; a separate follow-up.
 const AUDITED = [
   'App.jsx',
   'pages/Home.jsx',
@@ -71,6 +77,17 @@ const AUDITED = [
   'components/Modal.jsx',
   'components/EmptyState.jsx',
   'components/ConfirmDialog.jsx',
+  // Shared components rendered INSIDE the six tabs (I18N-2 second pass).
+  'components/BuildOptions.jsx',
+  'components/PeriodPicker.jsx',
+  'components/GroupTree.jsx',
+  'components/TableTree.jsx',
+  'components/FrameworkPicker.jsx',
+  'components/FileTable.jsx',
+  'components/AiThinking.jsx',
+  'components/BottomTerminal.jsx',
+  'components/Toast.jsx',
+  'components/UserMenu.jsx',
 ].map((p) => join(SRC, p));
 
 let failures = 0;

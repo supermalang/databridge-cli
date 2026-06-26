@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Dropdown of framework nodes (goal/outcome/output) with breadcrumb labels.
  * Used by IndicatorModal to set framework_ref.
  */
 export default function FrameworkPicker({ value, onChange }) {
+  const { t } = useTranslation();
   const [nodes, setNodes] = useState([]);
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export default function FrameworkPicker({ value, onChange }) {
       value={value || ''}
       onChange={e => onChange?.(e.target.value || null)}
     >
-      <option value="">(no framework link)</option>
+      <option value="">{t('components.frameworkPicker.none')}</option>
       {nodes.map(n => (
         <option key={n.id} value={n.id}>
           [{n.level}] {n.id} — {n.breadcrumb}

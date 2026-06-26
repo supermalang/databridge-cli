@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const ToastCtx = createContext(() => {});
 
 // Wrap your app in <ToastProvider/> and call useToast() anywhere.
 export function ToastProvider({ children }) {
+  const { t } = useTranslation();
   const [toasts, setToasts] = useState([]);
 
   const dismiss = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), []);
@@ -35,7 +37,7 @@ export function ToastProvider({ children }) {
             <span>{t.text}</span>
             <button
               onClick={() => dismiss(t.id)}
-              aria-label="Dismiss notification"
+              aria-label={t('components.toast.dismiss')}
               style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', opacity: 0.7, fontSize: 14, lineHeight: 1, padding: 0 }}
             >✕</button>
           </div>

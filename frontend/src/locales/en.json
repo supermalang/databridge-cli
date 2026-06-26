@@ -729,6 +729,82 @@
       "deleteMessage": "“{{name}}” will be permanently deleted. This can’t be undone.",
       "deleted": "Deleted {{name}}",
       "deleteFailed": "Delete failed"
+    },
+    "components": {
+    "buildOptions": {
+      "title": "Build options",
+      "hint": "Split one report per value of a main-table column, and preview a few groups before running the full split build.",
+      "splitBy": "Split by",
+      "splitPlaceholder": "No split — type to filter columns",
+      "noSplit": "No split — one combined report",
+      "groupsToBuild": "Groups to build",
+      "groupsHint": "Choose a split-by column to preview groups",
+      "buildAll": "Build all groups (default)",
+      "firstN": "First N groups (preview)",
+      "previewNote": "Preview only — builds the first {{n}} group(s) so you can check the layout before committing to the full split build.",
+      "buildReport": "Build report",
+      "building": "Building…"
+    },
+    "groupTree": {
+      "hidden": "Hidden ({{count}})",
+      "hiddenHint": "notes & non-analytical fields",
+      "pii": "PII ({{count}})",
+      "piiHint": "flagged personal data",
+      "hiddenCount": "· {{count}} hidden",
+      "piiCount": "· {{count}} PII"
+    },
+    "tableTree": {
+      "tableCount_one": "{{count}} table",
+      "tableCount_other": "{{count}} tables"
+    },
+    "frameworkPicker": {
+      "none": "(no framework link)"
+    },
+    "periodPicker": {
+      "none": "(no period)",
+      "baseline": "· baseline",
+      "add": "Add",
+      "addPeriod": "+ Period",
+      "placeholder": "e.g. Q3 2026"
+    },
+    "aiThinking": {
+      "working": "Working…",
+      "analyzing": "Analyzing your data…",
+      "almost": "Almost there…"
+    },
+    "terminal": {
+      "sessions": "Sessions",
+      "filter": "Filter",
+      "awaiting": "Awaiting log lines…",
+      "logLabel": "Pipeline execution log",
+      "barTitle": "terminal",
+      "running": "Running",
+      "idle": "Idle",
+      "open": "Open",
+      "close": "Close",
+      "openTerminal": "Open terminal",
+      "closeTerminal": "Close terminal",
+      "barAria": "Terminal — {{status}}. {{action}}.",
+      "barAriaRunning": "running {{cmd}}",
+      "barAriaIdle": "idle",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "stagePipeline": "Pipeline",
+      "stageExtract": "Extract",
+      "stageTransform": "Transform",
+      "stageModel": "Model",
+      "stageAnalyze": "Analyze",
+      "stageDeliver": "Deliver"
+    },
+    "toast": {
+      "dismiss": "Dismiss notification"
+    },
+    "userMenu": {
+      "account": "Account",
+      "profile": "Profile",
+      "signOut": "Sign out",
+      "superadmin": "superadmin"
+    }
     }
   }
 }

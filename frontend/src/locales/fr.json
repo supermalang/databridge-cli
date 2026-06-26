@@ -729,6 +729,82 @@
       "deleteMessage": "« {{name}} » sera définitivement supprimé. Cette action est irréversible.",
       "deleted": "{{name}} supprimé",
       "deleteFailed": "Échec de la suppression"
+    },
+    "components": {
+    "buildOptions": {
+      "title": "Options de génération",
+      "hint": "Générez un rapport par valeur d’une colonne de la table principale, et prévisualisez quelques groupes avant de lancer la génération complète par groupe.",
+      "splitBy": "Répartir par",
+      "splitPlaceholder": "Aucune répartition — saisissez pour filtrer les colonnes",
+      "noSplit": "Aucune répartition — un rapport unique consolidé",
+      "groupsToBuild": "Groupes à générer",
+      "groupsHint": "Choisissez une colonne de répartition pour prévisualiser les groupes",
+      "buildAll": "Générer tous les groupes (par défaut)",
+      "firstN": "N premiers groupes (aperçu)",
+      "previewNote": "Aperçu seulement — génère les {{n}} premier(s) groupe(s) pour vérifier la mise en page avant de lancer la génération complète par groupe.",
+      "buildReport": "Générer le rapport",
+      "building": "Génération…"
+    },
+    "groupTree": {
+      "hidden": "Masqués ({{count}})",
+      "hiddenHint": "notes et champs non analytiques",
+      "pii": "DCP ({{count}})",
+      "piiHint": "données personnelles signalées",
+      "hiddenCount": "· {{count}} masqué(s)",
+      "piiCount": "· {{count}} DCP"
+    },
+    "tableTree": {
+      "tableCount_one": "{{count}} table",
+      "tableCount_other": "{{count}} tables"
+    },
+    "frameworkPicker": {
+      "none": "(aucun lien au cadre)"
+    },
+    "periodPicker": {
+      "none": "(aucune période)",
+      "baseline": "· référence",
+      "add": "Ajouter",
+      "addPeriod": "+ Période",
+      "placeholder": "ex. T3 2026"
+    },
+    "aiThinking": {
+      "working": "Traitement…",
+      "analyzing": "Analyse de vos données…",
+      "almost": "Bientôt terminé…"
+    },
+    "terminal": {
+      "sessions": "Sessions",
+      "filter": "Filtre",
+      "awaiting": "En attente de lignes de journal…",
+      "logLabel": "Journal d’exécution du pipeline",
+      "barTitle": "terminal",
+      "running": "En cours",
+      "idle": "Inactif",
+      "open": "Ouvrir",
+      "close": "Fermer",
+      "openTerminal": "Ouvrir le terminal",
+      "closeTerminal": "Fermer le terminal",
+      "barAria": "Terminal — {{status}}. {{action}}.",
+      "barAriaRunning": "exécution de {{cmd}}",
+      "barAriaIdle": "inactif",
+      "expand": "Développer",
+      "collapse": "Réduire",
+      "stagePipeline": "Pipeline",
+      "stageExtract": "Extraction",
+      "stageTransform": "Transformation",
+      "stageModel": "Modélisation",
+      "stageAnalyze": "Analyse",
+      "stageDeliver": "Diffusion"
+    },
+    "toast": {
+      "dismiss": "Fermer la notification"
+    },
+    "userMenu": {
+      "account": "Compte",
+      "profile": "Profil",
+      "signOut": "Se déconnecter",
+      "superadmin": "superadministrateur"
+    }
     }
   }
 }

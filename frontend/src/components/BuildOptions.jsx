@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Shared build-options control for the regular Reports build and the Express
@@ -25,10 +26,11 @@ export default function BuildOptions({
   onChange,
   hideTrigger = false,
   disabled = false,
-  buildLabel = 'Build report',
+  buildLabel,
   buildTitle,
   busy = false,
 }) {
+  const { t } = useTranslation();
   const [splitBy, setSplitBy] = useState('');
   const [sampleMode, setSampleMode] = useState('all');   // 'all' | 'first-n'
   const [sampleN, setSampleN] = useState('2');
@@ -71,9 +73,9 @@ export default function BuildOptions({
   }, [splitCols, query]);
 
   const options = useMemo(
-    () => [{ value: NO_SPLIT, label: 'No split — one combined report' },
+    () => [{ value: NO_SPLIT, label: t('components.buildOptions.noSplit') },
            ...filteredCols.map((c) => ({ value: c, label: c }))],
-    [filteredCols],
+    [filteredCols, t],
   );
 
   // Keep the keyboard highlight in range as the filtered list shrinks/grows.
@@ -136,16 +138,15 @@ export default function BuildOptions({
   return (
     <div className="build-options" data-testid="build-options">
       <div className="build-options__header">
-        <span className="build-options__title">Build options</span>
+        <span className="build-options__title">{t('components.buildOptions.title')}</span>
         <p className="build-options__hint">
-          Split one report per value of a main-table column, and preview a few groups
-          before running the full split build.
+          {t('components.buildOptions.hint')}
         </p>
       </div>
 
       <div className="build-options__row">
         <div className="build-options__field">
-          <span className="build-options__label" id="build-split-by-label">Split by</span>
+          <span className="build-options__label" id="build-split-by-label">{t('components.buildOptions.splitBy')}</span>
           <div className="build-combo" ref={comboRef}>
             <input
               ref={inputRef}
@@ -159,7 +160,7 @@ export default function BuildOptions({
               aria-labelledby="build-split-by-label"
               aria-autocomplete="list"
               autoComplete="off"
-              placeholder="No split — type to filter columns"
+              placeholder={t('components.buildOptions.splitPlaceholder')}
               value={open ? query : (splitBy || '')}
               disabled={disabled}
               onFocus={openList}
@@ -200,17 +201,17 @@ export default function BuildOptions({
         </div>
 
         <label className="build-options__field">
-          <span className="build-options__label">Groups to build</span>
+          <span className="build-options__label">{t('components.buildOptions.groupsToBuild')}</span>
           <select
             className="build-options__select"
             data-testid="build-sample-mode"
             value={sampleMode}
             onChange={(e) => { setSampleMode(e.target.value); emit(splitBy, e.target.value, sampleN); }}
             disabled={disabled || !splitActive}
-            title={splitActive ? undefined : 'Choose a split-by column to preview groups'}
+            title={splitActive ? undefined : t('components.buildOptions.groupsHint')}
           >
-            <option value="all">Build all groups (default)</option>
-            <option value="first-n">First N groups (preview)</option>
+            <option value="all">{t('components.buildOptions.buildAll')}</option>
+            <option value="first-n">{t('components.buildOptions.firstN')}</option>
           </select>
         </label>
 
@@ -232,8 +233,7 @@ export default function BuildOptions({
 
       {splitActive && sampleMode === 'first-n' && (
         <p className="build-options__preview-note">
-          Preview only — builds the first {sampleN || 'N'} group(s) so you can check the
-          layout before committing to the full split build.
+          {t('components.buildOptions.previewNote', { n: sampleN || 'N' })}
         </p>
       )}
 
@@ -247,7 +247,7 @@ export default function BuildOptions({
             disabled={disabled || busy}
             title={buildTitle}
           >
-            {busy ? 'Building…' : buildLabel}
+            {busy ? t('components.buildOptions.building') : (buildLabel || t('components.buildOptions.buildReport'))}
           </button>
         </div>
       )}
