@@ -387,6 +387,19 @@ indicators: []
 # In your Word template: "This report covers {{ ind_total_beneficiaries }}
 # beneficiaries. {{ ind_pct_female }} are female."
 
+# ---------------------------------------------------------------------------
+# Equity / inclusion lens (optional)
+# ---------------------------------------------------------------------------
+# List cross-cutting variables (gender, age group, location, disability, ...).
+# A single line here expands into a full disaggregation section: build-report
+# auto-generates one stacked-bar chart per indicator × dimension, so every
+# indicator above is broken down across each equity dimension — surfacing gaps
+# between groups without writing a chart for each combination by hand.
+# Each generated chart's questions are [<indicator question>, <dimension>] and
+# its name is "equity_<indicator>_<dimension>". Omit or leave empty to skip.
+equity_dimensions: []
+# equity_dimensions: [Gender, Age_group, Region]
+
 # Text summaries → {{ summary_<name> }} placeholders in Word template
 # Each summary produces a paragraph of text computed from the data.
 # stat types:

@@ -159,6 +159,56 @@ def compute_indicators(
     return context
 
 
+def build_equity_charts(cfg: Dict) -> List[Dict]:
+    """Build disaggregation chart specs for the equity / inclusion lens (ME-1).
+
+    One chart spec is produced per indicator x equity dimension, so a single
+    ``equity_dimensions:`` config line yields a full disaggregation section in
+    the report. Each spec is shaped like the rest of the chart engine
+    (mirrors ``default_charts.default_charts_from_questions``):
+
+        {"name", "title", "type", "questions"}
+
+    The chart ``type`` is ``stacked_bar`` (a grouped/stacked categorical
+    comparison across the equity dimension). The indicator's measured column and
+    the equity dimension are both referenced in ``questions`` so the dimension
+    drives the disaggregation.
+
+    Returns ``[]`` when ``equity_dimensions`` is absent/empty OR there are no
+    indicators — nothing to disaggregate.
+    """
+    from src.utils.periods import slugify
+
+    dimensions = cfg.get("equity_dimensions") or []
+    indicators = cfg.get("indicators") or []
+    if not dimensions or not indicators:
+        return []
+
+    charts: List[Dict] = []
+    used_names = set()
+    for ind in indicators:
+        ind_name = ind.get("name")
+        if not ind_name:
+            continue
+        measure = ind.get("question") or ind_name
+        for dim in dimensions:
+            if not dim:
+                continue
+            base = slugify(f"equity_{ind_name}_{dim}") or f"equity_chart_{len(charts) + 1}"
+            name, i = base, 2
+            while name in used_names:
+                name = f"{base}_{i}"
+                i += 1
+            used_names.add(name)
+            charts.append({
+                "name": name,
+                "title": f"{ind_name} by {dim}",
+                "type": "stacked_bar",
+                "questions": [measure, dim],
+            })
+    return charts
+
+
 def _rag_status(pct, warning, critical) -> Optional[str]:
     """RAG traffic-light status on the pct_achievement scale (ME-2).
 
