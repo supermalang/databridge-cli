@@ -1,36 +1,36 @@
+import { Trans, useTranslation } from 'react-i18next';
 import { ExpressBanner } from './Templates.jsx';
 import StageHelp from '../components/StageHelp.jsx';
 
 // The five ordered workflow stages. Each card deep-links into its stage (and a
-// specific sub-page). `navigate(stageId, subId)` is provided by App.
+// specific sub-page). `navigate(stageId, subId)` is provided by App. The card
+// `label`/`desc` are sourced from the i18n bundle at render time (keys under
+// `home.stages.<id>`); the sub-page short labels stay as their stable English
+// strings so deep-link navigation by visible label remains language-stable
+// (matches the App sub-tab strip + the i18n-coverage spec's hasText clicks).
 const STAGE_CARDS = [
   {
-    id: 'extract', step: '01', label: 'Extract', tone: 'accent',
-    desc: 'Connect a Kobo, Ona, or INFORM form and configure the AI provider.',
+    id: 'extract', step: '01', key: 'extract', tone: 'accent',
     subs: [{ id: 'connection', label: 'Connection' }, { id: 'ai', label: 'AI configuration' }],
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 1.5 14 5v6l-6 3.5L2 11V5z"/><path d="M2 5l6 3.5L14 5M8 8.5V15"/></svg>,
   },
   {
-    id: 'transform', step: '02', label: 'Clean & check', tone: 'green',
-    desc: 'Tidy and rename your questions, hide fields you don’t need, then check the data for problems before you use it.',
+    id: 'transform', step: '02', key: 'transform', tone: 'green',
     subs: [{ id: 'questions', label: 'Questions' }, { id: 'profile', label: 'Profile' }, { id: 'validate', label: 'Validate' }],
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 5h10M3 5l2-2M3 5l2 2"/><path d="M13 11H3M13 11l-2-2M13 11l-2 2"/></svg>,
   },
   {
-    id: 'model', step: '03', label: 'Combine data', tone: 'violet',
-    desc: 'Link related answers together and group them into combined tables (for example, totals per region) that your charts and reports can reuse.',
+    id: 'model', step: '03', key: 'model', tone: 'violet',
     subs: [{ id: 'views', label: 'Views' }],
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.8 14.2 5 8 8.2 1.8 5z"/><path d="M2 8l6 3.2L14 8"/><path d="M2 11l6 3.2L14 11"/></svg>,
   },
   {
-    id: 'analyze', step: '04', label: 'Analyze', tone: 'warm',
-    desc: 'Build charts, indicators, summaries, and the results framework — or just ask a question of your data.',
+    id: 'analyze', step: '04', key: 'analyze', tone: 'warm',
     subs: [{ id: 'composition', label: 'Charts & indicators' }, { id: 'ask', label: 'Ask' }],
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><line x1="3.5" y1="13" x2="3.5" y2="8"/><line x1="8" y1="13" x2="8" y2="4"/><line x1="12.5" y1="13" x2="12.5" y2="10"/></svg>,
   },
   {
-    id: 'present', step: '05', label: 'Deliver', tone: 'rose',
-    desc: 'Export data to files or a database, set report output options, then generate and manage Word reports.',
+    id: 'present', step: '05', key: 'present', tone: 'rose',
     subs: [{ id: 'output', label: 'Output' }, { id: 'reports', label: 'Reports' }, { id: 'templates', label: 'Templates' }],
     icon: <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2h7l3 3v9H3z"/><polyline points="10 2 10 5 13 5"/></svg>,
   },
@@ -41,6 +41,7 @@ const STAGE_CARDS = [
 // `activeCmd` props and toggles the shared terminal via the same event the
 // topbar button uses.
 export default function Home({ navigate, ready = null }) {
+  const { t } = useTranslation();
   const toggleTerminal = () => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'));
 
   // First-run / empty state (PUX-2): until the project has a connected form and
@@ -73,28 +74,28 @@ export default function Home({ navigate, ready = null }) {
 
       <div className="home-head">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="greeting__date">DATABRIDGE · WORKFLOW</div>
-          <h1 className="home-head__title">Your data analysis <em>pipeline.</em></h1>
+          <div className="greeting__date">{t('home.eyebrow')}</div>
+          <h1 className="home-head__title">{t('home.titleLead')}<em>{t('home.titleAccent')}</em></h1>
           <div className="home-head__sub">
-            Five stages from raw submissions to a finished report. Jump into any stage below, or run the whole pipeline end to end.
+            {t('home.subtitle')}
           </div>
           <StageHelp
-            title="Workflow"
-            hint="New here? Work left to right — each stage hands off to the next."
+            title={t('home.helpTitle')}
+            hint={t('home.helpHint')}
             body={
               <>
-                <p>This is your end-to-end pipeline. Start at <b>Extract</b> to connect a form, then move through the stages in order: clean and check your data, combine it, build charts and indicators, then deliver a Word report. You can run the whole thing at once, or open one stage at a time.</p>
-                <p>Each stage below has its own <b>?&nbsp;Help</b> button with the same kind of guidance, so you are never far from an explanation.</p>
+                <p><Trans i18nKey="home.helpBody1" components={{ b: <b /> }} /></p>
+                <p><Trans i18nKey="home.helpBody2" components={{ b: <b /> }} /></p>
               </>
             }
             docsHref="docs/reference/internals.md"
-            docsLabel="How the pipeline fits together"
+            docsLabel={t('home.helpDocsLabel')}
           />
         </div>
         <div className="home-head__actions">
           <button className="btn" onClick={toggleTerminal}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
-            Terminal
+            {t('shell.terminal')}
           </button>
         </div>
       </div>
@@ -103,35 +104,37 @@ export default function Home({ navigate, ready = null }) {
       <div className="home-cards">
         {firstRun && (
           <div className="home-firstrun" data-testid="home-firstrun">
-            <span className="home-firstrun__lead">New here? Start by connecting your form — the rest unlocks once your data is in.</span>
+            <span className="home-firstrun__lead">{t('home.firstRunLead')}</span>
             <button
               type="button"
               className="home-cta--primary"
               data-cta="primary"
               onClick={() => navigate(RECOMMENDED_STAGE, 'connection')}
             >
-              Connect your form
+              {t('home.connectForm')}
               <span aria-hidden="true"> →</span>
             </button>
           </div>
         )}
         {STAGE_CARDS.map((s, i) => {
           const dimmed = firstRun && s.id !== RECOMMENDED_STAGE;
+          const label = t(`home.stages.${s.key}.label`);
+          const desc = t(`home.stages.${s.key}.desc`);
           return (
           <div className={`home-card-wrap${dimmed ? ' is-dimmed' : ''}`} key={s.id}>
             <button
               type="button"
               className={`home-card${dimmed ? ' is-dimmed' : ''}`}
               data-tone={s.tone}
-              aria-label={`${s.label} — ${s.desc}`}
+              aria-label={`${label} — ${desc}`}
               onClick={() => navigate(s.id, s.subs[0].id)}
             >
               <span className="home-card__top">
                 <span className="home-card__step">{s.step}</span>
                 <span className="home-card__icon" data-tone={s.tone}>{s.icon}</span>
               </span>
-              <span className="home-card__label">{s.label}</span>
-              <span className="home-card__desc">{s.desc}</span>
+              <span className="home-card__label">{label}</span>
+              <span className="home-card__desc">{desc}</span>
             </button>
             <div className="home-card__subs">
               {s.subs.map(sub => (

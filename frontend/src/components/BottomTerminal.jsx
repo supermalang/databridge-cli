@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const LEVELS = ['info', 'ok', 'warn', 'error'];
 
@@ -8,12 +9,12 @@ const LEVELS = ['info', 'ok', 'warn', 'error'];
 // commands; "Pipeline" shows them all. Stages with no /api/run command today
 // (Model, Analyze) are kept for parity with the workflow and show an empty state.
 const PIPELINE_TREE = [
-  { id: 'pipeline',  label: 'Pipeline',  depth: 0, parent: true },
-  { id: 'extract',   label: 'Extract',   depth: 1 },
-  { id: 'transform', label: 'Transform', depth: 1 },
-  { id: 'model',     label: 'Model',     depth: 1 },
-  { id: 'analyze',   label: 'Analyze',   depth: 1 },
-  { id: 'present',   label: 'Deliver',   depth: 1 },
+  { id: 'pipeline',  labelKey: 'stagePipeline',  depth: 0, parent: true },
+  { id: 'extract',   labelKey: 'stageExtract',   depth: 1 },
+  { id: 'transform', labelKey: 'stageTransform', depth: 1 },
+  { id: 'model',     labelKey: 'stageModel',     depth: 1 },
+  { id: 'analyze',   labelKey: 'stageAnalyze',   depth: 1 },
+  { id: 'present',   labelKey: 'stageDeliver',   depth: 1 },
 ];
 
 // Maps a run command (from the SSE stream) to the pipeline stage it belongs to.
@@ -63,6 +64,7 @@ function nowTime() {
 //   lines      array of { line, level, time?, command? }
 //   open, setOpen  hoisted state so the topbar terminal icon can toggle it
 export default function BottomTerminal({ project = 'databridge', cmd, lines = [], open, setOpen }) {
+  const { t } = useTranslation();
   const [session, setSession] = useState('pipeline');
   const [filters, setFilters] = useState(() => new Set(LEVELS));
   const bodyRef = useRef(null);
@@ -95,12 +97,15 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
           type="button"
           className="bottom-term__bar-toggle"
           aria-expanded={open}
-          aria-label={`Terminal — ${cmd ? `running ${cmd}` : 'idle'}. ${open ? 'Collapse' : 'Expand'}.`}
+          aria-label={t('components.terminal.barAria', {
+            status: cmd ? t('components.terminal.barAriaRunning', { cmd }) : t('components.terminal.barAriaIdle'),
+            action: open ? t('components.terminal.collapse') : t('components.terminal.expand'),
+          })}
           onClick={() => setOpen(!open)}
         >
           <span className="dot" style={{ background: cmd ? 'var(--warm)' : 'var(--green)' }} />
-          <span className="sr-only">{cmd ? 'Running' : 'Idle'}</span>
-          <span className="bottom-term__bar-title">terminal</span>
+          <span className="sr-only">{cmd ? t('components.terminal.running') : t('components.terminal.idle')}</span>
+          <span className="bottom-term__bar-title">{t('components.terminal.barTitle')}</span>
           <span className="bottom-term__bar-sep">·</span>
           <span>{project}</span>
           {cmd && <>
@@ -109,7 +114,7 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
           </>}
         </button>
         <div className="bottom-term__bar-actions">
-          <button title={open ? 'Close' : 'Open'} aria-label={open ? 'Close terminal' : 'Open terminal'} onClick={() => setOpen(!open)}>
+          <button title={open ? t('components.terminal.close') : t('components.terminal.open')} aria-label={open ? t('components.terminal.closeTerminal') : t('components.terminal.openTerminal')} onClick={() => setOpen(!open)}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               {open ? <><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></>
                     : <><polyline points="4 10 8 6 12 10"/></>}
@@ -120,7 +125,7 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
 
       <div className="bottom-term__body">
         <aside className="bottom-term__side">
-          <div className="bottom-term__side-label">Sessions</div>
+          <div className="bottom-term__side-label">{t('components.terminal.sessions')}</div>
           <ul>
             {PIPELINE_TREE.map(s => (
               <li
@@ -133,11 +138,11 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
                 <span
                   className="dot"
                   style={s.parent ? { background: cmd ? 'var(--warm)' : 'var(--green)' } : undefined}
-                />{s.label}
+                />{t(`components.terminal.${s.labelKey}`)}
               </li>
             ))}
           </ul>
-          <div className="bottom-term__side-label">Filter</div>
+          <div className="bottom-term__side-label">{t('components.terminal.filter')}</div>
           <ul>
             {LEVELS.map(l => (
               <li key={l} onClick={() => toggleFilter(l)}>
@@ -150,9 +155,9 @@ export default function BottomTerminal({ project = 'databridge', cmd, lines = []
           </ul>
         </aside>
 
-        <div className="bottom-term__main" ref={bodyRef} role="log" aria-live="polite" aria-label="Pipeline execution log">
+        <div className="bottom-term__main" ref={bodyRef} role="log" aria-live="polite" aria-label={t('components.terminal.logLabel')}>
           {filtered.length === 0 ? (
-            <div style={{ color: '#5a6473', fontStyle: 'italic' }}>Awaiting log lines…</div>
+            <div style={{ color: '#5a6473', fontStyle: 'italic' }}>{t('components.terminal.awaiting')}</div>
           ) : (
             filtered.map((l, i) => (
               <div className="log" key={i}>

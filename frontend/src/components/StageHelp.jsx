@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 // Shared contextual-help affordance for every stage page (PUX-4).
 //
@@ -21,6 +22,7 @@ import { useId, useState } from 'react';
 //   docsHref — relative href to the matching docs/reference/*.md page.
 //   docsLabel — optional link text (defaults to a generic "Read the reference").
 export default function StageHelp({ title, hint, body, docsHref, docsLabel }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const panelId = useId();
 
@@ -38,11 +40,11 @@ export default function StageHelp({ title, hint, body, docsHref, docsLabel }) {
           data-testid="stage-help-toggle"
           aria-expanded={open ? 'true' : 'false'}
           aria-controls={panelId}
-          aria-label={`Help — ${title}`}
+          aria-label={t('stageHelp.helpFor', { title })}
           onClick={() => setOpen((o) => !o)}
         >
           <span className="stage-help__qmark" aria-hidden="true">?</span>
-          Help
+          {t('stageHelp.help')}
         </button>
       </div>
 
@@ -51,10 +53,10 @@ export default function StageHelp({ title, hint, body, docsHref, docsLabel }) {
         className="stage-help__panel"
         data-testid="stage-help-panel"
         role="region"
-        aria-label={`${title} help`}
+        aria-label={t('stageHelp.regionLabel', { title })}
         hidden={!open}
       >
-        <div className="stage-help__panel-title">{title} — how this stage works</div>
+        <div className="stage-help__panel-title">{t('stageHelp.panelTitle', { title })}</div>
         <div className="stage-help__body">{body}</div>
         <a
           className="stage-help__docs"
@@ -62,7 +64,7 @@ export default function StageHelp({ title, hint, body, docsHref, docsLabel }) {
           target="_blank"
           rel="noopener noreferrer"
         >
-          {docsLabel || 'Open the reference guide'}
+          {docsLabel || t('stageHelp.openReference')}
           <span className="stage-help__docs-ext" aria-hidden="true"> ↗</span>
         </a>
       </div>

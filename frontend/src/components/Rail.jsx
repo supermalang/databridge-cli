@@ -34,6 +34,8 @@ export function RailToolbar({ left, right }) {
   );
 }
 
+import { useTranslation } from 'react-i18next';
+
 // ── Status card ──────────────────────────────────────────────────────────────
 // checks: [{ tone: 'ok'|'warn'|'rose', label, sub }]
 const ToneIcon = ({ tone }) => (
@@ -48,11 +50,13 @@ const ToneIcon = ({ tone }) => (
   </span>
 );
 
-export function StatusCard({ checks = [], title = 'Status' }) {
+export function StatusCard({ checks = [], title }) {
+  const { t } = useTranslation();
+  const heading = title ?? t('rail.status');
   const okCount = checks.filter(c => c.tone === 'ok').length;
   return (
     <div className="rail-card">
-      <div className="rail-card__title">{title}
+      <div className="rail-card__title">{heading}
         <span className="tag tag--green" style={{ fontSize: 9.5 }}>{okCount}/{checks.length}</span>
       </div>
       <div className="check-list">
@@ -72,12 +76,13 @@ export function StatusCard({ checks = [], title = 'Status' }) {
 
 // ── Quick actions card ───────────────────────────────────────────────────────
 // actions: [{ icon, label, onClick, disabled, title }] — falsy entries skipped
-export function QuickActionsCard({ actions = [], title = 'Quick actions' }) {
+export function QuickActionsCard({ actions = [], title }) {
+  const { t } = useTranslation();
   const items = actions.filter(Boolean);
   if (items.length === 0) return null;
   return (
     <div className="rail-card">
-      <div className="rail-card__title">{title}</div>
+      <div className="rail-card__title">{title ?? t('rail.quickActions')}</div>
       {items.map((a, i) => (
         <button key={i} className="rail-action" onClick={a.onClick} disabled={a.disabled} title={a.title || ''}>
           {a.icon}

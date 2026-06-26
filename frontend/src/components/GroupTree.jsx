@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { nodeCounts } from '../lib/questionGroups.js';
 
 // Generic nested-group accordion shared by the Questions, Profile, and Validate
@@ -31,6 +32,7 @@ function defaultOpenPaths(nodes, defaultOpenDepth, acc = new Set()) {
 }
 
 export default function GroupTree({ tree, renderVisible, renderHidden, renderPii, renderHeaderExtra, defaultOpenDepth = 0 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(() => defaultOpenPaths(tree, defaultOpenDepth));
   const [openHidden, setOpenHidden] = useState(() => new Set());
   const [openPii, setOpenPii] = useState(() => new Set());
@@ -74,8 +76,8 @@ export default function GroupTree({ tree, renderVisible, renderHidden, renderPii
           <Chevron />
           <span className="gt-node__name">{node.name}</span>
           <span className="gt-node__count">
-            {counts.visible}{counts.hidden ? <span className="gt-node__hiddencount"> · {counts.hidden} hidden</span> : null}
-            {counts.pii ? <span className="gt-node__piicount"> · {counts.pii} PII</span> : null}
+            {counts.visible}{counts.hidden ? <span className="gt-node__hiddencount"> {t('components.groupTree.hiddenCount', { count: counts.hidden })}</span> : null}
+            {counts.pii ? <span className="gt-node__piicount"> {t('components.groupTree.piiCount', { count: counts.pii })}</span> : null}
           </span>
           {renderHeaderExtra && <span className="gt-node__extra">{renderHeaderExtra(node)}</span>}
         </div>
@@ -87,8 +89,8 @@ export default function GroupTree({ tree, renderVisible, renderHidden, renderPii
               <div className="gt-hidden gt-pii" data-open={piiOpen}>
                 <div className="gt-hidden__head" onClick={() => toggle(setOpenPii, node.path)}>
                   <Chevron />
-                  <span>PII ({pii.length})</span>
-                  <span className="gt-hidden__hint">flagged personal data</span>
+                  <span>{t('components.groupTree.pii', { count: pii.length })}</span>
+                  <span className="gt-hidden__hint">{t('components.groupTree.piiHint')}</span>
                 </div>
                 {piiOpen && (
                   <div className="gt-hidden__body">
@@ -101,8 +103,8 @@ export default function GroupTree({ tree, renderVisible, renderHidden, renderPii
               <div className="gt-hidden" data-open={hiddenOpen}>
                 <div className="gt-hidden__head" onClick={() => toggle(setOpenHidden, node.path)}>
                   <Chevron />
-                  <span>Hidden ({node.hidden.length})</span>
-                  <span className="gt-hidden__hint">notes &amp; non-analytical fields</span>
+                  <span>{t('components.groupTree.hidden', { count: node.hidden.length })}</span>
+                  <span className="gt-hidden__hint">{t('components.groupTree.hiddenHint')}</span>
                 </div>
                 {hiddenOpen && (
                   <div className="gt-hidden__body">

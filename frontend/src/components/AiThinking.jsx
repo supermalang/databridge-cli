@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 // Spinner + rotating status caption shown while an AI task runs, so the user knows
 // it's processing. Pass context-specific `messages`; they cycle every `interval` ms.
 // `card` wraps it in a rail-card for use inside the right-hand rail.
-const DEFAULT_MESSAGES = ['Working…', 'Analyzing your data…', 'Almost there…'];
-
-export default function AiThinking({ messages = DEFAULT_MESSAGES, interval = 2200, card = false }) {
-  const msgs = messages && messages.length ? messages : DEFAULT_MESSAGES;
+export default function AiThinking({ messages, interval = 2200, card = false }) {
+  const { t } = useTranslation();
+  const defaults = [
+    t('components.aiThinking.working'),
+    t('components.aiThinking.analyzing'),
+    t('components.aiThinking.almost'),
+  ];
+  const msgs = messages && messages.length ? messages : defaults;
   const [i, setI] = useState(0);
 
   useEffect(() => {

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export default function PeriodPicker({ value, onChange, allowAdd = true }) {
+  const { t } = useTranslation();
   const [periods, setPeriods] = useState({ current: null, baseline: null, registry: [] });
   const [adding, setAdding]   = useState(false);
   const [draft,  setDraft]    = useState('');
@@ -32,10 +34,10 @@ export default function PeriodPicker({ value, onChange, allowAdd = true }) {
         onChange={e => onChange?.(e.target.value)}
         style={{ minWidth: 140 }}
       >
-        <option value="">(no period)</option>
+        <option value="">{t('components.periodPicker.none')}</option>
         {periods.registry.map(p => (
           <option key={p.slug} value={p.label}>
-            {p.label}{p.label === periods.baseline ? ' · baseline' : ''}
+            {p.label}{p.label === periods.baseline ? ` ${t('components.periodPicker.baseline')}` : ''}
           </option>
         ))}
       </select>
@@ -46,12 +48,12 @@ export default function PeriodPicker({ value, onChange, allowAdd = true }) {
               autoFocus className="src-input"
               value={draft} onChange={e => setDraft(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') addPeriod(); if (e.key === 'Escape') setAdding(false); }}
-              placeholder="e.g. Q3 2026" style={{ width: 140 }}
+              placeholder={t('components.periodPicker.placeholder')} style={{ width: 140 }}
             />
-            <button className="btn btn-primary btn-sm" onClick={addPeriod}>Add</button>
+            <button className="btn btn-primary btn-sm" onClick={addPeriod}>{t('components.periodPicker.add')}</button>
           </>
         ) : (
-          <button className="btn btn-ghost btn-sm" onClick={() => setAdding(true)}>+ Period</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setAdding(true)}>{t('components.periodPicker.addPeriod')}</button>
         )
       )}
     </div>
