@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
+import { useFieldErrors } from '../lib/fieldError.js';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { useToast } from '../components/Toast.jsx';
 import ProjectMembersPanel from '../components/ProjectMembersPanel.jsx';
@@ -21,8 +22,23 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
   const [proj, setProj] = useState(editing ? mode : null);   // becomes set after create
   const [tab, setTab] = useState(initialTab || 'details');
 
+  const fe = useFieldErrors();
   const init = editing ? mode : {};
   const [name, setName] = useState(init.name || '');
+
+  // Inline required-name validation (A11Y-5 fieldProps pattern: aria-invalid +
+  // aria-describedby + role="alert"). Keep the error in sync with the live value
+  // so the empty input is announced and the submit button stays gated.
+  const setNameAndValidate = (value) => {
+    setName(value);
+    if (value.trim()) fe.clearError('name');
+    else fe.setError('name', 'Name is required');
+  };
+  // Seed the error for an empty initial name (create mode) on first render.
+  if (!name.trim() && !fe.errorFor('name')) fe.setError('name', 'Name is required');
+  // React's useId yields colon-bearing ids (":r5:") that are invalid in a CSS
+  // `#id` selector; sanitize so aria-describedby resolves and is queryable.
+  const nameErrorId = fe.errorId('name').replace(/:/g, '-');
   const [description, setDescription] = useState(init.description || '');
   const [tagsText, setTagsText] = useState((init.tags || []).join(', '));
   const [language, setLanguage] = useState(init.language || 'English');
@@ -151,7 +167,13 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
         {tab === 'details' && (
           <div className="pf-panel" {...panelProps('projectform', 'details')}>
             <div className="profile-field"><label>Name *</label>
-              <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Q3 Monitoring" /></div>
+              <input autoFocus value={name}
+                     aria-invalid={fe.errorFor('name') ? 'true' : 'false'}
+                     aria-describedby={fe.errorFor('name') ? nameErrorId : undefined}
+                     onChange={e => setNameAndValidate(e.target.value)} placeholder="e.g. Q3 Monitoring" />
+              {fe.errorFor('name') && (
+                <div id={nameErrorId} role="alert" className="pf-field-error">{fe.errorFor('name')}</div>
+              )}</div>
             <div className="profile-field"><label>Description</label>
               <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)}
                         placeholder="What is this project about?" /></div>
@@ -176,7 +198,7 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
                 ))}
               </div></div>
             <div className="pf-actions">
-              <button className="btn btn-primary" disabled={busy} onClick={submit}>
+              <button className="btn btn-primary" disabled={busy || !name.trim()} onClick={submit}>
                 {busy ? 'Saving…' : (proj ? 'Save' : 'Create')}
               </button>
             </div>
