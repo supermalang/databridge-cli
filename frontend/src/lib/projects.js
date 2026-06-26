@@ -9,6 +9,19 @@ export async function listProjects() {
   }
 }
 
+// The active project's language (authoritative since PLANG-1). Returns null when
+// unavailable so callers can fall back gracefully. Read-only consumers (e.g. the
+// AI-config view) use this to display the project language without re-deriving it.
+export async function getActiveProjectLanguage() {
+  try {
+    const { projects, active_id } = await listProjects();
+    const active = (projects || []).find(p => p.id === active_id) || null;
+    return active?.language || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function activateProject(id) {
   const res = await fetch(`/api/projects/${id}/activate`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to activate project');

@@ -203,6 +203,8 @@
       "aiBaseUrlAria": "AI Base URL",
       "language": "Language",
       "languagePlaceholder": "English",
+      "languageProjectHint": "Set on the project and governs the language of generated output.",
+      "languageUnset": "Not set",
       "maxTokens": "Max tokens",
       "limit": "limit",
       "connectionLabel": "Connection",
