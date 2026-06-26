@@ -48,7 +48,7 @@ A card is startable only when all of the following hold:
 | Area | Planned | Progress |
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
-| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 4 / 9 |
+| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 7 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 7 / 7 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 6 / 6 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
@@ -232,7 +232,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **UX-4 — Unsaved-changes guard on the project form**
+- [x] **UX-4 — Unsaved-changes guard on the project form**
 
   [frontend/src/pages/ProjectForm.jsx](../frontend/src/pages/ProjectForm.jsx) has no dirty
   tracking; editing Details then hitting ← Back discards silently.
@@ -282,7 +282,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **UX-6 — Inline validation for required name (ProjectForm)**
+- [x] **UX-6 — Inline validation for required name (ProjectForm)**
 
   Currently a toast only. Add an inline error + disable submit until valid.
 
@@ -324,7 +324,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **UX-8 — Accessible labels on color swatches / icon buttons**
+- [x] **UX-8 — Accessible labels on color swatches / icon buttons**
 
   They convey meaning by color/emoji alone; add `aria-label` + `aria-pressed` on the selected one.
 
