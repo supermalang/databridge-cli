@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import yaml from 'js-yaml';
 import Home from './pages/Home.jsx';
 import Sources from './pages/Sources.jsx';
@@ -23,6 +24,7 @@ import { RunProvider } from './lib/run.js';
 import { DirtyProvider } from './lib/dirty.js';
 import { AiStatusProvider } from './lib/aiStatus.js';
 import { tabProps, panelProps, panelId, makeTabKeydown } from './lib/tabs.js';
+import { setLanguage } from './lib/i18n.js';
 
 // Human-friendly verbs for the active run alert. Falls back to a generic phrasing.
 const RUN_LABELS = {
@@ -66,25 +68,28 @@ const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'pii'];
 
 // The workflow: Home + five ordered stages. Stages with >1 sub render a
 // secondary sub-tab strip; single-sub stages navigate straight to their page.
+// `labelKey` resolves through the i18n bundles (I18N-1) so the primary nav tab
+// labels switch language live; `label` is the English fallback kept for
+// non-localized uses (aria-labels, sub-tab strips — I18N-2 widens coverage).
 const STAGES = [
-  { id: 'home', label: 'Home', home: true },
-  { id: 'extract', label: 'Extract', subs: [
+  { id: 'home', label: 'Home', labelKey: 'nav.home', home: true },
+  { id: 'extract', label: 'Extract', labelKey: 'nav.extract', subs: [
     { id: 'connection', label: 'Connection',       render: () => <Sources section="setup" /> },
     { id: 'ai',         label: 'AI configuration',  render: () => <Sources section="ai" /> },
   ] },
-  { id: 'transform', label: 'Transform', subs: [
+  { id: 'transform', label: 'Transform', labelKey: 'nav.transform', subs: [
     { id: 'questions', label: 'Questions', render: () => <Questions /> },
     { id: 'profile',   label: 'Profile',   render: () => <Profile /> },
     { id: 'validate',  label: 'Validate',  render: () => <Validate /> },
   ] },
-  { id: 'model', label: 'Model', subs: [
+  { id: 'model', label: 'Model', labelKey: 'nav.model', subs: [
     { id: 'views', label: 'Views', render: () => <Composition sections={VIEWS_SECTIONS} /> },
   ] },
-  { id: 'analyze', label: 'Analyze', subs: [
+  { id: 'analyze', label: 'Analyze', labelKey: 'nav.analyze', subs: [
     { id: 'ask',         label: 'Ask',                  render: () => <Ask /> },
     { id: 'composition', label: 'Charts & indicators', render: () => <Composition sections={ANALYZE_SECTIONS} /> },
   ] },
-  { id: 'present', label: 'Deliver', subs: [
+  { id: 'present', label: 'Deliver', labelKey: 'nav.deliver', subs: [
     { id: 'output',    label: 'Output',    render: () => <Sources section="output" /> },
     { id: 'templates', label: 'Templates', render: () => <Templates /> },
     { id: 'reports',   label: 'Reports',   render: () => <Reports /> },
@@ -110,6 +115,7 @@ function ActivePeriodChip() {
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const [stageId, setStageId] = useState('home');
   const [subId, setSubId] = useState(null);
 
@@ -161,7 +167,14 @@ export default function App() {
   };
   const [formAlias, setFormAlias] = useState('');
   const [me, setMe] = useState(null);
-  useEffect(() => { fetchMe().then(setMe); }, []);
+  useEffect(() => {
+    fetchMe().then((u) => {
+      setMe(u);
+      // Apply the user's saved interface language on load (re-applied on every
+      // reload + relogin since it comes from the server). Defaults to English.
+      if (u) setLanguage(u.language);
+    });
+  }, []);
   // Clear any pending auto-collapse timer on unmount.
   useEffect(() => () => clearCollapseTimer(), []);
 
@@ -609,7 +622,7 @@ export default function App() {
             {...tabProps('primary', s.id, stageId === s.id)}
             onClick={() => navigate(s.id)}
           >
-            {s.label}
+            {s.labelKey ? t(s.labelKey) : s.label}
           </button>
         ))}
       </nav>

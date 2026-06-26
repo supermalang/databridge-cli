@@ -1,0 +1,25 @@
+{
+  "translation": {
+    "nav": {
+      "home": "Accueil",
+      "extract": "Extraire",
+      "transform": "Transformer",
+      "model": "Modéliser",
+      "analyze": "Analyser",
+      "deliver": "Diffuser"
+    },
+    "profile": {
+      "title": "Votre profil",
+      "back": "Retour",
+      "firstName": "Prénom",
+      "lastName": "Nom",
+      "email": "E-mail",
+      "emailManaged": "Géré par votre fournisseur d’identité",
+      "save": "Enregistrer",
+      "saving": "Enregistrement…",
+      "language": "Langue de l’interface",
+      "languageEnglish": "English",
+      "languageFrench": "Français"
+    }
+  }
+}
