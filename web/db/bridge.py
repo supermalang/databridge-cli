@@ -8,27 +8,8 @@ from web.db import repository as repo
 from web.db.models import Project, User
 
 
-def _inject_project_language(project: Project, cfg: dict) -> dict:
-    """Set cfg["ai"]["language"] from the project language (single source of truth).
-
-    A project's `meta.language` (set once at creation, immutable) overrides any
-    value previously stored in `ai.language`. Legacy projects with no
-    `meta.language` keep their existing `ai.language`, else default to "English"."""
-    meta = project.meta or {}
-    project_language = meta.get("language")
-    ai = dict(cfg.get("ai") or {})
-    if project_language:
-        ai["language"] = project_language
-    elif "language" not in ai:
-        ai["language"] = "English"
-    cfg["ai"] = ai
-    return cfg
-
-
 def materialize_config(project: Project, path: Path = CONFIG_PATH) -> None:
-    cfg = dict(project.config or {})
-    cfg = _inject_project_language(project, cfg)
-    write_config(cfg, Path(path))
+    write_config(project.config or {}, Path(path))
 
 
 def mirror_active(db: Session, user: User, path: Path = CONFIG_PATH) -> bool:
