@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import PageHeader from './PageHeader.jsx';
 import StageHelp from '../components/StageHelp.jsx';
 import FileTable from '../components/FileTable.jsx';
@@ -12,6 +13,7 @@ import { loadConfig } from '../lib/config.js';
 import BuildOptions from '../components/BuildOptions.jsx';
 
 export default function Reports() {
+  const { t } = useTranslation();
   const toast = useToast();
   const { confirm, confirmDialog } = useConfirm();
   const { canEdit } = usePerms();
@@ -66,9 +68,9 @@ export default function Reports() {
     !hasTemplate && 'template',
   ].filter(Boolean);
   const buildReady = canEdit && buildMissing.length === 0;
-  const buildTitle = !canEdit ? 'Editor access required'
-    : buildReady ? 'Render a Word report from the latest data'
-    : `Needs: ${buildMissing.join(', ')}`;
+  const buildTitle = !canEdit ? t('reports.editorRequired')
+    : buildReady ? t('reports.buildReadyTitle')
+    : t('reports.buildNeeds', { missing: buildMissing.join(', ') });
 
   // Fetch registry periods when Compare modal opens
   useEffect(() => {
@@ -82,63 +84,63 @@ export default function Reports() {
   }, [showCompare]);
 
   const deleteReport = async (name) => {
-    if (!await confirm({ title: 'Delete report?', message: `“${name}” will be permanently deleted. This can’t be undone.` })) return;
+    if (!await confirm({ title: t('reports.deleteReportTitle'), message: t('reports.deleteReportMessage', { name }) })) return;
     const res = await fetch(`/api/reports/${encodeURIComponent(name)}`, { method: 'DELETE' });
-    toast(res.ok ? `Deleted ${name}` : 'Delete failed', res.ok ? 'ok' : 'err');
+    toast(res.ok ? t('reports.deletedReport', { name }) : t('reports.deleteFailed'), res.ok ? 'ok' : 'err');
     loadReports();
   };
 
   const deleteAllReports = async () => {
     if (!await confirm({
-      title: 'Delete all reports?',
-      message: 'Every generated .docx report will be permanently deleted. This can’t be undone.',
-      confirmLabel: 'Delete all',
+      title: t('reports.deleteAllTitle'),
+      message: t('reports.deleteAllMessage'),
+      confirmLabel: t('common.deleteAll'),
     })) return;
     const res = await fetch('/api/reports', { method: 'DELETE' });
-    toast(res.ok ? 'Deleted all reports' : 'Delete failed', res.ok ? 'ok' : 'err');
+    toast(res.ok ? t('reports.deletedAll') : t('reports.deleteFailed'), res.ok ? 'ok' : 'err');
     loadReports();
   };
 
   const deleteSession = async (sid) => {
-    if (!await confirm({ title: 'Delete data session?', message: `All files from session ${sid} will be permanently deleted. This can’t be undone.` })) return;
+    if (!await confirm({ title: t('reports.deleteSessionTitle'), message: t('reports.deleteSessionMessage', { sid }) })) return;
     const res = await fetch(`/api/data/sessions/${encodeURIComponent(sid)}`, { method: 'DELETE' });
-    toast(res.ok ? `Deleted session ${sid}` : 'Delete failed', res.ok ? 'ok' : 'err');
+    toast(res.ok ? t('reports.deletedSession', { sid }) : t('reports.deleteFailed'), res.ok ? 'ok' : 'err');
     loadSessions();
   };
 
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Step 5 of 5 · Reports"
-        title="Browse"
-        accent="generated reports."
-        sub="Word reports rendered by build-report appear here. Download individual files or grab everything as a zip."
+        eyebrow={t('reports.eyebrow')}
+        title={t('reports.title')}
+        accent={t('reports.accent')}
+        sub={t('reports.sub')}
       />
       <StageHelp
-        title="Reports"
-        hint="Finished Word reports land here — download one or compare periods."
+        title={t('reports.helpTitle')}
+        hint={t('reports.helpHint')}
         body={
           <>
-            <p>Every time you build a report, the finished <b>.docx</b> file appears in this list. Download a single report, grab them all as a zip, or build a comparison across two periods to show change over time.</p>
-            <p>If the list is empty, run <b>build-report</b> first — you need downloaded data and a template in place before a report can be generated.</p>
+            <p><Trans i18nKey="reports.helpBody1" components={{ b: <b /> }} /></p>
+            <p><Trans i18nKey="reports.helpBody2" components={{ b: <b /> }} /></p>
           </>
         }
         docsHref="docs/reference/templates.md"
-        docsLabel="Reports & template placeholders reference"
+        docsLabel={t('reports.helpDocsLabel')}
       />
       <RailLayout rail={
         <>
           <StatusCard checks={[
             { tone: reports?.length ? 'ok' : 'warn',
-              label: `${reports?.length || 0} report${reports?.length === 1 ? '' : 's'} generated`,
-              sub: reports?.length ? 'ready to download' : 'run build-report to create one' },
+              label: t('reports.reportsGenerated', { count: reports?.length || 0 }),
+              sub: reports?.length ? t('reports.readyToDownload') : t('reports.runBuildToCreate') },
             { tone: sessions?.length ? 'ok' : 'warn',
-              label: `${sessions?.length || 0} data session${sessions?.length === 1 ? '' : 's'}`,
-              sub: sessions?.length ? 'available to build from' : 'run download first' },
+              label: t('reports.dataSessions', { count: sessions?.length || 0 }),
+              sub: sessions?.length ? t('reports.availableToBuild') : t('reports.runDownloadFirst') },
           ]} />
           <QuickActionsCard actions={[
-            { icon: RailIcons.copy, label: 'Compare periods', onClick: () => { setSelected([]); setShowCompare(true); },
-              title: 'Build a comparison report across periods' },
+            { icon: RailIcons.copy, label: t('reports.comparePeriods'), onClick: () => { setSelected([]); setShowCompare(true); },
+              title: t('reports.comparePeriodsTitle') },
           ]} />
         </>
       }>
@@ -147,8 +149,8 @@ export default function Reports() {
         {/* ─── Build ─── */}
         <div className="form-section">
           <div className="form-section-title">
-            Build a report
-            <span>Render a Word report from the latest data</span>
+            {t('reports.buildTitle')}
+            <span>{t('reports.buildSubtitle')}</span>
           </div>
           <BuildOptions
             questions={cfg?.questions || []}
@@ -161,11 +163,11 @@ export default function Reports() {
         {/* ─── Reports ─── */}
         <div className="form-section">
           <div className="form-section-title">
-            Reports
-            <span>Generated .docx files</span>
+            {t('reports.reportsTitle')}
+            <span>{t('reports.reportsSubtitle')}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <button className="btn btn-ghost btn-sm" onClick={() => { setSelected([]); setShowCompare(true); }}>
-                Compare periods
+                {t('reports.comparePeriods')}
               </button>
               {reports?.length > 0 && (
                 <button
@@ -173,31 +175,31 @@ export default function Reports() {
                   data-testid="reports-delete-all"
                   onClick={deleteAllReports}
                   disabled={!canEdit}
-                  title={canEdit ? 'Permanently delete every generated report' : 'Viewer access — deleting requires an editor or admin role'}>
-                  Delete all reports
+                  title={canEdit ? t('reports.deleteAllReportsTitle') : t('reports.viewerDeleteTitle')}>
+                  {t('reports.deleteAllReports')}
                 </button>
               )}
-              <button className="btn btn-ghost btn-sm" onClick={loadReports}>↺ Refresh</button>
+              <button className="btn btn-ghost btn-sm" onClick={loadReports}>{t('common.refresh')}</button>
             </div>
           </div>
-          {reports === null && <p className="empty-state" style={{ padding: 12 }}>Loading…</p>}
-          {reports?.length === 0 && <p className="empty-state" style={{ padding: 12 }}>No reports yet — run <b>build-report</b> from the Dashboard.</p>}
+          {reports === null && <p className="empty-state" style={{ padding: 12 }}>{t('common.loading')}</p>}
+          {reports?.length === 0 && <p className="empty-state" style={{ padding: 12 }}><Trans i18nKey="reports.noReportsYet" components={{ b: <b /> }} /></p>}
           {reports?.length > 1 && (
             <a
               className="btn btn-primary btn-sm"
               href="/api/reports/download-zip"
               download="reports.zip"
-              aria-label={`Download all ${reports.length} reports as ZIP`}
+              aria-label={t('reports.downloadAllAria', { count: reports.length })}
               style={{ marginBottom: 12 }}>
-              ↓ Download all as ZIP ({reports.length} files)
+              {t('reports.downloadAllZip', { count: reports.length })}
             </a>
           )}
           {reports?.length > 0 && (
             <FileTable
               columns={[
-                { key: 'name', label: 'File', render: r => <span className="file-name">{r.name}</span> },
-                { key: 'size_kb', label: 'Size', render: r => <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{r.size_kb} KB</span> },
-                { key: 'modified', label: 'Generated', render: r => <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{r.modified}</span> },
+                { key: 'name', label: t('reports.colFile'), render: r => <span className="file-name">{r.name}</span> },
+                { key: 'size_kb', label: t('reports.colSize'), render: r => <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{r.size_kb} KB</span> },
+                { key: 'modified', label: t('reports.colGenerated'), render: r => <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{r.modified}</span> },
               ]}
               rows={reports}
               actions={r => (
@@ -206,12 +208,12 @@ export default function Reports() {
                     className="btn btn-primary btn-sm"
                     href={`/api/reports/download/${encodeURIComponent(r.name)}`}
                     download
-                    aria-label={`Download ${r.name}`}>
-                    ↓ Download
+                    aria-label={t('reports.downloadAria', { name: r.name })}>
+                    {t('reports.download')}
                   </a>
                   <button className="btn btn-danger btn-sm" onClick={() => deleteReport(r.name)}
                           disabled={!canEdit}
-                          title={canEdit ? '' : 'Viewer access — deleting requires an editor or admin role'}>Delete</button>
+                          title={canEdit ? '' : t('reports.viewerDeleteTitle')}>{t('common.delete')}</button>
                 </>
               )}
             />
@@ -221,22 +223,22 @@ export default function Reports() {
         {/* ─── Data sessions ─── */}
         <div className="form-section">
           <div className="form-section-title">
-            Data files
-            <span>Submissions exported by <code style={{ fontFamily: 'var(--font-mono)' }}>download</code>, grouped by run</span>
-            <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={loadSessions}>↺ Refresh</button>
+            {t('reports.dataFilesTitle')}
+            <span>{t('reports.dataFilesSubtitlePre')}<code style={{ fontFamily: 'var(--font-mono)' }}>download</code>{t('reports.dataFilesSubtitlePost')}</span>
+            <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={loadSessions}>{t('common.refresh')}</button>
           </div>
-          {sessions === null && <p className="empty-state" style={{ padding: 12 }}>Loading…</p>}
-          {sessions?.length === 0 && <p className="empty-state" style={{ padding: 12 }}>No data files yet. Run <b>download</b> first.</p>}
+          {sessions === null && <p className="empty-state" style={{ padding: 12 }}>{t('common.loading')}</p>}
+          {sessions?.length === 0 && <p className="empty-state" style={{ padding: 12 }}><Trans i18nKey="reports.noDataFilesYet" components={{ b: <b /> }} /></p>}
           {sessions?.length > 0 && (
             <FileTable
               columns={[
-                { key: 'label', label: 'Session', render: (s, i) => (
+                { key: 'label', label: t('reports.colSession'), render: (s, i) => (
                   <span className="file-name">
                     {s.label}
-                    {sessions.indexOf(s) === 0 && <span style={{ fontSize: 10, color: 'var(--accent)', marginLeft: 8 }}>(latest)</span>}
+                    {sessions.indexOf(s) === 0 && <span style={{ fontSize: 10, color: 'var(--accent)', marginLeft: 8 }}>{t('reports.latest')}</span>}
                   </span>
                 )},
-                { key: 'files', label: 'Files', render: s => <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{s.files.length} file{s.files.length !== 1 ? 's' : ''}</span> },
+                { key: 'files', label: t('reports.colFiles'), render: s => <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{s.files.length} file{s.files.length !== 1 ? 's' : ''}</span> },
               ]}
               rows={sessions}
               actions={s => (
@@ -245,12 +247,12 @@ export default function Reports() {
                     className="btn btn-primary btn-sm"
                     href={`/api/data/sessions/${encodeURIComponent(s.session_id)}/download`}
                     download
-                    aria-label={`Download data session ${s.label} as ZIP`}>
-                    ↓ Download ZIP
+                    aria-label={t('reports.downloadSessionAria', { label: s.label })}>
+                    {t('reports.downloadZip')}
                   </a>
                   <button className="btn btn-danger btn-sm" onClick={() => deleteSession(s.session_id)}
                           disabled={!canEdit}
-                          title={canEdit ? '' : 'Viewer access — deleting requires an editor or admin role'}>Delete</button>
+                          title={canEdit ? '' : t('reports.viewerDeleteTitle')}>{t('common.delete')}</button>
                 </>
               )}
             />
@@ -262,11 +264,11 @@ export default function Reports() {
       {/* ─── Compare modal ─── */}
       {showCompare && (
         <Modal
-          title="Build comparison report"
+          title={t('reports.compareModalTitle')}
           onClose={() => setShowCompare(false)}
           onSave={async () => {
             if (selected.length < 2) {
-              toast('Pick at least 2 periods', 'err');
+              toast(t('reports.pickAtLeastTwo'), 'err');
               return;
             }
             setShowCompare(false);
@@ -276,18 +278,18 @@ export default function Reports() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ compare: selected.join(',') }),
               });
-              if (!r.ok) { toast(`Build failed (${r.status})`, 'err'); return; }
-              toast(`Building comparison: ${selected.join(' vs ')}…`, 'ok');
+              if (!r.ok) { toast(t('reports.buildFailed', { status: r.status }), 'err'); return; }
+              toast(t('reports.buildingComparison', { periods: selected.join(' vs ') }), 'ok');
               // Reload reports after a delay so the new docx shows up
               setTimeout(loadReports, 3000);
-            } catch (e) { toast(e.message || 'Network error', 'err'); }
+            } catch (e) { toast(e.message || t('reports.networkError'), 'err'); }
           }}
-          saveLabel="Build comparison"
+          saveLabel={t('reports.buildComparison')}
           width={520}
         >
           <div style={{ maxHeight: 300, overflow: 'auto' }}>
-            <p style={{ color: 'var(--ink-3)', fontSize: 13, marginBottom: 12 }}>Pick 2 or more periods to compare:</p>
-            {periods.length === 0 && <p style={{ color: 'var(--ink-3)' }}>No periods configured yet. Add some in the Sources tab.</p>}
+            <p style={{ color: 'var(--ink-3)', fontSize: 13, marginBottom: 12 }}>{t('reports.pickPeriods')}</p>
+            {periods.length === 0 && <p style={{ color: 'var(--ink-3)' }}>{t('reports.noPeriods')}</p>}
             {periods.map(p => (
               <label key={p.slug} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
                 <input

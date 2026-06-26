@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import yaml from 'js-yaml';
 import { useToast } from '../components/Toast.jsx';
 import { loadConfig, loadConfigText, saveConfigPatch, saveConfigText } from '../lib/config.js';
@@ -63,6 +64,7 @@ const FORMATS = [
 ];
 
 export default function Sources({ section = 'setup' } = {}) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [cfg,      setCfg]      = useState(null);
   const [original, setOriginal] = useState(null);
@@ -111,7 +113,7 @@ export default function Sources({ section = 'setup' } = {}) {
       // Re-check AI status: saving may make a just-tested config the saved one,
       // which unlocks the AI buttons without a manual page refresh.
       window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'sources' } }));
-      toast('Saved ✓', 'ok');
+      toast(t('common.saved'), 'ok');
     } catch (e) { toast(e.message, 'err'); }
   };
 
@@ -119,7 +121,7 @@ export default function Sources({ section = 'setup' } = {}) {
     try {
       await saveConfigText(yamlText);
       window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'sources' } }));
-      toast('Saved ✓', 'ok'); reload();
+      toast(t('common.saved'), 'ok'); reload();
     }
     catch (e) { toast(e.message, 'err'); }
   };
@@ -157,15 +159,15 @@ export default function Sources({ section = 'setup' } = {}) {
   };
 
   // ── early states ─────────────────────────────────────────────────────────
-  if (cfg === null) return <div className="page"><p className="empty-state">Loading config…</p></div>;
+  if (cfg === null) return <div className="page"><p className="empty-state">{t('sources.loadingConfig')}</p></div>;
 
   // ── render ───────────────────────────────────────────────────────────────
   // The "output" section lives under the Deliver stage; setup + ai are Extract.
   const header = section === 'output'
-    ? { eyebrow: 'Step 5 of 5 · Output', title: 'Choose your', accent: 'output.',
-        sub: 'Pick the export formats and destinations, decide where reports are written, and set the active period.' }
-    : { eyebrow: 'Step 1 of 5 · Configure sources', title: 'Connect your data', accent: 'source.',
-        sub: 'Choose a platform, point at the right form, and pick the voice the AI uses when it writes narrative blocks.' };
+    ? { eyebrow: t('sources.outputEyebrow'), title: t('sources.outputTitle'), accent: t('sources.outputAccent'),
+        sub: t('sources.outputSub') }
+    : { eyebrow: t('sources.setupEyebrow'), title: t('sources.setupTitle'), accent: t('sources.setupAccent'),
+        sub: t('sources.setupSub') };
 
   return (
     <div className="page">
@@ -178,12 +180,12 @@ export default function Sources({ section = 'setup' } = {}) {
           <>
             {section !== 'output' && (
               <div className="config-view-toggle">
-                <button className={`view-btn ${view === 'form' ? 'active' : ''}`} onClick={() => setView('form')}>↻ Form</button>
-                <button className={`view-btn ${view === 'yaml' ? 'active' : ''}`} onClick={() => setView('yaml')}>{'{ } YAML'}</button>
+                <button className={`view-btn ${view === 'form' ? 'active' : ''}`} onClick={() => setView('form')}>{t('sources.viewForm')}</button>
+                <button className={`view-btn ${view === 'yaml' ? 'active' : ''}`} onClick={() => setView('yaml')}>{t('sources.viewYaml')}</button>
               </div>
             )}
             <button className={`btn ${dirty ? 'btn-primary' : ''}`} onClick={view === 'yaml' ? saveYaml : saveAll} disabled={view === 'form' && !dirty}>
-              Save changes
+              {t('common.saveChanges')}
             </button>
           </>
         }
@@ -191,36 +193,36 @@ export default function Sources({ section = 'setup' } = {}) {
 
       {section === 'output' ? (
         <StageHelp
-          title="Output"
-          hint="Choose where your data and reports are written before you run."
+          title={t('sources.outputHelpTitle')}
+          hint={t('sources.outputHelpHint')}
           body={
             <>
-              <p>Pick one or more export formats (CSV, Excel, JSON, or a database) and where the files should land. Set the active reporting period here too, so charts and reports cover the right dates.</p>
-              <p>You don't have to fill in everything — just the destinations you actually use. The reference covers each format and the matching settings.</p>
+              <p>{t('sources.outputHelpBody1')}</p>
+              <p>{t('sources.outputHelpBody2')}</p>
             </>
           }
           docsHref="docs/reference/config.md"
-          docsLabel="Output & export settings reference"
+          docsLabel={t('sources.outputHelpDocsLabel')}
         />
       ) : (
         <StageHelp
-          title="Sources"
-          hint="Connect your form first — paste the server URL, token, and form ID."
+          title={t('sources.setupHelpTitle')}
+          hint={t('sources.setupHelpHint')}
           body={
             <>
-              <p>This stage points the tool at your survey. Choose your platform (Kobo, Ona, or INFORM), paste the server URL and your API token, then enter the form's ID. Once connected, the next stages can pull your questions and data.</p>
-              <p>The AI configuration sub-tab is optional — it only affects the narrative text the tool can draft for you. You can skip it and add it later.</p>
+              <p>{t('sources.setupHelpBody1')}</p>
+              <p>{t('sources.setupHelpBody2')}</p>
             </>
           }
           docsHref="docs/reference/config.md"
-          docsLabel="Connection & config.yml reference"
+          docsLabel={t('sources.setupHelpDocsLabel')}
         />
       )}
 
       {view === 'yaml' ? (
         <div className="src-card">
           <textarea
-            aria-label="config.yml YAML editor"
+            aria-label={t('sources.yamlEditorAria')}
             spellCheck={false}
             value={yamlText}
             onChange={e => setYamlText(e.target.value)}
@@ -257,9 +259,10 @@ export default function Sources({ section = 'setup' } = {}) {
 
 // ── Right rail (Extract): Status · Tips ───────────────────────────────────────
 function ExtractRail({ cfg, questionCount, lastCheck }) {
+  const { t } = useTranslation();
   return (
     <>
-      <StatusCard checks={sourceChecks(cfg, questionCount, lastCheck)} />
+      <StatusCard checks={sourceChecks(t, cfg, questionCount, lastCheck)} />
       <TipsRailCard />
     </>
   );
@@ -292,6 +295,7 @@ function OutputRail({ cfg }) {
 
 // ── Connection ───────────────────────────────────────────────────────────────
 function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConnection, lastCheck, questionCount }) {
+  const { t } = useTranslation();
   const { run, running, activeCmd } = useRun();
   const { canEdit } = usePerms();
   const toast = useToast();
@@ -312,14 +316,14 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
     try {
       const resp = await fetch('/api/sample-data', { method: 'POST' });
       if (!resp.ok) {
-        let msg = 'Could not load the sample data.';
+        let msg = t('sources.sampleError');
         try { const j = await resp.json(); if (j?.detail) msg = j.detail; } catch {}
         throw new Error(msg);
       }
       window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'sample-data' } }));
-      toast('Sample data loaded — the next stages now have example questions and rows.', 'ok');
+      toast(t('sources.sampleLoaded'), 'ok');
     } catch (e) {
-      toast(e.message || 'Could not load the sample data.', 'err');
+      toast(e.message || t('sources.sampleError'), 'err');
     } finally {
       setLoadingSample(false);
     }
@@ -366,15 +370,15 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
     <div className="src-card">
       <div className="src-card__head">
         <div>
-          <div className="src-card__title">Connection</div>
-          <div className="src-card__sub">Where your survey lives.</div>
+          <div className="src-card__title">{t('sources.connectionTitle')}</div>
+          <div className="src-card__sub">{t('sources.connectionSub')}</div>
         </div>
       </div>
 
       <div className="src-field">
         <div className="src-field__label">
-          Platform
-          <div className="src-field__hint">Switch between Kobo Toolbox and Ona / INFORM — fields adapt to match.</div>
+          {t('sources.platform')}
+          <div className="src-field__hint">{t('sources.platformHint')}</div>
         </div>
         <div className="platform-pick">
           {PLATFORMS.map(p => (
@@ -398,11 +402,11 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
       </div>
 
       <div className="src-field">
-        <div className="src-field__label">API Base URL
-          <div className="src-field__hint">Token is the Django REST token — fetch from your profile.</div>
+        <div className="src-field__label">{t('sources.apiBaseUrl')}
+          <div className="src-field__hint">{t('sources.apiBaseUrlHint')}</div>
         </div>
         <input
-          aria-label="API Base URL"
+          aria-label={t('sources.apiBaseUrl')}
           className="src-input src-input--mono"
           value={cfg.api?.url || ''}
           placeholder={PLATFORMS.find(p => p.id === platform)?.defaultUrl}
@@ -411,61 +415,61 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
       </div>
 
       <div className="src-field">
-        <div className="src-field__label">API Token
-          <div className="src-field__hint">Stored encrypted at rest and hidden once saved. Use <code>env:VARNAME</code> to read it from an environment variable instead.</div>
+        <div className="src-field__label">{t('sources.apiToken')}
+          <div className="src-field__hint"><Trans i18nKey="sources.apiTokenHint" components={{ c: <code /> }} /></div>
         </div>
 
         {tokenInputMode ? (
           <>
             <div className="token-field">
               <input
-                aria-label="API Token"
+                aria-label={t('sources.apiToken')}
                 type={showToken ? 'text' : 'password'}
                 value={cfg.api?.token || ''}
-                placeholder="paste token or env:KOBO_TOKEN"
+                placeholder={t('sources.tokenPlaceholder')}
                 autoComplete="off"
                 onChange={e => set('api.token')(e.target.value)}
               />
-              <button title={showToken ? 'Hide' : 'Show'} onClick={() => setShowToken(s => !s)}>
+              <button title={showToken ? t('sources.hide') : t('sources.show')} onClick={() => setShowToken(s => !s)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/>
                 </svg>
               </button>
-              <button title="Copy" onClick={copyToken}>
+              <button title={t('sources.copy')} onClick={copyToken}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h7"/></svg>
               </button>
             </div>
             {editingToken && (
-              <button className="btn btn-sm token-cancel" onClick={cancelTokenEdit}>Cancel</button>
+              <button className="btn btn-sm token-cancel" onClick={cancelTokenEdit}>{t('common.cancel')}</button>
             )}
           </>
         ) : isEnvToken ? (
           <div className="token-saved">
             <code className="token-saved__env">{savedToken}</code>
-            <span className="token-saved__tag">env var</span>
-            <button className="btn btn-sm" onClick={beginEditEnv}>Edit</button>
+            <span className="token-saved__tag">{t('sources.envVar')}</span>
+            <button className="btn btn-sm" onClick={beginEditEnv}>{t('sources.edit')}</button>
           </div>
         ) : (
           <div className="token-saved">
             <span className="token-saved__mask">••••••••••••</span>
-            <span className="token-saved__tag">saved</span>
-            <button className="btn btn-sm" onClick={beginReplaceSecret}>Replace</button>
+            <span className="token-saved__tag">{t('sources.saved')}</span>
+            <button className="btn btn-sm" onClick={beginReplaceSecret}>{t('sources.replace')}</button>
           </div>
         )}
       </div>
 
       <div className="src-field">
-        <div className="src-field__label">Form UID
-          <div className="src-field__hint">Identifier from {platform === 'ona' ? 'Ona / INFORM' : 'Kobo'}.</div>
+        <div className="src-field__label">{t('sources.formUid')}
+          <div className="src-field__hint">{t('sources.formUidHint', { platform: platform === 'ona' ? 'Ona / INFORM' : 'Kobo' })}</div>
         </div>
-        <input aria-label="Form UID" className="src-input src-input--mono" value={cfg.form?.uid || ''} placeholder="aAbBcCdDeEfFgGhH" onChange={e => set('form.uid')(e.target.value)} />
+        <input aria-label={t('sources.formUid')} className="src-input src-input--mono" value={cfg.form?.uid || ''} placeholder="aAbBcCdDeEfFgGhH" onChange={e => set('form.uid')(e.target.value)} />
       </div>
 
       <div className="src-field">
-        <div className="src-field__label">Alias
-          <div className="src-field__hint">Slug used for file outputs and the URL.</div>
+        <div className="src-field__label">{t('sources.alias')}
+          <div className="src-field__hint">{t('sources.aliasHint')}</div>
         </div>
-        <input aria-label="Alias" className="src-input src-input--mono" value={cfg.form?.alias || ''} placeholder="monitoring_survey" onChange={e => set('form.alias')(e.target.value)} />
+        <input aria-label={t('sources.alias')} className="src-input src-input--mono" value={cfg.form?.alias || ''} placeholder="monitoring_survey" onChange={e => set('form.alias')(e.target.value)} />
       </div>
 
       <div className="src-field">
@@ -473,11 +477,11 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
         <div className="inline-status">
           <button className="btn btn-primary btn-sm" onClick={testConnection}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="3 8 7 12 13 4"/></svg>
-            Test connection
+            {t('sources.testConnection')}
           </button>
-          {lastCheck && lastCheck.status === 'pending' && <span className="inline-status__check">⋯ checking…</span>}
+          {lastCheck && lastCheck.status === 'pending' && <span className="inline-status__check">{t('sources.checking')}</span>}
           {lastCheck && lastCheck.status === 'ok' && (
-            <span className="inline-status__check">Last check <b>{lastCheck.time}</b> · {lastCheck.msg}</span>
+            <span className="inline-status__check"><Trans i18nKey="sources.lastCheck" values={{ time: lastCheck.time, msg: lastCheck.msg }} components={{ b: <b /> }} /></span>
           )}
           {lastCheck && lastCheck.status === 'err' && (
             <span className="inline-status__check" style={{ color: 'var(--rose)' }}>✗ {lastCheck.msg}</span>
@@ -486,28 +490,26 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
       </div>
 
       <div className="src-field">
-        <div className="src-field__label">Pull from platform
-          <div className="src-field__hint">Fetch the form schema, then download its submissions.</div>
+        <div className="src-field__label">{t('sources.pullFromPlatform')}
+          <div className="src-field__hint">{t('sources.pullHint')}</div>
         </div>
         <div className="inline-status" style={{ gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-sm" onClick={fetchQuestions} disabled={running || !canEdit}
-                  title={canEdit ? 'Pull the latest form schema (preserves your renames + hidden/PII flags)'
-                                 : 'Viewer access — fetching questions requires an editor or admin role'}>
+                  title={canEdit ? t('sources.fetchTitle') : t('sources.fetchViewerTitle')}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><polyline points="2 4 2 8 6 8"/><path d="M3 11a6 6 0 1 0 1.4-7"/></svg>
-            {running && activeCmd === 'fetch-questions' ? 'Fetching…' : 'Fetch questions'}
+            {running && activeCmd === 'fetch-questions' ? t('sources.fetching') : t('sources.fetchQuestions')}
           </button>
           <button className="btn btn-primary btn-sm" onClick={downloadData} disabled={running || !canEdit}
-                  title={canEdit ? 'Download submissions for the configured questions (applies filters + PII gating)'
-                                 : 'Viewer access — downloading data requires an editor or admin role'}>
+                  title={canEdit ? t('sources.downloadTitle') : t('sources.downloadViewerTitle')}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
-            {running && activeCmd === 'download' ? 'Downloading…' : 'Download data'}
+            {running && activeCmd === 'download' ? t('sources.downloading') : t('sources.downloadData')}
           </button>
         </div>
       </div>
 
       <div className="src-field src-field--sample">
-        <div className="src-field__label">No token yet?
-          <div className="src-field__hint">Load a small example dataset to explore the next stages — no API token or AI key needed.</div>
+        <div className="src-field__label">{t('sources.noToken')}
+          <div className="src-field__hint">{t('sources.noTokenHint')}</div>
         </div>
         <div className="inline-status">
           <button
@@ -516,9 +518,8 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
             className="btn btn-primary btn-sm"
             onClick={tryWithSampleData}
             disabled={loadingSample || !canEdit}
-            title={canEdit ? 'Load a bundled example dataset so you can try the tool without credentials'
-                           : 'Viewer access — loading sample data requires an editor or admin role'}>
-            {loadingSample ? 'Loading sample…' : 'Try with sample data'}
+            title={canEdit ? t('sources.sampleTitle') : t('sources.sampleViewerTitle')}>
+            {loadingSample ? t('sources.loadingSample') : t('sources.trySample')}
           </button>
         </div>
       </div>
@@ -528,6 +529,7 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
 
 // ── AI Narrative ─────────────────────────────────────────────────────────────
 function AINarrativeCard({ cfg, set }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const ai = cfg.ai || {};
   const maxTok = parseInt(ai.max_tokens, 10) || 1500;
@@ -577,17 +579,17 @@ function AINarrativeCard({ cfg, set }) {
   const onTestAi = async () => {
     const r = await testAi(ai);
     setTestResult(r);
-    toast(r.ok ? `AI connection OK${r.tokens_used ? ` · ${r.tokens_used} tokens` : ''}`
-               : `AI test failed: ${r.message}`, r.ok ? 'ok' : 'err');
+    toast(r.ok ? t('sources.aiConnOk') + (r.tokens_used ? t('sources.aiTokensSuffix', { tokens: r.tokens_used }) : '')
+               : t('sources.aiTestFailed', { message: r.message }), r.ok ? 'ok' : 'err');
   };
 
   return (
     <div className="src-card">
       <div className="src-card__head">
         <div>
-          <div className="src-card__title">AI Narrative</div>
+          <div className="src-card__title">{t('sources.aiTitle')}</div>
           <div className="src-card__sub">
-            Fills <code>{'{{ summary_text }}'}</code>, <code>{'{{ observations }}'}</code>, <code>{'{{ recommendations }}'}</code> in Word reports.
+            <Trans i18nKey="sources.aiSub" components={{ c1: <code>{'{{ summary_text }}'}</code>, c2: <code>{'{{ observations }}'}</code>, c3: <code>{'{{ recommendations }}'}</code> }} />
           </div>
         </div>
         <span style={{ color: 'var(--ink-3)' }}>
@@ -596,124 +598,123 @@ function AINarrativeCard({ cfg, set }) {
       </div>
 
       <div className="src-field">
-        <div className="src-field__label">Provider
-          <div className="src-field__hint">OpenAI-compatible providers (Gemini, OpenRouter, Groq, DeepSeek…) auto-fill the right Base URL.</div>
+        <div className="src-field__label">{t('sources.provider')}
+          <div className="src-field__hint">{t('sources.providerHint')}</div>
         </div>
-        <select aria-label="AI provider" className="src-input" value={preset} onChange={e => onPresetChange(e.target.value)}>
+        <select aria-label={t('sources.providerAria')} className="src-input" value={preset} onChange={e => onPresetChange(e.target.value)}>
           {AI_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
       <div className="src-field">
-        <div className="src-field__label">Model</div>
+        <div className="src-field__label">{t('sources.model')}</div>
         <div className="src-field__stack">
         <select
-          aria-label="AI model"
+          aria-label={t('sources.modelAria')}
           className="src-input src-input--mono"
           value={showCustomModel ? '__custom__' : model}
           onChange={e => onModelSelect(e.target.value)}
         >
-          {!showCustomModel && model === '' && <option value="" disabled>Select a model…</option>}
+          {!showCustomModel && model === '' && <option value="" disabled>{t('sources.selectModel')}</option>}
           {modelList.map(m => <option key={m} value={m}>{m}</option>)}
-          <option value="__custom__">Custom…</option>
+          <option value="__custom__">{t('sources.customModel')}</option>
         </select>
         {showCustomModel && (
           <input
-            aria-label="Custom AI model id"
+            aria-label={t('sources.customModelAria')}
             className="src-input src-input--mono"
             style={{ marginTop: 6 }}
             value={model}
-            placeholder={presetDef.id === 'anthropic' ? 'claude-…' : 'model id (e.g. llama-3.3-70b-versatile)'}
+            placeholder={presetDef.id === 'anthropic' ? 'claude-…' : t('sources.modelIdPlaceholder')}
             onChange={e => set('ai.model')(e.target.value)}
           />
         )}
         </div>
       </div>
       <div className="src-field">
-        <div className="src-field__label">API key
-          <div className="src-field__hint">Hidden once saved. Use <code>env:VARNAME</code> to read from an environment variable.</div>
+        <div className="src-field__label">{t('sources.apiKey')}
+          <div className="src-field__hint"><Trans i18nKey="sources.apiKeyHint" components={{ c: <code /> }} /></div>
         </div>
         {keyInputMode ? (
           <>
             <div className="token-field">
               <input
-                aria-label="AI API key"
+                aria-label={t('sources.aiApiKeyAria')}
                 type={showKey ? 'text' : 'password'}
                 value={ai.api_key || ''}
-                placeholder="paste key or env:OPENAI_API_KEY"
+                placeholder={t('sources.keyPlaceholder')}
                 autoComplete="off"
                 onChange={e => set('ai.api_key')(e.target.value)}
               />
-              <button title={showKey ? 'Hide' : 'Show'} onClick={() => setShowKey(s => !s)}>
+              <button title={showKey ? t('sources.hide') : t('sources.show')} onClick={() => setShowKey(s => !s)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/>
                 </svg>
               </button>
-              <button title="Copy" onClick={copyKey}>
+              <button title={t('sources.copy')} onClick={copyKey}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h7"/></svg>
               </button>
             </div>
             {editingKey && (
-              <button className="btn btn-sm token-cancel" onClick={cancelKeyEdit}>Cancel</button>
+              <button className="btn btn-sm token-cancel" onClick={cancelKeyEdit}>{t('common.cancel')}</button>
             )}
           </>
         ) : isEnvKey ? (
           <div className="token-saved">
             <code className="token-saved__env">{savedKey}</code>
-            <span className="token-saved__tag">env var</span>
-            <button className="btn btn-sm" onClick={beginEditEnvKey}>Edit</button>
+            <span className="token-saved__tag">{t('sources.envVar')}</span>
+            <button className="btn btn-sm" onClick={beginEditEnvKey}>{t('sources.edit')}</button>
           </div>
         ) : (
           <div className="token-saved">
             <span className="token-saved__mask">••••••••••••</span>
-            <span className="token-saved__tag">saved</span>
-            <button className="btn btn-sm" onClick={beginReplaceKey}>Replace</button>
+            <span className="token-saved__tag">{t('sources.saved')}</span>
+            <button className="btn btn-sm" onClick={beginReplaceKey}>{t('sources.replace')}</button>
           </div>
         )}
       </div>
       {isOpenAiBacked && (
         <div className="src-field">
-          <div className="src-field__label">Base URL
+          <div className="src-field__label">{t('sources.baseUrl')}
             {preset !== 'openai' && preset !== 'custom' && (
-              <div className="src-field__hint">Auto-filled for {presetDef.name}. Edit only if your endpoint differs.</div>
+              <div className="src-field__hint">{t('sources.baseUrlHint', { provider: presetDef.name })}</div>
             )}
           </div>
-          <input aria-label="AI Base URL" className="src-input src-input--mono" value={ai.base_url || ''} placeholder="https://api.openai.com/v1" onChange={e => set('ai.base_url')(e.target.value)} />
+          <input aria-label={t('sources.aiBaseUrlAria')} className="src-input src-input--mono" value={ai.base_url || ''} placeholder="https://api.openai.com/v1" onChange={e => set('ai.base_url')(e.target.value)} />
         </div>
       )}
       <div className="src-field">
-        <div className="src-field__label">Language</div>
-        <input aria-label="Language" className="src-input" value={ai.language || ''} placeholder="English" onChange={e => set('ai.language')(e.target.value)} />
+        <div className="src-field__label">{t('sources.language')}</div>
+        <input aria-label={t('sources.language')} className="src-input" value={ai.language || ''} placeholder={t('sources.languagePlaceholder')} onChange={e => set('ai.language')(e.target.value)} />
       </div>
       <div className="src-field">
-        <div className="src-field__label">Max tokens</div>
+        <div className="src-field__label">{t('sources.maxTokens')}</div>
         <div className="slider-row">
-          <input aria-label="Max tokens" type="range" min="100" max="8000" step="100" value={maxTok} onChange={e => set('ai.max_tokens')(parseInt(e.target.value, 10))} />
+          <input aria-label={t('sources.maxTokens')} type="range" min="100" max="8000" step="100" value={maxTok} onChange={e => set('ai.max_tokens')(parseInt(e.target.value, 10))} />
           <span className="slider-row__value">{maxTok}</span>
-          <span className="slider-row__limit">limit</span>
+          <span className="slider-row__limit">{t('sources.limit')}</span>
         </div>
       </div>
 
       <div className="src-field">
-        <div className="src-field__label">Connection
-          <div className="src-field__hint">AI buttons stay locked until this passes. Save your changes, then test.</div>
+        <div className="src-field__label">{t('sources.connectionLabel')}
+          <div className="src-field__hint">{t('sources.aiConnHint')}</div>
         </div>
         <div className="inline-status" style={{ gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-primary btn-sm" onClick={onTestAi} disabled={testing || !configured}
-                  title={configured ? 'Send a tiny probe to verify the provider + key work'
-                                    : 'Set a provider, model and API key first'}>
+                  title={configured ? t('sources.aiProbeTitle') : t('sources.aiSetFirst')}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="3 8 7 12 13 4"/></svg>
-            {testing ? 'Testing…' : 'Test AI connection'}
+            {testing ? t('sources.testing') : t('sources.testAi')}
           </button>
           {verified ? (
-            <span className="inline-status__check" style={{ color: 'var(--green, #16a34a)' }}>✓ Verified — AI features unlocked</span>
+            <span className="inline-status__check" style={{ color: 'var(--green, #16a34a)' }}>{t('sources.verified')}</span>
           ) : testResult && testResult.ok ? (
-            <span className="inline-status__check">✓ {testResult.message} · Save changes to unlock</span>
+            <span className="inline-status__check">{t('sources.testOkUnlock', { message: testResult.message })}</span>
           ) : testResult && !testResult.ok ? (
-            <span className="inline-status__check" style={{ color: 'var(--rose)' }}>✗ {testResult.message}</span>
+            <span className="inline-status__check" style={{ color: 'var(--rose)' }}>{t('sources.testErr', { message: testResult.message })}</span>
           ) : !configured ? (
-            <span className="inline-status__check" style={{ color: 'var(--muted)' }}>Add a provider + API key</span>
+            <span className="inline-status__check" style={{ color: 'var(--muted)' }}>{t('sources.addProvider')}</span>
           ) : (
-            <span className="inline-status__check" style={{ color: 'var(--muted)' }}>Not verified yet</span>
+            <span className="inline-status__check" style={{ color: 'var(--muted)' }}>{t('sources.notVerified')}</span>
           )}
         </div>
       </div>
@@ -723,6 +724,7 @@ function AINarrativeCard({ cfg, set }) {
 
 // ── Output ───────────────────────────────────────────────────────────────────
 function OutputCard({ cfg, set }) {
+  const { t } = useTranslation();
   const exp = cfg.export || {};
   const rep = cfg.report || {};
   // cfg.export.format = the data-file format (csv/xlsx today) shown on the Reports tab.
@@ -755,24 +757,24 @@ function OutputCard({ cfg, set }) {
     <div className="src-card">
       <div className="src-card__head">
         <div>
-          <div className="src-card__title">Output</div>
-          <div className="src-card__sub">Where exports are written and what formats are emitted.</div>
+          <div className="src-card__title">{t('sources.outputCardTitle')}</div>
+          <div className="src-card__sub">{t('sources.outputCardSub')}</div>
         </div>
       </div>
 
       {/* 1 — Formats */}
       <div className="src-field">
-        <div className="src-field__label">Formats
-          <div className="src-field__hint">Sets the format of the exported data files shown on the Reports tab. CSV and XLSX ship today; JSON and database exports are on the roadmap.</div>
+        <div className="src-field__label">{t('sources.formats')}
+          <div className="src-field__hint">{t('sources.formatsHint')}</div>
         </div>
         <div className="chip-tabs">
           {FORMATS.map(f => (
             <button key={f.id} className="chip-tab" data-active={activeFmt === f.id} disabled={f.soon}
                     onClick={() => pickFmt(f)}
-                    title={f.soon ? 'Coming in a future version' : ''}>
+                    title={f.soon ? t('sources.comingSoon') : ''}>
               {f.label}
               {f.sub && <span className="chip-tab__sub">· {f.sub}</span>}
-              {f.soon && <span className="chip-tab__sub">· soon</span>}
+              {f.soon && <span className="chip-tab__sub">{t('sources.soon')}</span>}
             </button>
           ))}
         </div>
@@ -780,40 +782,40 @@ function OutputCard({ cfg, set }) {
 
       {isSql && (
         <div className="src-field">
-          <div className="src-field__label">Database connection
-            <div className="src-field__hint">Written to <code>export.database</code>. Use the <code>env:</code> prefix to read secrets from environment variables.</div>
+          <div className="src-field__label">{t('sources.dbConnection')}
+            <div className="src-field__hint"><Trans i18nKey="sources.dbConnectionHint" components={{ c1: <code>export.database</code>, c2: <code>env:</code> }} /></div>
           </div>
           <div className="db-cred-grid">
             <label className="db-cred">
-              <span>Host</span>
+              <span>{t('sources.dbHost')}</span>
               <input className="src-input src-input--mono" value={db.host || ''} placeholder="localhost" onChange={e => set('export.database.host')(e.target.value)} />
             </label>
             <label className="db-cred">
-              <span>Port</span>
+              <span>{t('sources.dbPort')}</span>
               <input className="src-input src-input--mono" type="number" value={db.port ?? ''} placeholder={activeFmt === 'postgres' ? '5432' : '3306'} onChange={e => set('export.database.port')(e.target.value ? parseInt(e.target.value, 10) : '')} />
             </label>
             <label className="db-cred">
-              <span>Database</span>
+              <span>{t('sources.dbDatabase')}</span>
               <input className="src-input src-input--mono" value={db.name || ''} placeholder="kobo_reports" onChange={e => set('export.database.name')(e.target.value)} />
             </label>
             <label className="db-cred">
-              <span>Table</span>
+              <span>{t('sources.dbTable')}</span>
               <input className="src-input src-input--mono" value={db.table || ''} placeholder="submissions" onChange={e => set('export.database.table')(e.target.value)} />
             </label>
             <label className="db-cred">
-              <span>User</span>
+              <span>{t('sources.dbUser')}</span>
               <input className="src-input src-input--mono" value={db.user || ''} placeholder="env:DB_USER" onChange={e => set('export.database.user')(e.target.value)} />
             </label>
             <label className="db-cred">
-              <span>Password</span>
+              <span>{t('sources.dbPassword')}</span>
               <input className="src-input src-input--mono" type="password" value={db.password || ''} placeholder="env:DB_PASSWORD" onChange={e => set('export.database.password')(e.target.value)} />
             </label>
             <label className="db-cred db-cred--wide">
-              <span>On existing table</span>
+              <span>{t('sources.onExistingTable')}</span>
               <select className="src-input" value={db.if_exists || 'append'} onChange={e => set('export.database.if_exists')(e.target.value)}>
-                <option value="append">append — add rows</option>
-                <option value="replace">replace — drop &amp; recreate (deletes existing rows)</option>
-                <option value="fail">fail — error if the table exists</option>
+                <option value="append">{t('sources.ifExistsAppend')}</option>
+                <option value="replace">{t('sources.ifExistsReplace')}</option>
+                <option value="fail">{t('sources.ifExistsFail')}</option>
               </select>
             </label>
           </div>
@@ -825,39 +827,39 @@ function OutputCard({ cfg, set }) {
 
       {/* 3 — Split by */}
       <div className="src-field">
-        <div className="src-field__label">Split by
-          <div className="src-field__hint">Generate one report per unique value of a categorical question.</div>
+        <div className="src-field__label">{t('sources.splitBy')}
+          <div className="src-field__hint">{t('sources.splitByHint')}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <input
-            aria-label="Split by"
+            aria-label={t('sources.splitBy')}
             className="src-input src-input--mono"
             list="split-by-options"
             value={rep.split_by || ''}
-            placeholder={catOptions.length ? 'Search categorical questions…' : 'No categorical questions yet'}
+            placeholder={catOptions.length ? t('sources.splitSearch') : t('sources.splitNone')}
             onChange={e => set('report.split_by')(e.target.value)}
           />
           <datalist id="split-by-options">
             {catOptions.map(o => <option key={o} value={o} />)}
           </datalist>
-          {rep.split_by && <div className="src-field__hint">Will produce 1 report per unique value.</div>}
+          {rep.split_by && <div className="src-field__hint">{t('sources.splitWillProduce')}</div>}
         </div>
       </div>
 
       {/* 4 — Export file name */}
       <div className="src-field">
-        <div className="src-field__label">Export file name
-          <div className="src-field__hint">Base name for generated reports. Period and split suffixes are appended automatically.</div>
+        <div className="src-field__label">{t('sources.exportName')}
+          <div className="src-field__hint">{t('sources.exportNameHint')}</div>
         </div>
         <input
-          aria-label="Export file name"
+          aria-label={t('sources.exportName')}
           className="src-input src-input--mono"
           value={exportName}
           placeholder={cfg.form?.alias || 'project'}
           onChange={e => setExportName(e.target.value)}
         />
         <div className="src-field__hint" style={{ marginTop: 6 }}>
-          Full pattern: <code>{`${exportName || '<name>'}_{period}_{split}.docx`}</code>
+          {t('sources.fullPattern')} <code>{`${exportName || '<name>'}_{period}_{split}.docx`}</code>
         </div>
       </div>
     </div>
@@ -873,6 +875,7 @@ const pad2 = (n) => String(n).padStart(2, '0');
 const lastDay = (y, m) => new Date(y, m, 0).getDate();   // m = 1..12
 
 function PeriodRangeField({ cfg, set }) {
+  const { t } = useTranslation();
   const periods = cfg.periods || {};
   const curLabel = periods.current || '';
   const cur = (periods.registry || []).find(e => e.label === curLabel) || {};
@@ -933,51 +936,51 @@ function PeriodRangeField({ cfg, set }) {
 
   return (
     <div className="src-field">
-      <div className="src-field__label">Reporting period
-        <div className="src-field__hint">Reports include only submissions whose date falls in this window.</div>
+      <div className="src-field__label">{t('sources.reportingPeriod')}
+        <div className="src-field__hint">{t('sources.reportingPeriodHint')}</div>
       </div>
 
       <div>
         <div className="chip-tabs" style={{ marginBottom: 10, width: 'fit-content' }}>
           {['year', 'quarter', 'month', 'custom'].map(m => (
             <button key={m} className="chip-tab" data-active={mode === m} onClick={() => setMode(m)}>
-              {m === 'custom' ? 'Custom range' : m[0].toUpperCase() + m.slice(1)}
+              {t(`sources.periodMode.${m}`)}
             </button>
           ))}
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {mode !== 'custom' && (
-            <select aria-label="Reporting period year" className="src-input" style={{ width: 110 }} value={year} onChange={e => setYear(+e.target.value)}>
+            <select aria-label={t('sources.periodYearAria')} className="src-input" style={{ width: 110 }} value={year} onChange={e => setYear(+e.target.value)}>
               {yearOpts.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           )}
           {mode === 'quarter' && (
-            <select aria-label="Reporting period quarter" className="src-input" style={{ width: 120 }} value={quarter} onChange={e => setQuarter(+e.target.value)}>
+            <select aria-label={t('sources.periodQuarterAria')} className="src-input" style={{ width: 120 }} value={quarter} onChange={e => setQuarter(+e.target.value)}>
               {[1, 2, 3, 4].map(q => <option key={q} value={q}>Q{q}</option>)}
             </select>
           )}
           {mode === 'month' && (
-            <select aria-label="Reporting period month" className="src-input" style={{ width: 120 }} value={month} onChange={e => setMonth(+e.target.value)}>
+            <select aria-label={t('sources.periodMonthAria')} className="src-input" style={{ width: 120 }} value={month} onChange={e => setMonth(+e.target.value)}>
               {MONTHS.map((mn, i) => <option key={mn} value={i + 1}>{mn}</option>)}
             </select>
           )}
           {mode === 'custom' && (
             <>
-              <input aria-label="Reporting period start date" type="date" className="src-input" style={{ width: 160 }} value={start} onChange={e => setStart(e.target.value)} />
+              <input aria-label={t('sources.periodStartAria')} type="date" className="src-input" style={{ width: 160 }} value={start} onChange={e => setStart(e.target.value)} />
               <span style={{ color: 'var(--ink-3)' }}>→</span>
-              <input aria-label="Reporting period end date" type="date" className="src-input" style={{ width: 160 }} value={end} onChange={e => setEnd(e.target.value)} />
+              <input aria-label={t('sources.periodEndAria')} type="date" className="src-input" style={{ width: 160 }} value={end} onChange={e => setEnd(e.target.value)} />
             </>
           )}
-          <button className="btn btn-sm" onClick={apply} disabled={!preview.label}>Set period</button>
+          <button className="btn btn-sm" onClick={apply} disabled={!preview.label}>{t('sources.setPeriod')}</button>
         </div>
 
         <div className="src-field__hint" style={{ marginTop: 8 }}>
           {curLabel
-            ? <>Active: <b>{curLabel}</b>{cur.started ? ` · ${cur.started} → ${cur.ended}` : ''}</>
-            : 'No period set — reports include all submissions.'}
+            ? <><Trans i18nKey="sources.periodActive" values={{ label: curLabel }} components={{ b: <b /> }} />{cur.started ? ` · ${cur.started} → ${cur.ended}` : ''}</>
+            : t('sources.periodNone')}
           {preview.label && preview.label !== curLabel && (
-            <> · pending: <b>{preview.label}</b> ({preview.started} → {preview.ended}) — click Set period, then Save.</>
+            <Trans i18nKey="sources.periodPending" values={{ label: preview.label, started: preview.started, ended: preview.ended }} components={{ b: <b /> }} />
           )}
         </div>
       </div>
@@ -986,49 +989,50 @@ function PeriodRangeField({ cfg, set }) {
 }
 
 // Build the readiness checks shown in the Extract Status card.
-function sourceChecks(cfg, questionCount, lastCheck) {
+function sourceChecks(t, cfg, questionCount, lastCheck) {
   const hostFromUrl = (cfg.api?.url || '').replace(/^https?:\/\//, '');
   return [
     // Connection — only "reachable" once a live test has actually passed.
     {
       tone: lastCheck?.status === 'ok' ? 'ok' : lastCheck?.status === 'err' ? 'rose' : 'warn',
-      label: lastCheck?.status === 'ok' ? 'Connection reachable'
-           : lastCheck?.status === 'err' ? 'Connection failed'
-           : 'Connection not tested',
+      label: lastCheck?.status === 'ok' ? t('sources.checkReachable')
+           : lastCheck?.status === 'err' ? t('sources.checkFailed')
+           : t('sources.checkNotTested'),
       sub: lastCheck?.status === 'ok' ? lastCheck.msg
          : lastCheck?.status === 'err' ? lastCheck.msg
-         : (hostFromUrl ? `${hostFromUrl} — click Test connection` : 'Set an API URL + token'),
+         : (hostFromUrl ? t('sources.checkClickTest', { host: hostFromUrl }) : t('sources.checkSetUrl')),
     },
     // Questions — questionCount comes from the saved config (/api/questions).
     {
       tone: questionCount > 0 ? 'ok' : 'warn',
-      label: questionCount > 0 ? `${questionCount} questions configured` : 'No questions yet',
-      sub: questionCount > 0 ? 'from saved config' : 'run Fetch questions to populate',
+      label: questionCount > 0 ? t('sources.checkQuestionsConfigured', { count: questionCount }) : t('sources.checkNoQuestions'),
+      sub: questionCount > 0 ? t('sources.checkFromSaved') : t('sources.checkRunFetch'),
     },
     // AI — reflects saved config only (verification lives on the AI card).
     {
       tone: cfg.ai?.api_key ? 'ok' : 'warn',
-      label: cfg.ai?.api_key ? 'AI key set' : 'AI key not set',
-      sub: cfg.ai?.model ? `${cfg.ai.model} · ${cfg.ai.provider || 'openai'}` : 'unconfigured',
+      label: cfg.ai?.api_key ? t('sources.checkAiKeySet') : t('sources.checkAiKeyNotSet'),
+      sub: cfg.ai?.model ? `${cfg.ai.model} · ${cfg.ai.provider || 'openai'}` : t('sources.checkUnconfigured'),
     },
   ];
 }
 
 // ── Right rail: Tips ────────────────────────────────────────────────────────
 function TipsRailCard() {
+  const { t } = useTranslation();
   return (
     <div className="tips-card">
-      <div className="rail-card__title">Tips
+      <div className="rail-card__title">{t('sources.tips')}
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.2v1.8h5V9.7A4.5 4.5 0 0 0 8 1.5zm-1.5 12h3v1h-3v-1z"/></svg>
       </div>
       <div className="tips-card__item">
-        Prefix the token with <code>env:</code> (e.g. <code>env:KOBO_TOKEN</code>) to read it from an environment variable instead of saving the literal value.
+        <Trans i18nKey="sources.tip1" components={{ c1: <code>env:</code>, c2: <code>env:KOBO_TOKEN</code> }} />
       </div>
       <div className="tips-card__item">
-        Run <b>Test connection</b> before fetching questions — it checks the API URL, token, and form UID.
+        <Trans i18nKey="sources.tip2" components={{ b: <b /> }} />
       </div>
       <div className="tips-card__item">
-        Re-fetching questions preserves your edits: renamed columns and adjusted categories carry over, and only new fields are added.
+        {t('sources.tip3')}
       </div>
     </div>
   );

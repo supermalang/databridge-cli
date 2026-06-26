@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const FOCUSABLE = [
   'a[href]', 'button:not([disabled])', 'textarea:not([disabled])',
@@ -12,7 +13,8 @@ const modalStack = [];
 // Reusable accessible modal. Click backdrop or press Esc to dismiss.
 // Traps focus while open, restores focus to the trigger on close, and locks
 // background scroll. Pass `danger` to style the primary action as destructive.
-export default function Modal({ title, onClose, onSave, saveLabel = 'Save', danger = false, children, width = 520 }) {
+export default function Modal({ title, onClose, onSave, saveLabel, danger = false, children, width = 520 }) {
+  const { t } = useTranslation();
   const dialogRef = useRef(null);
   const titleId = useRef(`modal-title-${Math.random().toString(36).slice(2)}`);
 
@@ -72,15 +74,15 @@ export default function Modal({ title, onClose, onSave, saveLabel = 'Save', dang
       >
         <div className="modal-header">
           <h3 id={titleId.current}>{title}</h3>
-          <button onClick={onClose} aria-label="Close dialog">✕</button>
+          <button onClick={onClose} aria-label={t('common.closeDialog')}>✕</button>
         </div>
         <div className="modal-body">{children}</div>
         {/* Footer only when there's a save action — Cancel pairs with Save (discard
             vs commit). Dismiss-only modals would just duplicate the ✕, so omit it. */}
         {onSave && (
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '12px 20px 16px', borderTop: '1px solid var(--border)' }}>
-            <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-            <button className={`btn btn-sm ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onSave}>{saveLabel}</button>
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>{t('common.cancel')}</button>
+            <button className={`btn btn-sm ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onSave}>{saveLabel ?? t('common.save')}</button>
           </div>
         )}
       </div>

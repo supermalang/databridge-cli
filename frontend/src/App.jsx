@@ -27,14 +27,17 @@ import { tabProps, panelProps, panelId, makeTabKeydown } from './lib/tabs.js';
 import { setLanguage } from './lib/i18n.js';
 
 // Human-friendly verbs for the active run alert. Falls back to a generic phrasing.
-const RUN_LABELS = {
-  'build-report': 'Building report…',
-  'run-all': 'Building report…',
-  download: 'Downloading data…',
-  'fetch-questions': 'Fetching questions…',
-  'generate-template': 'Generating template…',
+// `t` is the i18next translator threaded in from the component (labels localized).
+const RUN_LABEL_KEYS = {
+  'build-report': 'shell.runBuilding',
+  'run-all': 'shell.runBuilding',
+  download: 'shell.runDownloading',
+  'fetch-questions': 'shell.runFetching',
+  'generate-template': 'shell.runGenerating',
 };
-const runLabel = (cmd) => RUN_LABELS[cmd] || (cmd ? `Running ${cmd}…` : 'Running…');
+const runLabel = (t, cmd) =>
+  (RUN_LABEL_KEYS[cmd] && t(RUN_LABEL_KEYS[cmd])) ||
+  (cmd ? t('shell.runGeneric', { cmd }) : t('shell.runDefault'));
 
 // Project identity swatch (avatar) styling. The color is user-chosen IDENTITY, not
 // an action color (One Voice Rule: it never competes with teal CTAs). Pick legible
@@ -218,9 +221,9 @@ export default function App() {
     if (id === activeProjectId) { setProjMenuOpen(false); return; }
     if (switchingRef.current) { setProjMenuOpen(false); return; }
     if (dirtyRef.current && !await confirm({
-      title: 'Discard unsaved changes?',
-      message: 'You have unsaved edits on the current page. Switching projects will discard them.',
-      confirmLabel: 'Switch & discard',
+      title: t('shell.discardTitle'),
+      message: t('shell.discardMessage'),
+      confirmLabel: t('shell.discardConfirm'),
     })) { setProjMenuOpen(false); return; }
     dirtyRef.current = false;
     switchingRef.current = true;
@@ -309,13 +312,13 @@ export default function App() {
       }
       if (status === 'success' || status === 'error') runningCmdRef.current = null;
       if (status === 'success') {
-        toast(`${command} done ✓`, 'ok');
+        toast(t('shell.runDone', { cmd: command }), 'ok');
         // Leave the pending auto-collapse timer alone: a build of ANY duration ends
         // up collapsed ~delay after it STARTED (this also collapses short builds
         // that finish before the delay), unless errored or user-overridden.
       }
       if (status === 'error') {
-        toast(`${command} failed`, 'err');
+        toast(t('shell.runFailed', { cmd: command }), 'err');
         // Auto-expand so the failure log is visible, unless the user is in control.
         clearCollapseTimer();
         if (!userOverrodeTermRef.current) setTermOpen(true);
@@ -465,20 +468,20 @@ export default function App() {
   const runAlert = running ? (
     <div className="run-alert" data-testid="run-alert" role="status" aria-live="polite">
       <span className="run-alert__dot" aria-hidden="true" />
-      <span className="run-alert__label">{runLabel(activeCmd)}</span>
+      <span className="run-alert__label">{runLabel(t, activeCmd)}</span>
       <button
         type="button"
         className="run-alert__logs"
         onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}
       >
-        View logs
+        {t('shell.viewLogs')}
       </button>
       <button
         type="button"
         className="run-alert__stop"
         data-testid="run-stop"
-        aria-label="Stop the running task"
-        title="Stop the running task"
+        aria-label={t('shell.stopTask')}
+        title={t('shell.stopTask')}
         onClick={() => stop()}
       >
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
@@ -499,7 +502,7 @@ export default function App() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
           <ActivePeriodChip />
           <div style={{ position: 'relative' }}>
-            <button className="project-switcher" title="Switch project" type="button"
+            <button className="project-switcher" title={t('shell.switchProject')} type="button"
                     ref={projSwitcherRef}
                     aria-haspopup="menu"
                     aria-expanded={projMenuOpen}
@@ -510,7 +513,7 @@ export default function App() {
                 {activeProject?.icon || (activeProject?.name || '?').slice(0, 2).toUpperCase()}
               </span>
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
-                <span className="project-switcher__name">{activeProject?.name || 'No project'}</span>
+                <span className="project-switcher__name">{activeProject?.name || t('common.noProject')}</span>
                 <span className="project-switcher__slug">{activeProject?.slug || ''}</span>
               </span>
               <span className="project-switcher__chev">▾</span>
@@ -531,7 +534,7 @@ export default function App() {
                     <span className="project-menu__right">
                       {p.role && <span className="project-menu__role">{p.role}</span>}
                       {(p.role === 'admin' || p.role === 'superadmin' || isSuperadmin) && (
-                        <button className="project-menu__gear" title="Project settings"
+                        <button className="project-menu__gear" title={t('shell.projectSettings')}
                                 onClick={(e) => { e.stopPropagation(); openProjectForm(p); }}>
                           ⚙
                         </button>
@@ -542,7 +545,7 @@ export default function App() {
                 {archivedProjects.length > 0 && (
                   <>
                     <div className="project-menu__sep" />
-                    <div className="project-menu__grouplabel">Archived</div>
+                    <div className="project-menu__grouplabel">{t('shell.archived')}</div>
                     {archivedProjects.map(p => (
                       <div key={p.id} className="project-menu__item project-menu__archived">
                         <span className="project-menu__label">{p.name}</span>
@@ -550,12 +553,12 @@ export default function App() {
                           <button className="project-menu__unarchive"
                                   type="button"
                                   data-testid="project-unarchive"
-                                  title="Restore this project to the active list"
+                                  title={t('shell.unarchiveTitle')}
                                   onClick={(e) => { e.stopPropagation(); unarchiveProject(p.id); }}>
-                            Unarchive
+                            {t('shell.unarchive')}
                           </button>
                           {(p.role === 'admin' || p.role === 'superadmin' || isSuperadmin) && (
-                            <button className="project-menu__gear" title="Project settings"
+                            <button className="project-menu__gear" title={t('shell.projectSettings')}
                                     onClick={(e) => { e.stopPropagation(); openProjectForm(p); }}>
                               ⚙
                             </button>
@@ -575,7 +578,7 @@ export default function App() {
                            e.preventDefault(); openProjectForm(activeProject, 'members');
                          }
                        }}>
-                    Manage members…
+                    {t('shell.manageMembers')}
                   </div>
                 )}
                 <div className="project-menu__item project-menu__add"
@@ -586,7 +589,7 @@ export default function App() {
                          e.preventDefault(); openProjectForm('create');
                        }
                      }}>
-                  + New project
+                  {t('shell.newProject')}
                 </div>
               </div>
             )}
@@ -595,10 +598,10 @@ export default function App() {
             <div className="project-switching" data-testid="project-switching"
                  role="status" aria-live="polite">
               <span className="project-switching__spinner" aria-hidden="true" />
-              <span className="project-switching__label">Switching project…</span>
+              <span className="project-switching__label">{t('shell.switchingProject')}</span>
             </div>
           )}
-          <button className="iconbtn" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
+          <button className="iconbtn" title={t('shell.terminal')} onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
           </button>
           <UserMenu me={me} role={activeRole} isSuperadmin={isSuperadmin}
@@ -609,7 +612,7 @@ export default function App() {
       <nav
         className="tabs-bar"
         role="tablist"
-        aria-label="Workflow stages"
+        aria-label={t('shell.workflowStages')}
         data-tab-group="primary"
         onKeyDown={makeTabKeydown('primary', STAGES.map(s => s.id), stageId, (id) => navigate(id))}
       >
@@ -631,7 +634,7 @@ export default function App() {
         <nav
           className="subtabs-bar"
           role="tablist"
-          aria-label={`${stage.label} sections`}
+          aria-label={t('shell.stageSections', { stage: stage.labelKey ? t(stage.labelKey) : stage.label })}
           data-tab-group="sub"
           onKeyDown={makeTabKeydown('sub', subs.map(sub => sub.id), activeSub?.id, (id) => setSubId(id))}
         >

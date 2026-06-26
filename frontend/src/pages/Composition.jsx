@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import yaml from 'js-yaml';
 import Modal from '../components/Modal.jsx';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
@@ -110,6 +111,7 @@ function ChartIcon({ type }) {
 const ALL_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'views', 'templates', 'framework'];
 
 export default function Composition({ sections } = {}) {
+  const { t } = useTranslation();
   const secs = Array.isArray(sections) && sections.length ? sections : ALL_SECTIONS;
   const has = (k) => secs.includes(k);
   const toast = useToast();
@@ -476,29 +478,29 @@ export default function Composition({ sections } = {}) {
       />
       {has('views') && !has('charts') ? (
         <StageHelp
-          title="Combine data"
-          hint="Group related answers into reusable tables — like totals per region."
+          title={t('composition.viewsHelpTitle')}
+          hint={t('composition.viewsHelpHint')}
           body={
             <>
-              <p>A view is a saved, combined table built from your data — for example, the number of responses per region, or an average score per site. Once you define a view, your charts, indicators, and summaries can all reuse it.</p>
-              <p>This is optional. If your charts work straight off your questions, you can skip views entirely.</p>
+              <p>{t('composition.viewsHelpBody1')}</p>
+              <p>{t('composition.viewsHelpBody2')}</p>
             </>
           }
           docsHref="docs/reference/charts.md"
-          docsLabel="Views & combined tables reference"
+          docsLabel={t('composition.viewsHelpDocsLabel')}
         />
       ) : (
         <StageHelp
-          title="Charts & indicators"
-          hint="Add charts, indicators, and summaries — or let AI propose a starter set."
+          title={t('composition.composeHelpTitle')}
+          hint={t('composition.composeHelpHint')}
           body={
             <>
-              <p>This is where you decide what appears in the report. Add a <b>chart</b> to visualise answers, an <b>indicator</b> to track a single number, or a <b>summary</b> for AI-written narrative. Each one becomes a placeholder your Word template fills in.</p>
-              <p>Not sure where to start? Use the AI suggestion buttons to propose a starter set from your questions, then keep what fits.</p>
+              <p><Trans i18nKey="composition.composeHelpBody1" components={{ b: <b /> }} /></p>
+              <p>{t('composition.composeHelpBody2')}</p>
             </>
           }
           docsHref="docs/reference/charts.md"
-          docsLabel="Chart types & options reference"
+          docsLabel={t('composition.composeHelpDocsLabel')}
         />
       )}
       <RailLayout rail={
@@ -623,20 +625,20 @@ export default function Composition({ sections } = {}) {
 
       {preview && (
         <Modal
-          title={`Preview · ${preview.chart?.title || preview.chart?.name || 'chart'}`}
+          title={t('composition.previewTitle', { name: preview.chart?.title || preview.chart?.name || t('composition.chart') })}
           onClose={() => setPreview(null)}
           width={760}
         >
           <div style={{ minHeight: 280, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {preview.loading && (
-              <div style={{ color: 'var(--ink-3)' }}>Rendering preview…</div>
+              <div style={{ color: 'var(--ink-3)' }}>{t('composition.renderingPreview')}</div>
             )}
             {preview.error && (
               <div style={{ color: 'var(--danger, #b91c1c)', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>Couldn’t render this chart</div>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantRenderChart')}</div>
                 <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>{preview.error}</div>
                 <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
-                  Tip: previews need a downloaded data file in <code>data/processed/</code>. Run <code>Download</code> first if you haven’t.
+                  <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>Download</code> }} />
                 </div>
               </div>
             )}
@@ -653,22 +655,22 @@ export default function Composition({ sections } = {}) {
 
       {viewPreview && (
         <Modal
-          title={`Preview · ${viewPreview.view?.name || 'view'}`}
+          title={t('composition.previewTitle', { name: viewPreview.view?.name || t('composition.view') })}
           onClose={() => setViewPreview(null)}
           onSave={viewPreview.columns ? applyViewPreviewChanges : null}
-          saveLabel="Apply"
+          saveLabel={t('composition.apply')}
           width={920}
         >
           <div style={{ minHeight: 200 }}>
             {viewPreview.loading && (
-              <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 40 }}>Computing view…</div>
+              <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 40 }}>{t('composition.computingView')}</div>
             )}
             {viewPreview.error && (
               <div style={{ color: 'var(--danger, #b91c1c)', whiteSpace: 'pre-wrap' }}>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>Couldn’t compute this view</div>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantComputeView')}</div>
                 <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>{viewPreview.error}</div>
                 <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
-                  Tip: previews need a downloaded data file in <code>data/processed/</code>. Run <code>Download</code> first if you haven’t.
+                  <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>Download</code> }} />
                 </div>
               </div>
             )}
@@ -682,12 +684,12 @@ export default function Composition({ sections } = {}) {
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                     <div style={{ color: 'var(--ink-3)', fontSize: 12, flex: 1 }}>
-                      Showing {viewPreview.rows.length} of {viewPreview.n_rows?.toLocaleString() ?? viewPreview.rows.length} row{viewPreview.n_rows === 1 ? '' : 's'} · {visibleCols.length} of {viewPreview.columns.length} column{viewPreview.columns.length === 1 ? '' : 's'}
-                      <span style={{ marginLeft: 10 }}>Click <strong>×</strong> to drop a column · click the name to rename it.</span>
+                      {t('composition.showingRowsCols', { shownRows: viewPreview.rows.length, totalRows: viewPreview.n_rows?.toLocaleString() ?? viewPreview.rows.length, shownCols: visibleCols.length, totalCols: viewPreview.columns.length })}
+                      <span style={{ marginLeft: 10 }}><Trans i18nKey="composition.dropColumnHint" components={{ s: <strong /> }} /></span>
                     </div>
-                    <button className="btn btn-ghost btn-sm" onClick={downloadViewCsv} title="Download the full view table as CSV">
+                    <button className="btn btn-ghost btn-sm" onClick={downloadViewCsv} title={t('composition.downloadCsvTitle')}>
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="3 9 8 14 13 9"/><line x1="8" y1="2" x2="8" y2="14"/></svg>
-                      Download CSV
+                      {t('composition.downloadCsv')}
                     </button>
                   </div>
                   <div style={{ maxHeight: 460, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 4 }}>
@@ -721,7 +723,7 @@ export default function Composition({ sections } = {}) {
                           </tr>
                         ))}
                         {viewPreview.rows.length === 0 && (
-                          <tr><td colSpan={visibleCols.length || 1} style={{ padding: 20, textAlign: 'center', color: 'var(--ink-3)' }}>0 rows after filter/aggregation</td></tr>
+                          <tr><td colSpan={visibleCols.length || 1} style={{ padding: 20, textAlign: 'center', color: 'var(--ink-3)' }}>{t('composition.zeroRows')}</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -729,13 +731,13 @@ export default function Composition({ sections } = {}) {
                   {hiddenCols.length > 0 && (
                     <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 12, color: 'var(--ink-3)', marginRight: 4 }}>
-                        Dropped ({hiddenCols.length}):
+                        {t('composition.dropped', { count: hiddenCols.length })}
                       </span>
                       {hiddenCols.map(c => (
                         <button
                           key={c.name}
                           onClick={() => toggleViewColumnDrop(c.name)}
-                          title="Restore column"
+                          title={t('composition.restoreColumn')}
                           style={{ border: '1px solid var(--border)', background: 'var(--surface-2, #f7f7f7)', color: 'var(--ink-2)', borderRadius: 12, padding: '2px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono, monospace)' }}
                         >
                           + {c.name}
@@ -752,15 +754,15 @@ export default function Composition({ sections } = {}) {
 
       {summaryPreview && (
         <Modal
-          title={`Preview · ${summaryPreview.summary?.name || 'summary'}`}
+          title={t('composition.previewTitle', { name: summaryPreview.summary?.name || t('composition.summary') })}
           onClose={() => setSummaryPreview(null)}
           width={720}
         >
           <div style={{ minHeight: 160 }}>
-            {summaryPreview.loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 30 }}>Computing summary…</div>}
+            {summaryPreview.loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 30 }}>{t('composition.computingSummary')}</div>}
             {summaryPreview.error && (
               <div style={{ color: 'var(--danger, #b91c1c)', whiteSpace: 'pre-wrap' }}>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>Couldn't compute this summary</div>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantComputeSummary')}</div>
                 <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>{summaryPreview.error}</div>
               </div>
             )}
@@ -768,11 +770,11 @@ export default function Composition({ sections } = {}) {
               <>
                 {summaryPreview.n_rows !== undefined && (
                   <div style={{ color: 'var(--ink-3)', fontSize: 12, marginBottom: 8 }}>
-                    From {summaryPreview.n_rows.toLocaleString()} row{summaryPreview.n_rows === 1 ? '' : 's'}
+                    {t('composition.fromRows', { count: summaryPreview.n_rows.toLocaleString() })}
                   </div>
                 )}
                 <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
-                  {summaryPreview.text || <em style={{ color: 'var(--ink-3)' }}>No output returned.</em>}
+                  {summaryPreview.text || <em style={{ color: 'var(--ink-3)' }}>{t('composition.noOutput')}</em>}
                 </div>
               </>
             )}
@@ -788,19 +790,20 @@ export default function Composition({ sections } = {}) {
 const SECTION_LABELS = { charts: 'charts', indicators: 'indicators', tables: 'tables', summaries: 'summaries', views: 'views' };
 
 function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHelp }) {
+  const { t } = useTranslation();
   const { aiReady } = useAiStatus();
   const enabled = Object.keys(SECTION_LABELS).filter(k => secs.includes(k));
   const checks = enabled.map(k => ({
     tone: counts[k] > 0 ? 'ok' : 'warn',
-    label: `${counts[k]} ${SECTION_LABELS[k]}`,
-    sub: counts[k] > 0 ? 'configured' : 'none yet — add one',
+    label: `${counts[k]} ${t(`composition.kind.${k}`)}`,
+    sub: counts[k] > 0 ? t('composition.configured') : t('composition.noneYet'),
   }));
   const aiActions = enabled.map(k => ({
     icon: RailIcons.sparkle,
-    label: `Suggest ${SECTION_LABELS[k]}`,
+    label: t('composition.suggestKind', { kind: t(`composition.kind.${k}`) }),
     onClick: () => onSuggestKind(k),
     disabled: !!suggesting || !aiReady,
-    title: aiReady ? `Let AI propose ${SECTION_LABELS[k]} from your questions` : AI_LOCK_TIP,
+    title: aiReady ? t('composition.suggestKindTitle', { kind: t(`composition.kind.${k}`) }) : AI_LOCK_TIP,
   }));
   return (
     <>
@@ -808,10 +811,10 @@ function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHel
       <QuickActionsCard actions={aiActions} />
       {suggesting && (
         <AiThinking card messages={[
-          'Reading your questions…',
-          'Analyzing distributions…',
-          'Choosing the best options…',
-          `Drafting ${SECTION_LABELS[suggesting] || 'suggestions'}…`,
+          t('composition.thinking1'),
+          t('composition.thinking2'),
+          t('composition.thinking3'),
+          t('composition.drafting', { kind: t(`composition.kind.${suggesting}`, { defaultValue: t('composition.suggestions') }) }),
         ]} />
       )}
       {showChartHelp && <TokenAnatomy />}
@@ -827,6 +830,7 @@ function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHel
 // --auto-charts capability). Presented as low-effort scaffolding for non-experts
 // so the surface no longer opens as a wall of construct types.
 function StarterPath({ onStarterCharts, starterDisabled }) {
+  const { t } = useTranslation();
   // Reuse the existing Ask entry point: it's the sibling "Ask" sub-tab on the
   // Analyze stage. Navigate to it rather than re-implementing Ask here.
   const goToAsk = () => {
@@ -838,10 +842,9 @@ function StarterPath({ onStarterCharts, starterDisabled }) {
   return (
     <div className="starter-path" data-testid="composition-starter-path">
       <div className="starter-path__intro">
-        <div className="starter-path__title">Not sure where to start?</div>
+        <div className="starter-path__title">{t('composition.starterTitle')}</div>
         <p className="starter-path__sub">
-          The quickest way in: ask a question in plain language, or let us draft a
-          starter set of charts from your questions. You can refine everything below.
+          {t('composition.starterSub')}
         </p>
       </div>
       <div className="starter-path__actions">
@@ -850,7 +853,7 @@ function StarterPath({ onStarterCharts, starterDisabled }) {
             <path d="M2.5 11.5 2 14l2.5-.5A6 6 0 1 0 2.5 11.5Z" />
             <circle cx="8" cy="8" r=".6" fill="currentColor" />
           </svg>
-          Ask a question
+          {t('composition.askQuestion')}
         </button>
         <button
           type="button"
@@ -862,7 +865,7 @@ function StarterPath({ onStarterCharts, starterDisabled }) {
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <line x1="3.5" y1="13" x2="3.5" y2="8" /><line x1="8" y1="13" x2="8" y2="4" /><line x1="12.5" y1="13" x2="12.5" y2="10" />
           </svg>
-          Suggest starter charts
+          {t('composition.suggestStarter')}
         </button>
       </div>
     </div>
@@ -873,6 +876,7 @@ function StarterPath({ onStarterCharts, starterDisabled }) {
 // Collapses the less-common constructs (tables + summaries) behind a
 // keyboard-operable native <button> with aria-expanded; collapsed by default.
 function AdvancedSection({ open, onToggle, children }) {
+  const { t } = useTranslation();
   return (
     <div className="comp-advanced">
       <button
@@ -886,8 +890,8 @@ function AdvancedSection({ open, onToggle, children }) {
         <svg className="comp-advanced__chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <polyline points="6 4 10 8 6 12" />
         </svg>
-        <span className="comp-advanced__label">Advanced</span>
-        <span className="comp-advanced__hint">Tables &amp; summaries</span>
+        <span className="comp-advanced__label">{t('composition.advanced')}</span>
+        <span className="comp-advanced__hint">{t('composition.advancedHint')}</span>
       </button>
       <div
         id="composition-advanced-region"
@@ -903,21 +907,22 @@ function AdvancedSection({ open, onToggle, children }) {
 
 // ── Header band ──────────────────────────────────────────────────────────────
 function Header({ questionCount, sections = ALL_SECTIONS, onSave, dirty }) {
+  const { t } = useTranslation();
   const has = (k) => sections.includes(k);
   const viewsOnly = has('views') && !has('charts');
   return (
     <PageHeader
-      eyebrow={viewsOnly ? 'Step 3 of 5 · Combine data' : 'Step 4 of 5 · Compose'}
-      title={viewsOnly ? 'Combine your' : 'Shape your'}
-      accent={viewsOnly ? 'data.' : 'composition.'}
+      eyebrow={viewsOnly ? t('composition.viewsEyebrow') : t('composition.composeEyebrow')}
+      title={viewsOnly ? t('composition.viewsTitle') : t('composition.composeTitle')}
+      accent={viewsOnly ? t('composition.viewsAccent') : t('composition.composeAccent')}
       sub={viewsOnly
-        ? 'Link related answers together and group them into combined tables (for example, totals per region) that your charts, summaries, and indicators can reuse.'
-        : <>Define what shows up in the report — charts, indicators, and summaries. Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
+        ? t('composition.viewsSub')
+        : <>{t('composition.composeSubLead')}<b>{questionCount}</b>{t('composition.composeSubTail')}</>}
       actions={
         <button className={`btn ${dirty ? 'btn-primary' : ''}`} onClick={onSave} disabled={!dirty}
-                title={dirty ? '' : 'No unsaved changes'}>
+                title={dirty ? '' : t('composition.noUnsavedChanges')}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
-          Save changes
+          {t('common.saveChanges')}
         </button>
       }
     />
@@ -926,19 +931,20 @@ function Header({ questionCount, sections = ALL_SECTIONS, onSave, dirty }) {
 
 // ── Charts card ──────────────────────────────────────────────────────────────
 function ChartsCard({ charts, onAdd, onEdit, onRemove, onPreview, toast }) {
+  const { t } = useTranslation();
   return (
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
-          <div className="comp-card__title">Charts</div>
-          <div className="comp-card__sub">Each chart → <code>{'{{ chart_<name> }}'}</code> token in Word template</div>
+          <div className="comp-card__title">{t('composition.chartsTitle')}</div>
+          <div className="comp-card__sub">{t('composition.chartsSubPre')}<code>{'{{ chart_<name> }}'}</code>{t('composition.chartsSubPost')}</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add chart</button>
+          <button className="btn btn-ghost btn-sm" onClick={onAdd}>{t('composition.addChart')}</button>
         </div>
       </div>
       <div className="comp-card__body">
-        {charts.length === 0 && <p className="empty-state" style={{ padding: 20 }}>No charts configured.</p>}
+        {charts.length === 0 && <p className="empty-state" style={{ padding: 20 }}>{t('composition.noCharts')}</p>}
         {charts.map((ch, i) => (
           <div className="comp-row" key={`${ch.name}-${i}`}>
             <div className="comp-row__icon" data-tone={chartTone(ch.type)}>
@@ -946,24 +952,24 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onPreview, toast }) {
             </div>
             <div className="comp-row__body">
               <div className="comp-row__name">
-                {ch.name || '(unnamed)'}
+                {ch.name || t('composition.unnamed')}
                 {ch.ai && <span className="tag tag--warm">AI</span>}
               </div>
               <div className="comp-row__meta">
                 <code>{ch.type}</code>
                 <span className="comp-row__sep">·</span>
-                <span>{(ch.questions || []).join(', ') || 'no columns'}</span>
+                <span>{(ch.questions || []).join(', ') || t('composition.noColumns')}</span>
               </div>
             </div>
             <div className="comp-row__actions">
               <button className="btn btn-ghost" onClick={() => onPreview(i)}>
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-                Preview
+                {t('composition.preview')}
               </button>
-              <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
+              <button className="icon-btn" title={t('composition.edit')} onClick={() => onEdit(i)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
               </button>
-              <button className="icon-btn" title="Delete" onClick={onRemove(i)}>
+              <button className="icon-btn" title={t('composition.delete')} onClick={onRemove(i)}>
                 <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12" cy="8" r="1.4"/></svg>
               </button>
             </div>
@@ -976,6 +982,7 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onPreview, toast }) {
 
 // ── Framework card ───────────────────────────────────────────────────────────
 function FrameworkCard() {
+  const { t } = useTranslation();
   const toast = useToast();
   const { confirm, confirmDialog } = useConfirm();
   const [fw, setFw] = useState({ goal: null, outcomes: [], outputs: [] });
@@ -995,8 +1002,8 @@ function FrameworkCard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(next),
       });
-      if (r.ok) { await reload(); toast('Framework saved', 'ok'); }
-      else { toast('Save failed', 'err'); }
+      if (r.ok) { await reload(); toast(t('composition.frameworkSaved'), 'ok'); }
+      else { toast(t('composition.saveFailed'), 'err'); }
     } catch (e) { toast(e.message, 'err'); }
   };
 
@@ -1010,7 +1017,7 @@ function FrameworkCard() {
 
   const commitEdit = () => {
     const { level, index, draft } = editing;
-    if (!draft.id || !draft.label) { toast('id and label required', 'err'); return; }
+    if (!draft.id || !draft.label) { toast(t('composition.idLabelRequired'), 'err'); return; }
     const next = { goal: fw.goal, outcomes: [...fw.outcomes], outputs: [...fw.outputs] };
     if (level === 'goal') next.goal = { id: draft.id, label: draft.label };
     else if (level === 'outcome') {
@@ -1019,7 +1026,7 @@ function FrameworkCard() {
     }
     else if (level === 'output') {
       const entry = { id: draft.id, label: draft.label, parent: draft.parent };
-      if (!entry.parent) { toast('output needs a parent outcome', 'err'); return; }
+      if (!entry.parent) { toast(t('composition.outputNeedsParent'), 'err'); return; }
       if (index == null) next.outputs.push(entry); else next.outputs[index] = entry;
     }
     setEditing(null);
@@ -1027,7 +1034,7 @@ function FrameworkCard() {
   };
 
   const remove = async (level, index) => {
-    if (!await confirm({ title: 'Delete framework node?', message: 'This node will be removed from the results framework.' })) return;
+    if (!await confirm({ title: t('composition.deleteNodeTitle'), message: t('composition.deleteNodeMessage') })) return;
     const next = { goal: fw.goal, outcomes: [...fw.outcomes], outputs: [...fw.outputs] };
     if (level === 'goal') {
       // Clear `parent` from outcomes that pointed to the deleted goal so the
@@ -1059,18 +1066,18 @@ function FrameworkCard() {
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
-          <div className="comp-card__title">Results framework</div>
-          <div className="comp-card__sub">Goal → Outcomes → Outputs. Link indicators to nodes for logframe rendering.</div>
+          <div className="comp-card__title">{t('composition.frameworkTitle')}</div>
+          <div className="comp-card__sub">{t('composition.frameworkSub')}</div>
         </div>
         <div className="comp-card__head-actions">
-          {!fw.goal && <button className="btn btn-ghost btn-sm" onClick={() => startEdit('goal')}>+ Goal</button>}
-          <button className="btn btn-ghost btn-sm" onClick={() => startEdit('outcome')}>+ Outcome</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => startEdit('output')}>+ Output</button>
+          {!fw.goal && <button className="btn btn-ghost btn-sm" onClick={() => startEdit('goal')}>{t('composition.addGoal')}</button>}
+          <button className="btn btn-ghost btn-sm" onClick={() => startEdit('outcome')}>{t('composition.addOutcome')}</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => startEdit('output')}>{t('composition.addOutput')}</button>
         </div>
       </div>
       <div className="comp-card__body">
         {!fw.goal && (fw.outcomes || []).length === 0 && (
-          <p className="empty-state" style={{ padding: 20 }}>No framework configured.</p>
+          <p className="empty-state" style={{ padding: 20 }}>{t('composition.noFramework')}</p>
         )}
         <div className="framework-tree">
           {fw.goal && (
@@ -1116,25 +1123,25 @@ function FrameworkCard() {
 
       {editing && (
         <Modal
-          title={`${editing.index == null ? 'Add' : 'Edit'} ${editing.level}`}
+          title={editing.index == null ? t('composition.addLevel', { level: editing.level }) : t('composition.editLevel', { level: editing.level })}
           onClose={() => setEditing(null)}
           onSave={commitEdit}
-          saveLabel="Save"
+          saveLabel={t('common.save')}
           width={520}
         >
-          <ModalField label="ID" hint="Short opaque identifier (e.g. OP1.1)">
+          <ModalField label={t('composition.idLabel')} hint={t('composition.idHint')}>
             <input aria-label={`${editing.level} ID`} className="src-input" value={editing.draft.id}
                    onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, id: e.target.value } }))} />
           </ModalField>
-          <ModalField label="Label">
+          <ModalField label={t('composition.labelLabel')}>
             <input aria-label={`${editing.level} label`} className="src-input" value={editing.draft.label}
                    onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, label: e.target.value } }))} />
           </ModalField>
           {editing.level === 'output' && (
-            <ModalField label="Parent outcome">
-              <select aria-label="Parent outcome" className="src-input" value={editing.draft.parent || ''}
+            <ModalField label={t('composition.parentOutcome')}>
+              <select aria-label={t('composition.parentOutcome')} className="src-input" value={editing.draft.parent || ''}
                       onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, parent: e.target.value } }))}>
-                <option value="">(pick one)</option>
+                <option value="">{t('composition.pickOne')}</option>
                 {(fw.outcomes || []).map(oc => <option key={oc.id} value={oc.id}>{oc.id} — {oc.label}</option>)}
               </select>
             </ModalField>
@@ -1149,6 +1156,7 @@ function FrameworkCard() {
 
 // ── Indicators card ──────────────────────────────────────────────────────────
 function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
+  const { t } = useTranslation();
   const [latest, setLatest] = useState({}); // { [indicator.name]: { value, error } }
 
   useEffect(() => {
@@ -1182,22 +1190,22 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
-          <div className="comp-card__title">Indicators</div>
-          <div className="comp-card__sub">Text/number values → <code>{'{{ ind_<name> }}'}</code> placeholders in template</div>
+          <div className="comp-card__title">{t('composition.indicatorsTitle')}</div>
+          <div className="comp-card__sub">{t('composition.indicatorsSubPre')}<code>{'{{ ind_<name> }}'}</code>{t('composition.indicatorsSubPost')}</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add indicator</button>
+          <button className="btn btn-ghost btn-sm" onClick={onAdd}>{t('composition.addIndicator')}</button>
         </div>
       </div>
       <div className="comp-card__body">
-        {indicators.length === 0 && <p className="empty-state" style={{ padding: 20 }}>No indicators configured.</p>}
+        {indicators.length === 0 && <p className="empty-state" style={{ padding: 20 }}>{t('composition.noIndicators')}</p>}
         {indicators.length > 0 && (
           <div className="ind-table-head">
             <span />
-            <span>Name</span>
-            <span>Expression</span>
-            <span>Format</span>
-            <span>Latest</span>
+            <span>{t('composition.colNameLabel')}</span>
+            <span>{t('composition.colExpression')}</span>
+            <span>{t('composition.colFormat')}</span>
+            <span>{t('composition.colLatest')}</span>
             <span />
           </div>
         )}
@@ -1206,7 +1214,7 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
             <div className="comp-row__icon" data-tone="accent">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><polyline points="2 12 6 8 9 10 14 4"/></svg>
             </div>
-            <div className="ind-row__name">{ind.name || '(unnamed)'}</div>
+            <div className="ind-row__name">{ind.name || t('composition.unnamed')}</div>
             <div className="ind-row__expr">
               {ind.stat || 'count'}({ind.question || '—'})
               {ind.label && <span style={{ color: 'var(--ink-3)', marginLeft: 6, fontFamily: 'var(--font-sans)' }}>· {ind.label}</span>}
@@ -1246,19 +1254,20 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
 // Tables are chart-like recipes rendered with the `table` chart type →
 // {{ table_<name> }} placeholders in the Word template.
 function TablesCard({ tables, onAdd, onEdit, onRemove, onPreview }) {
+  const { t: tr } = useTranslation();
   return (
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
-          <div className="comp-card__title">Tables</div>
-          <div className="comp-card__sub">Tabular breakdowns → <code>{'{{ table_<name> }}'}</code> token in Word template</div>
+          <div className="comp-card__title">{tr('composition.tablesTitle')}</div>
+          <div className="comp-card__sub">{tr('composition.tablesSubPre')}<code>{'{{ table_<name> }}'}</code>{tr('composition.tablesSubPost')}</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add table</button>
+          <button className="btn btn-ghost btn-sm" onClick={onAdd}>{tr('composition.addTable')}</button>
         </div>
       </div>
       <div className="comp-card__body">
-        {tables.length === 0 && <p className="empty-state" style={{ padding: 20 }}>No tables configured.</p>}
+        {tables.length === 0 && <p className="empty-state" style={{ padding: 20 }}>{tr('composition.noTables')}</p>}
         {tables.map((t, i) => (
           <div className="comp-row" key={`${t.name}-${i}`}>
             <div className="comp-row__icon" data-tone="green">
@@ -1266,22 +1275,22 @@ function TablesCard({ tables, onAdd, onEdit, onRemove, onPreview }) {
             </div>
             <div className="comp-row__body">
               <div className="comp-row__name">
-                {t.name || '(unnamed)'}
+                {t.name || tr('composition.unnamed')}
                 {t.ai && <span className="tag tag--warm">AI</span>}
               </div>
               <div className="comp-row__meta">
-                <span>{(t.questions || []).join(', ') || 'no columns'}</span>
+                <span>{(t.questions || []).join(', ') || tr('composition.noColumns')}</span>
               </div>
             </div>
             <div className="comp-row__actions">
               <button className="btn btn-ghost" onClick={() => onPreview(i)}>
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-                Preview
+                {tr('composition.preview')}
               </button>
-              <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
+              <button className="icon-btn" title={tr('composition.edit')} onClick={() => onEdit(i)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
               </button>
-              <button className="icon-btn" title="Delete" onClick={onRemove(i)}>
+              <button className="icon-btn" title={tr('composition.delete')} onClick={onRemove(i)}>
                 <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12" cy="8" r="1.4"/></svg>
               </button>
             </div>
@@ -1294,19 +1303,20 @@ function TablesCard({ tables, onAdd, onEdit, onRemove, onPreview }) {
 
 // ── Summaries card ───────────────────────────────────────────────────────────
 function SummariesCard({ summaries, onAdd, onEdit, onRemove, onPreview }) {
+  const { t } = useTranslation();
   return (
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
-          <div className="comp-card__title">Summaries</div>
-          <div className="comp-card__sub">Text paragraphs → <code>{'{{ summary_<name> }}'}</code> placeholders. Composed by the AI narrative.</div>
+          <div className="comp-card__title">{t('composition.summariesTitle')}</div>
+          <div className="comp-card__sub">{t('composition.summariesSubPre')}<code>{'{{ summary_<name> }}'}</code>{t('composition.summariesSubPost')}</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add summary</button>
+          <button className="btn btn-ghost btn-sm" onClick={onAdd}>{t('composition.addSummary')}</button>
         </div>
       </div>
       <div className="comp-card__body">
-        {summaries.length === 0 && <p className="empty-state" style={{ padding: 20 }}>No summaries configured.</p>}
+        {summaries.length === 0 && <p className="empty-state" style={{ padding: 20 }}>{t('composition.noSummaries')}</p>}
         {summaries.map((s, i) => (
           <div className="sum-row" key={`${s.name}-${i}`}>
             <div className="comp-row__icon" data-tone="violet">
@@ -1314,23 +1324,23 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onPreview }) {
             </div>
             <div className="comp-row__body">
               <div className="comp-row__name">
-                {s.name || '(unnamed)'}
+                {s.name || t('composition.unnamed')}
                 {s.stat === 'ai' && <span className="tag tag--warm">AI</span>}
               </div>
               <div className="sum-row__body">
                 {s.prompt || `${s.stat || 'distribution'} of ${csv(s.questions) || '—'}${s.label ? ` · ${s.label}` : ''}`}
               </div>
-              <span className="sum-row__tokens">~ {Math.round(((s.prompt || '').length || 200) * 0.4 + 80)} tokens</span>
+              <span className="sum-row__tokens">{t('composition.tokensApprox', { count: Math.round(((s.prompt || '').length || 200) * 0.4 + 80) })}</span>
             </div>
             <div className="comp-row__actions">
               <button className="btn btn-ghost" onClick={() => onPreview(i)}>
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-                Preview
+                {t('composition.preview')}
               </button>
-              <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
+              <button className="icon-btn" title={t('composition.edit')} onClick={() => onEdit(i)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
               </button>
-              <button className="icon-btn" title="Delete" onClick={onRemove(i)}>
+              <button className="icon-btn" title={t('composition.delete')} onClick={onRemove(i)}>
                 <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12" cy="8" r="1.4"/></svg>
               </button>
             </div>
@@ -1343,6 +1353,7 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onPreview }) {
 
 // ── Views card ───────────────────────────────────────────────────────────────
 function ViewsCard({ views, onAdd, onEdit, onRemove, onPreview }) {
+  const { t } = useTranslation();
   const [dims, setDims] = useState({}); // { [view.name]: { rows, cols, error } }
 
   useEffect(() => {
@@ -1375,15 +1386,15 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onPreview }) {
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
-          <div className="comp-card__title">Combined tables (views)</div>
-          <div className="comp-card__sub">Link related answers and group them into combined tables — for example, totals per region — that your charts, summaries, and indicators can reuse.</div>
+          <div className="comp-card__title">{t('composition.viewsCardTitle')}</div>
+          <div className="comp-card__sub">{t('composition.viewsCardSub')}</div>
         </div>
         <div className="comp-card__head-actions">
-          <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add view</button>
+          <button className="btn btn-ghost btn-sm" onClick={onAdd}>{t('composition.addView')}</button>
         </div>
       </div>
       <div className="comp-card__body">
-        {views.length === 0 && <p className="empty-state" style={{ padding: 20 }}>No views configured.</p>}
+        {views.length === 0 && <p className="empty-state" style={{ padding: 20 }}>{t('composition.noViews')}</p>}
         {views.map((v, i) => {
           // Build a tiny expression string for the screenshot-style summary.
           const expr = v.group_by
@@ -1398,7 +1409,7 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onPreview }) {
               <div className="comp-row__icon" data-tone="green">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><line x1="2.5" y1="6.5" x2="13.5" y2="6.5"/><line x1="6" y1="3" x2="6" y2="13"/></svg>
               </div>
-              <div className="comp-row__name">{v.name || '(unnamed)'}</div>
+              <div className="comp-row__name">{v.name || t('composition.unnamed')}</div>
               <div className="ind-row__expr">{expr}</div>
               <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.45 }}>
                 {v.filter || '—'}
@@ -1408,17 +1419,17 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onPreview }) {
                   const d = dims[v.name];
                   if (!d) return '…';
                   if (d.error) return '—';
-                  return `${d.rows?.toLocaleString() ?? '?'} rows · ${d.cols ?? '?'} cols`;
+                  return t('composition.rowsCols', { rows: d.rows?.toLocaleString() ?? '?', cols: d.cols ?? '?' });
                 })()}
                 <div className="comp-row__actions" style={{ marginTop: 6, justifyContent: 'flex-end' }}>
                   <button className="btn btn-ghost btn-sm" onClick={() => onPreview(i)}>
                     <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-                    Preview
+                    {t('composition.preview')}
                   </button>
-                  <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
+                  <button className="icon-btn" title={t('composition.edit')} onClick={() => onEdit(i)}>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
                   </button>
-                  <button className="icon-btn" title="Delete" onClick={onRemove(i)}>
+                  <button className="icon-btn" title={t('composition.delete')} onClick={onRemove(i)}>
                     <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12" cy="8" r="1.4"/></svg>
                   </button>
                 </div>
@@ -1433,18 +1444,19 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onPreview }) {
 
 // ── Templates card ───────────────────────────────────────────────────────────
 function TemplatesCard({ templates, active, onReload, toast }) {
+  const { t: tr } = useTranslation();
   const upload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const fd = new FormData(); fd.append('file', file);
     const res = await fetch('/api/templates/upload', { method: 'POST', body: fd });
-    toast(res.ok ? `Uploaded ${file.name}` : 'Upload failed', res.ok ? 'ok' : 'err');
+    toast(res.ok ? tr('composition.uploaded', { name: file.name }) : tr('composition.uploadFailed'), res.ok ? 'ok' : 'err');
     e.target.value = '';
     onReload();
   };
   const setActive = async (name) => {
     const res = await fetch(`/api/templates/set-active/${encodeURIComponent(name)}`, { method: 'POST' });
-    toast(res.ok ? `Active: ${name}` : 'Failed', res.ok ? 'ok' : 'err');
+    toast(res.ok ? tr('composition.activeName', { name }) : tr('composition.failed'), res.ok ? 'ok' : 'err');
     onReload();
   };
 
@@ -1452,23 +1464,23 @@ function TemplatesCard({ templates, active, onReload, toast }) {
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
-          <div className="comp-card__title">Templates</div>
-          <div className="comp-card__sub">The Word version that holds the composition. Drop tokens anywhere you'd just type text.</div>
+          <div className="comp-card__title">{tr('composition.templatesTitle')}</div>
+          <div className="comp-card__sub">{tr('composition.templatesSub')}</div>
         </div>
         <div className="comp-card__head-actions">
           {active && (
             <a href={`/api/templates/download/${encodeURIComponent(active)}`} download>
-              <button className="btn btn-ghost btn-sm">↓ Download current</button>
+              <button className="btn btn-ghost btn-sm">{tr('composition.downloadCurrent')}</button>
             </a>
           )}
           <label className="btn btn-primary btn-sm" style={{ cursor: 'pointer' }}>
-            ↑ Upload new version
+            {tr('composition.uploadNewVersion')}
             <input type="file" accept=".docx" style={{ display: 'none' }} onChange={upload} />
           </label>
         </div>
       </div>
       <div className="comp-card__body">
-        {templates.length === 0 && <p className="empty-state" style={{ padding: 20 }}>No templates yet — run <b>generate-template</b> from the Dashboard or upload a <code>.docx</code>.</p>}
+        {templates.length === 0 && <p className="empty-state" style={{ padding: 20 }}><Trans i18nKey="composition.noTemplates" components={{ b: <b />, c: <code /> }} /></p>}
         {templates.map((t) => (
           <div className="tpl-row" key={t.name}>
             <div className="comp-row__icon" data-tone="accent">
@@ -1477,8 +1489,8 @@ function TemplatesCard({ templates, active, onReload, toast }) {
             <div>
               <div className="tpl-row__name">
                 {t.name}
-                {t.name === active && <span className="tag tag--green">current</span>}
-                {t.name !== active && <span className="tag" style={{ background: 'var(--bg-2)', color: 'var(--ink-3)' }}>archive</span>}
+                {t.name === active && <span className="tag tag--green">{tr('composition.currentBadge')}</span>}
+                {t.name !== active && <span className="tag" style={{ background: 'var(--bg-2)', color: 'var(--ink-3)' }}>{tr('composition.archiveBadge')}</span>}
               </div>
               <div className="tpl-row__meta">{t.modified}</div>
             </div>
@@ -1486,14 +1498,14 @@ function TemplatesCard({ templates, active, onReload, toast }) {
             <div className="tpl-row__size">{t.size_kb} KB</div>
             <div className="comp-row__actions">
               {t.name !== active && (
-                <button className="icon-btn" title="Set active" onClick={() => setActive(t.name)}>
+                <button className="icon-btn" title={tr('composition.setActive')} onClick={() => setActive(t.name)}>
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
                 </button>
               )}
-              <a className="icon-btn" href={`/api/templates/download/${encodeURIComponent(t.name)}`} download title="Download">
+              <a className="icon-btn" href={`/api/templates/download/${encodeURIComponent(t.name)}`} download title={tr('composition.download')}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="3 9 8 14 13 9"/><line x1="8" y1="2" x2="8" y2="14"/></svg>
               </a>
-              <button className="icon-btn" title="More">
+              <button className="icon-btn" title={tr('composition.more')}>
                 <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12" cy="8" r="1.4"/></svg>
               </button>
             </div>
@@ -1506,28 +1518,30 @@ function TemplatesCard({ templates, active, onReload, toast }) {
 
 // ── Right rail: Token anatomy ────────────────────────────────────────────────
 function TokenAnatomy() {
+  const { t } = useTranslation();
   return (
     <div className="token-card">
       <div>
-        <div className="token-card__title">Token anatomy</div>
-        <div className="token-card__sub">Drop any of these tokens into the Word template — Databridge fills them in step 4.</div>
+        <div className="token-card__title">{t('composition.tokenAnatomy')}</div>
+        <div className="token-card__sub">{t('composition.tokenAnatomySub')}</div>
       </div>
-      <div className="token-card__row"><span className="label">Chart</span><span className="ph">{'{{ chart_<name> }}'}</span></div>
-      <div className="token-card__row"><span className="label">Indicator</span><span className="ph">{'{{ ind_<name> }}'}</span></div>
-      <div className="token-card__row"><span className="label">Summary</span><span className="ph">{'{{ summary_<name> }}'}</span></div>
-      <div className="token-card__row"><span className="label">Split</span><span className="ph">{'{{ split_value }}'}</span></div>
+      <div className="token-card__row"><span className="label">{t('composition.tokenChart')}</span><span className="ph">{'{{ chart_<name> }}'}</span></div>
+      <div className="token-card__row"><span className="label">{t('composition.tokenIndicator')}</span><span className="ph">{'{{ ind_<name> }}'}</span></div>
+      <div className="token-card__row"><span className="label">{t('composition.tokenSummary')}</span><span className="ph">{'{{ summary_<name> }}'}</span></div>
+      <div className="token-card__row"><span className="label">{t('composition.tokenSplit')}</span><span className="ph">{'{{ split_value }}'}</span></div>
     </div>
   );
 }
 
 // ── Right rail: Chart library ────────────────────────────────────────────────
 function ChartLibrary() {
+  const { t } = useTranslation();
   const col = (type) => chartTone(type);
   return (
     <div className="lib-card">
       <div className="lib-card__head">
-        <h4>Chart library</h4>
-        <span>{CHART_TYPES.length} types</span>
+        <h4>{t('composition.chartLibrary')}</h4>
+        <span>{t('composition.typesCount', { count: CHART_TYPES.length })}</span>
       </div>
       <div className="lib-card__grid">
         {CHART_TYPES.map(t => (
@@ -1543,11 +1557,12 @@ function ChartLibrary() {
 
 // ── Right rail: Tips ────────────────────────────────────────────────────────
 function TipsCard() {
+  const { t } = useTranslation();
   return (
     <div className="tips-card-sm">
-      <div className="tips-card-sm__title">Tips</div>
+      <div className="tips-card-sm__title">{t('composition.tips')}</div>
       <div className="tips-card-sm__body">
-        Rename questions in the <b>Questions</b> step before you start composing — labels flow through to every chart, indicator, and summary automatically.
+        <Trans i18nKey="composition.tipBody" components={{ b: <b /> }} />
       </div>
     </div>
   );
@@ -1558,6 +1573,7 @@ function TipsCard() {
 // Composition page; condensed here.
 // ─────────────────────────────────────────────────────────────────────────────
 function ChartModal({ initial, columns = [], onClose, onSave }) {
+  const { t } = useTranslation();
   const [name, setName]       = useState(initial?.name || '');
   const [title, setTitle]     = useState(initial?.title || '');
   const [type, setType]       = useState(initial?.type || 'bar');
@@ -1567,33 +1583,34 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
   const fe = useFieldErrors();
 
   const submit = () => {
-    if (!name.trim()) return fe.setError('name', 'Name is required.');
+    if (!name.trim()) return fe.setError('name', t('composition.nameRequired'));
     const item = { name: name.trim(), title: title.trim(), type, questions: fromCsv(cols) };
     if (optsY.trim()) {
       try { const o = yaml.load(optsY); if (o && Object.keys(o).length) item.options = o; }
-      catch (e) { return setErr('Options YAML invalid: ' + e.message); }
+      catch (e) { return setErr(t('composition.optionsYamlInvalid') + e.message); }
     }
     onSave(item);
   };
   return (
-    <Modal title={initial ? `Edit chart: ${initial.name}` : 'Add chart'} onClose={onClose} onSave={submit} width={560}>
+    <Modal title={initial ? t('composition.editChart', { name: initial.name }) : t('composition.addChartModal')} onClose={onClose} onSave={submit} width={560}>
       <ModalError>{err}</ModalError>
-      <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label="Chart name" className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
-      <ModalField label="Title"><input aria-label="Chart title" className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Overall satisfaction" /></ModalField>
-      <ModalField label="Type" hint={CHART_REQS[type] ? `Needs: ${CHART_REQS[type]}` : undefined}>
-        <select aria-label="Chart type" className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+      <ModalField label={t('composition.fName')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.chartName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
+      <ModalField label={t('composition.fTitle')}><input aria-label={t('composition.chartTitle')} className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder={t('composition.chartTitlePlaceholder')} /></ModalField>
+      <ModalField label={t('composition.fType')} hint={CHART_REQS[type] ? t('composition.needs', { reqs: CHART_REQS[type] }) : undefined}>
+        <select aria-label={t('composition.chartType')} className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
       </ModalField>
-      <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name">
-        <ColumnPicker ariaLabel="Chart columns" value={cols} onChange={setCols} options={columns} placeholder="Search columns…" />
+      <ModalField label={t('composition.fColumns')} hint={t('composition.columnsHint')}>
+        <ColumnPicker ariaLabel={t('composition.chartColumns')} value={cols} onChange={setCols} options={columns} placeholder={t('composition.searchColumns')} />
       </ModalField>
-      <ModalField label="Options" hint="YAML, optional (e.g. top_n: 10)">
-        <textarea aria-label="Chart options (YAML)" value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
+      <ModalField label={t('composition.fOptions')} hint={t('composition.optionsHint')}>
+        <textarea aria-label={t('composition.chartOptionsYaml')} value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
       </ModalField>
     </Modal>
   );
 }
 
 function IndicatorModal({ initial, columns = [], onClose, onSave }) {
+  const { t } = useTranslation();
   const [name, setName]         = useState(initial?.name || '');
   const [label, setLabel]       = useState(initial?.label || '');
   const [stat, setStat]         = useState(initial?.stat || 'count');
@@ -1608,7 +1625,7 @@ function IndicatorModal({ initial, columns = [], onClose, onSave }) {
   const [err, setErr] = useState('');
   const fe = useFieldErrors();
   const submit = () => {
-    if (!name.trim()) return fe.setError('name', 'Name is required.');
+    if (!name.trim()) return fe.setError('name', t('composition.nameRequired'));
     const item = { name: name.trim(), stat };
     if (label.trim()) item.label = label.trim();
     if (question.trim()) item.question = question.trim();
@@ -1620,29 +1637,29 @@ function IndicatorModal({ initial, columns = [], onClose, onSave }) {
     onSave(item);
   };
   return (
-    <Modal title={initial ? `Edit indicator: ${initial.name}` : 'Add indicator'} onClose={onClose} onSave={submit}>
+    <Modal title={initial ? t('composition.editIndicator', { name: initial.name }) : t('composition.addIndicatorModal')} onClose={onClose} onSave={submit}>
       <ModalError>{err}</ModalError>
-      <ModalField label="Name" hint="Becomes {{ ind_<name> }} in the template" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label="Indicator name" className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="total_beneficiaries" /></ModalField>
-      <ModalField label="Label"><input aria-label="Indicator label" className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
-      <ModalField label="Stat"><select aria-label="Indicator stat" className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{INDICATOR_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
-      <ModalField label="Column"><ColumnPicker ariaLabel="Indicator column" value={question} onChange={setQuestion} options={columns} multi={false} placeholder="Number of Students" /></ModalField>
-      <ModalField label="Format" hint="Python format string"><input aria-label="Indicator format" className="src-input" value={format} onChange={e => setFormat(e.target.value)} placeholder="{:,.0f}" /></ModalField>
-      <ModalField label="Compare to" hint="Optional. Set 'baseline' to compute delta + percent change from the baseline period.">
-        <select aria-label="Indicator compare to" className="src-input" value={compareTo} onChange={e => setCompareTo(e.target.value)}>
-          <option value="">(no comparison)</option>
-          <option value="baseline">Baseline</option>
+      <ModalField label={t('composition.fName')} hint={t('composition.indNameHintPre') + '{{ ind_<name> }}' + t('composition.indNameHintPost')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.indicatorName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="total_beneficiaries" /></ModalField>
+      <ModalField label={t('composition.fLabel')}><input aria-label={t('composition.indicatorLabel')} className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
+      <ModalField label={t('composition.fStat')}><select aria-label={t('composition.indicatorStat')} className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{INDICATOR_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
+      <ModalField label={t('composition.fColumn')}><ColumnPicker ariaLabel={t('composition.indicatorColumn')} value={question} onChange={setQuestion} options={columns} multi={false} placeholder={t('composition.numberOfStudents')} /></ModalField>
+      <ModalField label={t('composition.fFormat')} hint={t('composition.pyFormatHint')}><input aria-label={t('composition.indicatorFormat')} className="src-input" value={format} onChange={e => setFormat(e.target.value)} placeholder="{:,.0f}" /></ModalField>
+      <ModalField label={t('composition.fCompareTo')} hint={t('composition.compareToHint')}>
+        <select aria-label={t('composition.indicatorCompareTo')} className="src-input" value={compareTo} onChange={e => setCompareTo(e.target.value)}>
+          <option value="">{t('composition.noComparison')}</option>
+          <option value="baseline">{t('composition.baseline')}</option>
         </select>
       </ModalField>
-      <ModalField label="Framework link" hint="Optional. Pick a goal/outcome/output node to link this indicator to.">
+      <ModalField label={t('composition.fFrameworkLink')} hint={t('composition.frameworkLinkHint')}>
         <FrameworkPicker value={frameworkRef} onChange={v => setFrameworkRef(v || '')} />
       </ModalField>
-      <ModalField label="Disaggregate by" hint="Optional. Computes the stat per group; adds {{ ind_<name>_breakdown }} + {{ ind_<name>_table }}.">
-        <ColumnPicker ariaLabel="Disaggregate by" value={disagg} onChange={setDisagg} options={columns} placeholder="Region, Sex" />
+      <ModalField label={t('composition.fDisaggregateBy')} hint={t('composition.disaggregateHintPre') + '{{ ind_<name>_breakdown }} + {{ ind_<name>_table }}' + t('composition.disaggregateHintPost')}>
+        <ColumnPicker ariaLabel={t('composition.disaggregateBy')} value={disagg} onChange={setDisagg} options={columns} placeholder={t('composition.regionSex')} />
       </ModalField>
-      <ModalField label="Primary" hint="Optional. Marks this as the framework node's headline indicator — drives the node's achievement % in the logframe.">
+      <ModalField label={t('composition.fPrimary')} hint={t('composition.primaryHint')}>
         <label className="run-opt" style={{ paddingTop: 6 }}>
           <input type="checkbox" checked={primary} onChange={e => setPrimary(e.target.checked)} />
-          Primary indicator for its framework node
+          {t('composition.primaryIndicator')}
         </label>
       </ModalField>
     </Modal>
@@ -1650,6 +1667,7 @@ function IndicatorModal({ initial, columns = [], onClose, onSave }) {
 }
 
 function SummaryModal({ initial, columns = [], onClose, onSave }) {
+  const { t } = useTranslation();
   const [name, setName]     = useState(initial?.name || '');
   const [label, setLabel]   = useState(initial?.label || '');
   const [stat, setStat]     = useState(initial?.stat || 'distribution');
@@ -1660,7 +1678,7 @@ function SummaryModal({ initial, columns = [], onClose, onSave }) {
   const [err, setErr]       = useState('');
   const fe = useFieldErrors();
   const submit = () => {
-    if (!name.trim()) return fe.setError('name', 'Name is required.');
+    if (!name.trim()) return fe.setError('name', t('composition.nameRequired'));
     const item = { name: name.trim(), stat };
     if (label.trim()) item.label = label.trim();
     const qs = fromCsv(cols); if (qs.length) item.questions = qs;
@@ -1670,30 +1688,31 @@ function SummaryModal({ initial, columns = [], onClose, onSave }) {
     onSave(item);
   };
   return (
-    <Modal title={initial ? `Edit summary: ${initial.name}` : 'Add summary'} onClose={onClose} onSave={submit} width={560}>
+    <Modal title={initial ? t('composition.editSummary', { name: initial.name }) : t('composition.addSummaryModal')} onClose={onClose} onSave={submit} width={560}>
       <ModalError>{err}</ModalError>
-      <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label="Summary name" className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} /></ModalField>
-      <ModalField label="Label"><input aria-label="Summary label" className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
-      <ModalField label="Stat"><select aria-label="Summary stat" className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{SUMMARY_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
-      <ModalField label="Columns"><ColumnPicker ariaLabel="Summary columns" value={cols} onChange={setCols} options={columns} /></ModalField>
-      {(stat === 'distribution' || stat === 'crosstab') && <ModalField label="Top N"><input aria-label="Summary top N" className="src-input" type="number" value={topN} onChange={e => setTopN(e.target.value)} /></ModalField>}
+      <ModalField label={t('composition.fName')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.summaryName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} /></ModalField>
+      <ModalField label={t('composition.fLabel')}><input aria-label={t('composition.summaryLabel')} className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
+      <ModalField label={t('composition.fStat')}><select aria-label={t('composition.summaryStat')} className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{SUMMARY_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
+      <ModalField label={t('composition.fColumns')}><ColumnPicker ariaLabel={t('composition.summaryColumns')} value={cols} onChange={setCols} options={columns} /></ModalField>
+      {(stat === 'distribution' || stat === 'crosstab') && <ModalField label={t('composition.fTopN')}><input aria-label={t('composition.summaryTopN')} className="src-input" type="number" value={topN} onChange={e => setTopN(e.target.value)} /></ModalField>}
       {stat === 'trend' && (
-        <ModalField label="Frequency"><select aria-label="Summary frequency" className="src-input" value={freq} onChange={e => setFreq(e.target.value)}>{['', 'day', 'week', 'month', 'year'].map(f => <option key={f} value={f}>{f || '—'}</option>)}</select></ModalField>
+        <ModalField label={t('composition.fFrequency')}><select aria-label={t('composition.summaryFrequency')} className="src-input" value={freq} onChange={e => setFreq(e.target.value)}>{['', 'day', 'week', 'month', 'year'].map(f => <option key={f} value={f}>{f || '—'}</option>)}</select></ModalField>
       )}
-      {stat === 'ai' && <ModalField label="Prompt"><textarea aria-label="Summary prompt" value={prompt} onChange={e => setPrompt(e.target.value)} rows={4} className="src-input" style={{ height: 'auto', padding: 10 }} /></ModalField>}
+      {stat === 'ai' && <ModalField label={t('composition.fPrompt')}><textarea aria-label={t('composition.summaryPrompt')} value={prompt} onChange={e => setPrompt(e.target.value)} rows={4} className="src-input" style={{ height: 'auto', padding: 10 }} /></ModalField>}
     </Modal>
   );
 }
 
 // Tables are chart recipes of type `table`. Minimal editor: name, title, columns.
 function TableModal({ initial, columns = [], onClose, onSave }) {
+  const { t } = useTranslation();
   const [name, setName]   = useState(initial?.name || '');
   const [title, setTitle] = useState(initial?.title || '');
   const [cols, setCols]   = useState(csv(initial?.questions || []));
   const [err, setErr]     = useState('');
   const fe = useFieldErrors();
   const submit = () => {
-    if (!name.trim()) return fe.setError('name', 'Name is required.');
+    if (!name.trim()) return fe.setError('name', t('composition.nameRequired'));
     const item = { name: name.trim(), title: title.trim(), type: 'table', questions: fromCsv(cols) };
     if (initial?.options) item.options = initial.options;
     if (initial?.source) item.source = initial.source;
@@ -1702,16 +1721,17 @@ function TableModal({ initial, columns = [], onClose, onSave }) {
     onSave(item);
   };
   return (
-    <Modal title={initial ? `Edit table: ${initial.name}` : 'Add table'} onClose={onClose} onSave={submit} width={560}>
+    <Modal title={initial ? t('composition.editTable', { name: initial.name }) : t('composition.addTableModal')} onClose={onClose} onSave={submit} width={560}>
       <ModalError>{err}</ModalError>
-      <ModalField label="Name" hint="Used as {{ table_<name> }} in the template" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label="Table name" className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} /></ModalField>
-      <ModalField label="Title"><input aria-label="Table title" className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
-      <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name."><ColumnPicker ariaLabel="Table columns" value={cols} onChange={setCols} options={columns} /></ModalField>
+      <ModalField label={t('composition.fName')} hint={t('composition.tableNameHintPre') + '{{ table_<name> }}' + t('composition.tableNameHintPost')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.tableName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} /></ModalField>
+      <ModalField label={t('composition.fTitle')}><input aria-label={t('composition.tableTitle')} className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
+      <ModalField label={t('composition.fColumns')} hint={t('composition.columnsHintDot')}><ColumnPicker ariaLabel={t('composition.tableColumns')} value={cols} onChange={setCols} options={columns} /></ModalField>
     </Modal>
   );
 }
 
 function ViewModal({ initial, onClose, onSave }) {
+  const { t } = useTranslation();
   const { aiReady } = useAiStatus();
   const [name, setName]               = useState(initial?.name || '');
   const [source, setSource]           = useState(initial?.source || 'main');
@@ -1754,12 +1774,12 @@ function ViewModal({ initial, onClose, onSave }) {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setErr(data.detail || `Request failed (${r.status})`);
+        setErr(data.detail || t('composition.requestFailed', { status: r.status }));
         window.dispatchEvent(new CustomEvent('databridge:ai-recheck'));
         return;
       }
       const v = (data.views || [])[0];
-      if (!v) { setErr('AI did not return a view — try rephrasing.'); return; }
+      if (!v) { setErr(t('composition.aiNoView')); return; }
       if (v.name) setName(v.name);
       if (v.source) setSource(v.source);
       setJoinParent(csv(v.join_parent || []));
@@ -1768,7 +1788,7 @@ function ViewModal({ initial, onClose, onSave }) {
       if (v.group_by) { setAggregate(true); setGroupBy(v.group_by); setQuestion(v.question || ''); setAgg(v.agg || 'sum'); }
       else { setAggregate(false); setGroupBy(''); setQuestion(''); }
     } catch (e) {
-      setErr(e.message || 'Network error');
+      setErr(e.message || t('composition.networkError'));
       window.dispatchEvent(new CustomEvent('databridge:ai-recheck'));
     } finally { setDescribing(false); }
   };
@@ -1776,8 +1796,8 @@ function ViewModal({ initial, onClose, onSave }) {
   const filterErr = validateFilterExpr(filter);
   const submit = () => {
     fe.clearAll();
-    if (!name.trim()) { fe.setError('name', 'Name is required.'); return; }
-    if (!source.trim()) { fe.setError('source', 'Source is required.'); return; }
+    if (!name.trim()) { fe.setError('name', t('composition.nameRequired')); return; }
+    if (!source.trim()) { fe.setError('source', t('composition.sourceRequired')); return; }
     if (filterErr) { fe.setError('filter', filterErr); return; }
     const item = { name: name.trim(), source: source.trim() };
     const jp = fromCsv(joinParent); if (jp.length) item.join_parent = jp;
@@ -1794,62 +1814,62 @@ function ViewModal({ initial, onClose, onSave }) {
   };
 
   return (
-    <Modal title={initial ? `Edit view: ${initial.name}` : 'Add view'} onClose={onClose} onSave={submit} width={580}>
+    <Modal title={initial ? t('composition.editView', { name: initial.name }) : t('composition.addViewModal')} onClose={onClose} onSave={submit} width={580}>
       <ModalError>{err}</ModalError>
 
       <div style={{ padding: '2px 0 12px', borderBottom: '1px dashed var(--border)', marginBottom: 4 }}>
         <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>
-          ✨ Describe the view <span style={{ fontWeight: 400, color: 'var(--ink-3)' }}>— let AI fill the form below</span>
+          {t('composition.describeViewTitle')} <span style={{ fontWeight: 400, color: 'var(--ink-3)' }}>{t('composition.describeViewSub')}</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input aria-label="Describe the view" className="src-input" style={{ flex: 1 }} value={describeText}
+          <input aria-label={t('composition.describeView')} className="src-input" style={{ flex: 1 }} value={describeText}
                  onChange={e => setDescribeText(e.target.value)}
                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (aiReady && !describing && describeText.trim()) build(); } }}
                  disabled={!aiReady || describing}
-                 placeholder={aiReady ? 'e.g. total students per department, only villages with students' : AI_LOCK_TIP} />
+                 placeholder={aiReady ? t('composition.describePlaceholder') : AI_LOCK_TIP} />
           <button className="btn btn-primary btn-sm" onClick={build}
                   disabled={!aiReady || describing || !describeText.trim()}
-                  title={aiReady ? '' : AI_LOCK_TIP} style={{ whiteSpace: 'nowrap' }}>Build</button>
+                  title={aiReady ? '' : AI_LOCK_TIP} style={{ whiteSpace: 'nowrap' }}>{t('composition.build')}</button>
         </div>
-        {describing && <div style={{ marginTop: 8 }}><AiThinking messages={['Reading your description…', 'Matching tables & columns…', 'Composing the view…']} /></div>}
+        {describing && <div style={{ marginTop: 8 }}><AiThinking messages={[t('composition.describeThinking1'), t('composition.describeThinking2'), t('composition.describeThinking3')]} /></div>}
       </div>
 
-      <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label="View name" className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="villages_with_dept" /></ModalField>
-      <ModalField label="Source table" hint="Which base table this view draws from" error={fe.errorFor('source')} errorId={fe.errorId('source')}>
-        <ColumnPicker ariaLabel="View source table" value={source} onChange={(v) => { setSource(v); if ((v || '').trim()) fe.clearError('source'); }} options={tableNames} multi={false} placeholder="main, or a repeat table…" />
+      <ModalField label={t('composition.fName')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.viewName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="villages_with_dept" /></ModalField>
+      <ModalField label={t('composition.fSourceTable')} hint={t('composition.sourceTableHint')} error={fe.errorFor('source')} errorId={fe.errorId('source')}>
+        <ColumnPicker ariaLabel={t('composition.viewSourceTable')} value={source} onChange={(v) => { setSource(v); if ((v || '').trim()) fe.clearError('source'); }} options={tableNames} multi={false} placeholder={t('composition.sourcePlaceholder')} />
       </ModalField>
       {parentName && (
-        <ModalField label="Join from parent" hint={`Columns to bring down from "${parentName}"`}>
-          <ColumnPicker ariaLabel="Join from parent" value={joinParent} onChange={setJoinParent} options={parentCols} placeholder="Search parent columns…" />
+        <ModalField label={t('composition.fJoinFromParent')} hint={t('composition.joinFromParentHint', { parent: parentName })}>
+          <ColumnPicker ariaLabel={t('composition.joinFromParent')} value={joinParent} onChange={setJoinParent} options={parentCols} placeholder={t('composition.searchParentColumns')} />
         </ModalField>
       )}
-      <ModalField label="Columns" hint="Which columns to keep — leave blank for all">
-        <ColumnPicker ariaLabel="View columns" value={columns} onChange={setColumns} options={sourceCols} placeholder="Search columns…" />
+      <ModalField label={t('composition.fColumns')} hint={t('composition.keepColumnsHint')}>
+        <ColumnPicker ariaLabel={t('composition.viewColumns')} value={columns} onChange={setColumns} options={sourceCols} placeholder={t('composition.searchColumns')} />
       </ModalField>
-      <ModalField label="Filter" hint="pandas query syntax, e.g. Age > 18 and Region == 'North'"
+      <ModalField label={t('composition.fFilter')} hint={t('composition.filterHint')}
                   error={filterErr || fe.errorFor('filter')} errorId={fe.errorId('filter')}>
-        <input aria-label="View filter" className="src-input" value={filter}
+        <input aria-label={t('composition.viewFilter')} className="src-input" value={filter}
                aria-invalid={(filterErr || fe.errorFor('filter')) ? 'true' : 'false'}
                aria-describedby={(filterErr || fe.errorFor('filter')) ? fe.errorId('filter') : undefined}
                onChange={e => { setFilter(e.target.value); fe.clearError('filter'); }}
                placeholder="Age > 18 and Region == 'North'"
                style={(filterErr || fe.errorFor('filter')) ? { borderColor: 'var(--rose)' } : undefined} />
       </ModalField>
-      <ModalField label="Aggregate">
+      <ModalField label={t('composition.fAggregate')}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
           <input type="checkbox" checked={aggregate} onChange={e => setAggregate(e.target.checked)} />
-          Roll rows up into group totals
+          {t('composition.rollUp')}
         </label>
       </ModalField>
       {aggregate && (
         <>
-          <ModalField label="Group by">
-            <ColumnPicker value={groupBy} onChange={setGroupBy} options={sourceCols} multi={false} placeholder="Column to group by…" />
+          <ModalField label={t('composition.fGroupBy')}>
+            <ColumnPicker value={groupBy} onChange={setGroupBy} options={sourceCols} multi={false} placeholder={t('composition.groupByPlaceholder')} />
           </ModalField>
-          <ModalField label="Aggregate column">
-            <ColumnPicker value={question} onChange={setQuestion} options={sourceCols} multi={false} placeholder="Numeric column to aggregate…" />
+          <ModalField label={t('composition.fAggregateColumn')}>
+            <ColumnPicker value={question} onChange={setQuestion} options={sourceCols} multi={false} placeholder={t('composition.aggColPlaceholder')} />
           </ModalField>
-          <ModalField label="Function"><select aria-label="Aggregate function" className="src-input" value={agg} onChange={e => setAgg(e.target.value)}>{['sum', 'mean', 'count', 'max', 'min'].map(a => <option key={a} value={a}>{a}</option>)}</select></ModalField>
+          <ModalField label={t('composition.fFunction')}><select aria-label={t('composition.aggregateFunction')} className="src-input" value={agg} onChange={e => setAgg(e.target.value)}>{['sum', 'mean', 'count', 'max', 'min'].map(a => <option key={a} value={a}>{a}</option>)}</select></ModalField>
         </>
       )}
     </Modal>
@@ -1870,6 +1890,7 @@ function ModalError({ children }) {
 // single column name; `options` are known export labels. Free-text is allowed
 // (Enter adds the typed value) so repeat/derived columns still work.
 function ColumnPicker({ value, onChange, options = [], multi = true, placeholder, ariaLabel }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const wrapRef = useRef(null);
@@ -1902,14 +1923,14 @@ function ColumnPicker({ value, onChange, options = [], multi = true, placeholder
         {multi && selected.map(c => (
           <span key={c} className="colpick__chip">
             {c}
-            <button type="button" aria-label={`Remove ${c}`} onClick={(e) => { e.stopPropagation(); removeChip(c); }}>×</button>
+            <button type="button" aria-label={t('composition.removeChip', { name: c })} onClick={(e) => { e.stopPropagation(); removeChip(c); }}>×</button>
           </span>
         ))}
         <input
           className="colpick__input"
-          aria-label={ariaLabel || placeholder || 'Search columns…'}
+          aria-label={ariaLabel || placeholder || t('composition.searchColumns')}
           value={multi ? query : (open ? query : (value || ''))}
-          placeholder={selected.length ? '' : (placeholder || 'Search columns…')}
+          placeholder={selected.length ? '' : (placeholder || t('composition.searchColumns'))}
           onFocus={() => { setOpen(true); if (!multi) setQuery(value || ''); }}
           onChange={e => { setQuery(e.target.value); if (!multi) onChange(e.target.value); setOpen(true); }}
           onKeyDown={e => {
@@ -1959,6 +1980,7 @@ function FieldError({ id, children }) {
 // Sticky table header cell for the view-preview table. Supports click-to-rename
 // (Enter commits, Esc cancels, empty value clears the rename) and an × drop button.
 function ColumnHeader({ column, renamed, onDrop, onRename }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState('');
   const displayName = renamed || column.name;
@@ -1970,13 +1992,13 @@ function ColumnHeader({ column, renamed, onDrop, onRename }) {
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
         <button
           onClick={onDrop}
-          title={`Drop column "${column.name}"`}
+          title={t('composition.dropColumn', { name: column.name })}
           style={{ border: 'none', background: 'transparent', color: 'var(--ink-3)', cursor: 'pointer', padding: 0, fontSize: 14, lineHeight: 1, fontFamily: 'var(--font-sans, inherit)' }}
         >×</button>
         {editing ? (
           <input
             autoFocus
-            aria-label={`Rename column ${column.name}`}
+            aria-label={t('composition.renameColumn', { name: column.name })}
             className="src-input"
             value={draft}
             onChange={e => setDraft(e.target.value)}
@@ -1990,7 +2012,7 @@ function ColumnHeader({ column, renamed, onDrop, onRename }) {
         ) : (
           <span
             onClick={startEdit}
-            title="Click to rename"
+            title={t('composition.clickToRename')}
             style={{ cursor: 'text', borderBottom: renamed ? '1px dashed var(--accent, #0891b2)' : '1px dashed transparent' }}
           >
             {displayName}
