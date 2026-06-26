@@ -71,31 +71,33 @@ const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'pii'];
 
 // The workflow: Home + five ordered stages. Stages with >1 sub render a
 // secondary sub-tab strip; single-sub stages navigate straight to their page.
-// `labelKey` resolves through the i18n bundles (I18N-1) so the primary nav tab
-// labels switch language live; `label` is the English fallback kept for
-// non-localized uses (aria-labels, sub-tab strips — I18N-2 widens coverage).
+// `labelKey` resolves through the i18n bundles so both the primary nav tabs
+// (I18N-1) and the secondary sub-tab strips (I18N-5, via `home.subs.<id>`)
+// switch language live; the primary stages keep an English `label` fallback for
+// non-localized uses (aria-labels). Sub-tabs render purely via `t(labelKey)` —
+// no user-facing prose literal lives in the data array (guarded by check:i18n).
 const STAGES = [
   { id: 'home', label: 'Home', labelKey: 'nav.home', home: true },
   { id: 'extract', label: 'Extract', labelKey: 'nav.extract', subs: [
-    { id: 'connection', label: 'Connection',       render: () => <Sources section="setup" /> },
-    { id: 'ai',         label: 'AI configuration',  render: () => <Sources section="ai" /> },
+    { id: 'connection', labelKey: 'home.subs.connection', render: () => <Sources section="setup" /> },
+    { id: 'ai',         labelKey: 'home.subs.ai',         render: () => <Sources section="ai" /> },
   ] },
-  { id: 'transform', label: 'Transform', labelKey: 'nav.transform', subs: [
-    { id: 'questions', label: 'Questions', render: () => <Questions /> },
-    { id: 'profile',   label: 'Profile',   render: () => <Profile /> },
-    { id: 'validate',  label: 'Validate',  render: () => <Validate /> },
+  { id: 'transform', label: 'Transform', labelKey: 'home.stages.transform.label', subs: [
+    { id: 'questions', labelKey: 'home.subs.questions', render: () => <Questions /> },
+    { id: 'profile',   labelKey: 'home.subs.profile',   render: () => <Profile /> },
+    { id: 'validate',  labelKey: 'home.subs.validate',  render: () => <Validate /> },
   ] },
-  { id: 'model', label: 'Model', labelKey: 'nav.model', subs: [
-    { id: 'views', label: 'Views', render: () => <Composition sections={VIEWS_SECTIONS} /> },
+  { id: 'model', label: 'Model', labelKey: 'home.stages.model.label', subs: [
+    { id: 'views', labelKey: 'home.subs.views', render: () => <Composition sections={VIEWS_SECTIONS} /> },
   ] },
   { id: 'analyze', label: 'Analyze', labelKey: 'nav.analyze', subs: [
-    { id: 'ask',         label: 'Ask',                  render: () => <Ask /> },
-    { id: 'composition', label: 'Charts & indicators', render: () => <Composition sections={ANALYZE_SECTIONS} /> },
+    { id: 'ask',         labelKey: 'home.subs.ask',         render: () => <Ask /> },
+    { id: 'composition', labelKey: 'home.subs.composition', render: () => <Composition sections={ANALYZE_SECTIONS} /> },
   ] },
   { id: 'present', label: 'Deliver', labelKey: 'nav.deliver', subs: [
-    { id: 'output',    label: 'Output',    render: () => <Sources section="output" /> },
-    { id: 'templates', label: 'Templates', render: () => <Templates /> },
-    { id: 'reports',   label: 'Reports',   render: () => <Reports /> },
+    { id: 'output',    labelKey: 'home.subs.output',    render: () => <Sources section="output" /> },
+    { id: 'templates', labelKey: 'home.subs.templates', render: () => <Templates /> },
+    { id: 'reports',   labelKey: 'home.subs.reports',   render: () => <Reports /> },
   ] },
 ];
 
@@ -646,7 +648,7 @@ export default function App() {
               {...tabProps('sub', sub.id, activeSub?.id === sub.id)}
               onClick={() => setSubId(sub.id)}
             >
-              {sub.label}
+              {sub.labelKey ? t(sub.labelKey) : sub.label}
             </button>
           ))}
         </nav>

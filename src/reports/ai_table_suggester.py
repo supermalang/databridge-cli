@@ -142,6 +142,7 @@ def _build_variables(cfg: Dict, user_request: str = "") -> Dict:
         "columns_block": columns_block,
         "repeat_groups_block": repeat_groups_block,
         "existing_block": existing_block,
+        "language": (cfg.get("ai") or {}).get("language") or "English",
     }
 
 

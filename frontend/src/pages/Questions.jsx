@@ -13,6 +13,7 @@ import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { useRun } from '../lib/run.js';
 import { RailLayout, RailToolbar, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 import AiThinking from '../components/AiThinking.jsx';
+import { SkeletonPanel } from '../components/Skeleton.jsx';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function colName(q) {
@@ -447,7 +448,7 @@ export default function Questions() {
   };
 
   // ── render ───────────────────────────────────────────────────────────────
-  if (questions === null) return <div className="page"><p className="empty-state">{t('questions.loading')}</p></div>;
+  if (questions === null) return <div className="page"><SkeletonPanel rows={5} rowHeight={52} label={t('questions.loading')} /></div>;
   if (questions.length === 0) {
     return (
       <div className="page">

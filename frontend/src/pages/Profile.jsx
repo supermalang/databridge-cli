@@ -4,6 +4,7 @@ import { isHidden, indexQuestionsByColumn, buildGroupTree, GROUP_LABELS } from '
 import GroupTree from '../components/GroupTree.jsx';
 import TableTree from '../components/TableTree.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import { SkeletonPanel } from '../components/Skeleton.jsx';
 
 // Data-quality threshold bands (merged from the former Validate DQ overview).
 // completeness: higher is better; outlier/duplicate rates: lower is better.
@@ -162,7 +163,7 @@ export default function Profile() {
         accent="tables."
         sub="A read-only snapshot of every base table, arranged as a tree of accordions. Open a table to inspect its columns — completeness, outlier and duplicate rates (color-coded), distinct counts, ranges and outliers."
       />
-      {loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 60 }}>Profiling…</div>}
+      {loading && <SkeletonPanel rows={5} rowHeight={56} label="Profiling…" />}
       {error && (
         <EmptyState tone="error" title="Profiling failed"
           description={`${error} — if you haven’t downloaded submissions yet, run Download from the Dashboard first.`} />

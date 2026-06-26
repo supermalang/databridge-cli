@@ -3,6 +3,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import PageHeader from './PageHeader.jsx';
 import StageHelp from '../components/StageHelp.jsx';
 import FileTable from '../components/FileTable.jsx';
+import { SkeletonList } from '../components/Skeleton.jsx';
 import Modal from '../components/Modal.jsx';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -182,7 +183,7 @@ export default function Reports() {
               <button className="btn btn-ghost btn-sm" onClick={loadReports}>{t('common.refresh')}</button>
             </div>
           </div>
-          {reports === null && <p className="empty-state" style={{ padding: 12 }}>{t('common.loading')}</p>}
+          {reports === null && <SkeletonList rows={3} rowHeight={40} label={t('common.loading')} />}
           {reports?.length === 0 && <p className="empty-state" style={{ padding: 12 }}><Trans i18nKey="reports.noReportsYet" components={{ b: <b /> }} /></p>}
           {reports?.length > 1 && (
             <a
@@ -227,7 +228,7 @@ export default function Reports() {
             <span>{t('reports.dataFilesSubtitlePre')}<code style={{ fontFamily: 'var(--font-mono)' }}>download</code>{t('reports.dataFilesSubtitlePost')}</span>
             <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={loadSessions}>{t('common.refresh')}</button>
           </div>
-          {sessions === null && <p className="empty-state" style={{ padding: 12 }}>{t('common.loading')}</p>}
+          {sessions === null && <SkeletonList rows={3} rowHeight={40} label={t('common.loading')} />}
           {sessions?.length === 0 && <p className="empty-state" style={{ padding: 12 }}><Trans i18nKey="reports.noDataFilesYet" components={{ b: <b /> }} /></p>}
           {sessions?.length > 0 && (
             <FileTable
