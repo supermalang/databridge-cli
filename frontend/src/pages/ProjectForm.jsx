@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
+import { useFieldErrors } from '../lib/fieldError.js';
+import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { useToast } from '../components/Toast.jsx';
 import ProjectMembersPanel from '../components/ProjectMembersPanel.jsx';
 import { createProject, updateProject, archiveProject } from '../lib/projects.js';
@@ -9,6 +11,12 @@ import { tabProps, panelProps, makeTabKeydown } from '../lib/tabs.js';
 const LANGS = ['English', 'French', 'Spanish', 'Portuguese', 'Arabic'];
 const COLORS = ['#0EA5E9', '#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#14B8A6', '#64748B'];
 const ICONS = ['📊', '🩺', '🌍', '🎓', '🚰', '🌱', '🏥', '📦'];
+
+// Human-readable names parallel to COLORS / ICONS, used as accessible labels so
+// the swatch and icon pickers don't convey their meaning by color/emoji alone
+// (the emoji glyph also renders as tofu without an emoji font). Index-aligned.
+const COLOR_NAMES = ['Sky', 'Indigo', 'Emerald', 'Amber', 'Red', 'Violet', 'Teal', 'Slate'];
+const ICON_NAMES = ['Chart', 'Health', 'Globe', 'Education', 'Water', 'Plant', 'Hospital', 'Package'];
 
 // Full-screen create/edit project form. `mode` is 'create' or an existing project
 // object (edit). Calls onDone(projectId|null) when finished/closed; onChanged() to
@@ -20,8 +28,23 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
   const [proj, setProj] = useState(editing ? mode : null);   // becomes set after create
   const [tab, setTab] = useState(initialTab || 'details');
 
+  const fe = useFieldErrors();
   const init = editing ? mode : {};
   const [name, setName] = useState(init.name || '');
+
+  // Inline required-name validation (A11Y-5 fieldProps pattern: aria-invalid +
+  // aria-describedby + role="alert"). Keep the error in sync with the live value
+  // so the empty input is announced and the submit button stays gated.
+  const setNameAndValidate = (value) => {
+    setName(value);
+    if (value.trim()) fe.clearError('name');
+    else fe.setError('name', 'Name is required');
+  };
+  // Seed the error for an empty initial name (create mode) on first render.
+  if (!name.trim() && !fe.errorFor('name')) fe.setError('name', 'Name is required');
+  // React's useId yields colon-bearing ids (":r5:") that are invalid in a CSS
+  // `#id` selector; sanitize so aria-describedby resolves and is queryable.
+  const nameErrorId = fe.errorId('name').replace(/:/g, '-');
   const [description, setDescription] = useState(init.description || '');
   const [tagsText, setTagsText] = useState((init.tags || []).join(', '));
   const [language, setLanguage] = useState(init.language || 'English');
@@ -31,6 +54,26 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
 
   const tags = () => tagsText.split(',').map(t => t.trim()).filter(Boolean);
   const payload = () => ({ name: name.trim(), description, tags: tags(), language, color, icon });
+
+  // Snapshot of the last-saved (or initial) Details values, used for dirty
+  // tracking. Refreshed on a successful create/save so saving clears the guard.
+  const [baseline, setBaseline] = useState(() => ({
+    name: init.name || '',
+    description: init.description || '',
+    tagsText: (init.tags || []).join(', '),
+    language: init.language || 'English',
+    color: init.color || COLORS[0],
+    icon: init.icon || ICONS[0],
+  }));
+
+  const dirty =
+    name !== baseline.name ||
+    description !== baseline.description ||
+    tagsText !== baseline.tagsText ||
+    language !== baseline.language ||
+    color !== baseline.color ||
+    icon !== baseline.icon;
+  useUnsavedGuard(!!dirty);
 
   const submit = async () => {
     if (!name.trim()) { toast('Name is required', 'err'); return; }
@@ -47,8 +90,20 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
         onChanged?.();
         toast('Saved', 'ok');
       }
+      setBaseline({ name, description, tagsText, language, color, icon });
     } catch (e) { toast(e.message || 'Save failed', 'err'); }
     finally { setBusy(false); }
+  };
+
+  // Back: if there are unsaved Details edits, confirm before discarding —
+  // reusing the shared useConfirm() Modal (same guard as project switching).
+  const handleBack = async () => {
+    if (dirty && !await confirm({
+      title: 'Discard unsaved changes?',
+      message: 'You have unsaved edits to this project. Leaving will discard them.',
+      confirmLabel: 'Discard',
+    })) return;
+    onDone?.(proj?.id || null);
   };
 
   const doArchive = async (archived) => {
@@ -85,7 +140,7 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
   return (
     <div className="project-form">
       <div className="project-form__bar">
-        <button className="btn btn-sm" onClick={() => onDone?.(proj?.id || null)}>← Back</button>
+        <button className="btn btn-sm" onClick={handleBack}>← Back</button>
         <h2 className="project-form__title">
           {editing ? `Project settings · ${proj?.name}` : 'New project'}
         </h2>
@@ -118,7 +173,13 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
         {tab === 'details' && (
           <div className="pf-panel" {...panelProps('projectform', 'details')}>
             <div className="profile-field"><label>Name *</label>
-              <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Q3 Monitoring" /></div>
+              <input autoFocus value={name}
+                     aria-invalid={fe.errorFor('name') ? 'true' : 'false'}
+                     aria-describedby={fe.errorFor('name') ? nameErrorId : undefined}
+                     onChange={e => setNameAndValidate(e.target.value)} placeholder="e.g. Q3 Monitoring" />
+              {fe.errorFor('name') && (
+                <div id={nameErrorId} role="alert" className="pf-field-error">{fe.errorFor('name')}</div>
+              )}</div>
             <div className="profile-field"><label>Description</label>
               <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)}
                         placeholder="What is this project about?" /></div>
@@ -130,20 +191,22 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
               </select></div>
             <div className="profile-field"><label>Color</label>
               <div className="pf-swatches">
-                {COLORS.map(c => (
+                {COLORS.map((c, i) => (
                   <button key={c} type="button" className={`pf-swatch ${color === c ? 'sel' : ''}`}
+                          aria-label={COLOR_NAMES[i]} aria-pressed={color === c ? 'true' : 'false'}
                           style={{ background: c }} onClick={() => setColor(c)} />
                 ))}
               </div></div>
             <div className="profile-field"><label>Icon</label>
               <div className="pf-icons">
-                {ICONS.map(ic => (
+                {ICONS.map((ic, i) => (
                   <button key={ic} type="button" className={`pf-icon ${icon === ic ? 'sel' : ''}`}
+                          aria-label={ICON_NAMES[i]} aria-pressed={icon === ic ? 'true' : 'false'}
                           onClick={() => setIcon(ic)}>{ic}</button>
                 ))}
               </div></div>
             <div className="pf-actions">
-              <button className="btn btn-primary" disabled={busy} onClick={submit}>
+              <button className="btn btn-primary" disabled={busy || !name.trim()} onClick={submit}>
                 {busy ? 'Saving…' : (proj ? 'Save' : 'Create')}
               </button>
             </div>
