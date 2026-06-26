@@ -166,6 +166,11 @@ def sanitize_run_config(cfg: dict) -> dict:
     form = cfg.get("form")
     if isinstance(form, dict) and form.get("alias"):
         form["alias"] = slugify(str(form["alias"])) or "form"
+    api = cfg.get("api")
+    if isinstance(api, dict):
+        for entry in api.get("forms") or []:
+            if isinstance(entry, dict) and entry.get("alias"):
+                entry["alias"] = slugify(str(entry["alias"])) or "form"
     return cfg
 
 

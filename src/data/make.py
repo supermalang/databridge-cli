@@ -332,14 +332,19 @@ def _download_multiform(cfg, strict, sample, no_redact):
     """
     from copy import deepcopy
     from src.data.extract import iter_forms
+    from src.utils.periods import slugify
 
     forms_questions = cfg.get("forms_questions", {}) or {}
     for alias, uid in iter_forms(cfg):
         log.info(f"=== Form '{alias}' (UID '{uid}') ===")
         run_cfg = deepcopy(cfg)
         # Scope the per-form pipeline: its own questions + alias for filenames.
+        # Slugify the alias before it reaches the filename prefix so a traversal
+        # alias (e.g. "../../evil") can't escape the output dir — defense-in-depth
+        # independent of the web sandbox (sanitize_run_config).
+        safe_alias = slugify(str(alias)) or "form"
         run_cfg["questions"] = forms_questions.get(alias, [])
-        run_cfg["form"] = {"alias": alias, "uid": uid}
+        run_cfg["form"] = {"alias": safe_alias, "uid": uid}
         run_cfg.pop("forms_questions", None)
         _download_one_form(cfg, run_cfg, strict, sample, no_redact, form_uid=uid)
 
