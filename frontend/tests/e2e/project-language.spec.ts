@@ -347,7 +347,14 @@ test.describe('PLANG-2 — read-only language in AI config', () => {
     await openAiConfig(page);
     const pane = page.locator('.tab-content:visible').first();
     await expect(pane).toContainText(PROJECT_LANGUAGE);
-    const results = await new AxeBuilder({ page }).include('.tab-content:visible').analyze();
+    // AxeBuilder.include() forwards its selector to axe-core's native
+    // document.querySelectorAll, which does NOT understand Playwright's `:visible`
+    // pseudo-class. Resolve the visible AI-config pane's stable id (the active
+    // tabpanel carries id="panel-primary-<stage>"; keep-alive hidden panes have
+    // display:none and no such id) and scope axe with a plain CSS id selector.
+    const paneId = await pane.evaluate((el) => el.id);
+    expect(paneId, 'the visible AI-config pane must expose a stable id').toBeTruthy();
+    const results = await new AxeBuilder({ page }).include(`#${paneId}`).analyze();
     expect(
       results.violations,
       `axe violations: ${JSON.stringify(results.violations.map((v) => v.id))}`,
