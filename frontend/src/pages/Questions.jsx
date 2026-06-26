@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { useToast } from '../components/Toast.jsx';
 import { loadConfig } from '../lib/config.js';
 import { usePerms } from '../lib/perms.js';
@@ -58,6 +59,7 @@ function buildTypeBreakdown(qs) {
 
 // ── component ────────────────────────────────────────────────────────────────
 export default function Questions() {
+  const { t } = useTranslation();
   const toast = useToast();
   const { canEdit } = usePerms();
   const { aiReady } = useAiStatus();
@@ -194,7 +196,7 @@ export default function Questions() {
       }
       return q;
     }));
-    toast('Applied suggested names — review and Save changes', 'ok');
+    toast(t('questions.appliedNames'), 'ok');
   };
 
   // Apply filter + search → list of { q, idx }, then build the nested group tree.
@@ -334,13 +336,13 @@ export default function Questions() {
     <table className="q-table">
       <thead>
         <tr>
-          <th style={{ width: '20%' }}>Name</th>
-          <th style={{ width: '12%' }}>Type</th>
-          <th style={{ width: '30%' }}>Label (from form)</th>
+          <th style={{ width: '20%' }}>{t('questions.colName')}</th>
+          <th style={{ width: '12%' }}>{t('questions.colType')}</th>
+          <th style={{ width: '30%' }}>{t('questions.colLabel')}</th>
           <th style={{ width: '30%' }}>
-            Report column name
+            {t('questions.colReportName')}
             <span style={{ display: 'block', marginTop: 3, fontFamily: 'var(--font-sans)', fontSize: 11, fontWeight: 400, letterSpacing: 0, textTransform: 'none', color: 'var(--ink-3)' }}>
-              This is the name shown in your report, spreadsheet, and charts.
+              {t('questions.colReportNameSub')}
             </span>
           </th>
           <th style={{ width: '8%' }}></th>
@@ -360,7 +362,7 @@ export default function Questions() {
                 className={liveDup ? 'q-row--dup' : undefined}>
               <td className="q-table__name">
                 {bareName(q)}
-                {pii && <span className="q-pii-badge" title="Flagged as PII — excluded from AI metadata">PII</span>}
+                {pii && <span className="q-pii-badge" title={t('questions.piiBadgeTitle')}>PII</span>}
               </td>
               <td>
                 <span className="q-type-badge" data-cat={q.category || 'undefined'}>{q.type || ''}</span>
@@ -369,10 +371,10 @@ export default function Questions() {
               <td>
                 <input
                   className="q-export-input"
-                  aria-label={`Report column name for ${q.label || bareName(q) || q.kobo_key}`}
+                  aria-label={t('questions.reportColumnAria', { name: q.label || bareName(q) || q.kobo_key })}
                   data-dirty={dirty}
                   data-dup={liveDup || undefined}
-                  title={liveDup ? 'Duplicate export label — rename so it is unique' : undefined}
+                  title={liveDup ? t('questions.dupInputTitle') : undefined}
                   value={q.export_label || ''}
                   placeholder={q.label || q.kobo_key}
                   onChange={e => setExportLabel(idx, e.target.value)}
@@ -384,13 +386,13 @@ export default function Questions() {
                     <span className="q-proposal__arrow">→</span>
                     <code className="q-proposal__new">{proposals.get(idx)}</code>
                     <button type="button" className="q-proposal__use"
-                            onClick={() => setExportLabel(idx, proposals.get(idx))}>Use</button>
+                            onClick={() => setExportLabel(idx, proposals.get(idx))}>{t('questions.use')}</button>
                   </div>
                 )}
               </td>
               <td>
                 <div className="q-row-actions">
-                  <button disabled={hidden} className={isUsed ? 'q-act--used' : ''} title={isUsed ? 'Used in charts' : 'Not currently used'} onClick={() => toast(isUsed ? `${colName(q)} is wired to a chart` : 'Not used yet', isUsed ? 'ok' : 'err')}>
+                  <button disabled={hidden} className={isUsed ? 'q-act--used' : ''} title={isUsed ? t('questions.useChartTitle') : t('questions.notUsedTitle')} onClick={() => toast(isUsed ? t('questions.wiredToChart', { name: colName(q) }) : t('questions.notUsedYet'), isUsed ? 'ok' : 'err')}>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="3" y1="13" x2="3" y2="8"/>
                       <line x1="7" y1="13" x2="7" y2="4"/>
@@ -400,7 +402,7 @@ export default function Questions() {
                   <button
                     disabled={hidden}
                     className={pii ? 'q-act--pii' : ''}
-                    title={pii ? 'Unflag PII' : 'Flag as PII — exclude from AI metadata'}
+                    title={pii ? t('questions.unflagPii') : t('questions.flagPiiTitle')}
                     onClick={() => togglePII(idx)}
                   >
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -409,7 +411,7 @@ export default function Questions() {
                   </button>
                   <button
                     className={hidden ? 'q-act--hidden' : ''}
-                    title={hidden ? 'Unhide — show in report' : 'Hide — exclude from analysis'}
+                    title={hidden ? t('questions.unhideTitle') : t('questions.hideTitle')}
                     onClick={() => toggleHidden(idx)}
                   >
                     {hidden ? (
@@ -445,12 +447,12 @@ export default function Questions() {
   };
 
   // ── render ───────────────────────────────────────────────────────────────
-  if (questions === null) return <div className="page"><p className="empty-state">Loading…</p></div>;
+  if (questions === null) return <div className="page"><p className="empty-state">{t('questions.loading')}</p></div>;
   if (questions.length === 0) {
     return (
       <div className="page">
         <Header total={0} groups={0} />
-        <div className="src-card"><p className="empty-state">No questions yet — go to <b>Extract → Connection &amp; output</b> and click <b>Fetch questions</b> to pull the schema from your platform.</p></div>
+        <div className="src-card"><p className="empty-state">{t('questions.emptyPre')}<b>{t('questions.emptyExtract')}</b>{t('questions.emptyMid')}<b>{t('questions.emptyFetch')}</b>{t('questions.emptyPost')}</p></div>
       </div>
     );
   }
@@ -470,29 +472,29 @@ export default function Questions() {
         <>
           <div className="q-search">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>
-            <input aria-label="Search questions" placeholder="Search by name or label..." value={search} onChange={e => { setSearch(e.target.value); exitReveal(); }} />
+            <input aria-label={t('questions.searchAria')} placeholder={t('questions.searchPlaceholder')} value={search} onChange={e => { setSearch(e.target.value); exitReveal(); }} />
           </div>
           <div className="config-view-toggle">
-            <button className={`view-btn ${filter === 'all' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('all'); exitReveal(); }}>All</button>
+            <button className={`view-btn ${filter === 'all' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('all'); exitReveal(); }}>{t('questions.filterAll')}</button>
             <button className={`view-btn ${filter === 'renamed' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('renamed'); exitReveal(); }}>
-              Renamed <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalRenamed})</span>
+              {t('questions.filterRenamed')} <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalRenamed})</span>
             </button>
             <button className={`view-btn ${filter === 'hidden' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('hidden'); exitReveal(); }}>
-              Hidden <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalHidden})</span>
+              {t('questions.filterHidden')} <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalHidden})</span>
             </button>
             <button className={`view-btn ${filter === 'pii' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('pii'); exitReveal(); }}>
-              PII <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalPii})</span>
+              {t('questions.filterPii')} <span style={{ fontFamily: 'var(--font-mono)', opacity: .7, marginLeft: 2 }}>({totalPii})</span>
             </button>
           </div>
         </>
       }
       right={
         <>
-          {dirtyIndices.size > 0 && <span className="q-unsaved-pill">{dirtyIndices.size} unsaved</span>}
+          {dirtyIndices.size > 0 && <span className="q-unsaved-pill">{t('questions.unsaved', { count: dirtyIndices.size })}</span>}
           <button className={`btn ${dirtyIndices.size > 0 && canEdit ? 'btn-primary' : ''}`} onClick={save} disabled={dirtyIndices.size === 0 || !canEdit}
-                  title={canEdit ? '' : 'You have viewer access — editing questions requires an editor or admin role'}>
+                  title={canEdit ? '' : t('questions.viewerEditTitle')}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 8 7 12 13 4"/></svg>
-            Save changes
+            {t('common.saveChanges')}
           </button>
         </>
       }
@@ -504,44 +506,44 @@ export default function Questions() {
       <Header total={questions.length} groups={totalGroups} />
 
       <StageHelp
-        title="Questions"
-        hint="Edit the report column name to change how a question appears everywhere."
+        title={t('questions.helpTitle')}
+        hint={t('questions.helpHint')}
         body={
           <>
-            <p>Every row here is one survey question. The most useful thing you can do is rename the <b>report column</b> so it reads cleanly in your charts and Word report — no YAML needed.</p>
-            <p>You can also hide fields you don't need, flag personal data (PII), and set each question's category so the right chart types are offered later. Use <b>Fetch questions</b> to pull the latest form schema; your edits are kept.</p>
+            <p><Trans i18nKey="questions.helpBody1" components={{ b: <b /> }} /></p>
+            <p><Trans i18nKey="questions.helpBody2" components={{ b: <b /> }} /></p>
           </>
         }
         docsHref="docs/reference/config.md"
-        docsLabel="Questions & categories reference"
+        docsLabel={t('questions.helpDocsLabel')}
       />
 
       <RailLayout toolbar={toolbar} rail={
         <>
           <StatusCard checks={[
             { tone: questions.length > 0 ? 'ok' : 'warn',
-              label: `${questions.length} fields configured`, sub: `${totalGroups} groups` },
+              label: t('questions.fieldsConfigured', { count: questions.length }), sub: t('questions.groupsCount', { count: totalGroups }) },
             { tone: dupInfo.indices.size > 0 ? 'rose' : 'ok',
-              label: dupInfo.indices.size > 0 ? `${dupInfo.cols.length} duplicate labels` : 'No duplicate labels',
-              sub: dupInfo.indices.size > 0 ? 'fix before saving' : 'export labels are unique' },
+              label: dupInfo.indices.size > 0 ? t('questions.duplicateLabels', { count: dupInfo.cols.length }) : t('questions.noDuplicateLabels'),
+              sub: dupInfo.indices.size > 0 ? t('questions.fixBeforeSaving') : t('questions.labelsUnique') },
             { tone: totalUsedInCharts > 0 ? 'ok' : 'warn',
-              label: `${totalUsedInCharts} used in charts`, sub: `${totalBoundInd} bound to indicators` },
+              label: t('questions.usedInCharts', { count: totalUsedInCharts }), sub: t('questions.boundIndicators', { count: totalBoundInd }) },
             { tone: 'ok',
-              label: `${totalPii} PII-flagged`, sub: `${totalHidden} hidden from report` },
+              label: t('questions.piiFlagged', { count: totalPii }), sub: t('questions.hiddenFromReport', { count: totalHidden }) },
           ]} />
           <QuickActionsCard actions={[
-            { icon: RailIcons.refresh, label: 'Fetch questions', onClick: () => run('fetch-questions'),
-              disabled: !canEdit, title: canEdit ? 'Re-fetch the form schema (preserves your edits)' : 'Editor access required' },
-            { icon: RailIcons.sparkle, label: 'Auto-hide clutter', onClick: suggestHidden,
-              disabled: !!suggesting || !aiReady, title: aiReady ? 'Ask the AI to flag non-analytical fields' : AI_LOCK_TIP },
-            { icon: RailIcons.shield, label: 'Flag PII', onClick: suggestPII,
-              disabled: !!suggesting || !aiReady, title: aiReady ? 'Ask the AI to flag personal-data fields' : AI_LOCK_TIP },
+            { icon: RailIcons.refresh, label: t('questions.fetchQuestions'), onClick: () => run('fetch-questions'),
+              disabled: !canEdit, title: canEdit ? t('questions.refetchTitle') : t('questions.editorRequired') },
+            { icon: RailIcons.sparkle, label: t('questions.autoHide'), onClick: suggestHidden,
+              disabled: !!suggesting || !aiReady, title: aiReady ? t('questions.autoHideTitle') : AI_LOCK_TIP },
+            { icon: RailIcons.shield, label: t('questions.flagPii'), onClick: suggestPII,
+              disabled: !!suggesting || !aiReady, title: aiReady ? t('questions.flagPiiAiTitle') : AI_LOCK_TIP },
           ]} />
           {suggesting && (
             <AiThinking card messages={[
-              'Reading your questions…',
-              'Analyzing each field…',
-              'Flagging matches…',
+              t('questions.thinking1'),
+              t('questions.thinking2'),
+              t('questions.thinking3'),
             ]} />
           )}
         </>
@@ -551,20 +553,16 @@ export default function Questions() {
         <div className="dup-banner" role="alert">
           <div className="dup-banner__text">
             {unresolvedDupCount > 0 ? (
-              <>
-                <b>{unresolvedDupCount} field{unresolvedDupCount === 1 ? '' : 's'}</b> still share a duplicate export
-                label. Accept a suggested name (<b>Use</b> / <b>Accept all proposals</b>) or rename each manually,
-                then Save changes.
-              </>
+              <Trans i18nKey="questions.dupStillShare" count={unresolvedDupCount} components={{ b: <b /> }} />
             ) : (
-              <>All duplicates resolved — click <b>Save changes</b> to continue.</>
+              <Trans i18nKey="questions.dupResolved" components={{ b: <b /> }} />
             )}
           </div>
           <div className="dup-banner__actions">
             {unresolvedDupCount > 0 && (
-              <button className="btn btn-primary btn-sm" onClick={acceptAllProposals}>Accept all proposals</button>
+              <button className="btn btn-primary btn-sm" onClick={acceptAllProposals}>{t('questions.acceptAll')}</button>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={exitReveal}>Show all fields</button>
+            <button className="btn btn-ghost btn-sm" onClick={exitReveal}>{t('questions.showAllFields')}</button>
           </div>
         </div>
       )}
@@ -581,24 +579,24 @@ export default function Questions() {
             renderHeaderExtra={renderHeaderExtra}
           />
         ) : (
-          <p className="empty-state" style={{ padding: 30 }}>No questions match your filter.</p>
+          <p className="empty-state" style={{ padding: 30 }}>{t('questions.noMatch')}</p>
         )}
       </div>
 
       </RailLayout>
 
       {reviewModal && (
-        <Modal title={reviewModal.title} onClose={() => setReviewModal(null)} onSave={applyReview} saveLabel="Apply">
+        <Modal title={reviewModal.title} onClose={() => setReviewModal(null)} onSave={applyReview} saveLabel={t('questions.apply')}>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
-            {reviewModal.hint} (Then <b>Save changes</b> to persist.)
+            <Trans i18nKey="questions.reviewHintSuffix" values={{ hint: reviewModal.hint }} components={{ b: <b /> }} />
           </p>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-              {reviewModal.items.filter(i => i.checked).length} of {reviewModal.items.length} selected
+              {t('questions.selectedCount', { checked: reviewModal.items.filter(i => i.checked).length, total: reviewModal.items.length })}
             </span>
             <div style={{ display: 'flex', gap: 6 }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => setAllReview(true)}>Select all</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setAllReview(false)}>Select none</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setAllReview(true)}>{t('questions.selectAll')}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setAllReview(false)}>{t('questions.selectNone')}</button>
             </div>
           </div>
           <div style={{ maxHeight: 340, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
@@ -622,12 +620,13 @@ export default function Questions() {
 // ── Header band ──────────────────────────────────────────────────────────────
 // Save lives in the RailLayout toolbar row (next to search + filters), not here.
 function Header({ total, groups }) {
+  const { t } = useTranslation();
   return (
     <PageHeader
-      eyebrow={`Step 2 of 5 · Questions · ${total} fields · ${groups} groups`}
-      title="Rename what shows up"
-      accent="in the report."
-      sub="Each row is a survey question. Edit the report column name to change how that column appears in your charts, indicators, and Word report — no YAML required."
+      eyebrow={t('questions.eyebrow', { total, groups })}
+      title={t('questions.title')}
+      accent={t('questions.accent')}
+      sub={t('questions.sub')}
     />
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 // Shared base-table arborescence: `main` plus one accordion per top-level group,
 // repeat tables nested under their group/sub-group folders (derived from each
@@ -52,6 +53,7 @@ function countTables(node) {
 }
 
 export default function TableTree({ tables, resolveSlash, tableMeta, renderBody }) {
+  const { t } = useTranslation();
   const forest = useMemo(
     () => (tables && tables.length ? buildTableForest(tables, resolveSlash) : []),
     [tables, resolveSlash]
@@ -87,7 +89,7 @@ export default function TableTree({ tables, resolveSlash, tableMeta, renderBody 
           <Chevron />
           <span className="gt-node__name">{node.name}</span>
           <span className="gt-node__count">
-            {isTable ? tableMeta(node.table) : `${nTables} table${nTables === 1 ? '' : 's'}`}
+            {isTable ? tableMeta(node.table) : t('components.tableTree.tableCount', { count: nTables })}
           </span>
         </div>
         {isOpen && (

@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Modal from './Modal.jsx';
 
 // Promise-based confirmation built on the accessible Modal — a styled,
@@ -9,11 +10,12 @@ import Modal from './Modal.jsx';
 //   …
 //   return (<>…{confirmDialog}</>);
 export function useConfirm() {
+  const { t } = useTranslation();
   const [state, setState] = useState(null);
 
   const confirm = useCallback((opts) => new Promise((resolve) => {
-    setState({ confirmLabel: 'Delete', danger: true, ...opts, resolve });
-  }), []);
+    setState({ confirmLabel: t('common.delete'), danger: true, ...opts, resolve });
+  }), [t]);
 
   const close = (result) => {
     setState((s) => { s?.resolve(result); return null; });

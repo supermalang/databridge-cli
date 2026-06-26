@@ -49,13 +49,14 @@ A card is startable only when all of the following hold:
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 9 / 9 |
-| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 7 / 7 |
+| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 6 / 6 |
-| [M&E capabilities](#me-capabilities) | 5 | 5 / 5 |
+| [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
-| [Internationalization (i18n)](#internationalization-i18n) | 2 | 1 / 2 |
+| [Internationalization (i18n)](#internationalization-i18n) | 4 | 2 / 4 |
 | [Performance](#performance) | 2 | 2 / 2 |
+| [Maintenance & hardening](#maintenance--hardening) | 3 | 0 / 3 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -730,6 +731,41 @@ A card is startable only when all of the following hold:
 
 ---
 
+- [ ] **A11Y-8 — Deferred a11y polish: home-card subtext contrast + picker focus ring (P2)**
+
+  Two small WCAG gaps deferred earlier. (a) `.home-card__sub` muted text is ~3.15:1 (`#858c98` on
+  `#f5f7fa`) — fails WCAG 2.1 AA 1.4.3 (needs 4.5:1). (b) The ProjectForm color swatches / icon
+  buttons (`.pf-swatch` / `.pf-icon`, from UX-8) have no explicit `:focus-visible` ring (rely on the
+  UA default). CSS-only.
+
+  **Files:** `frontend/src/styles.css` · `frontend/tests/e2e/a11y-8.spec.ts` (new)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - `.home-card__sub` meets WCAG AA contrast (>= 4.5:1) against its background; an axe `color-contrast`
+    audit on Home reports no violation on the stage-card subtext
+  - The color swatches + icon buttons show the app's teal `:focus-visible` ring on keyboard focus;
+    mouse behavior unchanged
+  - No other Home/ProjectForm visual regression (baselines refreshed + human-approved if the darker
+    subtext shifts them)
+
+  **Unit tests:** N/A (frontend CSS; Vitest not installed — asserted by the Playwright E2E below).
+
+  **E2E:** `frontend/tests/e2e/a11y-8.spec.ts` (new) + visual — axe `color-contrast` on Home asserts no
+  `.home-card__sub` violation; on the ProjectForm pickers, keyboard-focus a swatch/icon and assert a
+  visible outline (non-`none`, non-zero). `toHaveScreenshot` baselines at all three viewports (mobile
+  390x844, tablet 820x1180, desktop 1440x900); a human approves them.
+
+  **UAT:**
+  1. On Home, confirm the stage-card descriptions are comfortably legible (darker than before).
+  2. On the project form, Tab to a color swatch + an icon button; confirm a clear teal focus ring.
+  3. Confirm Home + the project form otherwise look unchanged.
+
+  **Verify:** `cd frontend && npx playwright test a11y-8.spec.ts`
+
+---
+
 ## Product UX — non-expert self-serve
 
 > Findings from the **2026-06-20 HCD / product critique** of the React frontend. `PRODUCT.md`
@@ -1208,6 +1244,73 @@ A card is startable only when all of the following hold:
   **E2E:** N/A (no UI surface)
 
   **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
+
+---
+
+- [ ] **ME-6 — Surface below-threshold indicators in the Validate panel (P2)**
+
+  Follow-up from ME-2 (which computes `ind_<name>_status` RAG + a `flagged_indicators` context but
+  does not surface them in the Validate panel). Add a validate-side detector so indicators below
+  their warning/critical threshold appear as Validate findings.
+
+  **Files:** `src/data/validate.py` (a `find_below_threshold_indicators` detector mirroring
+  `find_orphan_framework_refs`) · `web/main.py` (data-quality/validate findings endpoint) ·
+  `frontend/src/pages/Validate.jsx` · `tests/test_validate_thresholds.py` (new) ·
+  `frontend/tests/e2e/validate-thresholds.spec.ts` (new)
+
+  **Config/schema impact:** None — reuses ME-2's per-indicator `warning`/`critical` thresholds.
+
+  **Acceptance criteria**
+  - An indicator whose `pct_achievement` is below its warning/critical threshold produces a Validate
+    finding with the correct RAG severity
+  - The finding names the indicator + its target/actual/% + status
+  - No finding at/above warning, or for indicators without thresholds
+  - The findings render in the Validate panel UI alongside existing data-quality findings
+
+  **Unit tests:** `tests/test_validate_thresholds.py` — detector flags a below-warning + below-critical
+  indicator with the right severity; no flag at/above warning or when thresholds unset; finding carries
+  indicator/target/actual/% fields.
+
+  **E2E:** `frontend/tests/e2e/validate-thresholds.spec.ts` (new) + visual — with a stubbed
+  below-threshold indicator, open Validate and assert the threshold finding renders with its RAG
+  severity; `toHaveScreenshot` baseline at three viewports; a human approves.
+
+  **UAT:**
+  1. Configure an indicator that misses its target + a warning/critical threshold; open Validate.
+  2. Confirm a red/amber finding flags it with its %-of-target.
+  3. Raise the actual above warning; confirm the finding disappears.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_validate_thresholds.py` ·
+  `cd frontend && npx playwright test validate-thresholds.spec.ts`
+
+---
+
+- [ ] **ME-7 — Chart `form:` selector for multi-form (P2)**
+
+  Follow-up from ME-4 (multi-form data layer + INDICATOR `form:` selector shipped; the analogous CHART
+  selector was scoped out). Let a chart render against a specific form alias's DataFrame (`form:
+  baseline` vs `form: endline`) so pre/post charts are possible.
+
+  **Files:** `src/reports/charts.py` · `src/reports/builder.py` (route ME-4's `per_form` DataFrames into
+  chart rendering when a chart sets `form:`) · `tests/test_charts_multiform.py` (new)
+
+  **Config/schema impact:** None — reuses ME-4's `api.forms` + per-alias DataFrames; optional `form:`
+  on a chart (absent -> current default-df behavior).
+
+  **Acceptance criteria**
+  - A chart with `form: <alias>` renders from that alias's DataFrame (not the default)
+  - A chart without `form:` renders from the default DataFrame exactly as today (no regression)
+  - An unknown alias fails with a clear error (not a silent wrong-data chart)
+
+  **Unit tests:** `tests/test_charts_multiform.py` — per-form DataFrames (baseline mean != endline mean);
+  assert `form: baseline` aggregates baseline, `form: endline` aggregates endline; no-`form:` uses
+  default; unknown alias raises.
+
+  **E2E:** N/A (no UI surface — chart rendering is backend; verified via unit tests + PR review).
+
+  **UAT:** N/A (no UI surface — verified via the Verify command, unit tests, the verifier, PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts_multiform.py`
 
 ---
 
@@ -2676,7 +2779,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **I18N-2 — Full English + French translation coverage of the interface (P1)**
+- [x] **I18N-2 — Full English + French translation coverage of the interface (P1)**
 
   Build on I18N-1's mechanism to localize the **entire** interface: externalize every user-facing
   string across the six pages + shared components into the `en`/`fr` resource bundles so no
@@ -2739,6 +2842,78 @@ A card is startable only when all of the following hold:
 
   **Verify:** `cd frontend && npm run check:i18n` ·
   `cd frontend && npx playwright test i18n-coverage.spec.ts`
+- [ ] **I18N-3 — Externalize the remaining non-tab surfaces to EN/FR (P2)**
+
+  Follow-up from I18N-2 (which covered the six tabs + shell + in-tab shared components, leaving the
+  standalone Ask + Validate panels and ProjectForm / ProjectMembersPanel / members modal in English).
+  Externalize their user-facing strings into the en/fr bundles + extend the `check:i18n` audited set.
+
+  **Files:** `frontend/src/pages/Ask.jsx` · `frontend/src/pages/Validate.jsx` ·
+  `frontend/src/pages/ProjectForm.jsx` · `frontend/src/components/ProjectMembersPanel.jsx` (+ members
+  modal) · `frontend/src/locales/{en,fr}.json` · `frontend/scripts/check-i18n.mjs` ·
+  `frontend/tests/e2e/i18n-remaining.spec.ts` (new)
+
+  **Config/schema impact:** None — additive locale keys + check-script scope.
+
+  **Acceptance criteria**
+  - Every user-facing string in those components is sourced from the en/fr bundles — no hardcoded
+    literal remains (the extended `check:i18n` guard enforces this)
+  - en/fr stay key-aligned, no empty values; `check:i18n` passes
+  - With language=fr, representative strings on the Ask + Validate panels + the project form/members
+    panel render in French; English reverts
+  - English output byte-identical (no existing baseline drift)
+
+  **Unit tests:** N/A (frontend; Vitest not installed — asserted by the Playwright E2E + `check:i18n`).
+
+  **E2E:** `frontend/tests/e2e/i18n-remaining.spec.ts` (new) + visual — with profile language=fr, assert
+  a representative string on the Ask panel, the Validate panel, and the members panel renders in French
+  and no raw key leaks; `toHaveScreenshot` baseline of one such surface in French at three viewports; a
+  human approves (checking no FR overflow).
+
+  **UAT:**
+  1. In French, open the Ask panel, the Validate panel, and a project's Members panel; confirm all
+     labels/buttons are French with no raw keys.
+  2. Switch to English; confirm they revert.
+  3. Confirm no text overflows at mobile/tablet/desktop.
+
+  **Verify:** `cd frontend && npm run check:i18n` ·
+  `cd frontend && npx playwright test i18n-remaining.spec.ts`
+
+---
+
+- [ ] **I18N-4 — Native French review + correction of fr.json (P2)**
+
+  Follow-up from I18N-1/I18N-2: `fr.json` is best-effort assistant translation. A native French speaker
+  familiar with M&E / humanitarian terminology reviews + corrects every value for accuracy + natural
+  register. Changes only `fr` VALUES — no keys change, so en/fr stay key-aligned and `check:i18n` + the
+  i18n E2E still pass.
+
+  **Files:** `frontend/src/locales/fr.json` (corrected values only)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - Every `fr.json` value reviewed by a French-proficient M&E reviewer + corrected where inaccurate,
+    awkward, or wrong-register for the humanitarian/M&E domain
+  - No translation KEY added/removed/renamed (key set identical to `en.json`); no empty values
+  - `check:i18n` stays green; `i18n-coverage.spec.ts` still passes (update an expected FR string in
+    lockstep only if the review changes that exact phrase)
+
+  **Unit tests:** N/A — content/translation review; the parity guard is `check:i18n`.
+
+  **E2E:** N/A — no behavior change (the externalization mechanism is already covered by I18N-2's
+  `i18n-coverage.spec.ts`, which continues to pass).
+
+  **UAT:**
+  1. A native French M&E speaker reads through the app in French across all tabs; confirms wording is
+     correct, natural, and uses the right M&E/humanitarian terms.
+  2. Confirm no key codes or English remain.
+  3. Confirm `npm run check:i18n` passes (key parity intact).
+
+  **Verify:** `cd frontend && npm run check:i18n`
+
+---
+
 ## Performance
 
 > The web app feels slow (up to ~10s) when navigating between pages because there is **no caching
@@ -2880,6 +3055,95 @@ A card is startable only when all of the following hold:
   command, the unit tests, the verifier, and PR review; UAT moves in lockstep with E2E).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_perf_cache_shared.py`
+
+---
+
+## Maintenance & hardening
+
+> Tracked tech-debt / hardening surfaced during the 2026-06 build-out. Not feature work — small,
+> well-scoped fixes that keep the suite + toolchain healthy.
+
+---
+
+- [ ] **MNT-1 — Stabilize the order-dependent ask-save indicator test (P2)**
+
+  `tests/test_ask_api.py::test_ask_save_indicator_appends_to_indicators` passes in the full suite but
+  FAILS run in isolation — a test-isolation/ordering bug (leaked shared/config state). Pre-existing on
+  `develop`. Make it deterministic regardless of run order.
+
+  **Files:** `tests/test_ask_api.py` (+ the fixture / module-level state it depends on)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - The named test passes RUN ALONE
+  - It also passes in the full suite (no regression)
+  - Root cause (leaked state) fixed at the fixture/isolation level, not by reordering
+
+  **Unit tests:** the card IS a pytest-stability fix — covered by running the named test in isolation
+  then in the full file.
+
+  **E2E:** N/A (backend test-infra).
+
+  **UAT:** N/A (verified via the Verify command + the verifier + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_api.py::test_ask_save_indicator_appends_to_indicators` (alone), then `tests/test_ask_api.py`
+
+---
+
+- [ ] **MNT-2 — Clear dev-dependency CVEs (vite High + esbuild Moderate) (P2)**
+
+  `npm audit` flags pre-existing advisories in the frontend DEV toolchain: vite (High — needs >= 8.1) +
+  esbuild (Moderate — needs >= 0.25, dragged by the vite bump). Dev-only (not in the shipped bundle) but
+  should be cleared. Bump + verify the dev server, Playwright harness, and build still work.
+
+  **Files:** `frontend/package.json` · `frontend/package-lock.json` · possibly
+  `frontend/vite.config.*` / `frontend/playwright.config.ts` (if the major bump needs config changes)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - vite + esbuild bumped to versions with no outstanding High/Moderate advisory (npm audit clear for them)
+  - `npm run build` succeeds; the Vite dev server serves; the Playwright e2e harness runs
+  - No app/runtime behavior change (visual baselines unaffected, or refreshed + human-approved if the
+    toolchain bump shifts rendering)
+
+  **Unit tests:** N/A (dependency/toolchain chore).
+
+  **E2E:** the existing Playwright suite is the regression check — must stay green post-bump (no new
+  baselines expected; flag + human-approve any genuine drift).
+
+  **UAT:** N/A (verified via build + e2e green + dep-audit clean + PR review).
+
+  **Verify:** `cd frontend && npm audit` (vite/esbuild cleared) · `npm run build` · `npm run test:e2e`
+
+---
+
+- [ ] **MNT-3 — I18N-1 backend hygiene: double-commit + verbatim Zitadel error (P3)**
+
+  Two Low items from the I18N-1 security review. (a) `PATCH /api/me` commits twice — `set_user_language()`
+  commits internally and `patch_me` commits again (redundant). (b) The Zitadel sync error path echoes the
+  raw exception verbatim in the PATCH response (could embed internal URLs). Single commit site + sanitize
+  the message.
+
+  **Files:** `web/main.py` (`patch_me`) · `web/db/repository.py` (`set_user_language`) ·
+  `tests/test_profile_api.py`
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - `PATCH /api/me` commits exactly once (no redundant commit/refresh); behavior unchanged
+  - The Zitadel error path returns a sanitized message (no raw exception/internal URL) in the response
+  - Existing profile/language tests still pass (no regression to I18N-1)
+
+  **Unit tests:** `tests/test_profile_api.py` — a language PATCH persists via a single commit path
+  (behavior unchanged); a simulated Zitadel sync error yields a sanitized (non-verbatim) message.
+
+  **E2E:** N/A (backend).
+
+  **UAT:** N/A (verified via the Verify command + the verifier + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_profile_api.py tests/test_profile_language.py`
 
 ---
 
