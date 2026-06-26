@@ -40,7 +40,8 @@ export default function ProfileForm({ me, onDone, onSaved }) {
           </div>
           <div className="profile-field">
             <label>Email</label>
-            <input value={me?.email || ''} disabled />
+            <input value={me?.email || ''} disabled aria-describedby="profile-email-hint" />
+            <div id="profile-email-hint" className="pf-field-hint">Managed by your sign-in provider</div>
           </div>
           <div className="pf-actions">
             <button className="btn btn-primary" disabled={busy} onClick={save}>
