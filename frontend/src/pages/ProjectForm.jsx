@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
+import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { useToast } from '../components/Toast.jsx';
 import ProjectMembersPanel from '../components/ProjectMembersPanel.jsx';
 import { createProject, updateProject, archiveProject } from '../lib/projects.js';
@@ -32,6 +33,26 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
   const tags = () => tagsText.split(',').map(t => t.trim()).filter(Boolean);
   const payload = () => ({ name: name.trim(), description, tags: tags(), language, color, icon });
 
+  // Snapshot of the last-saved (or initial) Details values, used for dirty
+  // tracking. Refreshed on a successful create/save so saving clears the guard.
+  const [baseline, setBaseline] = useState(() => ({
+    name: init.name || '',
+    description: init.description || '',
+    tagsText: (init.tags || []).join(', '),
+    language: init.language || 'English',
+    color: init.color || COLORS[0],
+    icon: init.icon || ICONS[0],
+  }));
+
+  const dirty =
+    name !== baseline.name ||
+    description !== baseline.description ||
+    tagsText !== baseline.tagsText ||
+    language !== baseline.language ||
+    color !== baseline.color ||
+    icon !== baseline.icon;
+  useUnsavedGuard(!!dirty);
+
   const submit = async () => {
     if (!name.trim()) { toast('Name is required', 'err'); return; }
     setBusy(true);
@@ -47,8 +68,20 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
         onChanged?.();
         toast('Saved', 'ok');
       }
+      setBaseline({ name, description, tagsText, language, color, icon });
     } catch (e) { toast(e.message || 'Save failed', 'err'); }
     finally { setBusy(false); }
+  };
+
+  // Back: if there are unsaved Details edits, confirm before discarding —
+  // reusing the shared useConfirm() Modal (same guard as project switching).
+  const handleBack = async () => {
+    if (dirty && !await confirm({
+      title: 'Discard unsaved changes?',
+      message: 'You have unsaved edits to this project. Leaving will discard them.',
+      confirmLabel: 'Discard',
+    })) return;
+    onDone?.(proj?.id || null);
   };
 
   const doArchive = async (archived) => {
@@ -85,7 +118,7 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
   return (
     <div className="project-form">
       <div className="project-form__bar">
-        <button className="btn btn-sm" onClick={() => onDone?.(proj?.id || null)}>← Back</button>
+        <button className="btn btn-sm" onClick={handleBack}>← Back</button>
         <h2 className="project-form__title">
           {editing ? `Project settings · ${proj?.name}` : 'New project'}
         </h2>
