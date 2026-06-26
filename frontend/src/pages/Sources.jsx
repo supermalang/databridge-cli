@@ -697,7 +697,7 @@ function AINarrativeCard({ cfg, set }) {
         </div>
         <div className="src-readonly-value" aria-label={t('sources.language')}
              style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 'var(--r-md, 8px)',
-                      background: 'var(--bg-2)', color: 'var(--ink-1)', fontSize: 13.5 }}>
+                      background: 'var(--bg-2)', color: 'var(--ink)', fontSize: 13.5 }}>
           {projectLanguage || ai.language || t('sources.languageUnset')}
         </div>
       </div>
