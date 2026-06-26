@@ -50,13 +50,13 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 9 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 9 | 6 / 9 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 9 | 9 / 9 |
 | [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
-| [Internationalization (i18n)](#internationalization-i18n) | 5 | 2 / 5 |
-| [Project output language](#project-output-language) | 3 | 0 / 3 |
-| [Performance](#performance) | 3 | 2 / 3 |
+| [Internationalization (i18n)](#internationalization-i18n) | 5 | 3 / 5 |
+| [Project output language](#project-output-language) | 3 | 3 / 3 |
+| [Performance](#performance) | 3 | 3 / 3 |
 | [Maintenance & hardening](#maintenance--hardening) | 3 | 0 / 3 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
@@ -1128,7 +1128,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PUX-7 — Gate Fetch/Download on a confirmed connection; flip the sample-data affordance (P2)**
+- [x] **PUX-7 — Gate Fetch/Download on a confirmed connection; flip the sample-data affordance (P2)**
 
   On Extract → Connection, **Fetch questions** and **Download data** are always clickable
   (disabled only on `running || !canEdit`, `frontend/src/pages/Sources.jsx` ~497/502), so a
@@ -1213,7 +1213,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PUX-8 — Primary navigation labels adopt the PUX-1 plain-language stage names (P2)**
+- [x] **PUX-8 — Primary navigation labels adopt the PUX-1 plain-language stage names (P2)**
 
   PUX-1 reworded the Home stage cards to plain language for non-experts
   (`home.stages.transform.label` = "Clean & check" / "Nettoyer et vérifier";
@@ -1273,7 +1273,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PUX-9 — Copy-placeholder buttons for charts / indicators / summaries / tables on the Analyze tab (P2)**
+- [x] **PUX-9 — Copy-placeholder buttons for charts / indicators / summaries / tables on the Analyze tab (P2)**
 
   On Analyze → "Charts & indicators" (`frontend/src/pages/Composition.jsx`, `ANALYZE_SECTIONS`),
   every chart / indicator / summary / table the user defines maps to a docxtpl placeholder they
@@ -3134,7 +3134,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **I18N-5 — Translate the navigation sub-tabs + guard against label-in-data-array escapes (P2)**
+- [x] **I18N-5 — Translate the navigation sub-tabs + guard against label-in-data-array escapes (P2)**
 
   The secondary sub-tab bar renders `{sub.label}` — a hardcoded English string from the STAGES
   array (`frontend/src/App.jsx` ~649; the sub objects are defined ~79–99 with **no** `labelKey`), so
@@ -3212,7 +3212,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PLANG-1 — Project language is set once at creation and drives the AI output language (backend + config mirroring)**
+- [x] **PLANG-1 — Project language is set once at creation and drives the AI output language (backend + config mirroring)**
 
   `project.meta.language` already exists (offered in `ProjectForm` as
   English/French/Spanish/Portuguese/Arabic) but (a) it is **editable post-creation** via
@@ -3268,7 +3268,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PLANG-2 — Create-only language field + read-only language in AI config (UI)**
+- [x] **PLANG-2 — Create-only language field + read-only language in AI config (UI)**
 
   With PLANG-1 making the project language immutable + authoritative, reflect that in the UI. In
   `ProjectForm` the language `<select>` (`frontend/src/pages/ProjectForm.jsx` ~11/50/188–191) is
@@ -3327,7 +3327,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PLANG-3 — Generate AI output (narrative, summaries, suggestions, Ask) in the project language**
+- [x] **PLANG-3 — Generate AI output (narrative, summaries, suggestions, Ask) in the project language**
 
   With PLANG-1 feeding the project language into `config.ai.language`, ensure **every** AI generation
   site honours it so generated text comes out in the project language (per the confirmed scope —
@@ -3522,7 +3522,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PERF-3 — Per-page skeleton loaders for the data-driven tabs (perceived performance)**
+- [x] **PERF-3 — Per-page skeleton loaders for the data-driven tabs (perceived performance)**
 
   A complement to PERF-1/PERF-2 (server-side cache) on the **client** side: today every
   data-driven tab initialises its data to `null` and renders a single centred grey "Loading…"
