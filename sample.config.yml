@@ -360,7 +360,18 @@ indicators: []
 #   target       : goal value (numeric)
 #                  Exposes {{ ind_<name>_target }} and {{ ind_<name>_pct_achievement }} in Word template
 #
-# Example — indicator with achievement tracking:
+# Variance / traffic-light status (optional):
+#   warning      : amber threshold on the pct_achievement scale (percent of target)
+#   critical     : red threshold on the pct_achievement scale (percent of target)
+#                  RAG status, exposed as {{ ind_<name>_status }} (ok | warning | critical):
+#                    pct_achievement >= warning              -> "ok"       (green)
+#                    critical <= pct_achievement < warning   -> "warning"  (amber)
+#                    pct_achievement < critical              -> "critical" (red)
+#                  Both are optional; set them to flag below-target indicators in the
+#                  report's traffic-light table ({{ traffic_light }}). Indicators in the
+#                  warning/critical bands are surfaced as {{ flagged_indicators }}.
+#
+# Example — indicator with achievement tracking + traffic-light thresholds:
 #   - name: pct_female
 #     label: Female beneficiaries
 #     question: Gender
@@ -369,7 +380,9 @@ indicators: []
 #     format: percent
 #     baseline: 48.2
 #     target: 55.0
-#     # Template: "{{ ind_pct_female }} (target {{ ind_pct_female_target }}, {{ ind_pct_female_pct_achievement }} achieved)"
+#     warning: 80         # below 80% of target -> amber
+#     critical: 60        # below 60% of target -> red
+#     # Template: "{{ ind_pct_female }} (target {{ ind_pct_female_target }}, {{ ind_pct_female_pct_achievement }} achieved, status: {{ ind_pct_female_status }})"
 #
 # In your Word template: "This report covers {{ ind_total_beneficiaries }}
 # beneficiaries. {{ ind_pct_female }} are female."

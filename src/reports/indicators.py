@@ -147,12 +147,69 @@ def compute_indicators(
                     context[f"ind_{name}_pct_achievement"] = (
                         f"{pct:,.1f}%" if pct is not None else "N/A"
                     )
+                    # RAG traffic-light status (ME-2): only when thresholds are set.
+                    status = _rag_status(pct, ind.get("warning"), ind.get("critical"))
+                    if status is not None:
+                        context[f"ind_{name}_status"] = status
                 except (TypeError, ValueError, ZeroDivisionError):
                     context[f"ind_{name}_pct_achievement"] = "N/A"
         except Exception as e:
             log.warning(f"Indicator '{name}' failed: {e}")
             context[f"ind_{name}"] = "N/A"
     return context
+
+
+def _rag_status(pct, warning, critical) -> Optional[str]:
+    """RAG traffic-light status on the pct_achievement scale (ME-2).
+
+    Returns None when no thresholds are configured. Otherwise:
+        pct >= warning             -> "ok"       (green)
+        critical <= pct < warning  -> "warning"  (amber)
+        pct < critical             -> "critical" (red)
+
+    Either threshold may be omitted; the missing band simply does not apply.
+    """
+    if warning is None and critical is None:
+        return None
+    if pct is None:
+        return None
+    try:
+        p = float(pct)
+    except (TypeError, ValueError):
+        return None
+    if warning is not None and p >= float(warning):
+        return "ok"
+    if critical is not None and p >= float(critical):
+        return "warning"
+    if critical is not None:
+        return "critical"
+    # only a warning threshold set and pct below it -> warning
+    return "warning"
+
+
+def build_traffic_light_table(indicators_cfg: List[Dict], indicators_context: Dict) -> Dict:
+    """Build a red/amber/green progress table for the report (ME-2).
+
+    One row per indicator that defines a ``target``. Each row carries the
+    formatted baseline / target / actual / pct values from the indicators
+    context, plus the RAG ``status`` (defaults to "ok" when no thresholds set).
+
+    Returns ``{"rows": [{indicator, baseline, target, actual, pct, status}, ...]}``.
+    """
+    rows: List[Dict] = []
+    for ind in indicators_cfg:
+        name = ind.get("name")
+        if not name or ind.get("target") is None:
+            continue
+        rows.append({
+            "indicator": name,
+            "baseline":  indicators_context.get(f"ind_{name}_baseline", "—"),
+            "target":    indicators_context.get(f"ind_{name}_target", "—"),
+            "actual":    indicators_context.get(f"ind_{name}", "—"),
+            "pct":       indicators_context.get(f"ind_{name}_pct_achievement", "—"),
+            "status":    indicators_context.get(f"ind_{name}_status", "ok"),
+        })
+    return {"rows": rows}
 
 
 def _resolve_source(ind: Dict, main_df: pd.DataFrame, repeat_tables: Dict) -> pd.DataFrame:
