@@ -48,7 +48,7 @@ A card is startable only when all of the following hold:
 | Area | Planned | Progress |
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
-| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 7 / 9 |
+| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 9 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 7 / 7 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 6 / 6 |
 | [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
@@ -256,7 +256,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **UX-5 — Member rows fall back to a raw UUID**
+- [x] **UX-5 — Member rows fall back to a raw UUID**
 
   [frontend/src/components/ProjectMembersPanel.jsx](../frontend/src/components/ProjectMembersPanel.jsx)
   renders `m.email || m.name || m.user_id`, so members without email/name show a UUID.
@@ -303,7 +303,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **UX-7 — Explain read-only email (ProfileForm)**
+- [x] **UX-7 — Explain read-only email (ProfileForm)**
 
   Add "Managed by your sign-in provider" helper text so the disabled field doesn't look broken.
 
