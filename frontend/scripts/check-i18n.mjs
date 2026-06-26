@@ -181,6 +181,37 @@ for (const file of AUDITED) {
 }
 if (failures === cHadFailure) console.log('  ✓ no hardcoded user-facing prose in audited components');
 
+// ── (D): no user-facing `label:` literal in the nav / STAGES data arrays ──────
+// I18N-5: the secondary sub-tab strip used to render a hardcoded English
+// `sub.label` straight from the STAGES array — a coverage escape from check (C),
+// which only inspects JSX text nodes and a few attributes, never object-property
+// literals in a data array. This check closes that hole: a user-facing PROSE
+// `label:` literal in App.jsx's nav data arrays is flagged so the regression
+// (un-translated sub-tab labels) cannot recur. Nav labels must come from t() via
+// a `labelKey` instead. Single-token labels (the primary stages' English
+// `label` fallbacks: Home / Extract / Transform …) are NOT prose and pass.
+console.log('— (D) no user-facing label literal in the nav / STAGES data arrays');
+const dHadFailure = failures;
+const NAV_FILE = join(SRC, 'App.jsx');
+{
+  let raw;
+  try { raw = readFileSync(NAV_FILE, 'utf8'); } catch { raw = null; }
+  if (raw !== null) {
+    const src = stripComments(raw);
+    const rel = NAV_FILE.slice(ROOT.length + 1);
+    // `label: '...'` / `label: "..."` object-property string literals.
+    const labelRe = /\blabel\s*:\s*(['"])((?:\\.|(?!\1).)*)\1/g;
+    let m;
+    while ((m = labelRe.exec(src))) {
+      const lit = m[2];
+      if (isPhrase(lit)) {
+        fail(`${rel}: hardcoded nav label literal "${lit}" — render it via t()/labelKey, not a data-array string`);
+      }
+    }
+  }
+}
+if (failures === dHadFailure) console.log('  ✓ no hardcoded user-facing nav label literal');
+
 if (failures) {
   console.error(`\ncheck:i18n FAILED with ${failures} problem(s).`);
   process.exit(1);
