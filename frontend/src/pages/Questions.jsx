@@ -7,6 +7,7 @@ import { isHidden, buildGroupTree } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
 import Modal from '../components/Modal.jsx';
 import PageHeader from './PageHeader.jsx';
+import StageHelp from '../components/StageHelp.jsx';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { useRun } from '../lib/run.js';
 import { RailLayout, RailToolbar, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
@@ -336,7 +337,12 @@ export default function Questions() {
           <th style={{ width: '20%' }}>Name</th>
           <th style={{ width: '12%' }}>Type</th>
           <th style={{ width: '30%' }}>Label (from form)</th>
-          <th style={{ width: '30%' }}>Export label · used in charts &amp; template</th>
+          <th style={{ width: '30%' }}>
+            Report column name
+            <span style={{ display: 'block', marginTop: 3, fontFamily: 'var(--font-sans)', fontSize: 11, fontWeight: 400, letterSpacing: 0, textTransform: 'none', color: 'var(--ink-3)' }}>
+              This is the name shown in your report, spreadsheet, and charts.
+            </span>
+          </th>
           <th style={{ width: '8%' }}></th>
         </tr>
       </thead>
@@ -363,6 +369,7 @@ export default function Questions() {
               <td>
                 <input
                   className="q-export-input"
+                  aria-label={`Report column name for ${q.label || bareName(q) || q.kobo_key}`}
                   data-dirty={dirty}
                   data-dup={liveDup || undefined}
                   title={liveDup ? 'Duplicate export label — rename so it is unique' : undefined}
@@ -463,7 +470,7 @@ export default function Questions() {
         <>
           <div className="q-search">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>
-            <input placeholder="Search by name or label..." value={search} onChange={e => { setSearch(e.target.value); exitReveal(); }} />
+            <input aria-label="Search questions" placeholder="Search by name or label..." value={search} onChange={e => { setSearch(e.target.value); exitReveal(); }} />
           </div>
           <div className="config-view-toggle">
             <button className={`view-btn ${filter === 'all' && !revealedDupIdx ? 'active' : ''}`} onClick={() => { setFilter('all'); exitReveal(); }}>All</button>
@@ -495,6 +502,19 @@ export default function Questions() {
   return (
     <div className="page">
       <Header total={questions.length} groups={totalGroups} />
+
+      <StageHelp
+        title="Questions"
+        hint="Edit the report column name to change how a question appears everywhere."
+        body={
+          <>
+            <p>Every row here is one survey question. The most useful thing you can do is rename the <b>report column</b> so it reads cleanly in your charts and Word report — no YAML needed.</p>
+            <p>You can also hide fields you don't need, flag personal data (PII), and set each question's category so the right chart types are offered later. Use <b>Fetch questions</b> to pull the latest form schema; your edits are kept.</p>
+          </>
+        }
+        docsHref="docs/reference/config.md"
+        docsLabel="Questions & categories reference"
+      />
 
       <RailLayout toolbar={toolbar} rail={
         <>
@@ -607,7 +627,7 @@ function Header({ total, groups }) {
       eyebrow={`Step 2 of 5 · Questions · ${total} fields · ${groups} groups`}
       title="Rename what shows up"
       accent="in the report."
-      sub="Each row is a survey question. Edit the Export label to change how that column appears in charts, indicators, and Word placeholders — no YAML required."
+      sub="Each row is a survey question. Edit the report column name to change how that column appears in your charts, indicators, and Word report — no YAML required."
     />
   );
 }

@@ -1,0 +1,25 @@
+{
+  "translation": {
+    "nav": {
+      "home": "Home",
+      "extract": "Extract",
+      "transform": "Transform",
+      "model": "Model",
+      "analyze": "Analyze",
+      "deliver": "Deliver"
+    },
+    "profile": {
+      "title": "Your profile",
+      "back": "Back",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "emailManaged": "Managed by your sign-in provider",
+      "save": "Save",
+      "saving": "Saving…",
+      "language": "Interface language",
+      "languageEnglish": "English",
+      "languageFrench": "Français"
+    }
+  }
+}

@@ -139,6 +139,7 @@ export default function Validate() {
             <div className="validate-finding__actions">
               <button
                 disabled={!canAct}
+                aria-label={`Flag ${f.column} as PII`}
                 title={canAct ? 'Flag as PII — exclude from analysis & AI' : 'No matching question to flag'}
                 onClick={() => flagPII(f.column)}
               >
@@ -146,6 +147,7 @@ export default function Validate() {
               </button>
               <button
                 disabled={!canAct}
+                aria-label={`Hide column ${f.column}`}
                 title={canAct ? 'Hide column — exclude from analysis' : 'No matching question to hide'}
                 onClick={() => hideColumn(f.column)}
               >

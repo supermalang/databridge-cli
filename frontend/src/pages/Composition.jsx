@@ -7,7 +7,9 @@ import { useToast } from '../components/Toast.jsx';
 import { useCommand } from '../hooks/useCommand.js';
 import { loadConfig, saveConfigPatch } from '../lib/config.js';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
+import { useFieldErrors } from '../lib/fieldError.js';
 import PageHeader from './PageHeader.jsx';
+import StageHelp from '../components/StageHelp.jsx';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 import AiThinking from '../components/AiThinking.jsx';
 
@@ -124,6 +126,10 @@ export default function Composition({ sections } = {}) {
   const [templates,  setTemplates] = useState([]);
   const [activeTpl,  setActiveTpl] = useState('');
   const [editing,    setEditing]   = useState(null);
+  // PUX-3: progressive disclosure — tables + summaries are tucked behind an
+  // "Advanced" control, collapsed by default, so the surface leads with the
+  // recommended starter path + the primary constructs (charts + indicators).
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [suggestKind, setSuggestKind] = useState(null); // null | 'chart' | 'view' | 'summary'
   const [suggestText, setSuggestText] = useState('');
   const [suggesting,  setSuggesting]  = useState(null); // null | 'chart' | 'view' | 'summary' (which kind is running)
@@ -468,6 +474,33 @@ export default function Composition({ sections } = {}) {
         onSave={saveAll}
         dirty={dirty}
       />
+      {has('views') && !has('charts') ? (
+        <StageHelp
+          title="Combine data"
+          hint="Group related answers into reusable tables — like totals per region."
+          body={
+            <>
+              <p>A view is a saved, combined table built from your data — for example, the number of responses per region, or an average score per site. Once you define a view, your charts, indicators, and summaries can all reuse it.</p>
+              <p>This is optional. If your charts work straight off your questions, you can skip views entirely.</p>
+            </>
+          }
+          docsHref="docs/reference/charts.md"
+          docsLabel="Views & combined tables reference"
+        />
+      ) : (
+        <StageHelp
+          title="Charts & indicators"
+          hint="Add charts, indicators, and summaries — or let AI propose a starter set."
+          body={
+            <>
+              <p>This is where you decide what appears in the report. Add a <b>chart</b> to visualise answers, an <b>indicator</b> to track a single number, or a <b>summary</b> for AI-written narrative. Each one becomes a placeholder your Word template fills in.</p>
+              <p>Not sure where to start? Use the AI suggestion buttons to propose a starter set from your questions, then keep what fits.</p>
+            </>
+          }
+          docsHref="docs/reference/charts.md"
+          docsLabel="Chart types & options reference"
+        />
+      )}
       <RailLayout rail={
         <CompositionRail
           secs={secs}
@@ -478,6 +511,12 @@ export default function Composition({ sections } = {}) {
         />
       }>
         <>
+          {has('charts') && (
+            <StarterPath
+              onStarterCharts={() => openSuggestModal('charts')}
+              starterDisabled={!!suggesting}
+            />
+          )}
           {has('charts') && (
             <ChartsCard
               charts={charts}
@@ -496,23 +535,30 @@ export default function Composition({ sections } = {}) {
               onRemove={remove('indicator', setIndicators)}
             />
           )}
-          {has('tables') && (
-            <TablesCard
-              tables={tables}
-              onAdd={() => openEdit('table', null)}
-              onEdit={(i) => openEdit('table', i)}
-              onRemove={remove('table', setTables)}
-              onPreview={openTablePreview}
-            />
-          )}
-          {has('summaries') && (
-            <SummariesCard
-              summaries={summaries}
-              onAdd={() => openEdit('summary', null)}
-              onEdit={(i) => openEdit('summary', i)}
-              onRemove={remove('summary', setSummaries)}
-              onPreview={openSummaryPreview}
-            />
+          {(has('tables') || has('summaries')) && (
+            <AdvancedSection
+              open={advancedOpen}
+              onToggle={() => setAdvancedOpen(o => !o)}
+            >
+              {has('tables') && (
+                <TablesCard
+                  tables={tables}
+                  onAdd={() => openEdit('table', null)}
+                  onEdit={(i) => openEdit('table', i)}
+                  onRemove={remove('table', setTables)}
+                  onPreview={openTablePreview}
+                />
+              )}
+              {has('summaries') && (
+                <SummariesCard
+                  summaries={summaries}
+                  onAdd={() => openEdit('summary', null)}
+                  onEdit={(i) => openEdit('summary', i)}
+                  onRemove={remove('summary', setSummaries)}
+                  onPreview={openSummaryPreview}
+                />
+              )}
+            </AdvancedSection>
           )}
           {has('views') && (
             <ViewsCard
@@ -564,6 +610,7 @@ export default function Composition({ sections } = {}) {
             hint="Free-text guidance the AI will prioritise. Leave blank to let it choose freely from your questions."
           >
             <textarea
+              aria-label={`Guidance for AI ${suggestSpec[suggestKind].plural} suggestions`}
               className="src-input"
               rows={5}
               value={suggestText}
@@ -774,17 +821,97 @@ function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHel
   );
 }
 
+// ── Starter path (PUX-3) ─────────────────────────────────────────────────────
+// The recommended way to begin: ask a question (reuses the Analyze → Ask flow)
+// or auto-generate a starter chart set (reuses the existing suggest-charts /
+// --auto-charts capability). Presented as low-effort scaffolding for non-experts
+// so the surface no longer opens as a wall of construct types.
+function StarterPath({ onStarterCharts, starterDisabled }) {
+  // Reuse the existing Ask entry point: it's the sibling "Ask" sub-tab on the
+  // Analyze stage. Navigate to it rather than re-implementing Ask here.
+  const goToAsk = () => {
+    const subtabs = document.querySelectorAll('.subtabs-bar .subtab');
+    for (const el of subtabs) {
+      if (/^\s*ask\s*$/i.test(el.textContent || '')) { el.click(); return; }
+    }
+  };
+  return (
+    <div className="starter-path" data-testid="composition-starter-path">
+      <div className="starter-path__intro">
+        <div className="starter-path__title">Not sure where to start?</div>
+        <p className="starter-path__sub">
+          The quickest way in: ask a question in plain language, or let us draft a
+          starter set of charts from your questions. You can refine everything below.
+        </p>
+      </div>
+      <div className="starter-path__actions">
+        <button type="button" className="btn btn-primary" onClick={goToAsk}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M2.5 11.5 2 14l2.5-.5A6 6 0 1 0 2.5 11.5Z" />
+            <circle cx="8" cy="8" r=".6" fill="currentColor" />
+          </svg>
+          Ask a question
+        </button>
+        <button
+          type="button"
+          className="btn"
+          data-testid="composition-starter-charts"
+          onClick={onStarterCharts}
+          disabled={starterDisabled}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="3.5" y1="13" x2="3.5" y2="8" /><line x1="8" y1="13" x2="8" y2="4" /><line x1="12.5" y1="13" x2="12.5" y2="10" />
+          </svg>
+          Suggest starter charts
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Advanced disclosure (PUX-3) ──────────────────────────────────────────────
+// Collapses the less-common constructs (tables + summaries) behind a
+// keyboard-operable native <button> with aria-expanded; collapsed by default.
+function AdvancedSection({ open, onToggle, children }) {
+  return (
+    <div className="comp-advanced">
+      <button
+        type="button"
+        className="comp-advanced__toggle"
+        data-testid="composition-advanced-toggle"
+        aria-expanded={open ? 'true' : 'false'}
+        aria-controls="composition-advanced-region"
+        onClick={onToggle}
+      >
+        <svg className="comp-advanced__chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="6 4 10 8 6 12" />
+        </svg>
+        <span className="comp-advanced__label">Advanced</span>
+        <span className="comp-advanced__hint">Tables &amp; summaries</span>
+      </button>
+      <div
+        id="composition-advanced-region"
+        data-testid="composition-advanced"
+        className="comp-advanced__region"
+        hidden={!open}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ── Header band ──────────────────────────────────────────────────────────────
 function Header({ questionCount, sections = ALL_SECTIONS, onSave, dirty }) {
   const has = (k) => sections.includes(k);
   const viewsOnly = has('views') && !has('charts');
   return (
     <PageHeader
-      eyebrow={viewsOnly ? 'Step 3 of 5 · Derived views' : 'Step 4 of 5 · Compose'}
-      title={viewsOnly ? 'Build your' : 'Shape your'}
-      accent={viewsOnly ? 'views.' : 'composition.'}
+      eyebrow={viewsOnly ? 'Step 3 of 5 · Combine data' : 'Step 4 of 5 · Compose'}
+      title={viewsOnly ? 'Combine your' : 'Shape your'}
+      accent={viewsOnly ? 'data.' : 'composition.'}
       sub={viewsOnly
-        ? 'Virtual data tables — computed once and reused by charts, summaries, and indicators downstream.'
+        ? 'Link related answers together and group them into combined tables (for example, totals per region) that your charts, summaries, and indicators can reuse.'
         : <>Define what shows up in the report — charts, indicators, and summaries. Add manually, or let AI propose a set from your <b>{questionCount}</b> questions.</>}
       actions={
         <button className={`btn ${dirty ? 'btn-primary' : ''}`} onClick={onSave} disabled={!dirty}
@@ -996,16 +1123,16 @@ function FrameworkCard() {
           width={520}
         >
           <ModalField label="ID" hint="Short opaque identifier (e.g. OP1.1)">
-            <input className="src-input" value={editing.draft.id}
+            <input aria-label={`${editing.level} ID`} className="src-input" value={editing.draft.id}
                    onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, id: e.target.value } }))} />
           </ModalField>
           <ModalField label="Label">
-            <input className="src-input" value={editing.draft.label}
+            <input aria-label={`${editing.level} label`} className="src-input" value={editing.draft.label}
                    onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, label: e.target.value } }))} />
           </ModalField>
           {editing.level === 'output' && (
             <ModalField label="Parent outcome">
-              <select className="src-input" value={editing.draft.parent || ''}
+              <select aria-label="Parent outcome" className="src-input" value={editing.draft.parent || ''}
                       onChange={e => setEditing(s => ({ ...s, draft: { ...s.draft, parent: e.target.value } }))}>
                 <option value="">(pick one)</option>
                 {(fw.outcomes || []).map(oc => <option key={oc.id} value={oc.id}>{oc.id} — {oc.label}</option>)}
@@ -1248,8 +1375,8 @@ function ViewsCard({ views, onAdd, onEdit, onRemove, onPreview }) {
     <div className="comp-card">
       <div className="comp-card__head">
         <div className="comp-card__head-text">
-          <div className="comp-card__title">Views</div>
-          <div className="comp-card__sub">Virtual data tables — computed once, reused by charts, summaries, and indicators.</div>
+          <div className="comp-card__title">Combined tables (views)</div>
+          <div className="comp-card__sub">Link related answers and group them into combined tables — for example, totals per region — that your charts, summaries, and indicators can reuse.</div>
         </div>
         <div className="comp-card__head-actions">
           <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add view</button>
@@ -1437,9 +1564,10 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
   const [cols, setCols]       = useState(csv(initial?.questions || []));
   const [optsY, setOptsY]     = useState(initial?.options ? yaml.dump(initial.options, { indent: 2, lineWidth: -1 }) : '');
   const [err, setErr]         = useState('');
+  const fe = useFieldErrors();
 
   const submit = () => {
-    if (!name.trim()) return setErr('Name is required.');
+    if (!name.trim()) return fe.setError('name', 'Name is required.');
     const item = { name: name.trim(), title: title.trim(), type, questions: fromCsv(cols) };
     if (optsY.trim()) {
       try { const o = yaml.load(optsY); if (o && Object.keys(o).length) item.options = o; }
@@ -1450,16 +1578,16 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
   return (
     <Modal title={initial ? `Edit chart: ${initial.name}` : 'Add chart'} onClose={onClose} onSave={submit} width={560}>
       <ModalError>{err}</ModalError>
-      <ModalField label="Name"><input className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="satisfaction_overview" /></ModalField>
-      <ModalField label="Title"><input className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Overall satisfaction" /></ModalField>
+      <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label="Chart name" className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
+      <ModalField label="Title"><input aria-label="Chart title" className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Overall satisfaction" /></ModalField>
       <ModalField label="Type" hint={CHART_REQS[type] ? `Needs: ${CHART_REQS[type]}` : undefined}>
-        <select className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+        <select aria-label="Chart type" className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
       </ModalField>
       <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name">
-        <ColumnPicker value={cols} onChange={setCols} options={columns} placeholder="Search columns…" />
+        <ColumnPicker ariaLabel="Chart columns" value={cols} onChange={setCols} options={columns} placeholder="Search columns…" />
       </ModalField>
       <ModalField label="Options" hint="YAML, optional (e.g. top_n: 10)">
-        <textarea value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
+        <textarea aria-label="Chart options (YAML)" value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
       </ModalField>
     </Modal>
   );
@@ -1478,8 +1606,9 @@ function IndicatorModal({ initial, columns = [], onClose, onSave }) {
       : (initial?.disaggregate_by ? [initial.disaggregate_by] : [])));
   const [primary, setPrimary] = useState(!!initial?.primary);
   const [err, setErr] = useState('');
+  const fe = useFieldErrors();
   const submit = () => {
-    if (!name.trim()) return setErr('Name is required.');
+    if (!name.trim()) return fe.setError('name', 'Name is required.');
     const item = { name: name.trim(), stat };
     if (label.trim()) item.label = label.trim();
     if (question.trim()) item.question = question.trim();
@@ -1493,13 +1622,13 @@ function IndicatorModal({ initial, columns = [], onClose, onSave }) {
   return (
     <Modal title={initial ? `Edit indicator: ${initial.name}` : 'Add indicator'} onClose={onClose} onSave={submit}>
       <ModalError>{err}</ModalError>
-      <ModalField label="Name" hint="Becomes {{ ind_<name> }} in the template"><input className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="total_beneficiaries" /></ModalField>
-      <ModalField label="Label"><input className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
-      <ModalField label="Stat"><select className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{INDICATOR_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
-      <ModalField label="Column"><ColumnPicker value={question} onChange={setQuestion} options={columns} multi={false} placeholder="Number of Students" /></ModalField>
-      <ModalField label="Format" hint="Python format string"><input className="src-input" value={format} onChange={e => setFormat(e.target.value)} placeholder="{:,.0f}" /></ModalField>
+      <ModalField label="Name" hint="Becomes {{ ind_<name> }} in the template" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label="Indicator name" className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="total_beneficiaries" /></ModalField>
+      <ModalField label="Label"><input aria-label="Indicator label" className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
+      <ModalField label="Stat"><select aria-label="Indicator stat" className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{INDICATOR_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
+      <ModalField label="Column"><ColumnPicker ariaLabel="Indicator column" value={question} onChange={setQuestion} options={columns} multi={false} placeholder="Number of Students" /></ModalField>
+      <ModalField label="Format" hint="Python format string"><input aria-label="Indicator format" className="src-input" value={format} onChange={e => setFormat(e.target.value)} placeholder="{:,.0f}" /></ModalField>
       <ModalField label="Compare to" hint="Optional. Set 'baseline' to compute delta + percent change from the baseline period.">
-        <select className="src-input" value={compareTo} onChange={e => setCompareTo(e.target.value)}>
+        <select aria-label="Indicator compare to" className="src-input" value={compareTo} onChange={e => setCompareTo(e.target.value)}>
           <option value="">(no comparison)</option>
           <option value="baseline">Baseline</option>
         </select>
@@ -1508,7 +1637,7 @@ function IndicatorModal({ initial, columns = [], onClose, onSave }) {
         <FrameworkPicker value={frameworkRef} onChange={v => setFrameworkRef(v || '')} />
       </ModalField>
       <ModalField label="Disaggregate by" hint="Optional. Computes the stat per group; adds {{ ind_<name>_breakdown }} + {{ ind_<name>_table }}.">
-        <ColumnPicker value={disagg} onChange={setDisagg} options={columns} placeholder="Region, Sex" />
+        <ColumnPicker ariaLabel="Disaggregate by" value={disagg} onChange={setDisagg} options={columns} placeholder="Region, Sex" />
       </ModalField>
       <ModalField label="Primary" hint="Optional. Marks this as the framework node's headline indicator — drives the node's achievement % in the logframe.">
         <label className="run-opt" style={{ paddingTop: 6 }}>
@@ -1529,8 +1658,9 @@ function SummaryModal({ initial, columns = [], onClose, onSave }) {
   const [freq, setFreq]     = useState(initial?.freq || '');
   const [topN, setTopN]     = useState(initial?.top_n ?? '');
   const [err, setErr]       = useState('');
+  const fe = useFieldErrors();
   const submit = () => {
-    if (!name.trim()) return setErr('Name is required.');
+    if (!name.trim()) return fe.setError('name', 'Name is required.');
     const item = { name: name.trim(), stat };
     if (label.trim()) item.label = label.trim();
     const qs = fromCsv(cols); if (qs.length) item.questions = qs;
@@ -1542,15 +1672,15 @@ function SummaryModal({ initial, columns = [], onClose, onSave }) {
   return (
     <Modal title={initial ? `Edit summary: ${initial.name}` : 'Add summary'} onClose={onClose} onSave={submit} width={560}>
       <ModalError>{err}</ModalError>
-      <ModalField label="Name"><input className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
-      <ModalField label="Label"><input className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
-      <ModalField label="Stat"><select className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{SUMMARY_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
-      <ModalField label="Columns"><ColumnPicker value={cols} onChange={setCols} options={columns} /></ModalField>
-      {(stat === 'distribution' || stat === 'crosstab') && <ModalField label="Top N"><input className="src-input" type="number" value={topN} onChange={e => setTopN(e.target.value)} /></ModalField>}
+      <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label="Summary name" className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} /></ModalField>
+      <ModalField label="Label"><input aria-label="Summary label" className="src-input" value={label} onChange={e => setLabel(e.target.value)} /></ModalField>
+      <ModalField label="Stat"><select aria-label="Summary stat" className="src-input" value={stat} onChange={e => setStat(e.target.value)}>{SUMMARY_STATS.map(s => <option key={s} value={s}>{s}</option>)}</select></ModalField>
+      <ModalField label="Columns"><ColumnPicker ariaLabel="Summary columns" value={cols} onChange={setCols} options={columns} /></ModalField>
+      {(stat === 'distribution' || stat === 'crosstab') && <ModalField label="Top N"><input aria-label="Summary top N" className="src-input" type="number" value={topN} onChange={e => setTopN(e.target.value)} /></ModalField>}
       {stat === 'trend' && (
-        <ModalField label="Frequency"><select className="src-input" value={freq} onChange={e => setFreq(e.target.value)}>{['', 'day', 'week', 'month', 'year'].map(f => <option key={f} value={f}>{f || '—'}</option>)}</select></ModalField>
+        <ModalField label="Frequency"><select aria-label="Summary frequency" className="src-input" value={freq} onChange={e => setFreq(e.target.value)}>{['', 'day', 'week', 'month', 'year'].map(f => <option key={f} value={f}>{f || '—'}</option>)}</select></ModalField>
       )}
-      {stat === 'ai' && <ModalField label="Prompt"><textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={4} className="src-input" style={{ height: 'auto', padding: 10 }} /></ModalField>}
+      {stat === 'ai' && <ModalField label="Prompt"><textarea aria-label="Summary prompt" value={prompt} onChange={e => setPrompt(e.target.value)} rows={4} className="src-input" style={{ height: 'auto', padding: 10 }} /></ModalField>}
     </Modal>
   );
 }
@@ -1561,8 +1691,9 @@ function TableModal({ initial, columns = [], onClose, onSave }) {
   const [title, setTitle] = useState(initial?.title || '');
   const [cols, setCols]   = useState(csv(initial?.questions || []));
   const [err, setErr]     = useState('');
+  const fe = useFieldErrors();
   const submit = () => {
-    if (!name.trim()) return setErr('Name is required.');
+    if (!name.trim()) return fe.setError('name', 'Name is required.');
     const item = { name: name.trim(), title: title.trim(), type: 'table', questions: fromCsv(cols) };
     if (initial?.options) item.options = initial.options;
     if (initial?.source) item.source = initial.source;
@@ -1573,9 +1704,9 @@ function TableModal({ initial, columns = [], onClose, onSave }) {
   return (
     <Modal title={initial ? `Edit table: ${initial.name}` : 'Add table'} onClose={onClose} onSave={submit} width={560}>
       <ModalError>{err}</ModalError>
-      <ModalField label="Name" hint="Used as {{ table_<name> }} in the template"><input className="src-input" value={name} onChange={e => setName(e.target.value)} /></ModalField>
-      <ModalField label="Title"><input className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
-      <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name."><ColumnPicker value={cols} onChange={setCols} options={columns} /></ModalField>
+      <ModalField label="Name" hint="Used as {{ table_<name> }} in the template" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label="Table name" className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} /></ModalField>
+      <ModalField label="Title"><input aria-label="Table title" className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
+      <ModalField label="Columns" hint="Pick from your questions — type to search; press Enter to add a custom name."><ColumnPicker ariaLabel="Table columns" value={cols} onChange={setCols} options={columns} /></ModalField>
     </Modal>
   );
 }
@@ -1592,6 +1723,7 @@ function ViewModal({ initial, onClose, onSave }) {
   const [question, setQuestion]       = useState(initial?.question || '');
   const [agg, setAgg]                 = useState(initial?.agg || 'sum');
   const [err, setErr]                 = useState('');
+  const fe = useFieldErrors();
 
   // Table catalog from the latest download → powers the source/column dropdowns.
   const [tables, setTables] = useState([]);
@@ -1643,8 +1775,10 @@ function ViewModal({ initial, onClose, onSave }) {
 
   const filterErr = validateFilterExpr(filter);
   const submit = () => {
-    if (!name.trim() || !source.trim()) return setErr('Name and source are required.');
-    if (filterErr) return setErr(`Filter: ${filterErr}`);
+    fe.clearAll();
+    if (!name.trim()) { fe.setError('name', 'Name is required.'); return; }
+    if (!source.trim()) { fe.setError('source', 'Source is required.'); return; }
+    if (filterErr) { fe.setError('filter', filterErr); return; }
     const item = { name: name.trim(), source: source.trim() };
     const jp = fromCsv(joinParent); if (jp.length) item.join_parent = jp;
     if (filter.trim()) item.filter = filter.trim();
@@ -1668,7 +1802,7 @@ function ViewModal({ initial, onClose, onSave }) {
           ✨ Describe the view <span style={{ fontWeight: 400, color: 'var(--ink-3)' }}>— let AI fill the form below</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input className="src-input" style={{ flex: 1 }} value={describeText}
+          <input aria-label="Describe the view" className="src-input" style={{ flex: 1 }} value={describeText}
                  onChange={e => setDescribeText(e.target.value)}
                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (aiReady && !describing && describeText.trim()) build(); } }}
                  disabled={!aiReady || describing}
@@ -1680,22 +1814,26 @@ function ViewModal({ initial, onClose, onSave }) {
         {describing && <div style={{ marginTop: 8 }}><AiThinking messages={['Reading your description…', 'Matching tables & columns…', 'Composing the view…']} /></div>}
       </div>
 
-      <ModalField label="Name"><input className="src-input" value={name} onChange={e => setName(e.target.value)} placeholder="villages_with_dept" /></ModalField>
-      <ModalField label="Source table" hint="Which base table this view draws from">
-        <ColumnPicker value={source} onChange={setSource} options={tableNames} multi={false} placeholder="main, or a repeat table…" />
+      <ModalField label="Name" error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label="View name" className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="villages_with_dept" /></ModalField>
+      <ModalField label="Source table" hint="Which base table this view draws from" error={fe.errorFor('source')} errorId={fe.errorId('source')}>
+        <ColumnPicker ariaLabel="View source table" value={source} onChange={(v) => { setSource(v); if ((v || '').trim()) fe.clearError('source'); }} options={tableNames} multi={false} placeholder="main, or a repeat table…" />
       </ModalField>
       {parentName && (
         <ModalField label="Join from parent" hint={`Columns to bring down from "${parentName}"`}>
-          <ColumnPicker value={joinParent} onChange={setJoinParent} options={parentCols} placeholder="Search parent columns…" />
+          <ColumnPicker ariaLabel="Join from parent" value={joinParent} onChange={setJoinParent} options={parentCols} placeholder="Search parent columns…" />
         </ModalField>
       )}
       <ModalField label="Columns" hint="Which columns to keep — leave blank for all">
-        <ColumnPicker value={columns} onChange={setColumns} options={sourceCols} placeholder="Search columns…" />
+        <ColumnPicker ariaLabel="View columns" value={columns} onChange={setColumns} options={sourceCols} placeholder="Search columns…" />
       </ModalField>
-      <ModalField label="Filter" hint="pandas query syntax, e.g. Age > 18 and Region == 'North'">
-        <input className="src-input" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Age > 18 and Region == 'North'"
-               style={filterErr ? { borderColor: 'var(--rose)' } : undefined} />
-        {filterErr && <div style={{ color: 'var(--rose)', fontSize: 11.5, marginTop: 4 }}>{filterErr}</div>}
+      <ModalField label="Filter" hint="pandas query syntax, e.g. Age > 18 and Region == 'North'"
+                  error={filterErr || fe.errorFor('filter')} errorId={fe.errorId('filter')}>
+        <input aria-label="View filter" className="src-input" value={filter}
+               aria-invalid={(filterErr || fe.errorFor('filter')) ? 'true' : 'false'}
+               aria-describedby={(filterErr || fe.errorFor('filter')) ? fe.errorId('filter') : undefined}
+               onChange={e => { setFilter(e.target.value); fe.clearError('filter'); }}
+               placeholder="Age > 18 and Region == 'North'"
+               style={(filterErr || fe.errorFor('filter')) ? { borderColor: 'var(--rose)' } : undefined} />
       </ModalField>
       <ModalField label="Aggregate">
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
@@ -1711,7 +1849,7 @@ function ViewModal({ initial, onClose, onSave }) {
           <ModalField label="Aggregate column">
             <ColumnPicker value={question} onChange={setQuestion} options={sourceCols} multi={false} placeholder="Numeric column to aggregate…" />
           </ModalField>
-          <ModalField label="Function"><select className="src-input" value={agg} onChange={e => setAgg(e.target.value)}>{['sum', 'mean', 'count', 'max', 'min'].map(a => <option key={a} value={a}>{a}</option>)}</select></ModalField>
+          <ModalField label="Function"><select aria-label="Aggregate function" className="src-input" value={agg} onChange={e => setAgg(e.target.value)}>{['sum', 'mean', 'count', 'max', 'min'].map(a => <option key={a} value={a}>{a}</option>)}</select></ModalField>
         </>
       )}
     </Modal>
@@ -1731,7 +1869,7 @@ function ModalError({ children }) {
 // Searchable column picker. `value` is a comma-separated string (multi) or a
 // single column name; `options` are known export labels. Free-text is allowed
 // (Enter adds the typed value) so repeat/derived columns still work.
-function ColumnPicker({ value, onChange, options = [], multi = true, placeholder }) {
+function ColumnPicker({ value, onChange, options = [], multi = true, placeholder, ariaLabel }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const wrapRef = useRef(null);
@@ -1769,6 +1907,7 @@ function ColumnPicker({ value, onChange, options = [], multi = true, placeholder
         ))}
         <input
           className="colpick__input"
+          aria-label={ariaLabel || placeholder || 'Search columns…'}
           value={multi ? query : (open ? query : (value || ''))}
           placeholder={selected.length ? '' : (placeholder || 'Search columns…')}
           onFocus={() => { setOpen(true); if (!multi) setQuery(value || ''); }}
@@ -1790,14 +1929,29 @@ function ColumnPicker({ value, onChange, options = [], multi = true, placeholder
   );
 }
 
-function ModalField({ label, hint, children }) {
+function ModalField({ label, hint, children, error, errorId }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 12, alignItems: 'start', padding: '8px 0', borderBottom: '1px dashed var(--border)' }}>
       <div style={{ fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 500, paddingTop: 6 }}>
         {label}
         {hint && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, marginTop: 4 }}>{hint}</div>}
       </div>
-      <div>{children}</div>
+      <div>
+        {children}
+        {error && <FieldError id={errorId}>{error}</FieldError>}
+      </div>
+    </div>
+  );
+}
+
+// Per-field validation message, programmatically linked to its input via a stable
+// `id` (the input's aria-describedby target). role="alert" so assistive tech
+// announces it the moment it appears.
+function FieldError({ id, children }) {
+  if (!children) return null;
+  return (
+    <div id={id} role="alert" style={{ color: 'var(--rose)', fontSize: 11.5, marginTop: 4 }}>
+      {children}
     </div>
   );
 }
@@ -1822,6 +1976,7 @@ function ColumnHeader({ column, renamed, onDrop, onRename }) {
         {editing ? (
           <input
             autoFocus
+            aria-label={`Rename column ${column.name}`}
             className="src-input"
             value={draft}
             onChange={e => setDraft(e.target.value)}

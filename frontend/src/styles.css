@@ -30,10 +30,15 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 .badge{background:rgba(255,255,255,.18);color:#fff;border-radius:4px;padding:2px 7px;font-size:10.5px;font-family:var(--font-mono);font-weight:500;border:0}
 .project-switcher{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px 0 10px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:8px;cursor:pointer;font-size:13px;color:#fff;margin-left:auto;transition:background .12s,border-color .12s}
 .project-switcher:hover{background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3)}
-.project-switcher__avatar{width:22px;height:22px;border-radius:5px;background:#fff;color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:11px}
+.project-switcher__avatar{width:22px;height:22px;border-radius:5px;background:#fff;color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:11px;line-height:1;overflow:hidden}
 .project-switcher__name{font-weight:600}
 .project-switcher__slug{font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,.75)}
 .project-switcher__chev{color:rgba(255,255,255,.75);font-size:10px}
+/* UX-9 — global "switching…" feedback: calm white-on-teal cue in the header */
+.project-switching{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px 0 10px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:999px;color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap}
+.project-switching__spinner{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;animation:db-spin .7s linear infinite;flex-shrink:0}
+.project-switching__label{letter-spacing:-.005em}
+@media (prefers-reduced-motion:reduce){.project-switching__spinner{animation:db-spin 1.4s linear infinite}}
 .status-dot{width:8px;height:8px;border-radius:50%;background:var(--border-strong);transition:background .3s}
 .status-dot.running{background:var(--warm);animation:pulse 1s infinite}
 .status-dot.success{background:var(--green)}.status-dot.error{background:var(--rose)}
@@ -46,8 +51,9 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 @keyframes db-spin{to{transform:rotate(360deg)}}
 @keyframes ai-msg-in{from{opacity:.25}to{opacity:1}}
 .tabs-bar{background:var(--bg);border-bottom:1px solid var(--border);display:flex;padding:0 28px;gap:2px;flex-shrink:0}
-.tab{display:flex;align-items:center;gap:8px;padding:0 14px;height:48px;cursor:pointer;border-bottom:2px solid transparent;font-size:13.5px;font-weight:500;color:var(--ink-2);transition:color .12s;user-select:none;letter-spacing:-.005em}
+.tab{display:flex;align-items:center;gap:8px;padding:0 14px;height:48px;cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;font-family:inherit;font-size:13.5px;font-weight:500;color:var(--ink-2);transition:color .12s;user-select:none;letter-spacing:-.005em}
 .tab:hover{color:var(--ink)}.tab.active{color:var(--accent);font-weight:600;border-bottom-color:var(--accent)}
+.tab:focus-visible,.subtab:focus-visible,.pf-tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:3px}
 .tab__num{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-3);background:var(--bg-2);border-radius:4px;padding:1px 5px;font-weight:500;line-height:1.5}
 .tab.active .tab__num{color:var(--accent);background:var(--accent-soft)}
 .tab-content{display:none;overflow:hidden}.tab-content.active{display:flex;flex-direction:column;flex:1;min-height:0}
@@ -55,6 +61,29 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 .page-greeting em{font-style:normal;color:var(--accent)}
 .page-eyebrow{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
 .page-sub{color:var(--ink-2);font-size:14px;line-height:1.55;max-width:64ch;margin-bottom:0}
+/* ── Stage contextual help (PUX-4): quiet "? Help" affordance + inline hint + disclosure panel.
+   One Voice Rule — the toggle is neutral, never teal, so it never competes with the page's
+   real primary action. Flat-by-default — 1px border; the open panel earns a soft shadow only
+   because it reads as a revealed surface. */
+.stage-help{margin:10px 0 4px;display:flex;flex-direction:column;gap:8px}
+.stage-help__bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.stage-help__hint{display:inline-flex;align-items:center;gap:6px;color:var(--ink-3);font-size:12.5px;line-height:1.4}
+.stage-help__hint::before{content:"";flex-shrink:0;width:6px;height:6px;border-radius:50%;background:var(--border-strong)}
+.stage-help__toggle{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;height:26px;padding:0 10px;border:1px solid var(--border-2);border-radius:999px;background:var(--surface);color:var(--ink-3);font-family:var(--font-sans);font-size:12px;font-weight:600;letter-spacing:-.005em;cursor:pointer;transition:color .12s,border-color .12s,background .12s}
+.stage-help__toggle:hover{color:var(--ink);border-color:var(--border-strong);background:var(--bg-2)}
+.stage-help__toggle:focus-visible,.stage-help__toggle:focus{outline:2px solid var(--accent);outline-offset:2px}
+.stage-help__toggle[aria-expanded="true"]{color:var(--ink);border-color:var(--border-strong);background:var(--bg-2)}
+.stage-help__qmark{display:grid;place-items:center;width:15px;height:15px;border-radius:50%;border:1px solid currentColor;font-size:10px;font-weight:700;line-height:1}
+.stage-help__panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-md);padding:16px 18px;max-width:72ch}
+.stage-help__panel-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;letter-spacing:-.01em}
+.stage-help__body{color:var(--ink-2);font-size:13px;line-height:1.6}
+.stage-help__body p{margin:0 0 8px}
+.stage-help__body p:last-child{margin-bottom:0}
+.stage-help__body code{font-family:var(--font-mono);font-size:11.5px;background:var(--bg-2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--ink-2)}
+.stage-help__docs{display:inline-flex;align-items:center;margin-top:12px;color:var(--accent);font-size:12.5px;font-weight:600;text-decoration:none}
+.stage-help__docs:hover{text-decoration:underline}
+.stage-help__docs:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.stage-help__docs-ext{font-family:var(--font-mono);font-size:11px}
 /* Shared page header (eyebrow + title + sub, with an optional right-aligned actions slot) */
 .page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
 .page-header__text{flex:1;min-width:0}
@@ -196,8 +225,9 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 /* ─────────── Bottom-sticky terminal ─────────── */
 .bottom-term{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--slate-dark);color:#E6EAF2;border-top:1px solid var(--slate-dark-2);box-shadow:0 -10px 30px rgba(0,0,0,.18);display:flex;flex-direction:column;transition:max-height .25s ease;max-height:42px;overflow:hidden}
 .bottom-term[data-open="true"]{max-height:50vh}
-.bottom-term__bar{height:42px;flex-shrink:0;padding:0 16px;display:flex;align-items:center;gap:14px;cursor:pointer;font-family:var(--font-mono);font-size:12px;color:#9aa6bb;user-select:none;background:var(--slate-dark)}
-.bottom-term__bar:hover{color:#d6dde9}
+.bottom-term__bar{height:42px;flex-shrink:0;padding:0 16px;display:flex;align-items:center;gap:14px;font-family:var(--font-mono);font-size:12px;color:#9aa6bb;user-select:none;background:var(--slate-dark)}
+.bottom-term__bar-toggle{flex:1;min-width:0;height:100%;display:flex;align-items:center;gap:14px;background:transparent;border:0;padding:0;margin:0;cursor:pointer;font-family:inherit;font-size:inherit;color:inherit;text-align:left}
+.bottom-term__bar-toggle:hover{color:#d6dde9}
 .bottom-term__bar .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(22,163,74,.25);flex-shrink:0}
 .bottom-term__bar-title{color:#d6dde9;font-weight:600;letter-spacing:-.005em}
 .bottom-term__bar-sep{color:#5a6473}
@@ -259,6 +289,7 @@ header h1{font-size:17px;font-weight:700;letter-spacing:-.02em;color:#fff;font-f
 /* Two-column field grid: 160px label / value */
 .src-field{display:grid;grid-template-columns:160px 1fr;gap:18px;align-items:start;padding:10px 0;border-bottom:1px dashed var(--border)}
 .src-field:last-child{border-bottom:0}
+.src-field--sample{margin-top:8px;padding-top:18px;border-top:1px solid var(--border)}
 .src-field__label{font-size:13px;font-weight:600;color:var(--ink);padding-top:8px}
 .src-field__hint{font-size:11.5px;color:var(--ink-3);margin-top:4px;font-weight:400;line-height:1.45}
 .src-field__hint code{font-family:var(--font-mono);font-size:11px;background:var(--bg-2);padding:1px 5px;border-radius:4px}
@@ -270,7 +301,7 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 
 /* Platform picker — 2 visual cards */
 .platform-pick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.platform-card{position:relative;display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--border-2);border-radius:10px;background:var(--surface);cursor:pointer;transition:border-color .12s,background .12s,box-shadow .12s}
+.platform-card{appearance:none;-webkit-appearance:none;font:inherit;text-align:left;width:100%;margin:0;position:relative;display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--border-2);border-radius:10px;background:var(--surface);cursor:pointer;transition:border-color .12s,background .12s,box-shadow .12s}
 .platform-card:hover{border-color:var(--border-strong)}
 .platform-card[data-selected="true"]{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 3px rgba(37,99,235,.10)}
 .platform-card__logo{width:36px;height:36px;display:grid;place-items:center;border-radius:8px;background:var(--bg-2);color:var(--ink);font-weight:800;font-size:14px;flex-shrink:0}
@@ -409,7 +440,7 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 
 /* ── Secondary sub-tab strip (stages with >1 page) ──────────────────────── */
 .subtabs-bar{background:var(--bg-2);border-bottom:1px solid var(--border);display:flex;padding:0 28px;gap:4px;flex-shrink:0}
-.subtab{display:flex;align-items:center;padding:0 12px;height:38px;cursor:pointer;border-bottom:2px solid transparent;font-size:12.5px;font-weight:500;color:var(--ink-3);transition:color .12s;user-select:none}
+.subtab{display:flex;align-items:center;padding:0 12px;height:38px;cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;font-family:inherit;font-size:12.5px;font-weight:500;color:var(--ink-3);transition:color .12s;user-select:none}
 .subtab:hover{color:var(--ink-2)}
 .subtab.active{color:var(--accent);font-weight:600;border-bottom-color:var(--accent)}
 
@@ -423,9 +454,11 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .home-cards{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
 @media(max-width:1100px){.home-cards{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:640px){.home-cards{grid-template-columns:1fr}}
-.home-card{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:8px;cursor:pointer;box-shadow:var(--shadow-sm);transition:border-color .12s,box-shadow .12s,transform .12s}
-.home-card:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-2px)}
-.home-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.home-card-wrap{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow-sm);transition:border-color .12s,box-shadow .12s,transform .12s}
+.home-card-wrap:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-2px)}
+.home-card-wrap:focus-within{border-color:var(--accent)}
+.home-card{appearance:none;-webkit-appearance:none;width:100%;margin:0;padding:0;border:0;background:transparent;font:inherit;color:inherit;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:8px;flex:1}
+.home-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
 .home-card__top{display:flex;align-items:center;justify-content:space-between}
 .home-card__step{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);letter-spacing:.05em}
 .home-card__icon{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;color:#fff}
@@ -442,6 +475,21 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .home-card__sub:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .home-card__arrow{display:none}
 @media(min-width:1101px){.home-card__arrow{display:block;position:absolute;right:-11px;top:50%;transform:translateY(-50%);color:var(--border-strong,var(--ink-3));font-size:14px;z-index:1}}
+
+/* First-run / empty-state onboarding (PUX-2): one recommended next action +
+   de-emphasized not-yet-actionable stages. The banner spans the full grid. */
+.home-firstrun{grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:14px;padding:16px 18px;margin-bottom:4px}
+.home-firstrun__lead{font-size:13.5px;color:var(--accent-ink);line-height:1.45;max-width:62ch}
+.home-cta--primary{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;gap:2px;background:var(--accent);color:#fff;border:1px solid var(--accent);border-radius:9px;padding:10px 18px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-sm);transition:background .12s,border-color .12s;white-space:nowrap}
+.home-cta--primary:hover{background:var(--accent-2);border-color:var(--accent-2)}
+.home-cta--primary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* De-emphasized stage cards: visibly secondary but still real, reachable buttons. */
+.home-card-wrap.is-dimmed{opacity:.55;box-shadow:none}
+.home-card-wrap.is-dimmed:hover{opacity:.85;border-color:var(--border-strong,var(--ink-3));box-shadow:var(--shadow-sm);transform:none}
+/* Keyboard focus un-dims the WRAP to full opacity so the teal :focus-visible ring on
+   the inner card renders at full strength (WCAG 2.4.7). Opacity on the wrap is an
+   opacity group, so the restore must live here, not on the inner button. */
+.home-card-wrap.is-dimmed:focus-within{opacity:1}
 
 /* table */
 .q-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
@@ -509,6 +557,26 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .comp-card__sub code{font-family:var(--font-mono);font-size:11.5px;background:var(--bg-2);padding:1px 5px;border-radius:4px;color:var(--ink-2)}
 .comp-card__head-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}
 .comp-card__body{padding:6px 0}
+
+/* PUX-3 — recommended starter path: clear, low-effort scaffolding at the top of
+   the Composition surface. Flat by default; the teal primary keeps the One Voice
+   Rule (Ask is the recommended action). */
+.starter-path{display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px 24px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r-lg);padding:16px 20px;box-shadow:var(--shadow-sm)}
+.starter-path__intro{flex:1;min-width:220px}
+.starter-path__title{font-size:14px;font-weight:700;letter-spacing:-.01em;color:var(--ink);line-height:1.25}
+.starter-path__sub{font-size:12.5px;color:var(--ink-3);margin-top:4px;line-height:1.5;max-width:54ch}
+.starter-path__actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+/* PUX-3 — Advanced progressive disclosure for tables + summaries. */
+.comp-advanced{display:flex;flex-direction:column;gap:16px}
+.comp-advanced__toggle{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;padding:8px 12px;background:transparent;border:1px solid var(--border-2);border-radius:8px;font-family:var(--font-sans);font-size:13px;font-weight:600;color:var(--ink-2);cursor:pointer;transition:background .12s,border-color .12s,color .12s}
+.comp-advanced__toggle:hover{background:var(--bg-2);color:var(--ink)}
+.comp-advanced__toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.comp-advanced__chevron{color:var(--ink-3);transition:transform .15s ease}
+.comp-advanced__toggle[aria-expanded="true"] .comp-advanced__chevron{transform:rotate(90deg)}
+.comp-advanced__hint{font-weight:400;font-size:12px;color:var(--ink-3)}
+.comp-advanced__region{display:flex;flex-direction:column;gap:16px}
+.comp-advanced__region[hidden]{display:none}
 
 /* Row inside a comp card */
 .comp-row{display:grid;grid-template-columns:32px 1fr auto;gap:14px;align-items:start;padding:11px 20px;border-bottom:1px solid var(--border)}
@@ -679,8 +747,15 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .project-menu__item { padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
   display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink, #0B1220); }
 .project-menu__item:hover { background: var(--bg-2, #f3f4f6); }
+/* Keyboard focus ring on the menu rows — teal accent, inset so it stays inside
+   the rounded dropdown (the header :focus-visible override is white, which would
+   vanish on this light surface). */
+.project-menu__item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
 .project-menu__item.active { font-weight: 600; background: var(--accent-soft, #E0F2FE); }
-.project-menu__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-menu__avatar { flex-shrink: 0; width: 22px; height: 22px; border-radius: 5px;
+  background: var(--bg-2, #f3f4f6); color: var(--ink-2, #475569);
+  display: grid; place-items: center; font-weight: 700; font-size: 11px; line-height: 1; overflow: hidden; }
+.project-menu__label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-menu__right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .project-menu__role { font-size: 11px; color: var(--muted, #6B7686); text-transform: uppercase; letter-spacing: .03em; }
 .project-menu__gear { border: 0; background: transparent; cursor: pointer; font-size: 13px;
@@ -688,7 +763,22 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .project-menu__gear:hover { background: var(--border, #e5e7eb); color: var(--ink, #0B1220); }
 .project-menu__grouplabel { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
   color: var(--muted, #6B7686); padding: 4px 10px 2px; }
+/* Archived rows are NOT switchable: they read as inert (default cursor, no
+   active-row hover highlight) and are dimmed so they clearly sit below the
+   active group. Unarchive is the only interactive element. */
+.project-menu__archived { cursor: default; opacity: .72; }
+.project-menu__archived:hover { background: transparent; }
 .project-menu__archived .project-menu__label { color: var(--ink-3, #5A6473); }
+/* Quiet, neutral row action — deliberately NOT the teal accent (One Voice Rule:
+   teal stays the single action color; the active-project highlight is the one
+   accent in this menu). A bordered ghost button keeps Unarchive obviously
+   clickable without competing for attention. */
+.project-menu__unarchive { border: 1px solid var(--border, #e5e7eb); background: transparent;
+  cursor: pointer; font-size: 11px; line-height: 1; color: var(--ink-2, #475569);
+  padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
+.project-menu__unarchive:hover { background: var(--bg-2, #f3f4f6); color: var(--ink, #0B1220);
+  border-color: var(--ink-3, #5A6473); }
+.project-menu__unarchive:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .project-menu__sep { height: 1px; background: var(--border, #e5e7eb); margin: 4px 0; }
 .project-menu__add { color: var(--accent, #2563eb); font-weight: 600; }
 .members-table th { font-weight: 600; }
@@ -861,6 +951,10 @@ header :focus-visible, .btn-primary:focus-visible { outline-color: #fff; }
 .pf-panel select:focus {
   border-color: var(--accent, #2563eb); box-shadow: 0 0 0 3px var(--accent-soft, #E0F2FE); }
 .profile-field input:disabled { background: var(--bg-2, #f3f4f6); color: var(--muted, #6B7686); }
+.profile-field input[aria-invalid="true"] { border-color: var(--rose, #DC2626); }
+.profile-field input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px var(--rose-soft, #FEE2E2); }
+.pf-field-error { color: var(--rose, #DC2626); font-size: 11.5px; margin-top: 6px; }
+.pf-field-hint { color: var(--muted, #6B7686); font-size: 11.5px; margin-top: 6px; line-height: 1.4; }
 .profile-field select, .pf-panel select {
   appearance: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16' fill='none' stroke='%236B7178' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='4 6 8 10 12 6'/></svg>");
   background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }

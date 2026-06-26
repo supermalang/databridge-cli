@@ -23,6 +23,30 @@ class StaleConfigError(Exception):
 ROLE_RANK = {"viewer": 1, "editor": 2, "admin": 3, "superadmin": 4}
 ASSIGNABLE_ROLES = ("viewer", "editor", "admin")
 
+# Supported interface languages (I18N-1). English is the default; French is the
+# only other selectable language.
+SUPPORTED_LANGUAGES = ("en", "fr")
+DEFAULT_LANGUAGE = "en"
+
+
+def get_user_language(user: User) -> str:
+    """The user's interface-language preference, defaulting to English when unset."""
+    lang = getattr(user, "language", None)
+    return lang if lang in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+
+
+def set_user_language(db: Session, user: User, language: str) -> User:
+    """Persist the authenticated caller's interface-language preference.
+
+    Writes ONLY the passed user's row. `language` must be one of
+    SUPPORTED_LANGUAGES — callers validate before reaching here."""
+    if language not in SUPPORTED_LANGUAGES:
+        raise ValueError(f"unsupported language: {language}")
+    user.language = language
+    db.commit()
+    db.refresh(user)
+    return user
+
 
 def role_for(db: Session, user: User, project: Project) -> Optional[str]:
     """The caller's effective role on a project, or None if no access.
@@ -233,7 +257,15 @@ def list_members(db: Session, project: Project) -> List[dict]:
     ).all()
     out = []
     for pm, u in rows:
-        out.append({"user_id": str(u.id), "email": u.email, "name": u.name,
+        email = (u.email or "").strip()
+        name = (u.name or "").strip()
+        # Guarantee a human-readable identifier server-side (UX-5): the panel must
+        # never fall back to the raw user_id UUID. Prefer email, then name; if BOTH
+        # are genuinely empty, surface a graceful non-UUID label rather than the
+        # internal id (a member who hasn't completed sign-in yet has neither set).
+        if not (email or name):
+            name = "Pending member"
+        out.append({"user_id": str(u.id), "email": email, "name": name,
                     "role": pm.role, "is_owner": project.owner_id == u.id,
                     "is_superadmin": bool(u.is_superadmin)})
     return out

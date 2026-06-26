@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import yaml from 'js-yaml';
 import Home from './pages/Home.jsx';
 import Sources from './pages/Sources.jsx';
@@ -17,11 +18,13 @@ import ProfileForm from './pages/ProfileForm.jsx';
 import { useToast } from './components/Toast.jsx';
 import { useCommand } from './hooks/useCommand.js';
 import { fetchMe } from './lib/auth.js';
-import { listProjects, activateProject } from './lib/projects.js';
+import { listProjects, activateProject, archiveProject } from './lib/projects.js';
 import { PermsProvider } from './lib/perms.js';
 import { RunProvider } from './lib/run.js';
 import { DirtyProvider } from './lib/dirty.js';
 import { AiStatusProvider } from './lib/aiStatus.js';
+import { tabProps, panelProps, panelId, makeTabKeydown } from './lib/tabs.js';
+import { setLanguage } from './lib/i18n.js';
 
 // Human-friendly verbs for the active run alert. Falls back to a generic phrasing.
 const RUN_LABELS = {
@@ -32,6 +35,23 @@ const RUN_LABELS = {
   'generate-template': 'Generating template…',
 };
 const runLabel = (cmd) => RUN_LABELS[cmd] || (cmd ? `Running ${cmd}…` : 'Running…');
+
+// Project identity swatch (avatar) styling. The color is user-chosen IDENTITY, not
+// an action color (One Voice Rule: it never competes with teal CTAs). Pick legible
+// text (white vs ink) per-color by WCAG relative luminance so even a light project
+// color keeps the emoji / two-letter fallback readable (AA target).
+const _srgb = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+const swatchTextColor = (hex) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
+  if (!m) return undefined;
+  const n = parseInt(m[1], 16);
+  const L = 0.2126 * _srgb((n >> 16) & 255) + 0.7152 * _srgb((n >> 8) & 255) + 0.0722 * _srgb(n & 255);
+  // Contrast of white (L=1) vs ink (#0B1220, L≈0.0086) against this bg; pick the higher.
+  const cWhite = 1.05 / (L + 0.05);
+  const cInk = (L + 0.05) / (0.0086 + 0.05);
+  return cWhite >= cInk ? '#fff' : '#0B1220';
+};
+const swatchStyle = (color) => (color ? { background: color, color: swatchTextColor(color) } : undefined);
 
 // How long the terminal stays open at the start of a run before auto-collapsing
 // to its bar (the run keeps going). Overridable via window.__TERM_COLLAPSE_MS so
@@ -48,25 +68,28 @@ const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'pii'];
 
 // The workflow: Home + five ordered stages. Stages with >1 sub render a
 // secondary sub-tab strip; single-sub stages navigate straight to their page.
+// `labelKey` resolves through the i18n bundles (I18N-1) so the primary nav tab
+// labels switch language live; `label` is the English fallback kept for
+// non-localized uses (aria-labels, sub-tab strips — I18N-2 widens coverage).
 const STAGES = [
-  { id: 'home', label: 'Home', home: true },
-  { id: 'extract', label: 'Extract', subs: [
+  { id: 'home', label: 'Home', labelKey: 'nav.home', home: true },
+  { id: 'extract', label: 'Extract', labelKey: 'nav.extract', subs: [
     { id: 'connection', label: 'Connection',       render: () => <Sources section="setup" /> },
     { id: 'ai',         label: 'AI configuration',  render: () => <Sources section="ai" /> },
   ] },
-  { id: 'transform', label: 'Transform', subs: [
+  { id: 'transform', label: 'Transform', labelKey: 'nav.transform', subs: [
     { id: 'questions', label: 'Questions', render: () => <Questions /> },
     { id: 'profile',   label: 'Profile',   render: () => <Profile /> },
     { id: 'validate',  label: 'Validate',  render: () => <Validate /> },
   ] },
-  { id: 'model', label: 'Model', subs: [
+  { id: 'model', label: 'Model', labelKey: 'nav.model', subs: [
     { id: 'views', label: 'Views', render: () => <Composition sections={VIEWS_SECTIONS} /> },
   ] },
-  { id: 'analyze', label: 'Analyze', subs: [
+  { id: 'analyze', label: 'Analyze', labelKey: 'nav.analyze', subs: [
     { id: 'ask',         label: 'Ask',                  render: () => <Ask /> },
     { id: 'composition', label: 'Charts & indicators', render: () => <Composition sections={ANALYZE_SECTIONS} /> },
   ] },
-  { id: 'present', label: 'Deliver', subs: [
+  { id: 'present', label: 'Deliver', labelKey: 'nav.deliver', subs: [
     { id: 'output',    label: 'Output',    render: () => <Sources section="output" /> },
     { id: 'templates', label: 'Templates', render: () => <Templates /> },
     { id: 'reports',   label: 'Reports',   render: () => <Reports /> },
@@ -92,6 +115,7 @@ function ActivePeriodChip() {
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const [stageId, setStageId] = useState('home');
   const [subId, setSubId] = useState(null);
 
@@ -143,7 +167,14 @@ export default function App() {
   };
   const [formAlias, setFormAlias] = useState('');
   const [me, setMe] = useState(null);
-  useEffect(() => { fetchMe().then(setMe); }, []);
+  useEffect(() => {
+    fetchMe().then((u) => {
+      setMe(u);
+      // Apply the user's saved interface language on load (re-applied on every
+      // reload + relogin since it comes from the server). Defaults to English.
+      if (u) setLanguage(u.language);
+    });
+  }, []);
   // Clear any pending auto-collapse timer on unmount.
   useEffect(() => () => clearCollapseTimer(), []);
 
@@ -151,6 +182,8 @@ export default function App() {
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [projMenuOpen, setProjMenuOpen] = useState(false);
+  const projSwitcherRef = useRef(null);   // trigger — focus returns here on Escape (mirrors Modal)
+  const projMenuRef = useRef(null);        // dropdown — ArrowDown moves roving focus into here
   const [projectForm, setProjectForm] = useState(null);     // 'create' | project object | null
   const [projectFormTab, setProjectFormTab] = useState('details');   // initial tab for the form
   const [profileOpen, setProfileOpen] = useState(false);    // user profile page overlay
@@ -175,18 +208,75 @@ export default function App() {
   // Project switch remounts the keep-alive panes (via the epoch bump below),
   // which discards any in-progress edits — so confirm first if a page is dirty.
   const dirtyRef = useRef(false);
+  // UX-9: a single "switching…" indicator covers the activate + hydrate window.
+  // `switching` drives the visible/live-region cue; `switchingRef` coalesces
+  // overlapping switches so exactly one indicator ever shows and it never gets
+  // stuck on — a second click while a switch is in flight is ignored.
+  const [switching, setSwitching] = useState(false);
+  const switchingRef = useRef(false);
   const switchProject = async (id) => {
     if (id === activeProjectId) { setProjMenuOpen(false); return; }
+    if (switchingRef.current) { setProjMenuOpen(false); return; }
     if (dirtyRef.current && !await confirm({
       title: 'Discard unsaved changes?',
       message: 'You have unsaved edits on the current page. Switching projects will discard them.',
       confirmLabel: 'Switch & discard',
     })) { setProjMenuOpen(false); return; }
     dirtyRef.current = false;
-    await activateProject(id);
-    setActiveProjectId(id);
-    setProjMenuOpen(false);
-    window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
+    switchingRef.current = true;
+    setSwitching(true);
+    try {
+      await activateProject(id);
+      setActiveProjectId(id);
+      setProjMenuOpen(false);
+      window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
+    } finally {
+      switchingRef.current = false;
+      setSwitching(false);
+    }
+  };
+
+  // Bring an archived project back to the active group. Archived rows are not
+  // switchable (no body onClick); Unarchive is their only action.
+  const unarchiveProject = async (id) => {
+    await archiveProject(id, false);
+    await refreshProjects();
+  };
+
+  // Escape closes the open project menu and returns focus to the trigger —
+  // mirrors the Modal.jsx Escape/focus contract. Document-level so it fires
+  // wherever focus sits inside the menu (rows are focusable but not modal).
+  useEffect(() => {
+    if (!projMenuOpen) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      setProjMenuOpen(false);
+      projSwitcherRef.current?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [projMenuOpen]);
+
+  // ArrowDown from the trigger opens the menu (if needed) and moves roving focus
+  // to the first menu item. Enter/Space open the menu (native <button> activation
+  // also fires onClick, so this only handles ArrowDown specially).
+  const onSwitcherKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setProjMenuOpen(true);
+      // Defer until the menu has rendered, then focus its first item.
+      requestAnimationFrame(() => {
+        projMenuRef.current?.querySelector('.project-menu__item')?.focus();
+      });
+    }
+  };
+
+  // Enter/Space on a focused project row activate it (matches the row onClick).
+  const onRowKeyDown = (id) => (e) => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault();
+      switchProject(id);
+    }
   };
   const nowTime = () => {
     const d = new Date();
@@ -288,6 +378,36 @@ export default function App() {
     })();
   }, []);
 
+  // Onboarding readiness (PUX-2): Home shows a first-run / empty state with a
+  // single recommended next action until the project has a connected form AND
+  // downloaded data. Reuse the existing /api/state readiness flags
+  // (has_questions / has_data) consumed elsewhere (Templates XTF-9). Re-fetch on
+  // a data change so the first-run state clears once prerequisites are met.
+  // null = readiness not yet resolved (avoids flashing either Home state before
+  // /api/state answers; Home holds its card render until this is known).
+  const [homeReady, setHomeReady] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    // Reset to unknown on project switch so the previous project's Home state
+    // never flashes during a switch — cards are held until the new /api/state
+    // resolves (PUX-6).
+    setHomeReady(null);
+    const load = async () => {
+      try {
+        const res = await fetch('/api/state');
+        // A non-OK response (4xx/5xx) must NOT coerce to ready=false — leave
+        // readiness unknown (null → cards held) so a returning user is never
+        // shown the first-run state on a transient/auth error (PUX-6).
+        if (!res.ok) return;
+        const s = await res.json();
+        if (alive) setHomeReady(!!(s.has_questions && s.has_data));
+      } catch { /* parse error / non-JSON → leave as-is (unknown, held) */ }
+    };
+    load();
+    window.addEventListener('databridge:data-changed', load);
+    return () => { alive = false; window.removeEventListener('databridge:data-changed', load); };
+  }, [activeProjectId]);
+
   const navigate = (nextStage, nextSub) => {
     const stage = STAGES.find(s => s.id === nextStage) || STAGES[0];
     setStageId(stage.id);
@@ -304,7 +424,7 @@ export default function App() {
 
   // Keep-alive panes: a tab mounts on first visit (lazy), then stays mounted but
   // hidden when you leave — so its fetched data, edits, and scroll are retained.
-  const panes = [{ key: 'home', render: () => <Home navigate={navigate} run={run} running={running} activeCmd={activeCmd} /> }];
+  const panes = [{ key: 'home', render: () => <Home navigate={navigate} ready={homeReady} run={run} running={running} activeCmd={activeCmd} /> }];
   for (const s of STAGES) {
     if (!s.subs) continue;
     for (const sub of s.subs) panes.push({ key: `${s.id}/${sub.id}`, render: sub.render });
@@ -380,9 +500,14 @@ export default function App() {
           <ActivePeriodChip />
           <div style={{ position: 'relative' }}>
             <button className="project-switcher" title="Switch project" type="button"
-                    onClick={() => setProjMenuOpen(o => !o)}>
-              <span className="project-switcher__avatar">
-                {(activeProject?.name || '?').slice(0, 2).toUpperCase()}
+                    ref={projSwitcherRef}
+                    aria-haspopup="menu"
+                    aria-expanded={projMenuOpen}
+                    onClick={() => setProjMenuOpen(o => !o)}
+                    onKeyDown={onSwitcherKeyDown}>
+              <span className="project-switcher__avatar"
+                    style={swatchStyle(activeProject?.color)}>
+                {activeProject?.icon || (activeProject?.name || '?').slice(0, 2).toUpperCase()}
               </span>
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
                 <span className="project-switcher__name">{activeProject?.name || 'No project'}</span>
@@ -391,11 +516,17 @@ export default function App() {
               <span className="project-switcher__chev">▾</span>
             </button>
             {projMenuOpen && (
-              <div className="project-menu">
+              <div className="project-menu" role="menu" ref={projMenuRef}>
                 {activeProjects.map(p => (
                   <div key={p.id}
                        className={`project-menu__item ${p.id === activeProjectId ? 'active' : ''}`}
-                       onClick={() => switchProject(p.id)}>
+                       role="menuitem" tabIndex={0}
+                       onClick={() => switchProject(p.id)}
+                       onKeyDown={onRowKeyDown(p.id)}>
+                    <span className="project-menu__avatar"
+                          style={swatchStyle(p.color)}>
+                      {p.icon || (p.name || '?').slice(0, 2).toUpperCase()}
+                    </span>
                     <span className="project-menu__label">{p.name}</span>
                     <span className="project-menu__right">
                       {p.role && <span className="project-menu__role">{p.role}</span>}
@@ -415,12 +546,21 @@ export default function App() {
                     {archivedProjects.map(p => (
                       <div key={p.id} className="project-menu__item project-menu__archived">
                         <span className="project-menu__label">{p.name}</span>
-                        {(p.role === 'admin' || p.role === 'superadmin' || isSuperadmin) && (
-                          <button className="project-menu__gear" title="Project settings"
-                                  onClick={(e) => { e.stopPropagation(); openProjectForm(p); }}>
-                            ⚙
+                        <span className="project-menu__right">
+                          <button className="project-menu__unarchive"
+                                  type="button"
+                                  data-testid="project-unarchive"
+                                  title="Restore this project to the active list"
+                                  onClick={(e) => { e.stopPropagation(); unarchiveProject(p.id); }}>
+                            Unarchive
                           </button>
-                        )}
+                          {(p.role === 'admin' || p.role === 'superadmin' || isSuperadmin) && (
+                            <button className="project-menu__gear" title="Project settings"
+                                    onClick={(e) => { e.stopPropagation(); openProjectForm(p); }}>
+                              ⚙
+                            </button>
+                          )}
+                        </span>
                       </div>
                     ))}
                   </>
@@ -428,17 +568,36 @@ export default function App() {
                 <div className="project-menu__sep" />
                 {activeProject && (
                   <div className="project-menu__item"
-                       onClick={() => openProjectForm(activeProject, 'members')}>
+                       role="menuitem" tabIndex={0}
+                       onClick={() => openProjectForm(activeProject, 'members')}
+                       onKeyDown={(e) => {
+                         if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+                           e.preventDefault(); openProjectForm(activeProject, 'members');
+                         }
+                       }}>
                     Manage members…
                   </div>
                 )}
                 <div className="project-menu__item project-menu__add"
-                     onClick={() => openProjectForm('create')}>
+                     role="menuitem" tabIndex={0}
+                     onClick={() => openProjectForm('create')}
+                     onKeyDown={(e) => {
+                       if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+                         e.preventDefault(); openProjectForm('create');
+                       }
+                     }}>
                   + New project
                 </div>
               </div>
             )}
           </div>
+          {switching && (
+            <div className="project-switching" data-testid="project-switching"
+                 role="status" aria-live="polite">
+              <span className="project-switching__spinner" aria-hidden="true" />
+              <span className="project-switching__label">Switching project…</span>
+            </div>
+          )}
           <button className="iconbtn" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('databridge:toggle-terminal'))}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 4 7 8 3 12"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
           </button>
@@ -447,29 +606,45 @@ export default function App() {
         </div>
       </header>
 
-      <nav className="tabs-bar">
+      <nav
+        className="tabs-bar"
+        role="tablist"
+        aria-label="Workflow stages"
+        data-tab-group="primary"
+        onKeyDown={makeTabKeydown('primary', STAGES.map(s => s.id), stageId, (id) => navigate(id))}
+      >
         {STAGES.map(s => (
-          <div
+          <button
             key={s.id}
+            type="button"
             className={`tab ${stageId === s.id ? 'active' : ''}`}
             data-tab={s.id}
+            {...tabProps('primary', s.id, stageId === s.id)}
             onClick={() => navigate(s.id)}
           >
-            {s.label}
-          </div>
+            {s.labelKey ? t(s.labelKey) : s.label}
+          </button>
         ))}
       </nav>
 
       {showSubBar && (
-        <nav className="subtabs-bar">
+        <nav
+          className="subtabs-bar"
+          role="tablist"
+          aria-label={`${stage.label} sections`}
+          data-tab-group="sub"
+          onKeyDown={makeTabKeydown('sub', subs.map(sub => sub.id), activeSub?.id, (id) => setSubId(id))}
+        >
           {subs.map(sub => (
-            <div
+            <button
               key={sub.id}
+              type="button"
               className={`subtab ${activeSub?.id === sub.id ? 'active' : ''}`}
+              {...tabProps('sub', sub.id, activeSub?.id === sub.id)}
               onClick={() => setSubId(sub.id)}
             >
               {sub.label}
-            </div>
+            </button>
           ))}
         </nav>
       )}
@@ -478,23 +653,37 @@ export default function App() {
         <RunProvider value={{ run, stop, running, activeCmd }}>
          <DirtyProvider value={dirtyRef}>
           <AiStatusProvider>
-            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
+            <main style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1, minHeight: 0 }}>
               {runAlert}
               {panes
                 .filter(p => visited.has(p.key) || p.key === activeKey)
-                .map(p => (
-                  <div
-                    key={`${p.key}@${activeProjectId ?? 'none'}#${keyEpoch[p.key] ?? epoch}`}
-                    className="tab-content"
-                    style={{
-                      flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
-                      display: p.key === activeKey ? 'flex' : 'none',
-                    }}
-                  >
-                    {p.render()}
-                  </div>
-                ))}
-            </div>
+                .map(p => {
+                  const isActive = p.key === activeKey;
+                  // The visible pane is the tabpanel controlled by the active
+                  // primary tab (aria-controls → panelId('primary', stageId));
+                  // when a sub-tab strip is shown it is ALSO the panel controlled
+                  // by the active sub tab, so it carries both id refs (primary id
+                  // on the wrapper, sub id on the inner content).
+                  const wrapperPanel = isActive ? panelProps('primary', stageId) : {};
+                  const subPanel = isActive && showSubBar ? panelProps('sub', activeSub?.id) : {};
+                  return (
+                    <div
+                      key={`${p.key}@${activeProjectId ?? 'none'}#${keyEpoch[p.key] ?? epoch}`}
+                      className="tab-content"
+                      {...wrapperPanel}
+                      tabIndex={isActive ? 0 : undefined}
+                      style={{
+                        flex: 1, minHeight: 0, overflow: 'auto', flexDirection: 'column',
+                        display: isActive ? 'flex' : 'none',
+                      }}
+                    >
+                      {showSubBar
+                        ? <div {...subPanel} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>{p.render()}</div>
+                        : p.render()}
+                    </div>
+                  );
+                })}
+            </main>
           </AiStatusProvider>
          </DirtyProvider>
         </RunProvider>

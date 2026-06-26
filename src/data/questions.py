@@ -17,7 +17,7 @@ SKIP_PREFIXES = ("_","meta/","formhub/","__")
 
 def fetch_and_write_questions(client, cfg: Dict, config_path: Path) -> None:
     platform = cfg.get("api", {}).get("platform", "kobo").lower()
-    log.info(f"Fetching schema for UID '{cfg['form']['uid']}' ({platform}) ...")
+    log.info(f"Fetching schema for UID '{client.form_uid}' ({platform}) ...")
     asset = client.get_form_schema()
     questions = _parse_schema(asset, platform)
     if not questions:
@@ -42,6 +42,56 @@ def fetch_and_write_questions(client, cfg: Dict, config_path: Path) -> None:
     log.info(f"Written {len(merged)} questions to config.yml:")
     for cat, count in sorted(by_cat.items()):
         log.info(f"  {cat:<15} {count} question(s)")
+    log.info("Next: edit config.yml, then run: python3 src/data/make.py download")
+
+
+def _merge_questions(new_questions: List[Dict], existing_questions: List[Dict]) -> List[Dict]:
+    """Merge freshly parsed questions with user edits from a prior fetch.
+
+    Preserves an edited ``category`` / ``export_label`` and an explicit
+    ``hidden`` choice, keyed by ``kobo_key`` — same rules as single-form.
+    """
+    existing = {q["kobo_key"]: q for q in existing_questions}
+    merged = []
+    for q in new_questions:
+        if q["kobo_key"] in existing:
+            prev = existing[q["kobo_key"]]
+            prev_cat = prev.get("category", q["category"])
+            q["category"] = prev_cat if prev_cat != "undefined" else q["category"]
+            q["export_label"] = prev.get("export_label", q["export_label"])
+            if "hidden" in prev:
+                q["hidden"] = prev["hidden"]
+        merged.append(q)
+    return merged
+
+
+def fetch_and_write_forms_questions(cfg: Dict, config_path: Path, client_factory) -> None:
+    """Multi-form fetch-questions: write a per-alias ``forms_questions`` mapping.
+
+    ``client_factory(form_uid)`` returns a client targeting that form's uid.
+    Each form's schema is parsed independently and the per-alias question list is
+    merged against any prior edits in ``cfg["forms_questions"][alias]``.
+    Single-form configs do NOT use this path (see ``fetch_and_write_questions``).
+    """
+    from src.data.extract import iter_forms
+
+    platform = cfg.get("api", {}).get("platform", "kobo").lower()
+    prior = cfg.get("forms_questions", {}) or {}
+    forms_questions: Dict[str, List[Dict]] = {}
+    for alias, uid in iter_forms(cfg):
+        log.info(f"Fetching schema for form '{alias}' (UID '{uid}', {platform}) ...")
+        client = client_factory(uid)
+        asset = client.get_form_schema()
+        questions = _parse_schema(asset, platform)
+        if not questions:
+            raise ValueError(
+                f"No questions found for form '{alias}' (UID '{uid}'). "
+                "Check the form UID and token permissions."
+            )
+        forms_questions[alias] = _merge_questions(questions, prior.get(alias, []))
+        log.info(f"  Form '{alias}': {len(forms_questions[alias])} question(s)")
+    cfg["forms_questions"] = forms_questions
+    write_config(cfg, config_path)
     log.info("Next: edit config.yml, then run: python3 src/data/make.py download")
 
 def _parse_schema(asset: Dict, platform: str = "kobo") -> List[Dict]:

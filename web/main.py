@@ -2,7 +2,7 @@ import asyncio, base64, io, json, os, shutil, sys, tempfile, zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, Dict, List, Literal, Optional
 
 import aiofiles, yaml
 from fastapi import FastAPI, HTTPException, UploadFile, Depends, Request
@@ -303,6 +303,10 @@ def unarchive_project_endpoint(project_id: str, request: Request,
 class ProfilePatchPayload(BaseModel):
     given_name: str = ""
     family_name: str = ""
+    # Interface-language preference (I18N-1). Optional: a name-only PATCH leaves it
+    # untouched. When present it must be one of the supported languages — any other
+    # value is a 422 validation error (rejected before reaching the DB).
+    language: Optional[Literal["en", "fr"]] = None
 
 
 @app.patch("/api/me")
@@ -313,20 +317,26 @@ def patch_me(payload: ProfilePatchPayload, request: Request,
         raise HTTPException(status_code=401, detail="Not authenticated")
     given = (payload.given_name or "").strip()
     family = (payload.family_name or "").strip()
-    full = " ".join(p for p in (given, family) if p) or user.name
-    user.name = full
+    # Only rename when name parts were actually supplied (a language-only PATCH
+    # must not blank the stored name).
+    if given or family:
+        user.name = " ".join(p for p in (given, family) if p) or user.name
+    # Persist the interface-language preference on the AUTHENTICATED caller's row.
+    if payload.language is not None:
+        db_repo.set_user_language(db, user, payload.language)
     db.commit()
     db.refresh(user)
     # Propagate to Zitadel when configured and this is a real Zitadel user.
     from web import zitadel_admin
     z_status = "skipped"
-    if zitadel_admin.enabled() and user.zitadel_sub and user.zitadel_sub != "dev-local":
+    if (given or family) and zitadel_admin.enabled() and user.zitadel_sub and user.zitadel_sub != "dev-local":
         try:
             zitadel_admin.update_human_user(user.zitadel_sub, given, family)
             z_status = "updated"
         except Exception as e:  # noqa: BLE001 — surface, don't fail the local save
             z_status = f"error: {e}"
-    return {"sub": user.zitadel_sub, "email": user.email, "name": user.name, "zitadel": z_status}
+    return {"sub": user.zitadel_sub, "email": user.email, "name": user.name,
+            "language": db_repo.get_user_language(user), "zitadel": z_status}
 
 
 @app.delete("/api/projects/{project_id}")
@@ -608,6 +618,74 @@ async def save_questions(payload: QuestionsPayload, request: Request):
         await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
     _sync_active_project_from_file(request)
     return {"ok": True, "saved": len(payload.questions)}
+
+
+# Bundled synthetic sample dataset (PUX-5): a fixed, in-repo asset so a new user
+# can try the tool end-to-end without a Kobo/Ona token or an AI key. The path is a
+# constant — never derived from request input — so there is no traversal surface.
+SAMPLE_DIR           = BASE_DIR / "src" / "data" / "sample"
+SAMPLE_QUESTIONS_PATH = SAMPLE_DIR / "questions.yml"
+SAMPLE_SUBMISSIONS_PATH = SAMPLE_DIR / "submissions.csv"
+
+
+@app.post("/api/sample-data")
+async def load_sample_data(request: Request):
+    """Load the bundled synthetic sample dataset into the caller's ACTIVE project
+    workspace so the downstream stages (Questions/Composition/Reports) have real
+    columns + rows — with NO Kobo/Ona token and NO AI key required.
+
+    Editor-gated and scoped to the active project (same gate as the other mutating
+    endpoints). The sample is fully synthetic / non-PII, so it passes the
+    fail-closed PII gate at build time without any consent/redact configuration.
+
+    Idempotent: it writes the sample questions into config.yml (replacing, not
+    appending) and the submissions into a single fixed-name file under
+    ``data/processed`` (overwritten, not multiplied), so a second POST leaves a
+    single coherent set."""
+    _require(request, "editor")
+
+    # Read the bundled asset from its fixed in-repo path (no request-derived paths).
+    if not SAMPLE_QUESTIONS_PATH.exists() or not SAMPLE_SUBMISSIONS_PATH.exists():
+        raise HTTPException(status_code=500, detail="Bundled sample dataset is missing")
+    sample_cfg = yaml.safe_load(SAMPLE_QUESTIONS_PATH.read_text(encoding="utf-8")) or {}
+    sample_questions = sample_cfg.get("questions") or []
+
+    # Merge the sample questions into the active project's config.yml (cwd-first
+    # mirror), preserving the rest of the user's config and NOT introducing any
+    # credentials. Replacing (not appending) keeps the set coherent + idempotent.
+    cfg = {}
+    if CONFIG_PATH.exists():
+        async with aiofiles.open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(await f.read()) or {}
+    cfg["questions"] = sample_questions
+    async with aiofiles.open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        await f.write(yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=False))
+    # Mirror config back into the DB (source of truth) so the next materialize
+    # doesn't discard the sample questions — same as the config-save path.
+    _sync_active_project_from_file(request)
+
+    # Materialize the submissions into data/processed under the name the downstream
+    # stages already read: ``{alias}_data.csv`` (load_processed_data globs
+    # ``{prefix}_data*.csv``). A fixed name (no timestamp) → a second POST
+    # overwrites rather than multiplying the data files.
+    # Sanitize the alias before using it in a filename: it comes from the
+    # editor-editable config.yml, so an unsanitized value (e.g. "../../etc/x")
+    # would escape DATA_DIR. slugify() reduces it to [a-z0-9_], same guard the
+    # SSE run path applies via sanitize_run_config. Defense-in-depth: confirm the
+    # resolved path stays inside DATA_DIR before writing.
+    from src.utils.periods import slugify
+    alias = slugify(str((cfg.get("form") or {}).get("alias") or "")) or "sample"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    dest = DATA_DIR / f"{alias}_data.csv"
+    if not dest.resolve().is_relative_to(DATA_DIR.resolve()):
+        raise HTTPException(status_code=400, detail="Invalid form alias")
+    async with aiofiles.open(SAMPLE_SUBMISSIONS_PATH, "r", encoding="utf-8") as src:
+        data = await src.read()
+    async with aiofiles.open(dest, "w", encoding="utf-8") as out:
+        await out.write(data)
+
+    return {"ok": True, "questions": len(sample_questions), "data_file": dest.name}
+
 
 @app.post("/api/questions/suggest-hidden")
 async def suggest_hidden_questions(request: Request):
@@ -1840,7 +1918,8 @@ async def stop_command():
     raise HTTPException(status_code=400, detail="Multiple runs active; specify a run_id (/api/stop/{run_id}).")
 
 @app.get("/api/state")
-async def get_state():
+async def get_state(request: Request):
+    _require_view(request)
     has_questions = False
     if CONFIG_PATH.exists():
         try:

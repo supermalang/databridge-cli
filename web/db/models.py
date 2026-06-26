@@ -25,6 +25,8 @@ class User(Base):
     active_project_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("projects.id", use_alter=True, name="fk_user_active_project"), nullable=True)
     is_superadmin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Per-user interface language preference (I18N-1). "en" (default) | "fr".
+    language: Mapped[str] = mapped_column(String(8), nullable=False, default="en", server_default="en")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 

@@ -1,4 +1,8 @@
 import { defineConfig } from '@playwright/test';
+// Installs `CSS.escape` in the Node test runtime (browser-only global, absent in
+// Node) so id-based locators using `CSS.escape(id)` work — React's useId() emits
+// ids with `:` that must be escaped. Loaded per worker via the config import.
+import './tests/e2e/css-escape-polyfill';
 
 /**
  * Visual / E2E harness (VIS-1).
