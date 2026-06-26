@@ -603,6 +603,16 @@ select.src-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<
 .icon-btn:hover{background:var(--bg-2);color:var(--ink);border-color:var(--border-strong)}
 .icon-btn svg{width:13px;height:13px}
 
+/* Copy-placeholder control (PUX-9): turns the accent colour on success so the
+   "copied" checkmark reads as a clear, momentary confirmation. */
+.copy-placeholder-btn.is-copied{color:var(--accent);border-color:var(--accent)}
+.copy-placeholder-btn.is-copied:hover{color:var(--accent)}
+
+/* Caveat note under the charts list explaining the generate-template constraint. */
+.placeholder-caveat{display:flex;gap:8px;align-items:flex-start;margin:6px 0 0;padding:10px 14px 12px;color:var(--ink-3);font-size:12.5px;line-height:1.5}
+.placeholder-caveat svg{flex:none;margin-top:2px;color:var(--ink-3)}
+.placeholder-caveat code{font-family:var(--font-mono,monospace);font-size:12px}
+
 /* Indicator row uses a table-like 5-col grid */
 .ind-row{display:grid;grid-template-columns:32px 1.4fr 1.5fr 60px 90px auto;gap:14px;align-items:center;padding:11px 20px;border-bottom:1px solid var(--border)}
 .ind-row:last-child{border-bottom:0}
