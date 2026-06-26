@@ -11,6 +11,7 @@ import { useAiStatus } from '../lib/aiStatus.js';
 import { SkeletonPanel } from '../components/Skeleton.jsx';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { RailLayout, StatusCard } from '../components/Rail.jsx';
+import { getActiveProjectLanguage } from '../lib/projects.js';
 
 const PLATFORMS = [
   { id: 'ona',  name: 'Ona / INFORM', tag: 'ona.io · UNICEF INFORM',        defaultUrl: 'https://api.ona.io/api/v1' },
@@ -554,6 +555,14 @@ function AINarrativeCard({ cfg, set }) {
   const toast = useToast();
   const ai = cfg.ai || {};
   const maxTok = parseInt(ai.max_tokens, 10) || 1500;
+  // The generated-output language is the PROJECT's language (authoritative since
+  // PLANG-1); it is read-only here and set on the project, not edited per-config.
+  const [projectLanguage, setProjectLanguage] = useState('');
+  useEffect(() => {
+    let alive = true;
+    getActiveProjectLanguage().then(l => { if (alive && l) setProjectLanguage(l); });
+    return () => { alive = false; };
+  }, []);
   const { configured, verified, testing, testAi } = useAiStatus();
   const [testResult, setTestResult] = useState(null);
 
@@ -704,8 +713,14 @@ function AINarrativeCard({ cfg, set }) {
         </div>
       )}
       <div className="src-field">
-        <div className="src-field__label">{t('sources.language')}</div>
-        <input aria-label={t('sources.language')} className="src-input" value={ai.language || ''} placeholder={t('sources.languagePlaceholder')} onChange={e => set('ai.language')(e.target.value)} />
+        <div className="src-field__label">{t('sources.language')}
+          <div className="src-field__hint">{t('sources.languageProjectHint')}</div>
+        </div>
+        <div className="src-readonly-value" aria-label={t('sources.language')}
+             style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 'var(--r-md, 8px)',
+                      background: 'var(--bg-2)', color: 'var(--ink)', fontSize: 13.5 }}>
+          {projectLanguage || ai.language || t('sources.languageUnset')}
+        </div>
       </div>
       <div className="src-field">
         <div className="src-field__label">{t('sources.maxTokens')}</div>
