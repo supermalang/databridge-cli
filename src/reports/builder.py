@@ -8,7 +8,7 @@ from docxtpl import DocxTemplate, InlineImage
 from jinja2.sandbox import SandboxedEnvironment
 from src.data.transform import load_processed_data, apply_local_scope, aggregate_repeat, join_repeat_to_main, apply_computed_columns, build_views
 from src.reports.charts import generate_chart, CHART_DIR
-from src.reports.indicators import compute_indicators
+from src.reports.indicators import compute_indicators, build_traffic_light_table, build_equity_charts
 from src.reports.narrator import generate_narrative
 from src.reports.summaries import compute_summaries
 from src.utils.provenance import build_provenance, data_mtime
@@ -95,6 +95,10 @@ class ReportBuilder:
         self.cfg = cfg
         self.report_cfg = cfg.get("report", {})
         self.charts_cfg: List[Dict] = cfg.get("charts", [])
+        # Equity / inclusion lens (ME-1): a single `equity_dimensions:` line
+        # expands into one disaggregation chart per indicator x dimension,
+        # appended to the rendered chart set without disturbing explicit charts.
+        self.charts_cfg = self.charts_cfg + build_equity_charts(cfg)
         self.tables_cfg: List[Dict] = cfg.get("tables", [])
         self.strict = strict
 
@@ -194,6 +198,12 @@ class ReportBuilder:
             self.cfg.get("indicators", []), df, repeat_tables, per_period=per_period
         )
         logframe = build_logframe(self.cfg, indicators)
+        # ME-2: red/amber/green progress table + below-threshold flags.
+        indicators_cfg = self.cfg.get("indicators", [])
+        traffic_light = build_traffic_light_table(indicators_cfg, indicators)
+        flagged_indicators = [
+            r for r in traffic_light["rows"] if r["status"] in ("warning", "critical")
+        ]
         data_quality = build_data_quality(self.cfg, df, repeat_tables)
         summaries   = compute_summaries(
             self.cfg.get("summaries", []), df, self.cfg.get("ai"),
@@ -229,6 +239,8 @@ class ReportBuilder:
             "generated_at":  datetime.today().strftime("%d/%m/%Y %H:%M"),
             "provenance":    provenance,
             "logframe":      logframe,
+            "traffic_light": traffic_light,
+            "flagged_indicators": flagged_indicators,
             "data_quality":  data_quality,
             **narrative,
             "stats_table":   stats_table,

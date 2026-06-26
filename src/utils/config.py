@@ -13,7 +13,11 @@ def load_config(path: Path = CONFIG_PATH) -> Dict:
     with open(path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
     cfg = _resolve_env(cfg)
-    for key in REQUIRED_KEYS:
+    # Multi-form (ME-4): forms are listed under api.forms, so a top-level `form`
+    # key is not required. Single-form still requires `form` (unchanged).
+    multiform = bool((cfg.get("api", {}) or {}).get("forms"))
+    required = ["api"] if multiform else REQUIRED_KEYS
+    for key in required:
         if key not in cfg:
             raise ValueError(f"Missing key '{key}' in {path}")
     platform = cfg.get("api", {}).get("platform", "kobo").lower()

@@ -8,6 +8,22 @@ DEFAULT_TIMEOUT = 120
 SUPPORTED_PLATFORMS = ("kobo", "ona")
 
 
+def iter_forms(cfg: Dict) -> List["tuple"]:
+    """Enumerate the (alias, uid) pairs a config targets.
+
+    Multi-form: one pair per ``api.forms`` entry, order preserved.
+    Single-form (legacy): exactly ``[(form.alias, form.uid)]``.
+
+    This is the single back-compat foundation for the multi-form feature — the
+    single-form path yields exactly one pair so callers can iterate uniformly.
+    """
+    forms = (cfg.get("api", {}) or {}).get("forms")
+    if forms:
+        return [(f.get("alias", ""), f.get("uid", "")) for f in forms]
+    form = cfg.get("form", {}) or {}
+    return [(form.get("alias", "form"), form.get("uid", ""))]
+
+
 class DataClient:
     """Base class for Kobo / Ona API clients."""
 
@@ -15,7 +31,7 @@ class DataClient:
     RETRY_TOTAL = 5
     RETRY_BACKOFF = 1.0  # urllib3 sleep schedule: 0s, 2s, 4s, 8s, 16s
 
-    def __init__(self, cfg: Dict):
+    def __init__(self, cfg: Dict, form_uid: Optional[str] = None):
         api = cfg.get("api", {})
         self.platform = api.get("platform", "kobo").lower()
         if self.platform not in SUPPORTED_PLATFORMS:
@@ -28,9 +44,13 @@ class DataClient:
             raise ValueError("api.url and api.token must be set in config.yml")
         self.headers = {"Authorization": f"Token {self.token}"}
         self.timeout = api.get("timeout", DEFAULT_TIMEOUT)
-        self.form_uid = cfg.get("form", {}).get("uid", "")
+        # Multi-form: caller passes the explicit uid of the form to target.
+        # Single-form (legacy): fall back to form.uid.
+        if form_uid is None:
+            form_uid = cfg.get("form", {}).get("uid", "")
+        self.form_uid = form_uid
         if not self.form_uid:
-            raise ValueError("form.uid must be set in config.yml")
+            raise ValueError("form.uid (or api.forms[].uid) must be set in config.yml")
         self.session = self._build_session()
 
     def _build_session(self) -> requests.Session:
@@ -123,9 +143,14 @@ class OnaClient(DataClient):
         return results
 
 
-def get_client(cfg: Dict) -> DataClient:
-    """Factory: return the right client based on api.platform in config."""
+def get_client(cfg: Dict, form_uid: Optional[str] = None) -> DataClient:
+    """Factory: return the right client based on api.platform in config.
+
+    ``form_uid`` (optional) targets a specific form uid — used by the multi-form
+    path to build one client per ``api.forms`` entry. When omitted the legacy
+    single-form ``form.uid`` is used.
+    """
     platform = cfg.get("api", {}).get("platform", "kobo").lower()
     if platform == "ona":
-        return OnaClient(cfg)
-    return KoboClient(cfg)
+        return OnaClient(cfg, form_uid=form_uid)
+    return KoboClient(cfg, form_uid=form_uid)

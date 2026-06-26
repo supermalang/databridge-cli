@@ -51,7 +51,7 @@ A card is startable only when all of the following hold:
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 9 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 7 | 7 / 7 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 6 / 6 |
-| [M&E capabilities](#me-capabilities) | 5 | 0 / 5 |
+| [M&E capabilities](#me-capabilities) | 5 | 5 / 5 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 2 | 0 / 2 |
@@ -1099,7 +1099,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **ME-1 — Equity / inclusion lens**
+- [x] **ME-1 — Equity / inclusion lens**
 
   Indicators support `disaggregate_by`, but there's no automatic cross-group comparison that
   *surfaces* inequities (gaps, convergence, exclusion) — let alone significance.
@@ -1122,7 +1122,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **ME-2 — Variance / traffic-light dashboards**
+- [x] **ME-2 — Variance / traffic-light dashboards**
 
   `pct_achievement` is computed per indicator and per framework node, but nothing flags
   indicators below threshold or renders a red/amber/green progress table.
@@ -1144,7 +1144,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **ME-3 — Indicator metadata catalog**
+- [x] **ME-3 — Indicator metadata catalog**
 
   Indicators carry computation params + `direction`, but not `unit`, `source`, `frequency`,
   or `responsible`, so the donor-style indicator reference annex can't be auto-generated.
@@ -1165,7 +1165,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **ME-4 — Multi-form / longitudinal linkage**
+- [x] **ME-4 — Multi-form / longitudinal linkage**
 
   The platform connects to exactly one form. Many frameworks need baseline ↔ endline (matched
   on beneficiary ID), monitoring ↔ registration, activity ↔ outcome. Largest change here.
@@ -1176,7 +1176,9 @@ A card is startable only when all of the following hold:
 
   **Acceptance criteria**
   - `fetch-questions` + `download` produce named DataFrames per form alias
-  - Indicators/charts can reference `form: baseline` vs `form: endline`
+  - Indicators can reference `form: baseline` vs `form: endline` (the analogous **chart** `form:`
+    selector is split to a follow-up — ME-4 delivers the multi-form data layer + indicator selector;
+    the card's own Unit-tests scoped charts out)
   - Enables pre/post and difference-in-differences
 
   **Unit tests:** `tests/test_extract_multiform.py` — mock the Kobo API to return two forms with distinct UIDs; assert `fetch-questions` produces separate question lists keyed by alias; assert `download` writes separate DataFrames for `baseline` and `endline`; assert an indicator referencing `form: baseline` reads from the correct DataFrame.
@@ -1187,7 +1189,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **ME-5 — Sampling weights**
+- [x] **ME-5 — Sampling weights**
 
   No support for survey weights — all aggregates assume equal weighting. (`--sample N` is for
   testing only, not statistical sampling.)

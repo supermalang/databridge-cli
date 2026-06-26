@@ -13,6 +13,32 @@ form:
   uid: aAbBcCdDeEfFgGhH
   alias: monitoring_survey
 
+# --- Multi-form / longitudinal linkage (OPTIONAL — single-form above is the default) ---
+# To connect more than one form (baseline ↔ endline, monitoring ↔ outcome, etc.),
+# list them under api.forms instead of the single top-level `form:` block above.
+# When api.forms is present, the single-form `form:` key is not required.
+#
+#   api:
+#     platform: kobo
+#     url: https://kf.kobotoolbox.org/api/v2
+#     token: env:KOBO_TOKEN
+#     forms:
+#       - {alias: baseline, uid: AAA111}
+#       - {alias: endline,  uid: BBB222}
+#
+# fetch-questions then writes a per-alias question map (instead of flat `questions:`):
+#   forms_questions:
+#     baseline: [ ... ]
+#     endline:  [ ... ]
+#
+# download writes a separate data file per alias: baseline_data_*.csv, endline_data_*.csv
+#
+# Indicators select which form they read from with a `form:` selector — enabling
+# pre/post comparisons and difference-in-differences:
+#   indicators:
+#     - {name: income_base, stat: mean, question: income, form: baseline}
+#     - {name: income_end,  stat: mean, question: income, form: endline}
+
 # Auto-filled by fetch-questions — edit after
 # For free-text (qualitative) questions you can add a classify: block so that
 # `classify-text` clusters responses into themes and writes a *_cluster column:
@@ -280,6 +306,12 @@ indicators: []
 #     question: Beneficiary_ID   # export_label of the column
 #     stat: count                # count|sum|mean|median|min|max|percent|most_common|count_distinct
 #     format: number             # number|decimal|percent|text
+#     # Optional reference metadata — surfaced in the generated template's
+#     # "Indicator Reference" annex (donor-style). All four are optional.
+#     unit: beneficiaries        # unit of measure
+#     source: Registration form  # data source / means of verification
+#     frequency: Quarterly       # reporting frequency
+#     responsible: M&E Officer   # who is responsible for the indicator
 #
 #   - name: communes_reached
 #     label: Communes reached
@@ -315,6 +347,10 @@ indicators: []
 #     question: Household_Size
 #     stat: mean
 #     format: decimal
+#     # weight_column: Survey_Weight   # optional: stat: mean becomes a weighted
+#                                      # average (numpy.average) over rows where both
+#                                      # the value and weight are numeric. Also valid
+#                                      # on a chart with value_col + agg: mean.
 #
 #   - name: top_region
 #     label: Most represented region
@@ -350,7 +386,18 @@ indicators: []
 #   target       : goal value (numeric)
 #                  Exposes {{ ind_<name>_target }} and {{ ind_<name>_pct_achievement }} in Word template
 #
-# Example — indicator with achievement tracking:
+# Variance / traffic-light status (optional):
+#   warning      : amber threshold on the pct_achievement scale (percent of target)
+#   critical     : red threshold on the pct_achievement scale (percent of target)
+#                  RAG status, exposed as {{ ind_<name>_status }} (ok | warning | critical):
+#                    pct_achievement >= warning              -> "ok"       (green)
+#                    critical <= pct_achievement < warning   -> "warning"  (amber)
+#                    pct_achievement < critical              -> "critical" (red)
+#                  Both are optional; set them to flag below-target indicators in the
+#                  report's traffic-light table ({{ traffic_light }}). Indicators in the
+#                  warning/critical bands are surfaced as {{ flagged_indicators }}.
+#
+# Example — indicator with achievement tracking + traffic-light thresholds:
 #   - name: pct_female
 #     label: Female beneficiaries
 #     question: Gender
@@ -359,10 +406,25 @@ indicators: []
 #     format: percent
 #     baseline: 48.2
 #     target: 55.0
-#     # Template: "{{ ind_pct_female }} (target {{ ind_pct_female_target }}, {{ ind_pct_female_pct_achievement }} achieved)"
+#     warning: 80         # below 80% of target -> amber
+#     critical: 60        # below 60% of target -> red
+#     # Template: "{{ ind_pct_female }} (target {{ ind_pct_female_target }}, {{ ind_pct_female_pct_achievement }} achieved, status: {{ ind_pct_female_status }})"
 #
 # In your Word template: "This report covers {{ ind_total_beneficiaries }}
 # beneficiaries. {{ ind_pct_female }} are female."
+
+# ---------------------------------------------------------------------------
+# Equity / inclusion lens (optional)
+# ---------------------------------------------------------------------------
+# List cross-cutting variables (gender, age group, location, disability, ...).
+# A single line here expands into a full disaggregation section: build-report
+# auto-generates one stacked-bar chart per indicator × dimension, so every
+# indicator above is broken down across each equity dimension — surfacing gaps
+# between groups without writing a chart for each combination by hand.
+# Each generated chart's questions are [<indicator question>, <dimension>] and
+# its name is "equity_<indicator>_<dimension>". Omit or leave empty to skip.
+equity_dimensions: []
+# equity_dimensions: [Gender, Age_group, Region]
 
 # Text summaries → {{ summary_<name> }} placeholders in Word template
 # Each summary produces a paragraph of text computed from the data.

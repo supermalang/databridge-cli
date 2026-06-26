@@ -52,6 +52,7 @@ Disaggregation (optional):
 """
 import logging
 from typing import Dict, List, Optional
+import numpy as np
 import pandas as pd
 
 log = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ def compute_indicators(
     df: pd.DataFrame,
     repeat_tables: Optional[Dict[str, pd.DataFrame]] = None,
     per_period: Optional[Dict[str, Dict]] = None,
+    per_form: Optional[Dict[str, Dict]] = None,
 ) -> Dict[str, str]:
     """Return a dict of {ind_<name>: formatted_value} for all indicators.
 
@@ -74,6 +76,12 @@ def compute_indicators(
         When provided, each indicator is also computed against every period in per_period.
         The result populates `ind_<name>_p_<slug>` placeholders, plus `_delta` and `_pct_change`
         when a baseline period exists.
+
+    per_form (optional, ME-4): {alias: {"df": main_df, "repeat_tables": {...}}}
+        Multi-form bundle. An indicator may carry a `form:` selector naming the
+        alias it reads from (e.g. `form: baseline` vs `form: endline`) — enabling
+        pre/post and difference-in-differences. Absent `form:` (or absent
+        per_form) → the positional ``df`` is used, so single-form is unchanged.
     """
     if repeat_tables is None:
         repeat_tables = {}
@@ -83,8 +91,20 @@ def compute_indicators(
         if not name:
             continue
         try:
+            # ME-4: an indicator may select a form alias from the per_form bundle;
+            # otherwise it reads the positional df (single-form, unchanged).
+            base_df, base_repeats = df, repeat_tables
+            form_alias = ind.get("form")
+            if per_form and form_alias:
+                bundle = per_form.get(form_alias)
+                if bundle is None:
+                    raise ValueError(
+                        f"indicator '{name}' references unknown form '{form_alias}'"
+                    )
+                base_df = bundle["df"]
+                base_repeats = bundle.get("repeat_tables", {})
             # Resolve data source for this indicator
-            ind_df = _resolve_source(ind, df, repeat_tables)
+            ind_df = _resolve_source(ind, base_df, base_repeats)
             value = _compute(ind, ind_df)
             fmt = ind.get("format", "number")
             context[f"ind_{name}"] = _format(value, fmt, ind)
@@ -146,12 +166,119 @@ def compute_indicators(
                     context[f"ind_{name}_pct_achievement"] = (
                         f"{pct:,.1f}%" if pct is not None else "N/A"
                     )
+                    # RAG traffic-light status (ME-2): only when thresholds are set.
+                    status = _rag_status(pct, ind.get("warning"), ind.get("critical"))
+                    if status is not None:
+                        context[f"ind_{name}_status"] = status
                 except (TypeError, ValueError, ZeroDivisionError):
                     context[f"ind_{name}_pct_achievement"] = "N/A"
         except Exception as e:
             log.warning(f"Indicator '{name}' failed: {e}")
             context[f"ind_{name}"] = "N/A"
     return context
+
+
+def build_equity_charts(cfg: Dict) -> List[Dict]:
+    """Build disaggregation chart specs for the equity / inclusion lens (ME-1).
+
+    One chart spec is produced per indicator x equity dimension, so a single
+    ``equity_dimensions:`` config line yields a full disaggregation section in
+    the report. Each spec is shaped like the rest of the chart engine
+    (mirrors ``default_charts.default_charts_from_questions``):
+
+        {"name", "title", "type", "questions"}
+
+    The chart ``type`` is ``stacked_bar`` (a grouped/stacked categorical
+    comparison across the equity dimension). The indicator's measured column and
+    the equity dimension are both referenced in ``questions`` so the dimension
+    drives the disaggregation.
+
+    Returns ``[]`` when ``equity_dimensions`` is absent/empty OR there are no
+    indicators — nothing to disaggregate.
+    """
+    from src.utils.periods import slugify
+
+    dimensions = cfg.get("equity_dimensions") or []
+    indicators = cfg.get("indicators") or []
+    if not dimensions or not indicators:
+        return []
+
+    charts: List[Dict] = []
+    used_names = set()
+    for ind in indicators:
+        ind_name = ind.get("name")
+        if not ind_name:
+            continue
+        measure = ind.get("question") or ind_name
+        for dim in dimensions:
+            if not dim:
+                continue
+            base = slugify(f"equity_{ind_name}_{dim}") or f"equity_chart_{len(charts) + 1}"
+            name, i = base, 2
+            while name in used_names:
+                name = f"{base}_{i}"
+                i += 1
+            used_names.add(name)
+            charts.append({
+                "name": name,
+                "title": f"{ind_name} by {dim}",
+                "type": "stacked_bar",
+                "questions": [measure, dim],
+            })
+    return charts
+
+
+def _rag_status(pct, warning, critical) -> Optional[str]:
+    """RAG traffic-light status on the pct_achievement scale (ME-2).
+
+    Returns None when no thresholds are configured. Otherwise:
+        pct >= warning             -> "ok"       (green)
+        critical <= pct < warning  -> "warning"  (amber)
+        pct < critical             -> "critical" (red)
+
+    Either threshold may be omitted; the missing band simply does not apply.
+    """
+    if warning is None and critical is None:
+        return None
+    if pct is None:
+        return None
+    try:
+        p = float(pct)
+    except (TypeError, ValueError):
+        return None
+    if warning is not None and p >= float(warning):
+        return "ok"
+    if critical is not None and p >= float(critical):
+        return "warning"
+    if critical is not None:
+        return "critical"
+    # only a warning threshold set and pct below it -> warning
+    return "warning"
+
+
+def build_traffic_light_table(indicators_cfg: List[Dict], indicators_context: Dict) -> Dict:
+    """Build a red/amber/green progress table for the report (ME-2).
+
+    One row per indicator that defines a ``target``. Each row carries the
+    formatted baseline / target / actual / pct values from the indicators
+    context, plus the RAG ``status`` (defaults to "ok" when no thresholds set).
+
+    Returns ``{"rows": [{indicator, baseline, target, actual, pct, status}, ...]}``.
+    """
+    rows: List[Dict] = []
+    for ind in indicators_cfg:
+        name = ind.get("name")
+        if not name or ind.get("target") is None:
+            continue
+        rows.append({
+            "indicator": name,
+            "baseline":  indicators_context.get(f"ind_{name}_baseline", "—"),
+            "target":    indicators_context.get(f"ind_{name}_target", "—"),
+            "actual":    indicators_context.get(f"ind_{name}", "—"),
+            "pct":       indicators_context.get(f"ind_{name}_pct_achievement", "—"),
+            "status":    indicators_context.get(f"ind_{name}_status", "ok"),
+        })
+    return {"rows": rows}
 
 
 def _resolve_source(ind: Dict, main_df: pd.DataFrame, repeat_tables: Dict) -> pd.DataFrame:
@@ -283,6 +410,17 @@ def _compute(ind: Dict, df: pd.DataFrame):
     if stat == "sum":
         return numeric.sum()
     if stat == "mean":
+        weight_col = ind.get("weight_column")
+        if weight_col:
+            if weight_col not in df.columns:
+                raise ValueError(f"weight_column '{weight_col}' not found in data")
+            weights = pd.to_numeric(df[weight_col], errors="coerce")
+            # Align on index and keep only rows where BOTH value and weight are numeric.
+            vals = pd.to_numeric(series, errors="coerce")
+            paired = pd.DataFrame({"v": vals, "w": weights}).dropna()
+            if paired.empty or paired["w"].sum() == 0:
+                raise ValueError(f"no weighted data in column '{question}' with weights '{weight_col}'")
+            return float(np.average(paired["v"], weights=paired["w"]))
         return numeric.mean()
     if stat == "median":
         return numeric.median()
