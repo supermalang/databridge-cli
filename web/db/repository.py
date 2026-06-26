@@ -233,7 +233,15 @@ def list_members(db: Session, project: Project) -> List[dict]:
     ).all()
     out = []
     for pm, u in rows:
-        out.append({"user_id": str(u.id), "email": u.email, "name": u.name,
+        email = (u.email or "").strip()
+        name = (u.name or "").strip()
+        # Guarantee a human-readable identifier server-side (UX-5): the panel must
+        # never fall back to the raw user_id UUID. Prefer email, then name; if BOTH
+        # are genuinely empty, surface a graceful non-UUID label rather than the
+        # internal id (a member who hasn't completed sign-in yet has neither set).
+        if not (email or name):
+            name = "Pending member"
+        out.append({"user_id": str(u.id), "email": email, "name": name,
                     "role": pm.role, "is_owner": project.owner_id == u.id,
                     "is_superadmin": bool(u.is_superadmin)})
     return out
