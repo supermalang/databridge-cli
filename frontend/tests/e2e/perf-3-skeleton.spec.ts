@@ -72,13 +72,13 @@ const QUESTIONS = {
 // A minimal but plausible profile payload (per-column EDA). Exact shape is the page's concern;
 // the spec only asserts the skeleton is gone and SOME real content rendered after release.
 const PROFILE = {
-  tables: [
+  profiles: [
     {
       name: 'main',
-      n_rows: 100,
+      rows: 100,
       columns: [
-        { name: 'age', role: 'quantitative', completeness: 0.97, n_missing: 3 },
-        { name: 'region', role: 'categorical', completeness: 1.0, n_missing: 0 },
+        { name: 'age', role: 'quantitative', distinct: 50 },
+        { name: 'region', role: 'categorical', distinct: 5 },
       ],
     },
   ],
@@ -189,10 +189,15 @@ test.describe('PERF-3 — skeleton replaces the plain "Loading…" while a mount
     await expect(plainLoading(page), 'the plain "Loading…" text must be replaced by the skeleton').toHaveCount(0);
 
     gate.release();
-    // After release the skeleton is gone; SOME real profile content has rendered (the column
-    // names from the payload appear). We assert on the payload value, not a brittle layout class.
+    // After release the skeleton is gone; SOME real profile content has rendered. The `main`
+    // table leaf starts collapsed (column names live behind it), so we assert on content that is
+    // visible WITHOUT manual expansion: the table name and its row/column meta rendered by
+    // Profile.jsx's `tableMeta`. This fails if the page shows the "Nothing to profile yet" empty
+    // state and passes only when a real profile renders.
     await expect(skeleton(page), 'the skeleton must be fully removed once data arrives').toHaveCount(0);
-    await expect(page.locator('.page')).toContainText(/region/i);
+    const profilePage = page.locator('.page:visible');
+    await expect(profilePage).toContainText(/100 rows · 2 columns/i);
+    await expect(profilePage).not.toContainText(/nothing to profile yet/i);
   });
 });
 
@@ -307,7 +312,7 @@ test.describe('PERF-3 — visual baselines of the skeleton states (3 viewports)'
     await expect(skeleton(page).first()).toBeVisible();
     await expect(plainLoading(page)).toHaveCount(0);
     await hideTerminal(page);
-    await expect(page.locator('.page')).toHaveScreenshot('perf3-questions-skeleton.png');
+    await expect(page.locator('.page:visible')).toHaveScreenshot('perf3-questions-skeleton.png');
 
     gate.release();
   });
@@ -322,7 +327,7 @@ test.describe('PERF-3 — visual baselines of the skeleton states (3 viewports)'
     await expect(skeleton(page).first()).toBeVisible();
     await expect(plainLoading(page)).toHaveCount(0);
     await hideTerminal(page);
-    await expect(page.locator('.page')).toHaveScreenshot('perf3-profile-skeleton.png');
+    await expect(page.locator('.page:visible')).toHaveScreenshot('perf3-profile-skeleton.png');
 
     gate.release();
   });
