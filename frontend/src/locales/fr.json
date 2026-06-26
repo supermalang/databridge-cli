@@ -3,8 +3,6 @@
     "nav": {
       "home": "Accueil",
       "extract": "Extraire",
-      "transform": "Transformer",
-      "model": "Modéliser",
       "analyze": "Analyser",
       "deliver": "Diffuser"
     },

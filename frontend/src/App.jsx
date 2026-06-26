@@ -82,12 +82,12 @@ const STAGES = [
     { id: 'connection', labelKey: 'home.subs.connection', render: () => <Sources section="setup" /> },
     { id: 'ai',         labelKey: 'home.subs.ai',         render: () => <Sources section="ai" /> },
   ] },
-  { id: 'transform', label: 'Transform', labelKey: 'nav.transform', subs: [
+  { id: 'transform', label: 'Transform', labelKey: 'home.stages.transform.label', subs: [
     { id: 'questions', labelKey: 'home.subs.questions', render: () => <Questions /> },
     { id: 'profile',   labelKey: 'home.subs.profile',   render: () => <Profile /> },
     { id: 'validate',  labelKey: 'home.subs.validate',  render: () => <Validate /> },
   ] },
-  { id: 'model', label: 'Model', labelKey: 'nav.model', subs: [
+  { id: 'model', label: 'Model', labelKey: 'home.stages.model.label', subs: [
     { id: 'views', labelKey: 'home.subs.views', render: () => <Composition sections={VIEWS_SECTIONS} /> },
   ] },
   { id: 'analyze', label: 'Analyze', labelKey: 'nav.analyze', subs: [
