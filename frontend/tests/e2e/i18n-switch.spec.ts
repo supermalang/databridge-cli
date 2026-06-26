@@ -119,7 +119,10 @@ async function gotoApp(page: Page) {
 // Open the user menu → "Profile" item → the full-screen profile page.
 async function openProfile(page: Page) {
   await page.locator('.user-avatar').click();
-  await page.locator('.user-menu__item', { hasText: /profile/i }).click();
+  // Language-independent: the Profile item is the only `.user-menu__item` that
+  // is NOT the danger-styled Sign-out button, so this matches whether the menu
+  // renders "Profile" (EN) or "Profil" (FR).
+  await page.locator('.user-menu__item:not(.user-menu__danger)').click();
   await expect(page.locator('.project-form')).toBeVisible();
 }
 
