@@ -2,7 +2,7 @@ import asyncio, base64, io, json, os, shutil, sys, tempfile, zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, Dict, List, Literal, Optional
 
 import aiofiles, yaml
 from fastapi import FastAPI, HTTPException, UploadFile, Depends, Request
@@ -303,6 +303,10 @@ def unarchive_project_endpoint(project_id: str, request: Request,
 class ProfilePatchPayload(BaseModel):
     given_name: str = ""
     family_name: str = ""
+    # Interface-language preference (I18N-1). Optional: a name-only PATCH leaves it
+    # untouched. When present it must be one of the supported languages — any other
+    # value is a 422 validation error (rejected before reaching the DB).
+    language: Optional[Literal["en", "fr"]] = None
 
 
 @app.patch("/api/me")
@@ -313,20 +317,26 @@ def patch_me(payload: ProfilePatchPayload, request: Request,
         raise HTTPException(status_code=401, detail="Not authenticated")
     given = (payload.given_name or "").strip()
     family = (payload.family_name or "").strip()
-    full = " ".join(p for p in (given, family) if p) or user.name
-    user.name = full
+    # Only rename when name parts were actually supplied (a language-only PATCH
+    # must not blank the stored name).
+    if given or family:
+        user.name = " ".join(p for p in (given, family) if p) or user.name
+    # Persist the interface-language preference on the AUTHENTICATED caller's row.
+    if payload.language is not None:
+        db_repo.set_user_language(db, user, payload.language)
     db.commit()
     db.refresh(user)
     # Propagate to Zitadel when configured and this is a real Zitadel user.
     from web import zitadel_admin
     z_status = "skipped"
-    if zitadel_admin.enabled() and user.zitadel_sub and user.zitadel_sub != "dev-local":
+    if (given or family) and zitadel_admin.enabled() and user.zitadel_sub and user.zitadel_sub != "dev-local":
         try:
             zitadel_admin.update_human_user(user.zitadel_sub, given, family)
             z_status = "updated"
         except Exception as e:  # noqa: BLE001 — surface, don't fail the local save
             z_status = f"error: {e}"
-    return {"sub": user.zitadel_sub, "email": user.email, "name": user.name, "zitadel": z_status}
+    return {"sub": user.zitadel_sub, "email": user.email, "name": user.name,
+            "language": db_repo.get_user_language(user), "zitadel": z_status}
 
 
 @app.delete("/api/projects/{project_id}")

@@ -220,17 +220,26 @@ def register_auth(app) -> None:
         claims = request.state.user
         if not claims:
             return claims
+        # Default interface language; overridden by the stored preference below.
+        out = {**claims, "language": "en"}
         sub = claims.get("sub")
         if sub:
             try:
-                from web.db import session as _dbs, repository as _repo
+                from web.db import session as _dbs, repository as _repo, provision as _prov
                 with _dbs.SessionLocal() as db:
                     u = _repo.get_user_by_sub(db, sub)
-                    if u and u.name:
-                        return {**claims, "name": u.name, "email": u.email or claims.get("email", "")}
-            except Exception:  # noqa: BLE001 — fall back to raw claims
+                    if u is None:
+                        # Provision on first read so the saved-preference round-trip
+                        # works even before a mutating call.
+                        u = _prov.ensure_user(db, claims)
+                    if u is not None:
+                        out["language"] = _repo.get_user_language(u)
+                        if u.name:
+                            out["name"] = u.name
+                            out["email"] = u.email or claims.get("email", "")
+            except Exception:  # noqa: BLE001 — fall back to raw claims + default lang
                 pass
-        return claims
+        return out
 
     if not auth_enabled():
         return
