@@ -12,6 +12,12 @@ const LANGS = ['English', 'French', 'Spanish', 'Portuguese', 'Arabic'];
 const COLORS = ['#0EA5E9', '#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#14B8A6', '#64748B'];
 const ICONS = ['📊', '🩺', '🌍', '🎓', '🚰', '🌱', '🏥', '📦'];
 
+// Human-readable names parallel to COLORS / ICONS, used as accessible labels so
+// the swatch and icon pickers don't convey their meaning by color/emoji alone
+// (the emoji glyph also renders as tofu without an emoji font). Index-aligned.
+const COLOR_NAMES = ['Sky', 'Indigo', 'Emerald', 'Amber', 'Red', 'Violet', 'Teal', 'Slate'];
+const ICON_NAMES = ['Chart', 'Health', 'Globe', 'Education', 'Water', 'Plant', 'Hospital', 'Package'];
+
 // Full-screen create/edit project form. `mode` is 'create' or an existing project
 // object (edit). Calls onDone(projectId|null) when finished/closed; onChanged() to
 // ask the parent to refresh its project list.
@@ -185,15 +191,17 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
               </select></div>
             <div className="profile-field"><label>Color</label>
               <div className="pf-swatches">
-                {COLORS.map(c => (
+                {COLORS.map((c, i) => (
                   <button key={c} type="button" className={`pf-swatch ${color === c ? 'sel' : ''}`}
+                          aria-label={COLOR_NAMES[i]} aria-pressed={color === c ? 'true' : 'false'}
                           style={{ background: c }} onClick={() => setColor(c)} />
                 ))}
               </div></div>
             <div className="profile-field"><label>Icon</label>
               <div className="pf-icons">
-                {ICONS.map(ic => (
+                {ICONS.map((ic, i) => (
                   <button key={ic} type="button" className={`pf-icon ${icon === ic ? 'sel' : ''}`}
+                          aria-label={ICON_NAMES[i]} aria-pressed={icon === ic ? 'true' : 'false'}
                           onClick={() => setIcon(ic)}>{ic}</button>
                 ))}
               </div></div>
