@@ -19,7 +19,13 @@ def test_materialize_config_writes_yaml(tmp_path, db):
     p = repo.create_project(db, user=u, name="Demo", config=cfg)
     out = tmp_path / "config.yml"
     bridge.materialize_config(p, path=out)
-    assert yaml.safe_load(out.read_text()) == cfg
+    written = yaml.safe_load(out.read_text())
+    # Original config keys round-trip unchanged.
+    assert written["api"] == {"platform": "kobo"}
+    assert written["form"] == {"alias": "demo"}
+    # AC4: a project with no explicit language and no existing ai.language
+    # gets the deterministic default ai.language == "English".
+    assert written["ai"]["language"] == "English"
 
 
 def test_mirror_active_uses_active_project(tmp_path, db):
