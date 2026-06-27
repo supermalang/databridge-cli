@@ -50,7 +50,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 9 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 9 | 9 / 9 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 9 / 10 |
 | [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
@@ -1344,6 +1344,61 @@ A card is startable only when all of the following hold:
   5. Switch the interface to French and confirm the copy tooltip + confirmation are translated.
 
   **Verify:** `cd frontend && npx playwright test copy-placeholder.spec.ts && npm run check:i18n`
+
+---
+
+- [ ] **PUX-10 — Auto-save the connection before Fetch/Download (no stale-config runs) (P2)**
+
+  Follow-up to PUX-7. **Test connection** probes the *in-form* values (URL/token/Form UID are
+  sent in the request body), but **Fetch questions** / **Download data** run the CLI against the
+  *saved* config (`run('fetch-questions')` / `run('download')` → `POST /api/run/<cmd>`, which
+  hydrates the saved project config). So a user who tests a connection and — without clicking
+  Save — clicks Fetch runs against the old/empty saved config and it fails confusingly (the
+  buttons are enabled by the successful test, but the tested values were never persisted). Fix:
+  make Fetch/Download **auto-save first** — when the config has unsaved changes (`dirty`,
+  `frontend/src/pages/Sources.jsx` ~92), persist it (the existing `saveAll` →
+  `POST /api/config`) and only then issue the run; if the save fails, **abort the run** and
+  surface the error. Matches *Make the safe path the default* — the user can't forget to save.
+
+  **Files:** `frontend/src/pages/Sources.jsx` (have `saveAll` ~108 report success/failure; pass
+  `dirty` + a save fn into `ConnectionCard` ~250; wrap `fetchQuestions`/`downloadData` ~306–307
+  to `await` a save-if-dirty before `run(...)`, aborting on save failure) ·
+  `frontend/tests/e2e/connection-autosave.spec.ts` (new) ·
+  `frontend/src/locales/{en,fr}.json` (only if a new user-facing string is added)
+
+  **Config/schema impact:** None — uses the existing `POST /api/config` save path.
+
+  **Acceptance criteria**
+  - Clicking **Fetch questions** or **Download data** while the config is `dirty` first issues a
+    `POST /api/config` (save) and only then the `POST /api/run/<cmd>` — the save completes before
+    the run starts, so the run uses the just-saved config
+  - When there are **no** unsaved changes, the buttons run immediately with no redundant save
+  - If the auto-save **fails** (validation / permission / network), the run is **not** started and
+    the error is surfaced to the user (no silent no-op, no run against stale config)
+  - After a successful auto-save the form is no longer `dirty` (same end state as a manual Save);
+    the manual Save button behaviour is unchanged
+  - No regression to PUX-7 gating (a confirmed connection is still required to enable the buttons)
+  - Any new user-facing string exists in both `en.json` and `fr.json`; `check:i18n` passes
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the save-before-run ordering and the
+  abort-on-save-failure are asserted by the Playwright E2E below, per the PUX/i18n precedent).
+
+  **E2E:** `frontend/tests/e2e/connection-autosave.spec.ts` (new) — network-mocked (same harness as
+  connection-gating): load a saved connection config, change the Form UID (dirty), run **Test
+  connection** (mock `ok+fields` → confirmed) so Fetch enables; click **Fetch questions** and assert
+  the request order is `POST /api/config` **then** `POST /api/run/fetch-questions` (the run is not
+  sent before the save resolves). Second case: mock `POST /api/config` → 4xx and assert clicking
+  Fetch does **not** call `/api/run/*` and shows an error. (No `toHaveScreenshot` baseline needed —
+  behavioural change, not visual.)
+
+  **UAT:**
+  1. Enter/adjust your connection details and click **Test connection** (success). Without clicking
+     Save, click **Fetch questions**. Confirm it works (it saved automatically first).
+  2. Confirm the Save button then shows no unsaved changes.
+  3. Force a save failure (e.g. an invalid config) and click Fetch — confirm you get a clear error
+     and the fetch does **not** run.
+
+  **Verify:** `cd frontend && npx playwright test connection-autosave.spec.ts && npm run check:i18n`
 
 ---
 
