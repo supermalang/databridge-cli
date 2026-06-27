@@ -106,7 +106,7 @@ export default function Sources({ section = 'setup' } = {}) {
   });
 
   const saveAll = async () => {
-    if (!cfg) return;
+    if (!cfg) return false;
     try {
       const text = yaml.dump(cfg, { indent: 2, lineWidth: -1 });
       await saveConfigText(text);
@@ -116,7 +116,8 @@ export default function Sources({ section = 'setup' } = {}) {
       // which unlocks the AI buttons without a manual page refresh.
       window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'sources' } }));
       toast(t('common.saved'), 'ok');
-    } catch (e) { toast(e.message, 'err'); }
+      return true;
+    } catch (e) { toast(e.message, 'err'); return false; }
   };
 
   const saveYaml = async () => {
@@ -253,6 +254,7 @@ export default function Sources({ section = 'setup' } = {}) {
             testConnection={testConnection} lastCheck={lastCheck}
             clearCheck={() => setLastCheck(null)}
             questionCount={questionCount}
+            dirty={!!dirty} saveNow={saveAll}
           />
         </RailLayout>
       )}
@@ -297,14 +299,22 @@ function OutputRail({ cfg }) {
 }
 
 // ── Connection ───────────────────────────────────────────────────────────────
-function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConnection, lastCheck, clearCheck, questionCount }) {
+function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConnection, lastCheck, clearCheck, questionCount, dirty, saveNow }) {
   const { t } = useTranslation();
   const { run, running, activeCmd } = useRun();
   const { canEdit } = usePerms();
   const toast = useToast();
   const [loadingSample, setLoadingSample] = useState(false);
-  const fetchQuestions = () => run('fetch-questions');
-  const downloadData = () => run('download');
+  // PUX-10 — Fetch/Download run the CLI against the SAVED config, but Test
+  // connection probes the *in-form* values. Persist any unsaved edits first so
+  // the run never executes against stale config; if the save fails, abort the
+  // run (the error toast is surfaced by saveNow).
+  const runSaved = async (cmd) => {
+    if (dirty) { const ok = await saveNow?.(); if (ok === false) return; }
+    run(cmd);
+  };
+  const fetchQuestions = () => runSaved('fetch-questions');
+  const downloadData = () => runSaved('download');
 
   // PUX-7 — Fetch/Download are destructive/expensive and need a *working form*
   // connection. "Confirmed working" = the most recent Test connection this
