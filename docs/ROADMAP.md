@@ -51,7 +51,7 @@ A card is startable only when all of the following hold:
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 9 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 10 / 10 |
-| [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
+| [M&E capabilities](#me-capabilities) | 7 | 6 / 7 |
 | [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 3 / 5 |
@@ -1560,7 +1560,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **ME-7 — Chart `form:` selector for multi-form (P2)**
+- [x] **ME-7 — Chart `form:` selector for multi-form (P2)**
 
   Follow-up from ME-4 (multi-form data layer + INDICATOR `form:` selector shipped; the analogous CHART
   selector was scoped out). Let a chart render against a specific form alias's DataFrame (`form:
