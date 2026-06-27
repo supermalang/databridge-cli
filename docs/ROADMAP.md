@@ -52,7 +52,7 @@ A card is startable only when all of the following hold:
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 9 / 10 |
 | [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
-| [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
+| [Express Template Fill](#express-template-fill) | 25 | 24 / 25 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 3 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
@@ -2846,6 +2846,44 @@ A card is startable only when all of the following hold:
      before.
 
   **Verify:** `cd frontend && npx playwright test build-options.spec.ts`
+
+---
+
+- [ ] **XTF-25 — Extractor reads Word content controls (`w:sdt`) so bracket placeholders in gray-shaded boxes are found**
+
+  `extract_placeholders` (`src/reports/template_inference.py`) builds paragraph text from
+  `paragraph.runs` (python-docx top-level runs only). Text inside a Word **content control**
+  (`w:sdt` — the gray-shaded fill-in box) lives under `w:sdt/w:sdtContent/w:r/w:t` and is
+  NOT returned by `paragraph.runs`, so any `[[placeholder]]` inside a content control is
+  invisible and the UI shows "Aucun espace réservé à examiner."
+  Fix: extend `_tokens_in_paragraph` to collect ALL `w:t` elements from the paragraph's
+  raw XML element (including those nested inside `w:sdt` subtrees) so bracket tokens are
+  found regardless of whether they sit in a plain run or a content control.
+  Non-UI/non-CLI; Python only.
+
+  **Files:** `src/reports/template_inference.py` · `tests/test_template_inference.py`
+
+  **Config/schema impact:** None — read-only parsing change.
+
+  **Acceptance criteria**
+  - A `[[placeholder]]` inside a Word content control is returned by `extract_placeholders`
+    with correct `raw`, `inner`, and `delimiter` — no longer invisible
+  - Same fix covers `[single-bracket]` and `{{ double-brace }}` tokens in content controls
+  - Tokens in plain runs are still found and their data is unchanged (no regression)
+  - A template mixing plain-run and content-control placeholders returns all of them in order
+  - Zero placeholders found only when there are genuinely no bracket tokens anywhere
+
+  **Unit tests:** `tests/test_template_inference.py` (extend) — build a `.docx` fixture using
+  python-docx's lxml interface to insert a `w:sdt` content control containing `[[name]]`.
+  Cases: (1) `[[placeholder]]` inside a content control is found with correct delimiter/inner;
+  (2) `[single]` and `{{ literal }}` inside content controls are also found; (3) mixed
+  content-control and plain-run tokens both returned; (4) all existing test cases still pass.
+
+  **E2E:** N/A (no UI surface — pure parsing function; verified via unit tests + PR review).
+
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py`
 
 ---
 
