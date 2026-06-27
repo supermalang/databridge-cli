@@ -131,11 +131,19 @@ export default function Validate() {
               )}
             </div>
             <div className="validate-finding__count">
-              {f.count.toLocaleString()} row{f.count === 1 ? '' : 's'}
-              <br />
-              <span style={{ color: f.severity === 'error' ? 'var(--danger, #b91c1c)' : f.severity === 'warning' ? 'var(--warn, #b45309)' : 'var(--ink-3)' }}>
-                {(f.pct * 100).toFixed(1)}%
-              </span>
+              {f.kind === 'below_threshold' ? (
+                <span className="validate-finding__indicator-badge" data-severity={f.severity}>
+                  indicator
+                </span>
+              ) : (
+                <>
+                  {f.count.toLocaleString()} row{f.count === 1 ? '' : 's'}
+                  <br />
+                  <span style={{ color: f.severity === 'error' ? 'var(--danger, #b91c1c)' : f.severity === 'warning' ? 'var(--warn, #b45309)' : 'var(--ink-3)' }}>
+                    {(f.pct * 100).toFixed(1)}%
+                  </span>
+                </>
+              )}
             </div>
             <div className="validate-finding__actions">
               <button
