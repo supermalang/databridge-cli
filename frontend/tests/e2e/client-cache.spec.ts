@@ -412,6 +412,78 @@ test.describe('PERF-4 — per-project namespacing', () => {
   });
 });
 
+test.describe('PERF-4 — CACHE_VERSION bump and TTL backstop reject stale/schema-mismatched entries', () => {
+  // Covers: "A CACHE_VERSION bump and a TTL backstop prevent indefinitely-stale or
+  // schema-mismatched entries from being served."
+
+  test('a localStorage entry written with an old CACHE_VERSION is treated as a cold miss', async ({ page }) => {
+    const stubs = await stubBootstrap(page);
+
+    // Seed a v0-versioned entry for /api/questions with a recognizable stale value.
+    // The cache module only reads `databridge:cache:v1:…` keys, so this must be ignored.
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        'databridge:cache:v0:proj-a::/api/questions',
+        JSON.stringify({
+          value: { questions: [{ kobo_key: 'old', label: 'Old', export_label: 'v0_stale_data', type: 'integer', category: 'quantitative', group: 'g' }] },
+          ts: Date.now(),
+        }),
+      );
+    });
+
+    // Gate the network: a cache HIT would paint the stale value instantly (no skeleton);
+    // a cold miss shows the skeleton while the fetch is pending.
+    const gate = makeGate();
+    stubs.gateRef.gate = gate.opened;
+    await gotoApp(page);
+    await openTransformSub(page, /questions/i);
+
+    // Cold miss: the skeleton must be visible. If the v0 entry were served, the stale
+    // value would paint instead and the skeleton would not appear.
+    await expect(
+      skeleton(page).first(),
+      'a v0-versioned entry must be ignored — skeleton (cold miss) must be visible',
+    ).toBeVisible();
+
+    gate.release();
+    await expect(questionInput(page).first()).toHaveValue('age_a');
+  });
+
+  test('a localStorage entry older than TTL_MS (24 h) is treated as a cold miss', async ({ page }) => {
+    const stubs = await stubBootstrap(page);
+
+    // Seed a current-version (v1) entry for /api/questions but with a timestamp 25 h ago.
+    // readEntry enforces (Date.now() - ts) < TTL_MS (24h), so this must be rejected.
+    const expiredTs = Date.now() - 25 * 60 * 60 * 1000;
+    await page.addInitScript((ts: number) => {
+      localStorage.setItem(
+        'databridge:cache:v1:proj-a::/api/questions',
+        JSON.stringify({
+          value: { questions: [{ kobo_key: 'old', label: 'Old', export_label: 'ttl_stale_data', type: 'integer', category: 'quantitative', group: 'g' }] },
+          ts,
+        }),
+      );
+    }, expiredTs);
+
+    // Gate the network: a cache HIT paints the stale value instantly (no skeleton);
+    // a cold miss keeps the skeleton visible while the fetch is pending.
+    const gate = makeGate();
+    stubs.gateRef.gate = gate.opened;
+    await gotoApp(page);
+    await openTransformSub(page, /questions/i);
+
+    // Cold miss: skeleton must be visible. If the expired entry were served, its stale
+    // value would paint and the skeleton would not appear.
+    await expect(
+      skeleton(page).first(),
+      'an expired entry (>TTL_MS) must be rejected — skeleton (cold miss) must be visible',
+    ).toBeVisible();
+
+    gate.release();
+    await expect(questionInput(page).first()).toHaveValue('age_a');
+  });
+});
+
 /**
  * AC5 (cache fully cleared on logout / handle401) is NOT covered by a deterministic
  * network-mocked E2E here: logout in this SPA navigates the page away to the IdP
