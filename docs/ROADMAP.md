@@ -57,6 +57,9 @@ A card is startable only when all of the following hold:
 | [Express Template Fill](#express-template-fill) | 25 | 25 / 25 |
 | [Express Template Fill](#express-template-fill) | 25 | 24 / 25 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
+| [Internationalization (i18n)](#internationalization-i18n) | 4 | 2 / 4 |
+| [Performance](#performance) | 2 | 2 / 2 |
+| [Maintenance & hardening](#maintenance--hardening) | 3 | 1 / 3 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 3 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 3 / 4 |
@@ -3842,7 +3845,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **MNT-2 — Clear dev-dependency CVEs (vite High + esbuild Moderate) (P2)**
+- [x] **MNT-2 — Clear dev-dependency CVEs (vite High + esbuild Moderate) (P2)**
 
   `npm audit` flags pre-existing advisories in the frontend DEV toolchain: vite (High — needs >= 8.1) +
   esbuild (Moderate — needs >= 0.25, dragged by the vite bump). Dev-only (not in the shipped bundle) but
