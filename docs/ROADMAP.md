@@ -52,10 +52,12 @@ A card is startable only when all of the following hold:
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 10 / 10 |
 | [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
-| [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
+| [Express Template Fill](#express-template-fill) | 25 | 24 / 25 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 3 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
+| [Performance](#performance) | 4 | 3 / 4 |
+| [Maintenance & hardening](#maintenance--hardening) | 4 | 0 / 4 |
 | [Performance](#performance) | 3 | 3 / 3 |
 | [Maintenance & hardening](#maintenance--hardening) | 4 | 1 / 4 |
 
@@ -2849,6 +2851,44 @@ A card is startable only when all of the following hold:
 
 ---
 
+- [ ] **XTF-25 — Extractor reads Word content controls (`w:sdt`) so bracket placeholders in gray-shaded boxes are found**
+
+  `extract_placeholders` (`src/reports/template_inference.py`) builds paragraph text from
+  `paragraph.runs` (python-docx top-level runs only). Text inside a Word **content control**
+  (`w:sdt` — the gray-shaded fill-in box) lives under `w:sdt/w:sdtContent/w:r/w:t` and is
+  NOT returned by `paragraph.runs`, so any `[[placeholder]]` inside a content control is
+  invisible and the UI shows "Aucun espace réservé à examiner."
+  Fix: extend `_tokens_in_paragraph` to collect ALL `w:t` elements from the paragraph's
+  raw XML element (including those nested inside `w:sdt` subtrees) so bracket tokens are
+  found regardless of whether they sit in a plain run or a content control.
+  Non-UI/non-CLI; Python only.
+
+  **Files:** `src/reports/template_inference.py` · `tests/test_template_inference.py`
+
+  **Config/schema impact:** None — read-only parsing change.
+
+  **Acceptance criteria**
+  - A `[[placeholder]]` inside a Word content control is returned by `extract_placeholders`
+    with correct `raw`, `inner`, and `delimiter` — no longer invisible
+  - Same fix covers `[single-bracket]` and `{{ double-brace }}` tokens in content controls
+  - Tokens in plain runs are still found and their data is unchanged (no regression)
+  - A template mixing plain-run and content-control placeholders returns all of them in order
+  - Zero placeholders found only when there are genuinely no bracket tokens anywhere
+
+  **Unit tests:** `tests/test_template_inference.py` (extend) — build a `.docx` fixture using
+  python-docx's lxml interface to insert a `w:sdt` content control containing `[[name]]`.
+  Cases: (1) `[[placeholder]]` inside a content control is found with correct delimiter/inner;
+  (2) `[single]` and `{{ literal }}` inside content controls are also found; (3) mixed
+  content-control and plain-run tokens both returned; (4) all existing test cases still pass.
+
+  **E2E:** N/A (no UI surface — pure parsing function; verified via unit tests + PR review).
+
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py`
+
+---
+
 ## Visual / E2E harness
 
 > The Definition of Done requires Playwright `toHaveScreenshot` baselines at mobile/tablet/desktop
@@ -3654,6 +3694,77 @@ A card is startable only when all of the following hold:
      rather than reading out each placeholder block.
 
   **Verify:** `cd frontend && npx playwright test perf-3-skeleton.spec.ts`
+
+---
+
+- [ ] **PERF-4 — Client-side stale-while-revalidate cache (instant UI on reload / project-switch / refresh) (P2)**
+
+  Follow-up to PERF-1/2 (server cache) + PERF-3 (skeletons). Keep-alive panes already make
+  *within-session* tab revisits instant, but a **full reload / cold start / re-login**, a
+  **project switch**, and the hourly / `databridge:data-changed` epoch bump all remount and
+  refetch from scratch (skeleton every time). Add a client-side **stale-while-revalidate** cache:
+  render the last-known response **instantly**, revalidate in the background, and only show the
+  skeleton on a true cold miss. Two tiers, split by data sensitivity (localStorage is readable by
+  any XSS, so secrets/PII must never be persisted):
+
+  - **Persisted tier (localStorage/IndexedDB, per-project namespace):** only small, non-sensitive
+    metadata — `/api/state`, `/api/questions`, `/api/templates`, `/api/reports`,
+    `/api/data/sessions`, `/api/periods`. Makes hard reloads paint instantly.
+  - **In-memory tier only (never written to disk):** `/api/config` (may carry a token),
+    `/api/profile`, `/api/data-quality` (column stats can expose data values). Instant on
+    within-session revisit, but not across a hard reload.
+
+  **Files:** `frontend/src/lib/cache.js` (new — the SWR cache: `swr(key, fetcher, {persist})` that
+  serves cache-then-revalidates, an in-memory map + a localStorage backend gated by a persist
+  whitelist, per-active-project namespacing, a `CACHE_VERSION`, a TTL backstop, and
+  `clearCache(scope)`) · `frontend/src/lib/auth.js` (wipe the whole cache on logout / `handle401`) ·
+  `frontend/src/App.jsx` (clear/namespace on project switch; clear the active project's cache on
+  `databridge:data-changed`) · the data-loading sites that should adopt it —
+  `frontend/src/pages/{Questions,Reports,Profile,Sources}.jsx` (+ any shared loader in
+  `frontend/src/lib/config.js`) wrap their mount fetch in `swr(...)` so a cache hit renders before
+  the network resolves (no skeleton on a hit) · `frontend/tests/e2e/client-cache.spec.ts` (new)
+
+  **Config/schema impact:** None — client-side only; no API/DB change (it consumes the same
+  endpoints, complementing the PERF-1 server cache).
+
+  **Acceptance criteria**
+  - On a **second load** of a tab whose data is cached (e.g. reopen after a reload, for a persisted
+    endpoint), the real content renders **without a skeleton flash**, and a background revalidation
+    request is still issued (stale-while-revalidate) and updates the view if the data changed
+  - **Persisted tier** writes ONLY the whitelisted non-sensitive endpoints to storage; `/api/config`,
+    `/api/profile`, `/api/data-quality` are **never** written to disk (asserted) — they use the
+    in-memory tier only
+  - Cache entries are **namespaced per active project**; switching to project B never serves
+    project A's cached data, and switching back to A is instant
+  - The cache is **invalidated** on `databridge:data-changed` (post-download / config save) so a
+    stale value is never served after the data changes, and is **fully cleared on logout**
+  - A `CACHE_VERSION` bump and a TTL backstop prevent indefinitely-stale or schema-mismatched
+    entries from being served
+  - No correctness regression: a cache miss behaves exactly as today (skeleton → fetch → content)
+  - **Security:** no secret or PII value is persisted to browser storage (verified against the
+    whitelist + a test that inspects localStorage after loading config/profile)
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the SWR behaviour, the persist
+  whitelist, per-project namespacing, and invalidation are asserted by the Playwright E2E below).
+
+  **E2E:** `frontend/tests/e2e/client-cache.spec.ts` (new) — network-mocked: (1) load a tab, reload
+  the page, and assert the cached content is visible immediately (before the revalidation response
+  is fulfilled) with no skeleton, and that a revalidation request still fires; (2) after loading
+  Connection (config) and Profile, assert `localStorage` contains NONE of the config token /
+  profile values (sensitivity whitelist holds); (3) trigger `databridge:data-changed` and assert the
+  next read refetches (cache invalidated); (4) switch projects and assert project A's cached value
+  is not shown for project B. (No `toHaveScreenshot` baseline — behavioural.)
+
+  **UAT:**
+  1. Load the app, visit a few tabs, then **hard-reload**. Confirm the previously-seen tabs paint
+     instantly (no skeleton), and data still refreshes a moment later.
+  2. Switch to another project and back; confirm the return is instant and shows the right project's
+     data (never the other project's).
+  3. Run a download (or save config); confirm the affected views refresh rather than showing stale
+     data.
+  4. Log out and back in; confirm no stale data persists across the logout.
+
+  **Verify:** `cd frontend && npx playwright test client-cache.spec.ts`
 
 ---
 
