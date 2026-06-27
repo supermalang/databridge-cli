@@ -34,8 +34,11 @@ def test_ask_save_appends(monkeypatch):
     cfg = {"charts": []}
     monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
     monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"charts": c["charts"]}))
-    client = TestClient(wm.app)
-    resp = client.post("/api/ask/save", json={"recipe": {"name": "by_region", "type": "bar", "questions": ["Region"]}})
+    # Use the context-manager form so the lifespan runs init_db(), provisioning the
+    # dev user + active project that _require("editor") needs. Without this, a cold
+    # run (no prior test has bootstrapped the DB) returns 400 "No active project".
+    with TestClient(wm.app) as client:
+        resp = client.post("/api/ask/save", json={"recipe": {"name": "by_region", "type": "bar", "questions": ["Region"]}})
     assert resp.status_code == 200 and resp.json()["name"] == "by_region"
     assert saved["charts"][0]["name"] == "by_region"
 
@@ -45,9 +48,9 @@ def test_ask_save_indicator_appends_to_indicators(monkeypatch):
     cfg = {}
     monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
     monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update(c))
-    client = TestClient(wm.app)
-    resp = client.post("/api/ask/save",
-                       json={"recipe": {"name": "n_rows", "stat": "count"}, "kind": "indicator"})
+    with TestClient(wm.app) as client:
+        resp = client.post("/api/ask/save",
+                           json={"recipe": {"name": "n_rows", "stat": "count"}, "kind": "indicator"})
     assert resp.status_code == 200 and resp.json()["name"] == "n_rows"
     assert saved["indicators"][0]["name"] == "n_rows"
 

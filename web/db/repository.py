@@ -43,8 +43,6 @@ def set_user_language(db: Session, user: User, language: str) -> User:
     if language not in SUPPORTED_LANGUAGES:
         raise ValueError(f"unsupported language: {language}")
     user.language = language
-    db.commit()
-    db.refresh(user)
     return user
 
 
