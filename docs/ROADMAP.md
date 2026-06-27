@@ -2851,6 +2851,43 @@ A card is startable only when all of the following hold:
 
 ---
 
+- [ ] **XTF-25 — Express Template Fill: extractor must read Word content controls (w:sdt) (P2)**
+
+  `_tokens_in_paragraph` in `src/reports/template_inference.py` iterates only
+  `paragraph.runs` (top-level `w:r` elements). Text inside gray-shaded Word **content
+  controls** (`w:sdt → w:sdtContent → w:r → w:t`) is invisible to the extractor, so any
+  `[[placeholder]]` typed inside a content control is silently skipped and the Express UI
+  shows "Aucun espace réservé à examiner." Fix by walking `paragraph._p.iter()` for all
+  descendant `w:t` elements, which covers both plain-paragraph runs and content-control runs
+  in a single pass. Non-UI, non-CLI — Python extractor only.
+
+  **Files:** `src/reports/template_inference.py` (`_tokens_in_paragraph` function) ·
+  `tests/test_template_inference.py` (new or extend)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - A `.docx` whose paragraph text is wrapped in a content control (`w:sdt`) and contains
+    `[[PLACEHOLDER]]` is correctly detected by `_tokens_in_paragraph` — the placeholder
+    appears in the returned token list
+  - A plain-paragraph `[[PLACEHOLDER]]` (no content control) continues to be detected as
+    before (no regression)
+  - A paragraph with both a plain run and a content-control run returns tokens from both
+  - `extract_placeholders` (the caller) therefore lists placeholders from content-control
+    paragraphs; the Express UI no longer shows "Aucun espace réservé à examiner" for a
+    template that only uses content-control placeholders
+
+  **Unit tests:** `tests/test_template_inference.py` — (1) build a minimal `python-docx`
+  document that wraps `[[TOKEN_IN_SDT]]` inside a `w:sdt` content control and assert
+  `_tokens_in_paragraph` returns `["TOKEN_IN_SDT"]`; (2) assert a plain-run `[[TOKEN_PLAIN]]`
+  paragraph still returns `["TOKEN_PLAIN"]`; (3) assert a paragraph containing both a plain
+  run and an `sdt` run returns both tokens; (4) assert that the regression path
+  (`extract_placeholders` on such a doc) returns a non-empty list.
+
+  **E2E:** N/A (Python-only extractor; no UI surface — verified via unit tests + the verifier
+  + PR review).
+
+  **UAT:** N/A (non-UI/CLI card — the human gate is PR review + unit tests green).
 - [ ] **XTF-25 — Extractor reads Word content controls (`w:sdt`) so bracket placeholders in gray-shaded boxes are found**
 
   `extract_placeholders` (`src/reports/template_inference.py`) builds paragraph text from
