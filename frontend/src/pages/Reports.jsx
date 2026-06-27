@@ -81,7 +81,9 @@ export default function Reports() {
     if (!showCompare) return;
     (async () => {
       try {
-        const d = await (await fetch('/api/periods')).json();
+        const res = await fetch('/api/periods');
+        if (!res.ok) { setPeriods([]); return; }
+        const d = await res.json();
         setPeriods(d.registry || []);
       } catch { setPeriods([]); }
     })();

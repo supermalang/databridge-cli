@@ -938,11 +938,12 @@ function PeriodRangeField({ cfg, set }) {
   // after) instead of an arbitrary fixed window.
   const [yrRange, setYrRange] = useState({ min: null, max: null });
   useEffect(() => {
+    if (!cfg?.api) return;
     (async () => {
       try { setYrRange(await (await fetch('/api/periods/date-range')).json()); }
       catch { /* keep fallback */ }
     })();
-  }, []);
+  }, [cfg?.api]);
 
   // Compute {label, started, ended} for the current selection.
   const resolve = () => {
