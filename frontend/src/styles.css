@@ -927,9 +927,11 @@ header :focus-visible, .btn-primary:focus-visible { outline-color: #fff; }
 .pf-swatches, .pf-icons { display: flex; gap: 8px; flex-wrap: wrap; }
 .pf-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
 .pf-swatch.sel { border-color: var(--ink, #0B1220); box-shadow: 0 0 0 2px #fff inset; }
+.pf-swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 50%; }
 .pf-icon { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border-2, #D6DBE3);
   background: var(--surface, #fff); font-size: 16px; cursor: pointer; }
 .pf-icon.sel { border-color: var(--accent, #2563eb); box-shadow: 0 0 0 2px var(--accent-soft, #E0F2FE); }
+.pf-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 .pf-danger { display: flex; align-items: center; justify-content: space-between; gap: 16px;
   padding: 14px 0; border-bottom: 1px solid var(--border, #e5e7eb); }
 .pf-danger:last-child { border-bottom: 0; }
