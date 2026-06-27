@@ -11,6 +11,7 @@ import { usePerms } from '../lib/perms.js';
 import { useRun } from '../lib/run.js';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 import { loadConfig } from '../lib/config.js';
+import { swr } from '../lib/cache.js';
 import BuildOptions from '../components/BuildOptions.jsx';
 
 export default function Reports() {
@@ -29,24 +30,26 @@ export default function Reports() {
   const [periods, setPeriods]       = useState([]);
   const [selected, setSelected]     = useState([]);
 
+  // All three are non-sensitive metadata on the persist whitelist (PERF-4), so a
+  // hard reload paints the last-known list instantly while it revalidates.
   const loadReports = useCallback(async () => {
     try {
-      const data = await (await fetch('/api/reports')).json();
-      setReports(data.files || []);
+      await swr('/api/reports', async () => (await (await fetch('/api/reports')).json()),
+        (data) => setReports(data.files || []));
     } catch (e) { toast(String(e), 'err'); }
   }, [toast]);
 
   const loadSessions = useCallback(async () => {
     try {
-      const data = await (await fetch('/api/data/sessions')).json();
-      setSessions(data.sessions || []);
+      await swr('/api/data/sessions', async () => (await (await fetch('/api/data/sessions')).json()),
+        (data) => setSessions(data.sessions || []));
     } catch { setSessions([]); }
   }, []);
 
   const loadTemplates = useCallback(async () => {
     try {
-      const data = await (await fetch('/api/templates')).json();
-      setTemplates(data.files || []);
+      await swr('/api/templates', async () => (await (await fetch('/api/templates')).json()),
+        (data) => setTemplates(data.files || []));
     } catch { setTemplates([]); }
   }, []);
 

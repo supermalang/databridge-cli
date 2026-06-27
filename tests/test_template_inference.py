@@ -1490,3 +1490,108 @@ def test_resolve_tie_flagged():
     assert _get(proposals[0], "status") == "needs_attention", proposals[0]
     reason = _get(proposals[0], "reason")
     assert "facilities" in reason and "staff" in reason, reason
+
+
+# =========================================================================== #
+# XTF-25 — extractor must read Word content controls (w:sdt)
+# =========================================================================== #
+# ``paragraph.runs`` only yields top-level ``w:r`` elements; text wrapped in a
+# Word gray-shaded content control lives at ``w:sdt/w:sdtContent/w:r/w:t`` and
+# is therefore invisible to the current extractor.  Fix: walk
+# ``paragraph._p.iter()`` for ALL ``w:t`` descendants.
+# These four tests are derived from the XTF-25 Acceptance criteria and are
+# expected to be RED until the fix lands.
+# =========================================================================== #
+
+from lxml import etree as _etree
+from src.reports.template_inference import _tokens_in_paragraph
+
+
+_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+
+def _sdt_paragraph(text: str):
+    """Return a minimal python-docx-compatible paragraph object whose text is
+    wrapped inside a ``w:sdt`` content control rather than a bare ``w:r``."""
+    doc = Document()
+    para = doc.add_paragraph()
+
+    # Build:  <w:sdt><w:sdtContent><w:r><w:t>text</w:t></w:r></w:sdtContent></w:sdt>
+    sdt = _etree.SubElement(para._p, f"{{{_W}}}sdt")
+    sdt_content = _etree.SubElement(sdt, f"{{{_W}}}sdtContent")
+    wr = _etree.SubElement(sdt_content, f"{{{_W}}}r")
+    wt = _etree.SubElement(wr, f"{{{_W}}}t")
+    wt.text = text
+
+    return para
+
+
+def _mixed_paragraph(plain_text: str, sdt_text: str):
+    """Return a paragraph that has BOTH a plain ``w:r`` run AND a ``w:sdt`` run."""
+    doc = Document()
+    para = doc.add_paragraph(plain_text)  # creates a plain w:r run
+
+    sdt = _etree.SubElement(para._p, f"{{{_W}}}sdt")
+    sdt_content = _etree.SubElement(sdt, f"{{{_W}}}sdtContent")
+    wr = _etree.SubElement(sdt_content, f"{{{_W}}}r")
+    wt = _etree.SubElement(wr, f"{{{_W}}}t")
+    wt.text = sdt_text
+
+    return para
+
+
+# AC1 — sdt-wrapped placeholder is detected
+def test_xtf25_sdt_token_detected():
+    """_tokens_in_paragraph must return the token inside a w:sdt content control."""
+    para = _sdt_paragraph("[[TOKEN_IN_SDT]]")
+    tokens = _tokens_in_paragraph(para)
+    inners = [t.inner for t in tokens]
+    assert "TOKEN_IN_SDT" in inners, (
+        f"expected 'TOKEN_IN_SDT' but got {inners!r} — "
+        "paragraph.runs misses w:sdt content"
+    )
+
+
+# AC2 — plain-paragraph regression: existing behaviour must be preserved
+def test_xtf25_plain_run_still_detected(tmp_path):
+    """_tokens_in_paragraph must still find tokens in a plain w:r paragraph."""
+    doc = Document()
+    para = doc.add_paragraph("[[TOKEN_PLAIN]]")
+    tokens = _tokens_in_paragraph(para)
+    inners = [t.inner for t in tokens]
+    assert "TOKEN_PLAIN" in inners, (
+        f"expected 'TOKEN_PLAIN' but got {inners!r}"
+    )
+
+
+# AC3 — paragraph with BOTH plain run and sdt run returns both tokens
+def test_xtf25_mixed_paragraph_returns_both_tokens():
+    """A paragraph containing a plain w:r AND a w:sdt run must yield both tokens."""
+    para = _mixed_paragraph("[[PLAIN_TOKEN]] ", "[[SDT_TOKEN]]")
+    tokens = _tokens_in_paragraph(para)
+    inners = [t.inner for t in tokens]
+    assert "PLAIN_TOKEN" in inners, f"plain token missing from {inners!r}"
+    assert "SDT_TOKEN" in inners, f"sdt token missing from {inners!r}"
+
+
+# AC4 — extract_placeholders end-to-end: non-empty on a doc with sdt placeholders
+def test_xtf25_extract_placeholders_returns_nonempty_for_sdt_doc(tmp_path):
+    """extract_placeholders must return a non-empty list when the doc's tokens
+    are inside w:sdt content controls."""
+    doc = Document()
+    para = doc.add_paragraph()
+    # Inject sdt wrapping [[REPORT_TITLE]] — mirrors the real-world failure.
+    sdt = _etree.SubElement(para._p, f"{{{_W}}}sdt")
+    sdt_content = _etree.SubElement(sdt, f"{{{_W}}}sdtContent")
+    wr = _etree.SubElement(sdt_content, f"{{{_W}}}r")
+    wt = _etree.SubElement(wr, f"{{{_W}}}t")
+    wt.text = "[[REPORT_TITLE]]"
+
+    path = tmp_path / "sdt_doc.docx"
+    doc.save(str(path))
+
+    tokens = extract_placeholders(str(path))
+    assert len(tokens) > 0, (
+        "extract_placeholders returned [] for a doc whose only placeholder is "
+        "inside a w:sdt content control"
+    )
