@@ -8,8 +8,10 @@ import StageHelp from '../components/StageHelp.jsx';
 import { useRun } from '../lib/run.js';
 import { usePerms } from '../lib/perms.js';
 import { useAiStatus } from '../lib/aiStatus.js';
+import { SkeletonPanel } from '../components/Skeleton.jsx';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { RailLayout, StatusCard } from '../components/Rail.jsx';
+import { getActiveProjectLanguage } from '../lib/projects.js';
 
 const PLATFORMS = [
   { id: 'ona',  name: 'Ona / INFORM', tag: 'ona.io · UNICEF INFORM',        defaultUrl: 'https://api.ona.io/api/v1' },
@@ -104,7 +106,7 @@ export default function Sources({ section = 'setup' } = {}) {
   });
 
   const saveAll = async () => {
-    if (!cfg) return;
+    if (!cfg) return false;
     try {
       const text = yaml.dump(cfg, { indent: 2, lineWidth: -1 });
       await saveConfigText(text);
@@ -114,7 +116,8 @@ export default function Sources({ section = 'setup' } = {}) {
       // which unlocks the AI buttons without a manual page refresh.
       window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'sources' } }));
       toast(t('common.saved'), 'ok');
-    } catch (e) { toast(e.message, 'err'); }
+      return true;
+    } catch (e) { toast(e.message, 'err'); return false; }
   };
 
   const saveYaml = async () => {
@@ -159,7 +162,7 @@ export default function Sources({ section = 'setup' } = {}) {
   };
 
   // ── early states ─────────────────────────────────────────────────────────
-  if (cfg === null) return <div className="page"><p className="empty-state">{t('sources.loadingConfig')}</p></div>;
+  if (cfg === null) return <div className="page"><SkeletonPanel rows={5} rowHeight={48} label={t('sources.loadingConfig')} /></div>;
 
   // ── render ───────────────────────────────────────────────────────────────
   // The "output" section lives under the Deliver stage; setup + ai are Extract.
@@ -249,7 +252,9 @@ export default function Sources({ section = 'setup' } = {}) {
             cfg={cfg} set={set} platform={platform}
             showToken={showToken} setShowToken={setShowToken}
             testConnection={testConnection} lastCheck={lastCheck}
+            clearCheck={() => setLastCheck(null)}
             questionCount={questionCount}
+            dirty={!!dirty} saveNow={saveAll}
           />
         </RailLayout>
       )}
@@ -294,14 +299,34 @@ function OutputRail({ cfg }) {
 }
 
 // ── Connection ───────────────────────────────────────────────────────────────
-function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConnection, lastCheck, questionCount }) {
+function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConnection, lastCheck, clearCheck, questionCount, dirty, saveNow }) {
   const { t } = useTranslation();
   const { run, running, activeCmd } = useRun();
   const { canEdit } = usePerms();
   const toast = useToast();
   const [loadingSample, setLoadingSample] = useState(false);
-  const fetchQuestions = () => run('fetch-questions');
-  const downloadData = () => run('download');
+  // PUX-10 — Fetch/Download run the CLI against the SAVED config, but Test
+  // connection probes the *in-form* values. Persist any unsaved edits first so
+  // the run never executes against stale config; if the save fails, abort the
+  // run (the error toast is surfaced by saveNow).
+  const runSaved = async (cmd) => {
+    if (dirty) { const ok = await saveNow?.(); if (ok === false) return; }
+    run(cmd);
+  };
+  const fetchQuestions = () => runSaved('fetch-questions');
+  const downloadData = () => runSaved('download');
+
+  // PUX-7 — Fetch/Download are destructive/expensive and need a *working form*
+  // connection. "Confirmed working" = the most recent Test connection this
+  // session returned ok AND counted a positive number of form fields (so a
+  // token-valid-but-no/invalid-Form-UID test does NOT qualify — both Fetch and
+  // Download need the form). Editing any connection field stales this (clearCheck).
+  const connectionConfirmed = lastCheck?.status === 'ok' && Number(lastCheck?.fields) > 0;
+
+  // Wrap a connection-field setter so editing it clears a stale confirmation:
+  // a previously-confirmed status must not keep Fetch/Download enabled after the
+  // platform / URL / token / Form UID changes.
+  const setConn = (path) => (value) => { clearCheck?.(); set(path)(value); };
 
   // No-credentials sample path (PUX-5): load the bundled synthetic dataset into the
   // active project so the downstream stages have real columns + rows without a token
@@ -329,6 +354,7 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
     }
   };
   const onPick = (id) => {
+    clearCheck?.();   // platform is a connection field — stale any confirmation
     set('api.platform')(id);
     // also seed the URL if blank
     if (!cfg.api?.url) set('api.url')(PLATFORMS.find(p => p.id === id).defaultUrl);
@@ -410,7 +436,7 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
           className="src-input src-input--mono"
           value={cfg.api?.url || ''}
           placeholder={PLATFORMS.find(p => p.id === platform)?.defaultUrl}
-          onChange={e => set('api.url')(e.target.value)}
+          onChange={e => setConn('api.url')(e.target.value)}
         />
       </div>
 
@@ -428,7 +454,7 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
                 value={cfg.api?.token || ''}
                 placeholder={t('sources.tokenPlaceholder')}
                 autoComplete="off"
-                onChange={e => set('api.token')(e.target.value)}
+                onChange={e => setConn('api.token')(e.target.value)}
               />
               <button title={showToken ? t('sources.hide') : t('sources.show')} onClick={() => setShowToken(s => !s)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -462,7 +488,7 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
         <div className="src-field__label">{t('sources.formUid')}
           <div className="src-field__hint">{t('sources.formUidHint', { platform: platform === 'ona' ? 'Ona / INFORM' : 'Kobo' })}</div>
         </div>
-        <input aria-label={t('sources.formUid')} className="src-input src-input--mono" value={cfg.form?.uid || ''} placeholder="aAbBcCdDeEfFgGhH" onChange={e => set('form.uid')(e.target.value)} />
+        <input aria-label={t('sources.formUid')} className="src-input src-input--mono" value={cfg.form?.uid || ''} placeholder="aAbBcCdDeEfFgGhH" onChange={e => setConn('form.uid')(e.target.value)} />
       </div>
 
       <div className="src-field">
@@ -494,13 +520,17 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
           <div className="src-field__hint">{t('sources.pullHint')}</div>
         </div>
         <div className="inline-status" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn btn-sm" onClick={fetchQuestions} disabled={running || !canEdit}
-                  title={canEdit ? t('sources.fetchTitle') : t('sources.fetchViewerTitle')}>
+          <button className="btn btn-sm" onClick={fetchQuestions} disabled={running || !canEdit || !connectionConfirmed}
+                  title={!canEdit ? t('sources.fetchViewerTitle')
+                       : !connectionConfirmed ? t('sources.fetchUntestedTitle')
+                       : t('sources.fetchTitle')}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><polyline points="2 4 2 8 6 8"/><path d="M3 11a6 6 0 1 0 1.4-7"/></svg>
             {running && activeCmd === 'fetch-questions' ? t('sources.fetching') : t('sources.fetchQuestions')}
           </button>
-          <button className="btn btn-primary btn-sm" onClick={downloadData} disabled={running || !canEdit}
-                  title={canEdit ? t('sources.downloadTitle') : t('sources.downloadViewerTitle')}>
+          <button className="btn btn-primary btn-sm" onClick={downloadData} disabled={running || !canEdit || !connectionConfirmed}
+                  title={!canEdit ? t('sources.downloadViewerTitle')
+                       : !connectionConfirmed ? t('sources.downloadUntestedTitle')
+                       : t('sources.downloadTitle')}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
             {running && activeCmd === 'download' ? t('sources.downloading') : t('sources.downloadData')}
           </button>
@@ -517,8 +547,10 @@ function ConnectionCard({ cfg, set, platform, showToken, setShowToken, testConne
             data-testid="try-sample-data"
             className="btn btn-primary btn-sm"
             onClick={tryWithSampleData}
-            disabled={loadingSample || !canEdit}
-            title={canEdit ? t('sources.sampleTitle') : t('sources.sampleViewerTitle')}>
+            disabled={loadingSample || !canEdit || connectionConfirmed}
+            title={!canEdit ? t('sources.sampleViewerTitle')
+                 : connectionConfirmed ? t('sources.sampleConfirmedTitle')
+                 : t('sources.sampleTitle')}>
             {loadingSample ? t('sources.loadingSample') : t('sources.trySample')}
           </button>
         </div>
@@ -533,6 +565,14 @@ function AINarrativeCard({ cfg, set }) {
   const toast = useToast();
   const ai = cfg.ai || {};
   const maxTok = parseInt(ai.max_tokens, 10) || 1500;
+  // The generated-output language is the PROJECT's language (authoritative since
+  // PLANG-1); it is read-only here and set on the project, not edited per-config.
+  const [projectLanguage, setProjectLanguage] = useState('');
+  useEffect(() => {
+    let alive = true;
+    getActiveProjectLanguage().then(l => { if (alive && l) setProjectLanguage(l); });
+    return () => { alive = false; };
+  }, []);
   const { configured, verified, testing, testAi } = useAiStatus();
   const [testResult, setTestResult] = useState(null);
 
@@ -683,8 +723,14 @@ function AINarrativeCard({ cfg, set }) {
         </div>
       )}
       <div className="src-field">
-        <div className="src-field__label">{t('sources.language')}</div>
-        <input aria-label={t('sources.language')} className="src-input" value={ai.language || ''} placeholder={t('sources.languagePlaceholder')} onChange={e => set('ai.language')(e.target.value)} />
+        <div className="src-field__label">{t('sources.language')}
+          <div className="src-field__hint">{t('sources.languageProjectHint')}</div>
+        </div>
+        <div className="src-readonly-value" aria-label={t('sources.language')}
+             style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 'var(--r-md, 8px)',
+                      background: 'var(--bg-2)', color: 'var(--ink)', fontSize: 13.5 }}>
+          {projectLanguage || ai.language || t('sources.languageUnset')}
+        </div>
       </div>
       <div className="src-field">
         <div className="src-field__label">{t('sources.maxTokens')}</div>

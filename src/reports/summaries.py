@@ -149,7 +149,8 @@ def _compute_summary(
     if stat == "keyword_frequency":
         if not questions:
             raise ValueError("stat 'keyword_frequency' requires at least one question")
-        return _keyword_frequency_text(df[questions[0]], top_n, s.get("language", "en"))
+        language = s.get("language") or _stopword_language_code(ai_cfg)
+        return _keyword_frequency_text(df[questions[0]], top_n, language)
 
     if stat == "correlation":
         if len(questions) < 2:
@@ -391,6 +392,26 @@ def _data_quality_text(df: pd.DataFrame, questions: List[str]) -> str:
         parts.append(f"Outliers (IQR): {', '.join(outlier_parts)}.")
 
     return " ".join(parts)
+
+
+# Maps a project / ai.language value (a language name like "French", or an ISO
+# code like "fr") to the 2-letter stop-word code used by _keyword_frequency_text.
+# Unknown / unsupported languages fall through to "en" (graceful degradation).
+_STOPWORD_LANG_CODES = {
+    "english": "en", "en": "en",
+    "french": "fr", "français": "fr", "francais": "fr", "fr": "fr",
+    "arabic": "ar", "ar": "ar",
+    "spanish": "es", "español": "es", "espanol": "es", "es": "es",
+}
+
+
+def _stopword_language_code(ai_cfg: Optional[Dict]) -> str:
+    """Derive the keyword-frequency stop-word code from ai.language.
+
+    Returns "en" when ai.language is missing or maps to no supported code, so the
+    keyword-frequency summary never crashes on an unknown language."""
+    lang = ((ai_cfg or {}).get("language") or "").strip().lower()
+    return _STOPWORD_LANG_CODES.get(lang, "en")
 
 
 def _keyword_frequency_text(series: pd.Series, top_n: int, language: str = "en") -> str:

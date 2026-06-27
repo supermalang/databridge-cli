@@ -50,13 +50,16 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 9 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 6 | 6 / 6 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 10 / 10 |
 | [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
 | [Express Template Fill](#express-template-fill) | 25 | 24 / 25 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
-| [Internationalization (i18n)](#internationalization-i18n) | 4 | 2 / 4 |
-| [Performance](#performance) | 2 | 2 / 2 |
-| [Maintenance & hardening](#maintenance--hardening) | 3 | 0 / 3 |
+| [Internationalization (i18n)](#internationalization-i18n) | 5 | 3 / 5 |
+| [Project output language](#project-output-language) | 3 | 3 / 3 |
+| [Performance](#performance) | 4 | 3 / 4 |
+| [Maintenance & hardening](#maintenance--hardening) | 4 | 0 / 4 |
+| [Performance](#performance) | 3 | 3 / 3 |
+| [Maintenance & hardening](#maintenance--hardening) | 4 | 1 / 4 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -1124,6 +1127,280 @@ A card is startable only when all of the following hold:
   3. Switch repeatedly between two ready projects and confirm no flicker or wrong state.
 
   **Verify:** `cd frontend && npx playwright test pux-2.spec.ts`
+
+---
+
+- [x] **PUX-7 — Gate Fetch/Download on a confirmed connection; flip the sample-data affordance (P2)**
+
+  On Extract → Connection, **Fetch questions** and **Download data** are always clickable
+  (disabled only on `running || !canEdit`, `frontend/src/pages/Sources.jsx` ~497/502), so a
+  non-expert can run them before a working connection exists and hit a confusing runtime failure
+  (fails *Make the safe path the default*). The **Test connection** button already validates the
+  live `api.url`/`token`(+`form.uid`) and stores the result in `lastCheck`
+  (`frontend/src/pages/Sources.jsx` ~132–159; backend `POST /api/sources/test` returns
+  `{ok, fields, status, message}` and counts the form schema's fields when a Form UID is present).
+  Wire the destructive/expensive actions to that signal: keep **Fetch questions** / **Download
+  data** disabled until the connection is confirmed working, and make **Try with sample data** the
+  enabled path until then — then swap the two once a real connection is confirmed. **Frontend-only
+  — no backend change** (the test endpoint already returns the field count); no change to what any
+  button does when enabled. Independent of PERF-3 and the A11Y/OUT/ME cards.
+
+  **Definition of "connection confirmed working":** the most recent Test connection in the current
+  session returned `ok === true` **and** a Form UID was provided whose schema loaded (the response
+  `fields` count is a positive number). Token-valid-but-no/invalid-Form-UID does **not** count,
+  because both Fetch and Download need the form.
+
+  **Files:** `frontend/src/pages/Sources.jsx` (ConnectionCard: derive a `connectionConfirmed`
+  boolean from `lastCheck` (`ok && fields > 0`); gate the Fetch ~497 / Download ~502 / Try-sample
+  ~520 `disabled` props on it; clear `lastCheck` when any connection field — platform, API URL,
+  API token, Form UID — is edited (~383–472) so a confirmed status goes stale on edit; add the
+  disabled-reason tooltips/helper text) · `frontend/src/locales/en.json` +
+  `frontend/src/locales/fr.json` (new `sources.*` strings for the disabled reasons — EN/FR parity
+  is enforced) · `frontend/src/styles.css` (only if the disabled affordance needs styling beyond
+  the existing disabled state) · `frontend/tests/e2e/connection-gating.spec.ts` (new)
+
+  **Config/schema impact:** None — frontend presentation/state only; no `config.yml`, DB, or
+  endpoint change.
+
+  **Acceptance criteria**
+  - On the Connection tab with **no** confirmed-working connection in the current session (no
+    successful test yet, or the last test errored / returned no positive field count): **Fetch
+    questions** and **Download data** are disabled, and **Try with sample data** is enabled
+    (all still subject to the existing `!canEdit` / `running` / `loadingSample` rules — viewers
+    stay disabled throughout)
+  - When the connection is **confirmed working** (`/api/sources/test` returned `ok` **and** a
+    positive `fields` count for the supplied Form UID): **Fetch questions** and **Download data**
+    are enabled (subject to `running`/`canEdit`), and **Try with sample data** is disabled
+  - A successful **token-only** test (no Form UID, so `fields` is null/0) does **not** enable
+    Fetch/Download — they stay disabled because the form has not been confirmed
+  - Editing any connection field (platform, API URL, API token, or Form UID) **clears** the
+    confirmed status: Fetch/Download re-disable and Try-with-sample re-enables until Test
+    connection is re-run successfully
+  - Each disabled action button conveys **why** it is disabled by a means other than styling alone
+    (e.g. a `title`/tooltip such as "Test the connection first" on Fetch/Download, and a
+    sample-disabled reason once a real connection exists); the new strings exist in both `en.json`
+    and `fr.json`
+  - **No behaviour change when enabled:** Fetch/Download/sample call the same handlers/endpoints as
+    today; no backend change
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the disabled/enabled
+  gating, the token-only non-enable case, and the edit-invalidation are asserted by the Playwright
+  E2E below, consistent with the A11Y/PUX cards' coverage approach).
+
+  **E2E:** `frontend/tests/e2e/connection-gating.spec.ts` (new) + visual (impeccable audit/critique
+  + `toHaveScreenshot`) — as an editor on the Connection tab, mocking `POST /api/sources/test`:
+  (1) on initial load assert Fetch questions + Download data are disabled and Try with sample data
+  is enabled; (2) mock the test to resolve `{ok:true, fields:42}`, click Test connection, and
+  assert Fetch/Download become enabled and Try-with-sample becomes disabled; (3) mock the test to
+  resolve `{ok:true, fields:null}` (token-only) and assert Fetch/Download stay disabled; (4) after
+  a confirmed-working state, edit the API token field and assert Fetch/Download re-disable and
+  Try-with-sample re-enables. Run a Playwright axe audit on both the gated and confirmed states and
+  assert no new violations. Capture `toHaveScreenshot` baselines of the disabled (pre-connection)
+  state and the confirmed-working state at all three viewports (mobile 390×844, tablet 820×1180,
+  desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. Open Extract → Connection on a project with no working credentials. Confirm **Fetch
+     questions** and **Download data** are greyed out and **Try with sample data** is clickable,
+     and that hovering the disabled buttons explains they need a tested connection.
+  2. Enter a valid URL, token, and Form UID and click **Test connection**. On success, confirm
+     Fetch questions + Download data become clickable and Try with sample data greys out.
+  3. Run **Test connection** with a valid token but no/invalid Form UID. Confirm Fetch/Download
+     stay disabled.
+  4. After a successful test, change the API token. Confirm Fetch/Download grey out again and Try
+     with sample data re-enables until you re-test.
+  5. Switch the interface to French and confirm the disabled-reason tooltips are translated.
+
+  **Verify:** `cd frontend && npx playwright test connection-gating.spec.ts`
+
+---
+
+- [x] **PUX-8 — Primary navigation labels adopt the PUX-1 plain-language stage names (P2)**
+
+  PUX-1 reworded the Home stage cards to plain language for non-experts
+  (`home.stages.transform.label` = "Clean & check" / "Nettoyer et vérifier";
+  `home.stages.model.label` = "Combine data" / "Combiner les données"), but the horizontal top-nav
+  still uses the old data-engineering jargon keys `nav.transform` ("Transform" / "Transformer") and
+  `nav.model` ("Model" / "Modéliser") (`frontend/src/App.jsx` STAGES ~77–100, rendered ~628 via
+  `t(s.labelKey)`). So the nav contradicts the very cards a non-expert just read on Home. Bring the
+  primary tab labels into line with the plain-language stage names in **both** languages. **Copy /
+  label only — no id, route, or behaviour change** (stage ids `transform`/`model`/`present` and the
+  `data-tab` ids are unchanged). To prevent future drift, prefer sourcing each nav label from the
+  same string as its Home stage card where one exists (single source of truth). Frontend-only;
+  follows the *Match system ↔ real world* / plain-language principle (PUX). Independent of I18N-5
+  (that one fixes the **sub**-tabs), though both touch the nav.
+
+  **Files:** `frontend/src/locales/en.json` + `frontend/src/locales/fr.json` (`nav.transform` and
+  `nav.model` values updated to the plain-language wording, EN/FR parity) · `frontend/src/App.jsx`
+  (STAGES `labelKey` / render ~77–100/628 — optionally point the nav label at the shared
+  `home.stages.*.label` key so it cannot drift from the Home card) ·
+  `frontend/tests/e2e/nav-labels.spec.ts` (new)
+
+  **Config/schema impact:** None — relabel only; stage ids / routes unchanged.
+
+  **Acceptance criteria**
+  - The primary top-nav tab currently reading "Transform" reads the same plain-language name as the
+    Home "Clean & check" stage card (FR: "Nettoyer et vérifier") — no "Transform" / "Transformer"
+    jargon remains as the visible nav label
+  - The primary top-nav tab currently reading "Model" reads the same plain-language name as the Home
+    "Combine data" stage card (FR: "Combiner les données") — no "Model" / "Modéliser" remains
+  - The remaining primary tabs (Home, Extract, Analyze, Deliver) are visually unchanged
+  - The nav labels match their corresponding Home stage-card labels in **both** English and French
+    (a single source of truth is acceptable and preferred)
+  - **No behaviour change:** stage ids, routes/navigation targets, and `data-tab` ids are
+    byte-for-byte unchanged — only the visible label text differs
+  - en/fr stay key-aligned with no empty values; `check:i18n` passes
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the relabeled nav and unchanged
+  navigation are asserted by the Playwright E2E below + `check:i18n`, per the i18n/PUX precedent).
+
+  **E2E:** `frontend/tests/e2e/nav-labels.spec.ts` (new) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — with language=en, assert the third and fourth primary tabs render the
+  plain-language names (matching the Home cards) and do NOT contain "Transform" / "Model"; with
+  language=fr, assert they render the French plain-language names and do NOT contain "Transformer" /
+  "Modéliser"; click each renamed tab and assert navigation lands on the same stage as before (route
+  / first sub-tab unchanged). Capture `toHaveScreenshot` baselines of the primary nav in English and
+  in French at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human
+  approves them.
+
+  **UAT:**
+  1. In English, read the Home stage cards, then look at the top navigation. Confirm the nav tab
+     names match the card names — in particular that no tab says "Transform" or "Model".
+  2. Switch the interface to French and confirm the nav shows the French plain-language names that
+     match the cards (no "Transformer" / "Modéliser").
+  3. Click each renamed tab and confirm it opens the same stage it always did (only the words
+     changed).
+
+  **Verify:** `cd frontend && npx playwright test nav-labels.spec.ts && npm run check:i18n`
+
+---
+
+- [x] **PUX-9 — Copy-placeholder buttons for charts / indicators / summaries / tables on the Analyze tab (P2)**
+
+  On Analyze → "Charts & indicators" (`frontend/src/pages/Composition.jsx`, `ANALYZE_SECTIONS`),
+  every chart / indicator / summary / table the user defines maps to a docxtpl placeholder they
+  must place in their Word template **by hand**: `{{ chart_<name> }}`, `{{ ind_<name> }}` (+
+  `{{ ind_<name>_breakdown }}` / `{{ ind_<name>_table }}` when `disaggregate_by` is set),
+  `{{ summary_<name> }}`, `{{ table_<name> }}` — where `<name>` is the item's `name` field verbatim
+  (`src/reports/builder.py` ~342/395, `src/reports/indicators.py` ~110–119,
+  `src/reports/summaries.py` ~53). Hand-typing these is error-prone — a single typo silently yields
+  an empty placeholder in the report. Add a per-row **copy-placeholder** button that copies the
+  exact `{{ … }}` token to the clipboard with visible confirmation, reusing the existing clipboard
+  pattern (`frontend/src/pages/Sources.jsx` ~577/653 — `navigator.clipboard.writeText` + the
+  copy-icon button). **UI only — no change to how placeholders are generated or rendered.**
+
+  **Caveat to surface (not hide):** chart + table placeholders embed binary images, so per the
+  CLAUDE.md single-run rule they only work inside a template produced by `generate-template`; the
+  copy button is for reference / advanced use and the recommended path for charts + tables stays
+  `generate-template`. Indicator + summary tokens are plain text and paste safely anywhere.
+
+  **Files:** `frontend/src/pages/Composition.jsx` (a small reusable copy-placeholder control in each
+  row's actions — ChartsCard ~964–975, IndicatorsCard ~1238–1245, TablesCard ~1285–1296,
+  SummariesCard ~1335–1346; derive the token from the item's `name`; for an indicator with
+  `disaggregate_by`, also offer the `_table` (and/or `_breakdown`) variant) ·
+  `frontend/src/locales/{en,fr}.json` (copy label/tooltip + "copied" confirmation + the chart/table
+  caveat note — EN/FR parity) · `frontend/src/styles.css` (only if the control needs styling beyond
+  the existing icon buttons) · `frontend/tests/e2e/copy-placeholder.spec.ts` (new)
+
+  **Config/schema impact:** None — UI presentation only; the placeholder tokens are unchanged.
+
+  **Acceptance criteria**
+  - Each **chart** row exposes a copy button that copies its exact placeholder `{{ chart_<name> }}`
+    (name = the chart's `name`) to the clipboard
+  - Each **indicator** row copies `{{ ind_<name> }}`; for an indicator with `disaggregate_by` set
+    the user can additionally copy the `{{ ind_<name>_table }}` variant (and/or `_breakdown`)
+  - Each **summary** row copies `{{ summary_<name> }}`; each **table** row copies `{{ table_<name> }}`
+  - The copied string includes the `{{ }}` delimiters with a single inner space (matching the
+    generated-template format) so it pastes ready to use
+  - Copying gives **visible confirmation** (a toast or a transient checkmark on the button) —
+    improving on the current silent copy pattern
+  - A brief inline note / tooltip explains that chart + table placeholders must live in a
+    `generate-template`-produced template (binary image data), while indicator + summary tokens
+    paste anywhere
+  - The copy control is keyboard-operable with an accessible name (e.g. "Copy placeholder for
+    <item name>"), per the A11Y-4 icon-button convention; no raw translation key leaks
+  - New strings exist in both `en.json` and `fr.json` (key-aligned; `check:i18n` passes)
+  - Impeccable audit/critique clean
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the clipboard write, exact token
+  correctness, and i18n parity are asserted by the Playwright E2E below + `check:i18n`, per the
+  i18n/PUX precedent).
+
+  **E2E:** `frontend/tests/e2e/copy-placeholder.spec.ts` (new) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — grant clipboard permissions; seed/add a chart named e.g. "sites", an
+  indicator "completion" (one without and one with `disaggregate_by`), a summary "overview", and a
+  table; click each row's copy button and assert `navigator.clipboard.readText()` returns the exact
+  token (`{{ chart_sites }}`, `{{ ind_completion }}`, `{{ ind_completion_table }}` for the
+  disaggregated one, `{{ summary_overview }}`, `{{ table_<name> }}`); assert the confirmation
+  feedback appears; run a Playwright axe audit and assert each copy button has a non-empty accessible
+  name. Capture `toHaveScreenshot` baselines of a row with the copy button (and its confirmation
+  state) at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves.
+
+  **UAT:**
+  1. On Analyze → Charts & indicators, add a chart and click its copy button. Paste into a text
+     editor and confirm you get exactly `{{ chart_<name> }}`.
+  2. Do the same for an indicator, a summary, and (under Advanced) a table; confirm each token matches
+     its name. For an indicator with a disaggregation, confirm you can also copy the `_table` variant.
+  3. Confirm a visible "copied" confirmation appears each time.
+  4. Confirm the note about chart/table placeholders needing a generated template is visible.
+  5. Switch the interface to French and confirm the copy tooltip + confirmation are translated.
+
+  **Verify:** `cd frontend && npx playwright test copy-placeholder.spec.ts && npm run check:i18n`
+
+---
+
+- [x] **PUX-10 — Auto-save the connection before Fetch/Download (no stale-config runs) (P2)**
+
+  Follow-up to PUX-7. **Test connection** probes the *in-form* values (URL/token/Form UID are
+  sent in the request body), but **Fetch questions** / **Download data** run the CLI against the
+  *saved* config (`run('fetch-questions')` / `run('download')` → `POST /api/run/<cmd>`, which
+  hydrates the saved project config). So a user who tests a connection and — without clicking
+  Save — clicks Fetch runs against the old/empty saved config and it fails confusingly (the
+  buttons are enabled by the successful test, but the tested values were never persisted). Fix:
+  make Fetch/Download **auto-save first** — when the config has unsaved changes (`dirty`,
+  `frontend/src/pages/Sources.jsx` ~92), persist it (the existing `saveAll` →
+  `POST /api/config`) and only then issue the run; if the save fails, **abort the run** and
+  surface the error. Matches *Make the safe path the default* — the user can't forget to save.
+
+  **Files:** `frontend/src/pages/Sources.jsx` (have `saveAll` ~108 report success/failure; pass
+  `dirty` + a save fn into `ConnectionCard` ~250; wrap `fetchQuestions`/`downloadData` ~306–307
+  to `await` a save-if-dirty before `run(...)`, aborting on save failure) ·
+  `frontend/tests/e2e/connection-autosave.spec.ts` (new) ·
+  `frontend/src/locales/{en,fr}.json` (only if a new user-facing string is added)
+
+  **Config/schema impact:** None — uses the existing `POST /api/config` save path.
+
+  **Acceptance criteria**
+  - Clicking **Fetch questions** or **Download data** while the config is `dirty` first issues a
+    `POST /api/config` (save) and only then the `POST /api/run/<cmd>` — the save completes before
+    the run starts, so the run uses the just-saved config
+  - When there are **no** unsaved changes, the buttons run immediately with no redundant save
+  - If the auto-save **fails** (validation / permission / network), the run is **not** started and
+    the error is surfaced to the user (no silent no-op, no run against stale config)
+  - After a successful auto-save the form is no longer `dirty` (same end state as a manual Save);
+    the manual Save button behaviour is unchanged
+  - No regression to PUX-7 gating (a confirmed connection is still required to enable the buttons)
+  - Any new user-facing string exists in both `en.json` and `fr.json`; `check:i18n` passes
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the save-before-run ordering and the
+  abort-on-save-failure are asserted by the Playwright E2E below, per the PUX/i18n precedent).
+
+  **E2E:** `frontend/tests/e2e/connection-autosave.spec.ts` (new) — network-mocked (same harness as
+  connection-gating): load a saved connection config, change the Form UID (dirty), run **Test
+  connection** (mock `ok+fields` → confirmed) so Fetch enables; click **Fetch questions** and assert
+  the request order is `POST /api/config` **then** `POST /api/run/fetch-questions` (the run is not
+  sent before the save resolves). Second case: mock `POST /api/config` → 4xx and assert clicking
+  Fetch does **not** call `/api/run/*` and shows an error. (No `toHaveScreenshot` baseline needed —
+  behavioural change, not visual.)
+
+  **UAT:**
+  1. Enter/adjust your connection details and click **Test connection** (success). Without clicking
+     Save, click **Fetch questions**. Confirm it works (it saved automatically first).
+  2. Confirm the Save button then shows no unsaved changes.
+  3. Force a save failure (e.g. an invalid config) and click Fetch — confirm you get a clear error
+     and the fetch does **not** run.
+
+  **Verify:** `cd frontend && npx playwright test connection-autosave.spec.ts && npm run check:i18n`
 
 ---
 
@@ -2611,6 +2888,39 @@ A card is startable only when all of the following hold:
   + PR review).
 
   **UAT:** N/A (non-UI/CLI card — the human gate is PR review + unit tests green).
+- [ ] **XTF-25 — Extractor reads Word content controls (`w:sdt`) so bracket placeholders in gray-shaded boxes are found**
+
+  `extract_placeholders` (`src/reports/template_inference.py`) builds paragraph text from
+  `paragraph.runs` (python-docx top-level runs only). Text inside a Word **content control**
+  (`w:sdt` — the gray-shaded fill-in box) lives under `w:sdt/w:sdtContent/w:r/w:t` and is
+  NOT returned by `paragraph.runs`, so any `[[placeholder]]` inside a content control is
+  invisible and the UI shows "Aucun espace réservé à examiner."
+  Fix: extend `_tokens_in_paragraph` to collect ALL `w:t` elements from the paragraph's
+  raw XML element (including those nested inside `w:sdt` subtrees) so bracket tokens are
+  found regardless of whether they sit in a plain run or a content control.
+  Non-UI/non-CLI; Python only.
+
+  **Files:** `src/reports/template_inference.py` · `tests/test_template_inference.py`
+
+  **Config/schema impact:** None — read-only parsing change.
+
+  **Acceptance criteria**
+  - A `[[placeholder]]` inside a Word content control is returned by `extract_placeholders`
+    with correct `raw`, `inner`, and `delimiter` — no longer invisible
+  - Same fix covers `[single-bracket]` and `{{ double-brace }}` tokens in content controls
+  - Tokens in plain runs are still found and their data is unchanged (no regression)
+  - A template mixing plain-run and content-control placeholders returns all of them in order
+  - Zero placeholders found only when there are genuinely no bracket tokens anywhere
+
+  **Unit tests:** `tests/test_template_inference.py` (extend) — build a `.docx` fixture using
+  python-docx's lxml interface to insert a `w:sdt` content control containing `[[name]]`.
+  Cases: (1) `[[placeholder]]` inside a content control is found with correct delimiter/inner;
+  (2) `[single]` and `{{ literal }}` inside content controls are also found; (3) mixed
+  content-control and plain-run tokens both returned; (4) all existing test cases still pass.
+
+  **E2E:** N/A (no UI surface — pure parsing function; verified via unit tests + PR review).
+
+  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py`
 
@@ -2956,6 +3266,250 @@ A card is startable only when all of the following hold:
 
 ---
 
+- [x] **I18N-5 — Translate the navigation sub-tabs + guard against label-in-data-array escapes (P2)**
+
+  The secondary sub-tab bar renders `{sub.label}` — a hardcoded English string from the STAGES
+  array (`frontend/src/App.jsx` ~649; the sub objects are defined ~79–99 with **no** `labelKey`), so
+  the sub-tabs (Connection, AI configuration, Questions, Profile, Validate, Views, Ask, Charts &
+  indicators, Output, Templates, Reports) stay in English even when the interface language is French.
+  The translations already exist and are complete in **both** bundles (the `subs.*` namespace in
+  `frontend/src/locales/{en,fr}.json`) — they are simply never invoked. This is a coverage escape
+  from I18N-2: the literal lives inside a data array, not as a JSX literal that the `check:i18n`
+  guard scans. Wire the sub-tab render through `t()` against the existing keys and **extend the guard**
+  so user-facing label literals in the nav/data arrays are caught and this cannot recur. Frontend-only;
+  no new translation resources required. Independent of PUX-8 (that one fixes the **primary** tab
+  wording), though both touch the nav.
+
+  **Files:** `frontend/src/App.jsx` (render the sub-tab label via `t()` against the existing
+  `subs.${sub.id}` key — e.g. add a `labelKey` to each sub or look up by id ~649; keep the English
+  `label` as a fallback) · `frontend/scripts/check-i18n.mjs` (extend the hardcoded-literal audit to
+  flag user-facing `label:` string literals in the STAGES / nav arrays so the escape can't recur) ·
+  `frontend/src/locales/{en,fr}.json` (only if a `subs.*` key turns out to be missing — current
+  audit says the namespace is complete and key-aligned) · `frontend/tests/e2e/i18n-subtabs.spec.ts`
+  (new)
+
+  **Config/schema impact:** None — wiring + guard scope only; the `subs.*` keys already exist.
+
+  **Acceptance criteria**
+  - With the interface language set to **French**, every secondary sub-tab label renders its French
+    translation from the `subs.*` bundle (e.g. Connexion, Profil, Valider, Vues, Interroger,
+    "Graphiques et indicateurs", Sortie, Modèles, Rapports) — no English sub-tab label remains
+  - With **English** selected, the sub-tabs render the English strings (no regression, no raw `subs.*`
+    key leaking into the UI)
+  - The sub-tab labels are sourced from the existing `subs.*` keys via `t()` (no duplicated/parallel
+    string set); en/fr stay key-aligned and `check:i18n` passes
+  - `check:i18n` is **extended** so a user-facing `label:` literal in the STAGES / nav data arrays
+    fails the check — it would flag the regression if the `t()` wiring were removed, and passes on the
+    fixed code
+  - **No behaviour change:** sub-tab ids, routes, ordering, and selection behaviour are unchanged —
+    only the displayed label is translated
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the translated sub-tabs and the guard
+  behaviour are asserted by the Playwright E2E below + `check:i18n`, per the i18n-area precedent).
+
+  **E2E:** `frontend/tests/e2e/i18n-subtabs.spec.ts` (new) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — with the profile mocked to language=fr, navigate to a stage that has sub-tabs
+  (Transform → Questions/Profile/Validate, and Deliver → Output/Templates/Reports) and assert the
+  sub-tab bar renders the French labels (e.g. "Profil", "Valider", "Modèles", "Rapports") and that no
+  raw `subs.*` key leaks; switch to English and assert they revert to the English labels. Capture
+  `toHaveScreenshot` baselines of a French sub-tab bar at all three viewports (mobile 390×844, tablet
+  820×1180, desktop 1440×900); a human approves them (confirming no French-length overflow).
+
+  **UAT:**
+  1. Switch the interface to French. Open Transform and confirm the sub-tabs read "Questions /
+     Profil / Valider" (not English).
+  2. Open Deliver and confirm the sub-tabs read "Sortie / Modèles / Rapports".
+  3. Switch back to English and confirm the sub-tabs revert to English.
+  4. Run `cd frontend && npm run check:i18n` and confirm it passes; confirm it now fails if a nav
+     label literal is left un-translated.
+
+  **Verify:** `cd frontend && npx playwright test i18n-subtabs.spec.ts && npm run check:i18n`
+
+---
+
+## Project output language
+
+> A per-project **output language** that is chosen once when the project is created and is then
+> fixed, governing the language of **AI-generated** report content (narrative text, AI summaries,
+> AI chart/indicator suggestions, Ask captions). It is **independent of the user-profile interface
+> language** (the i18n area): a francophone report can be produced from an English interface and
+> vice-versa. A `project.meta.language` field + a `ProjectForm` selector already exist
+> (English/French/Spanish/Portuguese/Arabic) but are editable after creation and never reach the
+> generation pipeline (which reads a separate, independently-editable `ai.language`). This area
+> makes the project language immutable, the single source of truth for the AI output language, and
+> actually consumed by every generation site. **Scope (confirmed): AI-generated text only** —
+> user-authored chart/indicator titles and question-derived axis labels render exactly as the user
+> entered them (no auto-translation pass). Ordered by dependency: **PLANG-2 and PLANG-3 depend on
+> PLANG-1.**
+
+---
+
+- [x] **PLANG-1 — Project language is set once at creation and drives the AI output language (backend + config mirroring)**
+
+  `project.meta.language` already exists (offered in `ProjectForm` as
+  English/French/Spanish/Portuguese/Arabic) but (a) it is **editable post-creation** via
+  `PATCH /api/projects/{id}` (`web/main.py` ~278–284; `_META_KEYS` includes `language`;
+  `repository.update_project` ~177–191 merges meta), and (b) it **never reaches the generation
+  pipeline** — `project.meta` is not mirrored to `config.yml`, so generation reads the separate,
+  independently-editable `ai.language` (`sample.config.yml` ~540; `narrator.py` ~83;
+  `summaries.py` ~268). Make the project language **immutable after creation** and the **single
+  source of truth** for the AI output language by injecting it into `config.ai.language` whenever
+  the config is materialized for the CLI. **Backend / data only** — the form + AI-config UI are
+  PLANG-2; threading the language into each generation site is PLANG-3.
+
+  **Files:** `web/main.py` (create still accepts `language`; the PATCH path must **not** change it —
+  drop `language` from the patch meta merge / reject attempts, ~222–284) · `web/db/repository.py`
+  (`update_project` preserves an existing `meta.language`, ~177–191) · `web/db/bridge.py`
+  (`materialize_config` / `mirror_active` set `cfg["ai"]["language"]` from `project.meta.language`
+  with a legacy default, ~11–24) · `tests/test_project_language.py` (new) · `tests/test_bridge.py`
+  (reconcile the existing `materialize_config` round-trip assertion to the injected `ai.language`)
+
+  **Config/schema impact:** No new DB column (lives in the existing `meta` JSONB). `config.ai.language`
+  becomes a **derived** mirror of the project language at materialize time — a manually-edited
+  `ai.language` is overwritten from the project on the next materialize.
+
+  **Acceptance criteria**
+  - A project's `language` is accepted at creation (`POST /api/projects`) and stored in
+    `project.meta.language`
+  - After creation the language is **immutable**: `PATCH /api/projects/{id}` does not change
+    `meta.language` (an attempt is ignored or rejected, still membership-scoped as today) and
+    `update_project` preserves the existing value
+  - When the active project's config is materialized to `config.yml`, `ai.language` is set from
+    `project.meta.language`, so the CLI + generation pipeline use the project language regardless of
+    any value previously stored in `ai.language`
+  - A **legacy** project with no `meta.language` falls back to its existing `config.ai.language` if
+    present, else `"English"` (deterministic default, no crash)
+  - Per-project isolation preserved: one project's language never appears in another's materialized
+    config
+
+  **Unit tests:** `tests/test_project_language.py` — (1) `test_create_persists_language`: create stores
+  `meta.language`. (2) `test_language_immutable_on_patch`: a PATCH attempting to change the language
+  leaves `meta.language` unchanged. (3) `test_materialize_injects_project_language`: `materialize_config`
+  sets `ai.language` from the project, overriding a stale `ai.language` already in the config. (4)
+  `test_legacy_default`: a project with no `meta.language` materializes the existing `ai.language` if
+  present, else `"English"`. (5) `test_per_project_isolation`: two projects materialize their own
+  languages independently. Uses the suite's SQLite + local-storage self-provisioning.
+
+  **E2E:** N/A (no UI surface — backend immutability + config mirroring; the form / AI-config UI is
+  PLANG-2 and is covered there).
+
+  **UAT:** N/A (back-end change, no UI surface of its own — verified via the Verify command, the unit
+  tests, the verifier, and PR review; UAT moves in lockstep with E2E).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_project_language.py`
+
+---
+
+- [x] **PLANG-2 — Create-only language field + read-only language in AI config (UI)**
+
+  With PLANG-1 making the project language immutable + authoritative, reflect that in the UI. In
+  `ProjectForm` the language `<select>` (`frontend/src/pages/ProjectForm.jsx` ~11/50/188–191) is
+  editable only when **creating** a project; in **edit** mode it is shown read-only/disabled with a
+  one-line note that it is fixed at creation. In the AI-config tab
+  (`frontend/src/pages/Sources.jsx` section="ai") the language stops being an editable input and
+  instead shows the **project's** language read-only, with a hint that it is set on the project and
+  governs generated output. New strings land in EN + FR (parity enforced). **Depends on PLANG-1.**
+
+  **Files:** `frontend/src/pages/ProjectForm.jsx` (language field editable on create, read-only /
+  disabled + helper note on edit; keep dirty-tracking correct for the now-immutable field
+  ~50/69–75/188–191) · `frontend/src/pages/Sources.jsx` (AI section: replace the editable language
+  control with a read-only display sourced from the active project's language + hint) ·
+  `frontend/src/lib/projects.js` (only if the active project's language is not already available to
+  the AI-config view) · `frontend/src/locales/{en,fr}.json` (read-only hints / labels) ·
+  `frontend/tests/e2e/project-language.spec.ts` (new)
+
+  **Config/schema impact:** None — UI only (PLANG-1 owns persistence + mirroring).
+
+  **Acceptance criteria**
+  - In the **create** project form the language selector is editable (English/French/Spanish/
+    Portuguese/Arabic) and its value is submitted on create
+  - In the **edit** project form the language is shown read-only / disabled with a visible one-line
+    note that it is set at creation and cannot be changed; the form's dirty-tracking does not flag
+    the unchanged read-only language
+  - The AI-config tab no longer presents language as an editable input; it displays the active
+    project's language as a read-only value with a hint that it is the project's language and drives
+    generated output
+  - The read-only AI-config language **matches** the project's language
+  - All new strings exist in both `en.json` and `fr.json` (key-aligned, `check:i18n` passes); the
+    controls are keyboard-accessible with accessible names and a visible focus ring
+  - Impeccable audit/critique clean
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the create-vs-edit field state, the
+  read-only AI-config display, and i18n parity are asserted by the Playwright E2E below + `check:i18n`,
+  per the i18n/PUX precedent).
+
+  **E2E:** `frontend/tests/e2e/project-language.spec.ts` (new) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — in the create form assert the language `<select>` is enabled and selectable; in
+  the edit form assert the language control is disabled / read-only and the fixed-at-creation note is
+  shown; on the AI-config tab assert the language renders read-only matching the project's language with
+  no editable input. Run a Playwright axe audit on both surfaces and assert no new violations. Capture
+  `toHaveScreenshot` baselines of the edit-mode read-only language field and the AI-config read-only
+  language at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves.
+
+  **UAT:**
+  1. Create a new project, choose **French** as the language, and save. Reopen the project's edit form
+     and confirm the language is shown but cannot be changed, with a note explaining it is fixed at
+     creation.
+  2. Open Extract → AI configuration and confirm the language is shown read-only as "French" with a
+     hint that it is the project's language.
+  3. Switch your **interface** (profile) language to English and confirm the **project** language stays
+     French (the two are independent).
+
+  **Verify:** `cd frontend && npx playwright test project-language.spec.ts && npm run check:i18n`
+
+---
+
+- [x] **PLANG-3 — Generate AI output (narrative, summaries, suggestions, Ask) in the project language**
+
+  With PLANG-1 feeding the project language into `config.ai.language`, ensure **every** AI generation
+  site honours it so generated text comes out in the project language (per the confirmed scope —
+  **AI-generated text only**; user-typed chart/indicator titles and question-derived axis labels render
+  as entered). The narrator already reads `ai.language` (`src/reports/narrator.py` ~83) and AI
+  summaries do too (`src/reports/summaries.py` ~268); extend the sites that currently ignore it: the
+  Ask engine caption/proposal prompts (`src/reports/ask_engine.py` ~189–206/422–442) and the AI
+  suggesters (`src/reports/ai_chart_suggester.py` and the other `ai_*_suggester.py` / template
+  inference) so their LLM prompts include the output-language instruction. Add a regression test that
+  each generation site passes the configured language into its prompt variables. **Depends on PLANG-1.**
+
+  **Files:** `src/reports/ask_engine.py` (thread language from `ai_cfg` into the propose / refine /
+  caption prompt variables) · `src/reports/ai_chart_suggester.py` + the other
+  `src/reports/ai_*_suggester.py` (+ template inference) that omit language (add the language prompt
+  var) · `src/reports/summaries.py` (the keyword-frequency stop-word language ~152 — derive from
+  `ai.language` rather than a hardcoded default where a sensible mapping exists) ·
+  `tests/test_generation_language.py` (new)
+
+  **Config/schema impact:** None — reads the existing `ai.language` (now fed by the project language via
+  PLANG-1).
+
+  **Acceptance criteria**
+  - Narrator, AI summaries, the Ask engine (captions / proposals), and the AI suggesters (chart /
+    indicator / etc.) each include the configured `ai.language` as the output-language instruction in
+    their LLM prompt variables
+  - Given `ai.language = "French"`, each site's prompt carries the French language instruction (provable
+    by capturing the prompt variables / mocking the LLM) — no site silently emits in a hardcoded language
+  - The keyword-frequency summary stop-word language follows `ai.language` (mapped to its code) rather
+    than a hardcoded default where a mapping exists; an unknown/unsupported language degrades gracefully
+    (no crash)
+  - User-authored chart/indicator titles + question-derived axis labels are **unchanged** (the confirmed
+    scope excludes translating user-typed strings) — only AI-generated text is language-driven
+  - AI features remain no-ops when no AI key is configured (no regression to the offline / seed path)
+
+  **Unit tests:** `tests/test_generation_language.py` — for the narrator, AI summaries, the Ask engine,
+  and at least one suggester: set `ai.language="French"`, mock/capture the LLM call, and assert the
+  language value reaches the prompt variables; assert a missing/empty `ai.language` defaults
+  deterministically to English; assert the no-AI-key path no-ops without error. Uses the suite's existing
+  fakes — no live LLM call.
+
+  **E2E:** N/A (no UI surface — generation pipeline; it consumes the config produced by PLANG-1/PLANG-2,
+  whose UI is covered there).
+
+  **UAT:** N/A (back-end generation, no UI surface of its own — verified via the Verify command, the unit
+  tests, the verifier, and PR review; UAT moves in lockstep with E2E).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_generation_language.py`
+
+---
+
 ## Performance
 
 > The web app feels slow (up to ~10s) when navigating between pages because there is **no caching
@@ -3100,6 +3654,157 @@ A card is startable only when all of the following hold:
 
 ---
 
+- [x] **PERF-3 — Per-page skeleton loaders for the data-driven tabs (perceived performance)**
+
+  A complement to PERF-1/PERF-2 (server-side cache) on the **client** side: today every
+  data-driven tab initialises its data to `null` and renders a single centred grey "Loading…"
+  line (`.empty-state`, `frontend/src/styles.css` ~176) on first mount — so on a cold load /
+  refresh, and on the first visit to each tab, the user sees a blank panel with one line of text
+  while the mount fetch is in flight (`Questions.jsx` ~450, `Sources.jsx` ~162, `Profile.jsx`
+  ~177, `Reports.jsx` ~185/230, `Validate.jsx` ~177). Replace that plain text with a reusable
+  **skeleton** placeholder whose shape approximates the real content, so the interface feels
+  responsive and content swaps in without a jarring layout shift. **Perceived-performance / UI
+  only — no change to data fetching, the keep-alive pane machinery, or the epoch/remount logic
+  (`frontend/src/App.jsx`); only the loading placeholder changes.** Scope is the five tabs that
+  currently render a mount-time `null → "Loading…"` state (Questions, Sources, Profile, Reports,
+  Validate); on-demand/action loads (Composition previews, Ask) and the app-shell are out of
+  scope (possible future cards). Independent of PERF-1/PERF-2 (no server change); independent of
+  the OUT/UX/ME/A11Y cards.
+
+  **Files:** `frontend/src/components/Skeleton.jsx` (new — a reusable `<Skeleton>` primitive:
+  shimmer block(s) with width/height/variant props, plus small composed layouts the pages reuse;
+  the wrapper carries `aria-busy="true"` + a visually-hidden "Loading" label and the shimmer
+  blocks are `aria-hidden`) · `frontend/src/styles.css` (a `.skeleton` class + shimmer
+  `@keyframes` that respects the existing `@media (prefers-reduced-motion: reduce)` block —
+  static placeholder, no shimmer, when reduced motion is set; design-token colours only) ·
+  `frontend/src/pages/Questions.jsx` (~450) · `frontend/src/pages/Sources.jsx` (~162) ·
+  `frontend/src/pages/Profile.jsx` (~177) · `frontend/src/pages/Reports.jsx` (~185/230) ·
+  `frontend/src/pages/Validate.jsx` (~177) — swap the `<p className="empty-state">…loading…</p>`
+  branch for a layout-matched skeleton · `frontend/tests/e2e/perf-3-skeleton.spec.ts` (new)
+
+  **Config/schema impact:** None — frontend presentation only; no `config.yml`, DB, or endpoint
+  change.
+
+  **Acceptance criteria**
+  - A reusable `Skeleton` component exists (`frontend/src/components/Skeleton.jsx`) with a shimmer
+    animation driven by tokenised colours; its container exposes `aria-busy="true"` and a
+    visually-hidden text label (e.g. "Loading"), and the decorative shimmer blocks are
+    `aria-hidden="true"` so assistive tech announces a single loading state, not noise
+  - Each of the five mount-loading tabs (Questions, Sources, Profile, Reports, Validate) renders a
+    layout-matched skeleton **in place of** the current plain "Loading…" text while its mount
+    fetch is in flight — the skeleton's overall shape approximates the real content (so content
+    swaps in with no major layout shift)
+  - Once the data arrives, the skeleton is fully replaced by the real content; on fetch error the
+    existing error/toast path is unchanged (no skeleton left stuck on screen)
+  - The skeleton honours `prefers-reduced-motion: reduce` — no shimmer animation under reduced
+    motion (a static placeholder is shown instead)
+  - **No behaviour change** to data fetching, the keep-alive panes, or the epoch/remount logic —
+    only the loading placeholder differs; a returning user (tab already mounted, data cached) sees
+    no skeleton on tab switch (the existing keep-alive path is unchanged)
+  - Impeccable audit/critique clean on the skeleton states
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — the skeleton
+  presence, the reduced-motion behaviour, and the skeleton→content swap are asserted by the
+  Playwright E2E below, consistent with the A11Y/PUX cards' coverage approach).
+
+  **E2E:** `frontend/tests/e2e/perf-3-skeleton.spec.ts` (new) + visual (impeccable audit/critique +
+  `toHaveScreenshot`) — for at least Questions and Profile: intercept the page's mount fetch
+  (`/api/questions`, `/api/profile`) and delay the response, assert the skeleton container
+  (`aria-busy="true"` / a `data-testid="skeleton"`) is visible while the request is pending and
+  that the plain "Loading…" text is gone; release the response and assert the skeleton is removed
+  and the real content is shown. Run a Playwright axe audit on a skeleton state and assert no new
+  violations (the busy region is announced once, shimmer blocks are hidden). Emulate
+  `prefers-reduced-motion: reduce` and assert the shimmer animation is not applied. Capture
+  `toHaveScreenshot` baselines of a Questions skeleton and a Profile skeleton at all three
+  viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. With a throttled connection (or a cold project), open the app and visit Questions, Sources,
+     Profile, Reports, and Validate for the first time. Confirm each shows a skeleton that
+     resembles its eventual layout — not a blank panel with one line of text — and that the real
+     content then replaces the skeleton without the page jumping.
+  2. Switch away from a tab you've already loaded and back again. Confirm it appears instantly with
+     no skeleton (keep-alive unchanged).
+  3. Enable "reduce motion" in your OS/browser and reload. Confirm the skeletons are static (no
+     shimmer) but still present.
+  4. With a screen reader on, load a tab and confirm it announces a single "loading/busy" state
+     rather than reading out each placeholder block.
+
+  **Verify:** `cd frontend && npx playwright test perf-3-skeleton.spec.ts`
+
+---
+
+- [ ] **PERF-4 — Client-side stale-while-revalidate cache (instant UI on reload / project-switch / refresh) (P2)**
+
+  Follow-up to PERF-1/2 (server cache) + PERF-3 (skeletons). Keep-alive panes already make
+  *within-session* tab revisits instant, but a **full reload / cold start / re-login**, a
+  **project switch**, and the hourly / `databridge:data-changed` epoch bump all remount and
+  refetch from scratch (skeleton every time). Add a client-side **stale-while-revalidate** cache:
+  render the last-known response **instantly**, revalidate in the background, and only show the
+  skeleton on a true cold miss. Two tiers, split by data sensitivity (localStorage is readable by
+  any XSS, so secrets/PII must never be persisted):
+
+  - **Persisted tier (localStorage/IndexedDB, per-project namespace):** only small, non-sensitive
+    metadata — `/api/state`, `/api/questions`, `/api/templates`, `/api/reports`,
+    `/api/data/sessions`, `/api/periods`. Makes hard reloads paint instantly.
+  - **In-memory tier only (never written to disk):** `/api/config` (may carry a token),
+    `/api/profile`, `/api/data-quality` (column stats can expose data values). Instant on
+    within-session revisit, but not across a hard reload.
+
+  **Files:** `frontend/src/lib/cache.js` (new — the SWR cache: `swr(key, fetcher, {persist})` that
+  serves cache-then-revalidates, an in-memory map + a localStorage backend gated by a persist
+  whitelist, per-active-project namespacing, a `CACHE_VERSION`, a TTL backstop, and
+  `clearCache(scope)`) · `frontend/src/lib/auth.js` (wipe the whole cache on logout / `handle401`) ·
+  `frontend/src/App.jsx` (clear/namespace on project switch; clear the active project's cache on
+  `databridge:data-changed`) · the data-loading sites that should adopt it —
+  `frontend/src/pages/{Questions,Reports,Profile,Sources}.jsx` (+ any shared loader in
+  `frontend/src/lib/config.js`) wrap their mount fetch in `swr(...)` so a cache hit renders before
+  the network resolves (no skeleton on a hit) · `frontend/tests/e2e/client-cache.spec.ts` (new)
+
+  **Config/schema impact:** None — client-side only; no API/DB change (it consumes the same
+  endpoints, complementing the PERF-1 server cache).
+
+  **Acceptance criteria**
+  - On a **second load** of a tab whose data is cached (e.g. reopen after a reload, for a persisted
+    endpoint), the real content renders **without a skeleton flash**, and a background revalidation
+    request is still issued (stale-while-revalidate) and updates the view if the data changed
+  - **Persisted tier** writes ONLY the whitelisted non-sensitive endpoints to storage; `/api/config`,
+    `/api/profile`, `/api/data-quality` are **never** written to disk (asserted) — they use the
+    in-memory tier only
+  - Cache entries are **namespaced per active project**; switching to project B never serves
+    project A's cached data, and switching back to A is instant
+  - The cache is **invalidated** on `databridge:data-changed` (post-download / config save) so a
+    stale value is never served after the data changes, and is **fully cleared on logout**
+  - A `CACHE_VERSION` bump and a TTL backstop prevent indefinitely-stale or schema-mismatched
+    entries from being served
+  - No correctness regression: a cache miss behaves exactly as today (skeleton → fetch → content)
+  - **Security:** no secret or PII value is persisted to browser storage (verified against the
+    whitelist + a test that inspects localStorage after loading config/profile)
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the SWR behaviour, the persist
+  whitelist, per-project namespacing, and invalidation are asserted by the Playwright E2E below).
+
+  **E2E:** `frontend/tests/e2e/client-cache.spec.ts` (new) — network-mocked: (1) load a tab, reload
+  the page, and assert the cached content is visible immediately (before the revalidation response
+  is fulfilled) with no skeleton, and that a revalidation request still fires; (2) after loading
+  Connection (config) and Profile, assert `localStorage` contains NONE of the config token /
+  profile values (sensitivity whitelist holds); (3) trigger `databridge:data-changed` and assert the
+  next read refetches (cache invalidated); (4) switch projects and assert project A's cached value
+  is not shown for project B. (No `toHaveScreenshot` baseline — behavioural.)
+
+  **UAT:**
+  1. Load the app, visit a few tabs, then **hard-reload**. Confirm the previously-seen tabs paint
+     instantly (no skeleton), and data still refreshes a moment later.
+  2. Switch to another project and back; confirm the return is instant and shows the right project's
+     data (never the other project's).
+  3. Run a download (or save config); confirm the affected views refresh rather than showing stale
+     data.
+  4. Log out and back in; confirm no stale data persists across the logout.
+
+  **Verify:** `cd frontend && npx playwright test client-cache.spec.ts`
+
+---
+
 ## Maintenance & hardening
 
 > Tracked tech-debt / hardening surfaced during the 2026-06 build-out. Not feature work — small,
@@ -3186,6 +3891,52 @@ A card is startable only when all of the following hold:
   **UAT:** N/A (verified via the Verify command + the verifier + PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_profile_api.py tests/test_profile_language.py`
+
+---
+
+- [x] **MNT-4 — Fix Toast crash: i18n `t` shadowed by the toasts.map variable (P1)**
+
+  `frontend/src/components/Toast.jsx` destructures the i18n function as `t`
+  (`const { t } = useTranslation()`), then renders `toasts.map(t => …)` — the map
+  parameter **shadows** the translation function. Inside the map, the dismiss
+  button calls `aria-label={t('components.toast.dismiss')}`, which now invokes the
+  toast object as a function → `TypeError: t is not a function`, crashing
+  `ToastProvider` and blanking the whole app (no error boundary). It triggers
+  whenever **any** toast renders — e.g. "Try with sample data" and "Create project"
+  both fire a success toast. Regression from the i18n toast externalization.
+  Fix: rename the `toasts.map` parameter (e.g. `item`) so `t(...)` resolves to the
+  translation function; no behaviour/markup change otherwise.
+
+  **Files:** `frontend/src/components/Toast.jsx` ·
+  `frontend/tests/e2e/toast-i18n.spec.ts` (new)
+
+  **Config/schema impact:** None — frontend bug fix only.
+
+  **Acceptance criteria**
+  - Rendering one or more toasts does NOT throw; `ToastProvider` mounts and the app
+    stays interactive (no blank page / uncaught `TypeError`)
+  - Each toast's dismiss control has a non-empty accessible name from
+    `components.toast.dismiss` (the i18n `t` resolves correctly inside the map)
+  - Triggering a toast via a real user action (e.g. load sample data, or create a
+    project) shows the toast and leaves the page rendered (root not emptied)
+  - No raw i18n key leaks; en/fr remain key-aligned (`check:i18n` passes)
+  - No change to toast behaviour, styling, timing, or markup beyond the variable rename
+
+  **Unit tests:** N/A (frontend-only; Vitest not installed — asserted by the Playwright E2E below).
+
+  **E2E:** `frontend/tests/e2e/toast-i18n.spec.ts` (new) — load the app (network-mocked,
+  same harness as connection-gating), perform an action that fires a toast, and assert:
+  (a) no `pageerror` occurs, (b) the toast (`[role="status"]`/`[role="alert"]`) is visible,
+  (c) its dismiss button exposes a non-empty accessible name, and (d) the `#root` still has
+  content (app not blanked). A regression guard run against the unpatched component must fail.
+  (No new `toHaveScreenshot` baseline required — behavioural fix, not a visual change.)
+
+  **UAT:**
+  1. Create a new project and confirm the success toast appears and the app does NOT go blank.
+  2. On Extract → Connection, click "Try with sample data" and confirm the toast appears with no crash.
+  3. Confirm the toast's ✕ dismiss button is reachable/announced and dismisses the toast.
+
+  **Verify:** `cd frontend && npx playwright test toast-i18n.spec.ts && npm run check:i18n`
 
 ---
 

@@ -264,6 +264,7 @@ def infer_specs(nl_tokens: List["Token"], catalog: Dict, ai_cfg: Dict) -> List[P
         "kinds": ", ".join(_KINDS),
         "chart_types": ask_engine._CHART_TYPES_BLOCK,
         "indicator_stats": ask_engine._INDICATOR_STATS_BLOCK,
+        "language": ai_cfg.get("language") or "English",
     }
     try:
         messages, _config = lf_client.get_prompt("template_inference", variables)
