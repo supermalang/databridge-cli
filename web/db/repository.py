@@ -43,8 +43,6 @@ def set_user_language(db: Session, user: User, language: str) -> User:
     if language not in SUPPORTED_LANGUAGES:
         raise ValueError(f"unsupported language: {language}")
     user.language = language
-    db.commit()
-    db.refresh(user)
     return user
 
 
@@ -183,8 +181,13 @@ def update_project(db: Session, project: Project, *, name: str = None, meta: dic
     if name is not None:
         project.name = name
     if meta is not None:
-        merged = dict(project.meta or {})
+        existing = dict(project.meta or {})
+        merged = dict(existing)
         merged.update(meta)
+        # Project language is set once at creation and is immutable thereafter:
+        # never let an update overwrite an existing meta.language.
+        if "language" in existing:
+            merged["language"] = existing["language"]
         project.meta = merged
     db.commit()
     db.refresh(project)

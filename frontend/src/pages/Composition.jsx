@@ -105,6 +105,47 @@ function ChartIcon({ type }) {
   }
 }
 
+// ── Copy-placeholder control (PUX-9) ─────────────────────────────────────────
+// Per-row icon button that copies the EXACT docxtpl token (e.g. "{{ chart_sites }}")
+// to the clipboard with a transient "copied" confirmation on the button itself, so
+// users never have to hand-type a placeholder (a single typo silently yields an
+// empty placeholder in the report). Reuses the Sources.jsx clipboard pattern
+// (navigator.clipboard.writeText). The accessible name names the target item, per
+// the A11Y-4 icon-button convention; `variant="table"` is used for the
+// {{ ind_<name>_table }} disaggregation variant so its accessible name reads
+// "Copy table placeholder for <name>".
+function CopyPlaceholderButton({ token, label, ariaLabel }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  const onCopy = async () => {
+    try { await navigator.clipboard.writeText(token); } catch { /* clipboard blocked */ }
+    setCopied(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 1600);
+  };
+
+  const name = copied ? t('composition.copied') : ariaLabel;
+  return (
+    <button
+      type="button"
+      className={`icon-btn copy-placeholder-btn${copied ? ' is-copied' : ''}`}
+      aria-label={name}
+      title={`${label} · ${token}`}
+      onClick={onCopy}
+    >
+      {copied ? (
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 8 7 12 13 4"/></svg>
+      ) : (
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h7"/></svg>
+      )}
+    </button>
+  );
+}
+
 // ── component ────────────────────────────────────────────────────────────────
 // `sections` selects which cards render + which config keys this instance saves,
 // so the same component backs both the Load (views) and Analyze (charts/etc) tabs.
@@ -962,6 +1003,11 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onPreview, toast }) {
               </div>
             </div>
             <div className="comp-row__actions">
+              <CopyPlaceholderButton
+                token={`{{ chart_${ch.name} }}`}
+                label={t('composition.copyPlaceholder')}
+                ariaLabel={t('composition.copyPlaceholderFor', { name: ch.name || t('composition.unnamed') })}
+              />
               <button className="btn btn-ghost" onClick={() => onPreview(i)}>
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
                 {t('composition.preview')}
@@ -975,6 +1021,10 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onPreview, toast }) {
             </div>
           </div>
         ))}
+        <p className="placeholder-caveat" data-testid="placeholder-caveat">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="7" x2="8" y2="11.5"/><circle cx="8" cy="4.6" r=".6" fill="currentColor"/></svg>
+          <span><Trans i18nKey="composition.placeholderCaveat" components={{ c: <code /> }} /></span>
+        </p>
       </div>
     </div>
   );
@@ -1236,10 +1286,22 @@ function IndicatorsCard({ indicators, onAdd, onEdit, onRemove }) {
               )}
             </div>
             <div className="comp-row__actions">
-              <button className="icon-btn" title="Edit" onClick={() => onEdit(i)}>
+              <CopyPlaceholderButton
+                token={`{{ ind_${ind.name} }}`}
+                label={t('composition.copyPlaceholder')}
+                ariaLabel={t('composition.copyPlaceholderFor', { name: ind.name || t('composition.unnamed') })}
+              />
+              {ind.disaggregate_by && (
+                <CopyPlaceholderButton
+                  token={`{{ ind_${ind.name}_table }}`}
+                  label={t('composition.copyTablePlaceholder')}
+                  ariaLabel={t('composition.copyTablePlaceholderFor', { name: ind.name || t('composition.unnamed') })}
+                />
+              )}
+              <button className="icon-btn" title={t('composition.edit')} onClick={() => onEdit(i)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
               </button>
-              <button className="icon-btn" title="Delete" onClick={onRemove(i)}>
+              <button className="icon-btn" title={t('composition.delete')} onClick={onRemove(i)}>
                 <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12" cy="8" r="1.4"/></svg>
               </button>
             </div>
@@ -1283,6 +1345,11 @@ function TablesCard({ tables, onAdd, onEdit, onRemove, onPreview }) {
               </div>
             </div>
             <div className="comp-row__actions">
+              <CopyPlaceholderButton
+                token={`{{ table_${t.name} }}`}
+                label={tr('composition.copyPlaceholder')}
+                ariaLabel={tr('composition.copyPlaceholderFor', { name: t.name || tr('composition.unnamed') })}
+              />
               <button className="btn btn-ghost" onClick={() => onPreview(i)}>
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
                 {tr('composition.preview')}
@@ -1333,6 +1400,11 @@ function SummariesCard({ summaries, onAdd, onEdit, onRemove, onPreview }) {
               <span className="sum-row__tokens">{t('composition.tokensApprox', { count: Math.round(((s.prompt || '').length || 200) * 0.4 + 80) })}</span>
             </div>
             <div className="comp-row__actions">
+              <CopyPlaceholderButton
+                token={`{{ summary_${s.name} }}`}
+                label={t('composition.copyPlaceholder')}
+                ariaLabel={t('composition.copyPlaceholderFor', { name: s.name || t('composition.unnamed') })}
+              />
               <button className="btn btn-ghost" onClick={() => onPreview(i)}>
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
                 {t('composition.preview')}

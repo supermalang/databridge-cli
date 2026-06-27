@@ -27,16 +27,16 @@ export function ToastProvider({ children }) {
         aria-atomic="false"
         style={{ position: 'fixed', bottom: 24, right: 24, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 999 }}
       >
-        {toasts.map(t => (
+        {toasts.map(item => (
           <div
-            key={t.id}
-            className={`toast ${t.type}`}
+            key={item.id}
+            className={`toast ${item.type}`}
             style={{ position: 'static', display: 'flex', alignItems: 'center', gap: 10 }}
-            role={t.type === 'err' ? 'alert' : 'status'}
+            role={item.type === 'err' ? 'alert' : 'status'}
           >
-            <span>{t.text}</span>
+            <span>{item.text}</span>
             <button
-              onClick={() => dismiss(t.id)}
+              onClick={() => dismiss(item.id)}
               aria-label={t('components.toast.dismiss')}
               style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', opacity: 0.7, fontSize: 14, lineHeight: 1, padding: 0 }}
             >✕</button>

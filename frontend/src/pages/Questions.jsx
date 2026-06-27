@@ -11,8 +11,10 @@ import PageHeader from './PageHeader.jsx';
 import StageHelp from '../components/StageHelp.jsx';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
 import { useRun } from '../lib/run.js';
+import { swr } from '../lib/cache.js';
 import { RailLayout, RailToolbar, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 import AiThinking from '../components/AiThinking.jsx';
+import { SkeletonPanel } from '../components/Skeleton.jsx';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function colName(q) {
@@ -83,15 +85,29 @@ export default function Questions() {
 
   const load = useCallback(async () => {
     try {
-      const data = await (await fetch('/api/questions')).json();
-      const list = data.questions || [];
-      setQuestions(list);
-      setOriginal(snapshot(list));
+      // Stale-while-revalidate (PERF-4): a cache hit paints the questions before
+      // the network resolves (no skeleton flash on reload / project return); the
+      // revalidation still fires and swaps in fresh data if it changed.
+      await swr('/api/questions', async () => (await (await fetch('/api/questions')).json()), (data) => {
+        const list = data.questions || [];
+        setQuestions(list);
+        setOriginal(snapshot(list));
+      });
       setCfg(await loadConfig());
     } catch (e) { toast(String(e), 'err'); }
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Refresh on a data change (post-download / questions save elsewhere). The SWR
+  // cache invalidates the active project's entry on this event (PERF-4), so this
+  // reload repopulates it with fresh data — the next mount/reload then serves the
+  // up-to-date value, never the stale one.
+  useEffect(() => {
+    const onChanged = (e) => { if (!(e && e.detail && e.detail.project)) load(); };
+    window.addEventListener('databridge:data-changed', onChanged);
+    return () => window.removeEventListener('databridge:data-changed', onChanged);
+  }, [load]);
 
   // Fetching the schema + downloading data now live on Extract → Connection. A
   // successful run there fires databridge:data-changed, which refreshes this tab
@@ -447,7 +463,7 @@ export default function Questions() {
   };
 
   // ── render ───────────────────────────────────────────────────────────────
-  if (questions === null) return <div className="page"><p className="empty-state">{t('questions.loading')}</p></div>;
+  if (questions === null) return <div className="page"><SkeletonPanel rows={5} rowHeight={52} label={t('questions.loading')} /></div>;
   if (questions.length === 0) {
     return (
       <div className="page">

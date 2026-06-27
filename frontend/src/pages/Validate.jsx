@@ -5,6 +5,7 @@ import { isHidden, indexQuestionsByColumn, buildGroupTree } from '../lib/questio
 import GroupTree from '../components/GroupTree.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
+import { SkeletonPanel } from '../components/Skeleton.jsx';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const SEV_RANK = { error: 0, warning: 1, info: 2 };
@@ -189,7 +190,7 @@ export default function Validate() {
           ]} />
         </>
       }>
-      {loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 60 }}>Running validation…</div>}
+      {loading && <SkeletonPanel rows={5} rowHeight={48} label="Running validation…" />}
       {error && (
         <EmptyState tone="error" title="Validation failed"
           description={`${error} — if you haven’t downloaded submissions yet, run Download from the Dashboard first.`} />

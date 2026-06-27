@@ -279,7 +279,10 @@ def create_project(payload: NewProjectPayload, request: Request, db: Session = D
 def patch_project(project_id: str, payload: ProjectPatchPayload, request: Request,
                   db: Session = Depends(db_session.get_db)):
     _user, project, _role = _admin_project(request, db, project_id)
-    meta = {k: getattr(payload, k) for k in _META_KEYS if getattr(payload, k) is not None}
+    # Project language is immutable after creation — it is the single source of
+    # truth for the AI output language, so it cannot be changed via PATCH.
+    meta = {k: getattr(payload, k) for k in _META_KEYS
+            if k != "language" and getattr(payload, k) is not None}
     db_repo.update_project(db, project, name=payload.name, meta=meta or None)
     return {"ok": True}
 
@@ -333,8 +336,8 @@ def patch_me(payload: ProfilePatchPayload, request: Request,
         try:
             zitadel_admin.update_human_user(user.zitadel_sub, given, family)
             z_status = "updated"
-        except Exception as e:  # noqa: BLE001 — surface, don't fail the local save
-            z_status = f"error: {e}"
+        except Exception:  # noqa: BLE001 — surface, don't fail the local save
+            z_status = "sync_error"
     return {"sub": user.zitadel_sub, "email": user.email, "name": user.name,
             "language": db_repo.get_user_language(user), "zitadel": z_status}
 
