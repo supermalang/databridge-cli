@@ -3117,39 +3117,67 @@ A card is startable only when all of the following hold:
 
   **Verify:** `cd frontend && npm run check:i18n` ·
   `cd frontend && npx playwright test i18n-coverage.spec.ts`
-- [ ] **I18N-3 — Externalize the remaining non-tab surfaces to EN/FR (P2)**
+- [ ] **I18N-3 — Externalize the remaining untranslated surfaces to EN/FR + close the guard blind spots (P2)**
 
-  Follow-up from I18N-2 (which covered the six tabs + shell + in-tab shared components, leaving the
-  standalone Ask + Validate panels and ProjectForm / ProjectMembersPanel / members modal in English).
-  Externalize their user-facing strings into the en/fr bundles + extend the `check:i18n` audited set.
+  Follow-up from I18N-2. A full translation audit (2026-06) found the locale bundles are perfectly
+  key-aligned (0 missing / 0 empty), but several surfaces render **hardcoded English** because the
+  strings never call `t()` — and `check:i18n` missed them for two reasons: (1) it only scans the
+  literal props `title`/`aria-label`/`placeholder`/`alt` (not `eyebrow`/`sub`/`saveLabel`/`hint`),
+  and (2) it doesn't audit Profile / Ask / Validate / ProjectForm / members at all. Externalize every
+  remaining user-facing literal on those surfaces AND harden the guard so the blind spots can't recur.
 
-  **Files:** `frontend/src/pages/Ask.jsx` · `frontend/src/pages/Validate.jsx` ·
-  `frontend/src/pages/ProjectForm.jsx` · `frontend/src/components/ProjectMembersPanel.jsx` (+ members
-  modal) · `frontend/src/locales/{en,fr}.json` · `frontend/scripts/check-i18n.mjs` ·
-  `frontend/tests/e2e/i18n-remaining.spec.ts` (new)
+  **Untranslated surfaces (from the audit):** **Profile.jsx** — `PageHeader` (eyebrow/title/sub),
+  the column-table headers (Column, Role, Completeness, Outlier rate, Dup. rate, Distinct, Detail),
+  "No visible columns.", the loading label ("Profiling…"), and the empty/error states ("Profiling
+  failed", "Nothing to profile yet"). **Ask.jsx** — header, the two placeholders, "Ask anything
+  about your data", "Couldn't answer that". **Validate.jsx** — header, "Running validation…",
+  "Validation failed", "No issues found…". **ProjectForm.jsx** — tabs (Details / Members / Danger
+  zone), field labels (Name, Description, Tags, Default language, Color, Icon) + placeholders, the
+  Delete-project block. **ProjectMembersPanel.jsx** (+ members modal) — Loading…, Member, Role,
+  Remove, Pending invites, Invite someone, the invite aria-labels + placeholder. **Composition.jsx**
+  strays — `saveLabel="Suggest"`, the AI `hint`, `title="Edit"`/`title="Delete"` row buttons,
+  "Download". **Questions.jsx** stray — "PII". (Out of scope / intentional literals: code-style
+  example placeholders such as `env:DB_USER`, `aAbBcCdDeEfFgGhH`, `top_n: 10`, `Age > 18 …`.)
+
+  **Files:** `frontend/src/pages/Profile.jsx` · `frontend/src/pages/Ask.jsx` ·
+  `frontend/src/pages/Validate.jsx` · `frontend/src/pages/ProjectForm.jsx` ·
+  `frontend/src/pages/Composition.jsx` (strays) · `frontend/src/pages/Questions.jsx` (PII stray) ·
+  `frontend/src/components/ProjectMembersPanel.jsx` (+ members modal) ·
+  `frontend/src/locales/{en,fr}.json` (additive, key-aligned) · `frontend/scripts/check-i18n.mjs`
+  (add `eyebrow`/`sub`/`saveLabel`/`hint` to the scanned literal props AND add the above files to the
+  audited set) · `frontend/tests/e2e/i18n-remaining.spec.ts` (new)
 
   **Config/schema impact:** None — additive locale keys + check-script scope.
 
   **Acceptance criteria**
-  - Every user-facing string in those components is sourced from the en/fr bundles — no hardcoded
-    literal remains (the extended `check:i18n` guard enforces this)
-  - en/fr stay key-aligned, no empty values; `check:i18n` passes
-  - With language=fr, representative strings on the Ask + Validate panels + the project form/members
-    panel render in French; English reverts
-  - English output byte-identical (no existing baseline drift)
+  - Every user-facing string on the surfaces listed above is sourced from the en/fr bundles — no
+    hardcoded literal remains (the intentional code-style example placeholders are exempt)
+  - `check:i18n` is **hardened** so it would now FAIL on this class of escape: it scans
+    `eyebrow`/`sub`/`saveLabel`/`hint` literal props in addition to `title`/`aria-label`/
+    `placeholder`/`alt`, and its audited set includes Profile / Ask / Validate / ProjectForm /
+    ProjectMembersPanel / Composition / Questions; it PASSES on the completed bundles
+  - en/fr stay key-aligned with no empty values
+  - With language=fr, representative strings on **Profile** (the screenshot surface), Ask, Validate,
+    ProjectForm, and the members panel render in French; switching to English reverts them; no raw
+    translation key leaks into the UI
+  - English output is unchanged (same visible text in English as before — pure externalization)
 
   **Unit tests:** N/A (frontend; Vitest not installed — asserted by the Playwright E2E + `check:i18n`).
 
-  **E2E:** `frontend/tests/e2e/i18n-remaining.spec.ts` (new) + visual — with profile language=fr, assert
-  a representative string on the Ask panel, the Validate panel, and the members panel renders in French
-  and no raw key leaks; `toHaveScreenshot` baseline of one such surface in French at three viewports; a
-  human approves (checking no FR overflow).
+  **E2E:** `frontend/tests/e2e/i18n-remaining.spec.ts` (new) + visual — with profile language=fr,
+  visit Profile, Ask, Validate, the project form, and the members panel and assert a representative
+  string on each renders in French and that no raw key (`foo.bar`) leaks; assert the same strings
+  revert in English. Add a guard-teeth check: a temporary hardcoded `eyebrow`/`sub` literal makes
+  `check:i18n` exit non-zero. `toHaveScreenshot` baseline of the French Profile header at three
+  viewports (mobile 390×844 / tablet 820×1180 / desktop 1440×900); a human approves (checking no FR
+  overflow).
 
   **UAT:**
-  1. In French, open the Ask panel, the Validate panel, and a project's Members panel; confirm all
-     labels/buttons are French with no raw keys.
-  2. Switch to English; confirm they revert.
-  3. Confirm no text overflows at mobile/tablet/desktop.
+  1. In French, open Profile and confirm the eyebrow/title/description and the column-table headers
+     are all French (no English, no raw keys).
+  2. In French, open Ask, Validate, the project edit form, and a project's Members panel; confirm all
+     labels/buttons/placeholders are French.
+  3. Switch to English; confirm everything reverts. Confirm no text overflows at mobile/tablet/desktop.
 
   **Verify:** `cd frontend && npm run check:i18n` ·
   `cd frontend && npx playwright test i18n-remaining.spec.ts`
