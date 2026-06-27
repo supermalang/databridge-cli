@@ -195,6 +195,7 @@ def propose_items(question: str, catalog: Dict, ai_cfg: Dict) -> List[Dict]:
         "catalog": json.dumps(catalog, ensure_ascii=False),
         "chart_types": _CHART_TYPES_BLOCK,
         "indicator_stats": _INDICATOR_STATS_BLOCK,
+        "language": ai_cfg.get("language") or "English",
     }
     try:
         messages, _config = lf_client.get_prompt("ask_propose", variables)
@@ -279,7 +280,10 @@ def ground_captions(items: List[Dict], ai_cfg: Dict) -> Dict[str, str]:
     provider = (ai_cfg.get("provider") or "openai").lower()
     charts_block = "\n".join(f'{it["name"]} — {it.get("title", "")}: {it.get("summary", "")}' for it in items)
     try:
-        messages, _config = lf_client.get_prompt("ask_caption", {"charts_block": charts_block})
+        messages, _config = lf_client.get_prompt(
+            "ask_caption",
+            {"charts_block": charts_block, "language": ai_cfg.get("language") or "English"},
+        )
         raw = lf_client.chat(
             messages,
             model=ai_cfg.get("model", "gpt-4o"),
@@ -429,6 +433,7 @@ def _propose_refinement(recipe: Dict, kind: str, instruction: str,
         "catalog": json.dumps(catalog, ensure_ascii=False),
         "chart_types": _CHART_TYPES_BLOCK,
         "indicator_stats": _INDICATOR_STATS_BLOCK,
+        "language": ai_cfg.get("language") or "English",
     }
     try:
         messages, _config = lf_client.get_prompt("ask_refine", variables)

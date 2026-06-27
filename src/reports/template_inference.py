@@ -112,14 +112,29 @@ def _run_span(run_offsets: List[int], start: int, end: int) -> List[int]:
     return spanned
 
 
+_W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_W_T = f"{{{_W_NS}}}t"
+
+
 def _tokens_in_paragraph(paragraph) -> List[Token]:
-    """Extract all tokens from a single python-docx paragraph."""
-    runs = paragraph.runs
-    text = "".join(r.text for r in runs)
+    """Extract all tokens from a single python-docx paragraph.
+
+    Walks ALL ``w:t`` descendants of the paragraph's XML element so that
+    placeholders inside Word content controls (``w:sdt``) — which are invisible
+    to ``paragraph.runs`` — are also detected (XTF-25).
+    """
+    # Collect text in document order from every w:t element (plain runs AND
+    # w:sdt/w:sdtContent/w:r/w:t content controls).
+    wt_elements = list(paragraph._p.iter(_W_T))
+    text = "".join((el.text or "") for el in wt_elements)
     if not text:
         return []
 
-    # Cumulative run start offsets (+ sentinel = total length).
+    # Cumulative offsets for plain paragraph.runs only — used to track which
+    # rewritable w:r elements a token spans.  Tokens that live entirely inside
+    # w:sdt content controls won't overlap any plain run and will get
+    # location.runs == [], which _rewrite_run_span handles gracefully.
+    runs = paragraph.runs
     run_offsets: List[int] = []
     acc = 0
     for r in runs:
@@ -264,6 +279,7 @@ def infer_specs(nl_tokens: List["Token"], catalog: Dict, ai_cfg: Dict) -> List[P
         "kinds": ", ".join(_KINDS),
         "chart_types": ask_engine._CHART_TYPES_BLOCK,
         "indicator_stats": ask_engine._INDICATOR_STATS_BLOCK,
+        "language": ai_cfg.get("language") or "English",
     }
     try:
         messages, _config = lf_client.get_prompt("template_inference", variables)

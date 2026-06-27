@@ -3,6 +3,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import PageHeader from './PageHeader.jsx';
 import StageHelp from '../components/StageHelp.jsx';
 import FileTable from '../components/FileTable.jsx';
+import { SkeletonList } from '../components/Skeleton.jsx';
 import Modal from '../components/Modal.jsx';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -10,6 +11,7 @@ import { usePerms } from '../lib/perms.js';
 import { useRun } from '../lib/run.js';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
 import { loadConfig } from '../lib/config.js';
+import { swr } from '../lib/cache.js';
 import BuildOptions from '../components/BuildOptions.jsx';
 
 export default function Reports() {
@@ -28,24 +30,26 @@ export default function Reports() {
   const [periods, setPeriods]       = useState([]);
   const [selected, setSelected]     = useState([]);
 
+  // All three are non-sensitive metadata on the persist whitelist (PERF-4), so a
+  // hard reload paints the last-known list instantly while it revalidates.
   const loadReports = useCallback(async () => {
     try {
-      const data = await (await fetch('/api/reports')).json();
-      setReports(data.files || []);
+      await swr('/api/reports', async () => (await (await fetch('/api/reports')).json()),
+        (data) => setReports(data.files || []));
     } catch (e) { toast(String(e), 'err'); }
   }, [toast]);
 
   const loadSessions = useCallback(async () => {
     try {
-      const data = await (await fetch('/api/data/sessions')).json();
-      setSessions(data.sessions || []);
+      await swr('/api/data/sessions', async () => (await (await fetch('/api/data/sessions')).json()),
+        (data) => setSessions(data.sessions || []));
     } catch { setSessions([]); }
   }, []);
 
   const loadTemplates = useCallback(async () => {
     try {
-      const data = await (await fetch('/api/templates')).json();
-      setTemplates(data.files || []);
+      await swr('/api/templates', async () => (await (await fetch('/api/templates')).json()),
+        (data) => setTemplates(data.files || []));
     } catch { setTemplates([]); }
   }, []);
 
@@ -182,7 +186,7 @@ export default function Reports() {
               <button className="btn btn-ghost btn-sm" onClick={loadReports}>{t('common.refresh')}</button>
             </div>
           </div>
-          {reports === null && <p className="empty-state" style={{ padding: 12 }}>{t('common.loading')}</p>}
+          {reports === null && <SkeletonList rows={3} rowHeight={40} label={t('common.loading')} />}
           {reports?.length === 0 && <p className="empty-state" style={{ padding: 12 }}><Trans i18nKey="reports.noReportsYet" components={{ b: <b /> }} /></p>}
           {reports?.length > 1 && (
             <a
@@ -227,7 +231,7 @@ export default function Reports() {
             <span>{t('reports.dataFilesSubtitlePre')}<code style={{ fontFamily: 'var(--font-mono)' }}>download</code>{t('reports.dataFilesSubtitlePost')}</span>
             <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={loadSessions}>{t('common.refresh')}</button>
           </div>
-          {sessions === null && <p className="empty-state" style={{ padding: 12 }}>{t('common.loading')}</p>}
+          {sessions === null && <SkeletonList rows={3} rowHeight={40} label={t('common.loading')} />}
           {sessions?.length === 0 && <p className="empty-state" style={{ padding: 12 }}><Trans i18nKey="reports.noDataFilesYet" components={{ b: <b /> }} /></p>}
           {sessions?.length > 0 && (
             <FileTable

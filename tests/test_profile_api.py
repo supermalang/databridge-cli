@@ -51,3 +51,46 @@ def test_patch_me_updates_db_name_when_zitadel_disabled(_isolated_base):
         assert r.json()["name"] == "Ada Lovelace"
         # /api/me reflects the updated name on the next read
         assert c.get("/api/me").json()["name"] == "Ada Lovelace"
+
+
+def test_set_user_language_does_not_commit_internally():
+    """set_user_language must only set the attribute — not commit — so that patch_me
+    owns the single commit site. Without this, a language PATCH commits twice."""
+    from web.db import repository as repo
+    from web.db.models import User
+
+    committed = []
+
+    class _FakeDb:
+        def commit(self):
+            committed.append(1)
+        def refresh(self, obj):
+            pass
+
+    user = User(zitadel_sub="test-sub", email="t@test.test", name="Test", language="en")
+    repo.set_user_language(_FakeDb(), user, "fr")
+    assert user.language == "fr", "language must be set"
+    assert committed == [], "set_user_language must not call db.commit() — the caller owns the commit"
+
+
+def test_patch_me_sanitizes_zitadel_error(_isolated_base, monkeypatch):
+    """A Zitadel sync error must not echo the raw exception (which can embed internal URLs)."""
+    import web.zitadel_admin as za
+
+    def _raise(sub, given, family):
+        raise Exception("https://internal.zitadel.corp/error?trace=secret-abc123")
+
+    monkeypatch.setattr(za, "enabled", lambda: True)
+    monkeypatch.setattr(za, "update_human_user", _raise)
+
+    # Simulate a non-dev user (zitadel_sub != "dev-local") so the sync path fires.
+    import web.auth as wa
+    monkeypatch.setattr(wa, "DEV_USER", {"sub": "real-zitadel-id", "email": "real@test.test", "name": "Real User"})
+
+    with TestClient(wm.app) as c:
+        r = c.patch("/api/me", json={"given_name": "Ada", "family_name": "Lovelace"})
+        assert r.status_code == 200, "Zitadel error must not fail the local save"
+        z = r.json().get("zitadel", "")
+        assert "internal.zitadel.corp" not in z, "raw exception must not appear in response"
+        assert "secret-abc123" not in z, "internal trace id must not appear in response"
+        assert z, "zitadel field must still be present (error indicator)"

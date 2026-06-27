@@ -185,10 +185,27 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
                         placeholder="What is this project about?" /></div>
             <div className="profile-field"><label>Tags</label>
               <input value={tagsText} onChange={e => setTagsText(e.target.value)} placeholder="comma, separated, tags" /></div>
-            <div className="profile-field"><label>Default language</label>
-              <select value={language} onChange={e => setLanguage(e.target.value)}>
-                {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
-              </select></div>
+            <div className="profile-field"><label htmlFor="pf-language">Default language</label>
+              {editing ? (
+                <>
+                  <select id="pf-language" className="pf-readonly-select" value={language}
+                          aria-disabled="true" aria-describedby="pf-language-note"
+                          style={{ background: 'var(--bg-2)', color: 'var(--ink-2)', cursor: 'not-allowed' }}
+                          onMouseDown={e => e.preventDefault()}
+                          onKeyDown={e => { if (e.key !== 'Tab') e.preventDefault(); }}
+                          onChange={() => {}}>
+                    {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                  <div id="pf-language-note" className="pf-field-note"
+                       style={{ color: 'var(--ink-3)', fontSize: 11.5, marginTop: 6, lineHeight: 1.45 }}>
+                    The language is set when the project is created and cannot be changed.
+                  </div>
+                </>
+              ) : (
+                <select id="pf-language" value={language} onChange={e => setLanguage(e.target.value)}>
+                  {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              )}</div>
             <div className="profile-field"><label>Color</label>
               <div className="pf-swatches">
                 {COLORS.map((c, i) => (
