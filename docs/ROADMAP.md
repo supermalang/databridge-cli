@@ -52,6 +52,7 @@ A card is startable only when all of the following hold:
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 10 / 10 |
 | [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
+| [Express Template Fill](#express-template-fill) | 25 | 25 / 25 |
 | [Express Template Fill](#express-template-fill) | 25 | 24 / 25 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 3 / 5 |
@@ -2851,6 +2852,7 @@ A card is startable only when all of the following hold:
 
 ---
 
+- [x] **XTF-25 — Express Template Fill: extractor must read Word content controls (w:sdt) (P2)**
 - [ ] **XTF-25 — Express Template Fill: extractor must read Word content controls (w:sdt) (P2)**
 
   `_tokens_in_paragraph` in `src/reports/template_inference.py` iterates only
