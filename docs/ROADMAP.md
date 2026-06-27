@@ -50,7 +50,7 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 9 / 9 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 9 / 10 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 10 / 10 |
 | [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
 | [Express Template Fill](#express-template-fill) | 25 | 24 / 25 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
@@ -58,6 +58,8 @@ A card is startable only when all of the following hold:
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 3 / 4 |
 | [Maintenance & hardening](#maintenance--hardening) | 4 | 0 / 4 |
+| [Performance](#performance) | 3 | 3 / 3 |
+| [Maintenance & hardening](#maintenance--hardening) | 4 | 1 / 4 |
 
 > **Shipped foundations** (delivered, not tracked here): results framework / logframe
 > (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
@@ -1347,7 +1349,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PUX-10 — Auto-save the connection before Fetch/Download (no stale-config runs) (P2)**
+- [x] **PUX-10 — Auto-save the connection before Fetch/Download (no stale-config runs) (P2)**
 
   Follow-up to PUX-7. **Test connection** probes the *in-form* values (URL/token/Form UID are
   sent in the request body), but **Fetch questions** / **Download data** run the CLI against the
@@ -3855,7 +3857,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **MNT-4 — Fix Toast crash: i18n `t` shadowed by the toasts.map variable (P1)**
+- [x] **MNT-4 — Fix Toast crash: i18n `t` shadowed by the toasts.map variable (P1)**
 
   `frontend/src/components/Toast.jsx` destructures the i18n function as `t`
   (`const { t } = useTranslation()`), then renders `toasts.map(t => …)` — the map
