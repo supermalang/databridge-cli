@@ -354,7 +354,8 @@
       "selectAll": "Tout sélectionner",
       "selectNone": "Tout désélectionner",
       "apply": "Appliquer",
-      "appliedNames": "Noms suggérés appliqués — vérifiez puis enregistrez les modifications"
+      "appliedNames": "Noms suggérés appliqués — vérifiez puis enregistrez les modifications",
+      "piiBadge": "DCP"
     },
     "composition": {
       "viewsEyebrow": "Étape 3 sur 5 · Combiner les données",
@@ -367,7 +368,13 @@
       "composeSubLead": "Définissez ce qui apparaît dans le rapport — graphiques, indicateurs et synthèses. Ajoutez-les manuellement, ou laissez l’IA proposer un ensemble à partir de vos ",
       "composeSubTail": " questions.",
       "noUnsavedChanges": "Aucune modification non enregistrée",
-      "kind": { "charts": "graphiques", "indicators": "indicateurs", "tables": "tableaux", "summaries": "synthèses", "views": "vues" },
+      "kind": {
+        "charts": "graphiques",
+        "indicators": "indicateurs",
+        "tables": "tableaux",
+        "summaries": "synthèses",
+        "views": "vues"
+      },
       "configured": "configuré(s)",
       "noneYet": "aucun pour l’instant — ajoutez-en un",
       "suggestKind": "Suggérer des {{kind}}",
@@ -606,7 +613,9 @@
       "removeChip": "Retirer {{name}}",
       "dropColumn": "Supprimer la colonne « {{name}} »",
       "renameColumn": "Renommer la colonne {{name}}",
-      "clickToRename": "Cliquez pour renommer"
+      "clickToRename": "Cliquez pour renommer",
+      "suggestSave": "Suggérer",
+      "suggestHint": "Texte libre que l’IA privilégiera. Laissez vide pour la laisser choisir librement parmi vos questions."
     },
     "reports": {
       "eyebrow": "Étape 5 sur 5 · Rapports",
@@ -740,80 +749,151 @@
       "deleteFailed": "Échec de la suppression"
     },
     "components": {
-    "buildOptions": {
-      "title": "Options de génération",
-      "hint": "Générez un rapport par valeur d’une colonne de la table principale, et prévisualisez quelques groupes avant de lancer la génération complète par groupe.",
-      "splitBy": "Répartir par",
-      "splitPlaceholder": "Aucune répartition — saisissez pour filtrer les colonnes",
-      "noSplit": "Aucune répartition — un rapport unique consolidé",
-      "groupsToBuild": "Groupes à générer",
-      "groupsHint": "Choisissez une colonne de répartition pour prévisualiser les groupes",
-      "buildAll": "Générer tous les groupes (par défaut)",
-      "firstN": "N premiers groupes (aperçu)",
-      "previewNote": "Aperçu seulement — génère les {{n}} premier(s) groupe(s) pour vérifier la mise en page avant de lancer la génération complète par groupe.",
-      "buildReport": "Générer le rapport",
-      "building": "Génération…"
+      "buildOptions": {
+        "title": "Options de génération",
+        "hint": "Générez un rapport par valeur d’une colonne de la table principale, et prévisualisez quelques groupes avant de lancer la génération complète par groupe.",
+        "splitBy": "Répartir par",
+        "splitPlaceholder": "Aucune répartition — saisissez pour filtrer les colonnes",
+        "noSplit": "Aucune répartition — un rapport unique consolidé",
+        "groupsToBuild": "Groupes à générer",
+        "groupsHint": "Choisissez une colonne de répartition pour prévisualiser les groupes",
+        "buildAll": "Générer tous les groupes (par défaut)",
+        "firstN": "N premiers groupes (aperçu)",
+        "previewNote": "Aperçu seulement — génère les {{n}} premier(s) groupe(s) pour vérifier la mise en page avant de lancer la génération complète par groupe.",
+        "buildReport": "Générer le rapport",
+        "building": "Génération…"
+      },
+      "groupTree": {
+        "hidden": "Masqués ({{count}})",
+        "hiddenHint": "notes et champs non analytiques",
+        "pii": "DCP ({{count}})",
+        "piiHint": "données personnelles signalées",
+        "hiddenCount": "· {{count}} masqué(s)",
+        "piiCount": "· {{count}} DCP"
+      },
+      "tableTree": {
+        "tableCount_one": "{{count}} table",
+        "tableCount_other": "{{count}} tables"
+      },
+      "frameworkPicker": {
+        "none": "(aucun lien au cadre)"
+      },
+      "periodPicker": {
+        "none": "(aucune période)",
+        "baseline": "· référence",
+        "add": "Ajouter",
+        "addPeriod": "+ Période",
+        "placeholder": "ex. T3 2026"
+      },
+      "aiThinking": {
+        "working": "Traitement…",
+        "analyzing": "Analyse de vos données…",
+        "almost": "Bientôt terminé…"
+      },
+      "terminal": {
+        "sessions": "Sessions",
+        "filter": "Filtre",
+        "awaiting": "En attente de lignes de journal…",
+        "logLabel": "Journal d’exécution du pipeline",
+        "barTitle": "terminal",
+        "running": "En cours",
+        "idle": "Inactif",
+        "open": "Ouvrir",
+        "close": "Fermer",
+        "openTerminal": "Ouvrir le terminal",
+        "closeTerminal": "Fermer le terminal",
+        "barAria": "Terminal — {{status}}. {{action}}.",
+        "barAriaRunning": "exécution de {{cmd}}",
+        "barAriaIdle": "inactif",
+        "expand": "Développer",
+        "collapse": "Réduire",
+        "stagePipeline": "Pipeline",
+        "stageExtract": "Extraction",
+        "stageTransform": "Transformation",
+        "stageModel": "Modélisation",
+        "stageAnalyze": "Analyse",
+        "stageDeliver": "Diffusion"
+      },
+      "toast": {
+        "dismiss": "Fermer la notification"
+      },
+      "userMenu": {
+        "account": "Compte",
+        "profile": "Profil",
+        "signOut": "Se déconnecter",
+        "superadmin": "superadministrateur"
+      }
     },
-    "groupTree": {
-      "hidden": "Masqués ({{count}})",
-      "hiddenHint": "notes et champs non analytiques",
-      "pii": "DCP ({{count}})",
-      "piiHint": "données personnelles signalées",
-      "hiddenCount": "· {{count}} masqué(s)",
-      "piiCount": "· {{count}} DCP"
+    "dataProfile": {
+      "eyebrow": "Étape 2 sur 5 · Profil des données",
+      "title": "Comprenez vos",
+      "accent": "tables.",
+      "sub": "Un aperçu en lecture seule de chaque table de base, organisé en arborescence d’accordéons. Ouvrez une table pour inspecter ses colonnes — taux de complétude, de valeurs aberrantes et de doublons (codés par couleur), nombre de valeurs distinctes, plages et valeurs aberrantes.",
+      "colColumn": "Colonne",
+      "colRole": "Rôle",
+      "colCompleteness": "Complétude",
+      "colOutlierRate": "Taux d’aberrants",
+      "colDupRate": "Taux de doublons",
+      "colDistinct": "Distinctes",
+      "colDetail": "Détail",
+      "noVisibleColumns": "Aucune colonne visible.",
+      "loading": "Profilage…",
+      "errorTitle": "Échec du profilage",
+      "errorBody": "{{error}} — si vous n’avez pas encore téléchargé de soumissions, lancez d’abord Télécharger depuis le tableau de bord.",
+      "emptyTitle": "Rien à profiler pour l’instant",
+      "emptyBody": "Le profil des données est construit à partir de vos soumissions téléchargées. Lancez Télécharger depuis le tableau de bord, puis revenez ici pour inspecter chaque table."
     },
-    "tableTree": {
-      "tableCount_one": "{{count}} table",
-      "tableCount_other": "{{count}} tables"
+    "ask": {
+      "eyebrow": "Étape 4 sur 5 · Interroger",
+      "title": "Interrogez vos",
+      "accent": "données.",
+      "sub": "Posez une question en langage clair — obtenez des graphiques calculés à partir de vos données, avec des légendes fondées sur les chiffres réels.",
+      "placeholder": "ex. Combien de soumissions par région ?",
+      "refinePlaceholder": "Affiner — ex. en faire une courbe, ventiler par sexe",
+      "emptyTitle": "Posez n’importe quelle question sur vos données",
+      "emptyBody": "Les dénombrements, distributions, tendances, comparaisons et classements fonctionnent tous. Chaque réponse est calculée à partir de vos données téléchargées — des graphiques et des indicateurs en chiffres clés que vous pouvez enregistrer d’un clic. (Nécessite une connexion à l’IA et un téléchargement terminé.)",
+      "errorTitle": "Impossible de répondre"
     },
-    "frameworkPicker": {
-      "none": "(aucun lien au cadre)"
+    "validate": {
+      "eyebrow": "Étape 2 sur 5 · Valider",
+      "title": "Vérifiez vos",
+      "accent": "données.",
+      "sub": "Analysez les soumissions téléchargées pour détecter les valeurs manquantes, les doublons, les valeurs aberrantes et les problèmes de type. Masquez une colonne ou marquez-la comme DCP pour résoudre un constat.",
+      "loading": "Validation en cours…",
+      "errorTitle": "Échec de la validation",
+      "errorBody": "{{error}} — si vous n’avez pas encore téléchargé de soumissions, lancez d’abord Télécharger depuis le tableau de bord.",
+      "noIssues": "Aucun problème détecté sur les colonnes visibles — vos données semblent propres."
     },
-    "periodPicker": {
-      "none": "(aucune période)",
-      "baseline": "· référence",
-      "add": "Ajouter",
-      "addPeriod": "+ Période",
-      "placeholder": "ex. T3 2026"
+    "projectForm": {
+      "sectionsAria": "Sections des paramètres du projet",
+      "tabDetails": "Détails",
+      "tabMembers": "Membres",
+      "tabDanger": "Zone sensible",
+      "name": "Nom *",
+      "namePlaceholder": "ex. Suivi T3",
+      "description": "Description",
+      "descriptionPlaceholder": "De quoi traite ce projet ?",
+      "tags": "Étiquettes",
+      "tagsPlaceholder": "étiquettes, séparées, par virgules",
+      "defaultLanguage": "Langue par défaut",
+      "color": "Couleur",
+      "icon": "Icône",
+      "deleteTitle": "Supprimer le projet",
+      "deleteDesc": "Supprimer définitivement ce projet et toutes ses données.",
+      "deleteButton": "Supprimer",
+      "languageNote": "La langue est définie à la création du projet et ne peut pas être modifiée."
     },
-    "aiThinking": {
-      "working": "Traitement…",
-      "analyzing": "Analyse de vos données…",
-      "almost": "Bientôt terminé…"
-    },
-    "terminal": {
-      "sessions": "Sessions",
-      "filter": "Filtre",
-      "awaiting": "En attente de lignes de journal…",
-      "logLabel": "Journal d’exécution du pipeline",
-      "barTitle": "terminal",
-      "running": "En cours",
-      "idle": "Inactif",
-      "open": "Ouvrir",
-      "close": "Fermer",
-      "openTerminal": "Ouvrir le terminal",
-      "closeTerminal": "Fermer le terminal",
-      "barAria": "Terminal — {{status}}. {{action}}.",
-      "barAriaRunning": "exécution de {{cmd}}",
-      "barAriaIdle": "inactif",
-      "expand": "Développer",
-      "collapse": "Réduire",
-      "stagePipeline": "Pipeline",
-      "stageExtract": "Extraction",
-      "stageTransform": "Transformation",
-      "stageModel": "Modélisation",
-      "stageAnalyze": "Analyse",
-      "stageDeliver": "Diffusion"
-    },
-    "toast": {
-      "dismiss": "Fermer la notification"
-    },
-    "userMenu": {
-      "account": "Compte",
-      "profile": "Profil",
-      "signOut": "Se déconnecter",
-      "superadmin": "superadministrateur"
-    }
+    "members": {
+      "loading": "Chargement…",
+      "colMember": "Membre",
+      "colRole": "Rôle",
+      "remove": "Retirer",
+      "pendingInvites": "Invitations en attente",
+      "inviteSomeone": "Inviter quelqu’un",
+      "inviteEmailAria": "Adresse e-mail de l’invitation",
+      "inviteEmailPlaceholder": "email@example.com",
+      "inviteRoleAria": "Rôle de l’invitation",
+      "accessNote": "Vous disposez d’un accès <b>{{role}}</b>. Seuls les administrateurs peuvent inviter ou modifier les rôles."
     }
   }
 }

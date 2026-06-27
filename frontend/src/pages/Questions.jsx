@@ -363,7 +363,7 @@ export default function Questions() {
                 className={liveDup ? 'q-row--dup' : undefined}>
               <td className="q-table__name">
                 {bareName(q)}
-                {pii && <span className="q-pii-badge" title={t('questions.piiBadgeTitle')}>PII</span>}
+                {pii && <span className="q-pii-badge" title={t('questions.piiBadgeTitle')}>{t('questions.piiBadge')}</span>}
               </td>
               <td>
                 <span className="q-type-badge" data-cat={q.category || 'undefined'}>{q.type || ''}</span>

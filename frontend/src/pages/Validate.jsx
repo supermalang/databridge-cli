@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import PageHeader from './PageHeader.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { isHidden, indexQuestionsByColumn, buildGroupTree } from '../lib/questionGroups.js';
@@ -11,6 +12,7 @@ const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const SEV_RANK = { error: 0, warning: 1, info: 2 };
 
 export default function Validate() {
+  const { t } = useTranslation();
   const toast = useToast();
   const [report, setReport] = useState(null);   // null | { n_rows, n_columns, checks, summary }
   const [questions, setQuestions] = useState([]);
@@ -164,10 +166,10 @@ export default function Validate() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Step 2 of 5 · Validate"
-        title="Check your"
-        accent="data."
-        sub="Scan the downloaded submissions for missingness, duplicates, outliers, and type problems. Hide a column or flag it as PII to resolve a finding."
+        eyebrow={t('validate.eyebrow')}
+        title={t('validate.title')}
+        accent={t('validate.accent')}
+        sub={t('validate.sub')}
       />
       <RailLayout rail={
         <>
@@ -190,15 +192,15 @@ export default function Validate() {
           ]} />
         </>
       }>
-      {loading && <SkeletonPanel rows={5} rowHeight={48} label="Running validation…" />}
+      {loading && <SkeletonPanel rows={5} rowHeight={48} label={t('validate.loading')} />}
       {error && (
-        <EmptyState tone="error" title="Validation failed"
-          description={`${error} — if you haven’t downloaded submissions yet, run Download from the Dashboard first.`} />
+        <EmptyState tone="error" title={t('validate.errorTitle')}
+          description={t('validate.errorBody', { error })} />
       )}
       {report && (
         <div>
           {visibleChecks.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>No issues found on visible columns — your data looks clean.</div>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>{t('validate.noIssues')}</div>
           ) : (
             <GroupTree tree={tree} renderVisible={renderFindings} />
           )}

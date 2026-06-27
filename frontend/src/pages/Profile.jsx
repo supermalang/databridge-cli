@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import PageHeader from './PageHeader.jsx';
 import { isHidden, indexQuestionsByColumn, buildGroupTree, GROUP_LABELS } from '../lib/questionGroups.js';
 import GroupTree from '../components/GroupTree.jsx';
@@ -39,18 +40,18 @@ function ColumnRow({ c, m }) {
   );
 }
 
-function renderCols(cols, dqMap) {
+function renderCols(cols, dqMap, t) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
         <tr style={{ textAlign: 'left', color: 'var(--ink-3)' }}>
-          <th style={{ padding: '6px 8px' }}>Column</th>
-          <th style={{ padding: '6px 8px' }}>Role</th>
-          <th style={{ padding: '6px 8px' }}>Completeness</th>
-          <th style={{ padding: '6px 8px' }}>Outlier rate</th>
-          <th style={{ padding: '6px 8px' }}>Dup. rate</th>
-          <th style={{ padding: '6px 8px' }}>Distinct</th>
-          <th style={{ padding: '6px 8px' }}>Detail</th>
+          <th style={{ padding: '6px 8px' }}>{t('dataProfile.colColumn')}</th>
+          <th style={{ padding: '6px 8px' }}>{t('dataProfile.colRole')}</th>
+          <th style={{ padding: '6px 8px' }}>{t('dataProfile.colCompleteness')}</th>
+          <th style={{ padding: '6px 8px' }}>{t('dataProfile.colOutlierRate')}</th>
+          <th style={{ padding: '6px 8px' }}>{t('dataProfile.colDupRate')}</th>
+          <th style={{ padding: '6px 8px' }}>{t('dataProfile.colDistinct')}</th>
+          <th style={{ padding: '6px 8px' }}>{t('dataProfile.colDetail')}</th>
         </tr>
       </thead>
       <tbody>
@@ -68,7 +69,7 @@ function visibleColumns(profile, questionsByColumn) {
 
 // One table's body: columns grouped by SUB-structure (the table's own path
 // prefix is stripped so we don't repeat the outer tree), plus correlations/dupes.
-function TableBody({ profile, tablePath, questionsByColumn, dqMap }) {
+function TableBody({ profile, tablePath, questionsByColumn, dqMap, t }) {
   const cols = visibleColumns(profile, questionsByColumn);
   const tree = buildGroupTree(cols, {
     getPath: (c) => {
@@ -79,13 +80,13 @@ function TableBody({ profile, tablePath, questionsByColumn, dqMap }) {
     },
     getHidden: () => false,
   });
-  const render = (cs) => renderCols(cs, dqMap);
+  const render = (cs) => renderCols(cs, dqMap, t);
   // No real sub-groups → render the columns flat (skip the "— no group —" wrapper).
   const flat = tree.length === 1 && tree[0].children.length === 0;
   return (
     <div style={{ padding: '2px 8px 10px' }}>
       {cols.length === 0
-        ? <div style={{ color: 'var(--ink-3)', fontSize: 12.5, padding: '4px 0' }}>No visible columns.</div>
+        ? <div style={{ color: 'var(--ink-3)', fontSize: 12.5, padding: '4px 0' }}>{t('dataProfile.noVisibleColumns')}</div>
         : flat ? render(tree[0].visible) : <GroupTree tree={tree} renderVisible={render} />}
       {profile.correlations?.length > 0 && (
         <div style={{ marginTop: 10, color: 'var(--ink-3)', fontSize: 12.5 }}>
@@ -102,6 +103,7 @@ function TableBody({ profile, tablePath, questionsByColumn, dqMap }) {
 }
 
 export default function Profile() {
+  const { t } = useTranslation();
   const [profiles, setProfiles] = useState(null);
   const [questionsByColumn, setQuestionsByColumn] = useState(() => new Map());
   const [san2slash, setSan2slash] = useState({});   // sanitized group path → slash path
@@ -158,20 +160,20 @@ export default function Profile() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Step 2 of 5 · Data profile"
-        title="Understand your"
-        accent="tables."
-        sub="A read-only snapshot of every base table, arranged as a tree of accordions. Open a table to inspect its columns — completeness, outlier and duplicate rates (color-coded), distinct counts, ranges and outliers."
+        eyebrow={t('dataProfile.eyebrow')}
+        title={t('dataProfile.title')}
+        accent={t('dataProfile.accent')}
+        sub={t('dataProfile.sub')}
       />
-      {loading && <SkeletonPanel rows={5} rowHeight={56} label="Profiling…" />}
+      {loading && <SkeletonPanel rows={5} rowHeight={56} label={t('dataProfile.loading')} />}
       {error && (
-        <EmptyState tone="error" title="Profiling failed"
-          description={`${error} — if you haven’t downloaded submissions yet, run Download from the Dashboard first.`} />
+        <EmptyState tone="error" title={t('dataProfile.errorTitle')}
+          description={t('dataProfile.errorBody', { error })} />
       )}
       {!loading && !error && profiles && profiles.length === 0 && (
         <EmptyState
-          title="Nothing to profile yet"
-          description={message || 'The data profile is built from your downloaded submissions. Run Download from the Dashboard, then come back here to inspect every table.'}
+          title={t('dataProfile.emptyTitle')}
+          description={message || t('dataProfile.emptyBody')}
         />
       )}
       {profiles && profiles.length > 0 && (
@@ -180,7 +182,7 @@ export default function Profile() {
             tables={profiles}
             resolveSlash={(key) => san2slash[key] || key}
             tableMeta={(p) => `${(p.rows ?? 0).toLocaleString()} rows · ${visibleColumns(p, questionsByColumn).length} columns`}
-            renderBody={(p, slash) => <TableBody profile={p} tablePath={slash} questionsByColumn={questionsByColumn} dqMap={dq[p.name]} />}
+            renderBody={(p, slash) => <TableBody profile={p} tablePath={slash} questionsByColumn={questionsByColumn} dqMap={dq[p.name]} t={t} />}
           />
         </div>
       )}
