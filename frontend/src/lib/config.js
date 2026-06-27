@@ -9,7 +9,9 @@ import { swr } from './cache.js';
 export async function loadConfig() {
   try {
     return await swr('/api/config', async () => {
-      const data = await (await fetch('/api/config')).json();
+      const res = await fetch('/api/config');
+      if (!res.ok) { handle401(res); return {}; }
+      const data = await res.json();
       return yaml.load(data.content || '') || {};
     });
   } catch {
@@ -53,7 +55,9 @@ export async function saveConfigText(content) {
 
 export async function loadConfigText() {
   try {
-    const data = await (await fetch('/api/config')).json();
+    const res = await fetch('/api/config');
+    if (!res.ok) { handle401(res); return ''; }
+    const data = await res.json();
     return data.content || '';
   } catch {
     return '';
