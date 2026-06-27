@@ -25,6 +25,7 @@ import { DirtyProvider } from './lib/dirty.js';
 import { AiStatusProvider } from './lib/aiStatus.js';
 import { tabProps, panelProps, panelId, makeTabKeydown } from './lib/tabs.js';
 import { setLanguage } from './lib/i18n.js';
+import { setActiveProject as setCacheProject, swr } from './lib/cache.js';
 
 // Human-friendly verbs for the active run alert. Falls back to a generic phrasing.
 // `t` is the i18next translator threaded in from the component (labels localized).
@@ -194,6 +195,9 @@ export default function App() {
   const [profileOpen, setProfileOpen] = useState(false);    // user profile page overlay
   const refreshProjects = async () => {
     const { projects, active_id, is_superadmin } = await listProjects();
+    // Namespace the SWR cache to the active project BEFORE the panes (re)mount so
+    // each project's reads/writes land in its own namespace (PERF-4).
+    setCacheProject(active_id);
     setProjects(projects); setActiveProjectId(active_id); setIsSuperadmin(!!is_superadmin);
     return projects;
   };
@@ -232,6 +236,11 @@ export default function App() {
     setSwitching(true);
     try {
       await activateProject(id);
+      // Re-namespace the SWR cache to the target project BEFORE the panes remount,
+      // so project B never reads A's cache and a return to A is an instant hit. The
+      // data-changed event below carries `detail.project`, so the cache treats it as
+      // a switch (no invalidation) — see lib/cache.js (PERF-4).
+      setCacheProject(id);
       setActiveProjectId(id);
       setProjMenuOpen(false);
       window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
@@ -399,14 +408,20 @@ export default function App() {
     setHomeReady(null);
     const load = async () => {
       try {
-        const res = await fetch('/api/state');
-        // A non-OK response (4xx/5xx) must NOT coerce to ready=false — leave
-        // readiness unknown (null → cards held) so a returning user is never
-        // shown the first-run state on a transient/auth error (PUX-6).
-        if (!res.ok) return;
-        const s = await res.json();
-        if (alive) setHomeReady(!!(s.has_questions && s.has_data));
-      } catch { /* parse error / non-JSON → leave as-is (unknown, held) */ }
+        // SWR persisted tier (PERF-4): /api/state is small non-sensitive readiness
+        // metadata, so it is cached to disk — a hard reload resolves Home's state
+        // instantly while it revalidates.
+        await swr('/api/state', async () => {
+          const res = await fetch('/api/state');
+          // A non-OK response (4xx/5xx) must NOT coerce to ready=false — leave
+          // readiness unknown (null → cards held) so a returning user is never
+          // shown the first-run state on a transient/auth error (PUX-6).
+          if (!res.ok) throw new Error(`state ${res.status}`);
+          return await res.json();
+        }, (s) => {
+          if (alive) setHomeReady(!!(s.has_questions && s.has_data));
+        });
+      } catch { /* parse error / non-JSON / non-OK → leave as-is (unknown, held) */ }
     };
     load();
     window.addEventListener('databridge:data-changed', load);

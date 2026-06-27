@@ -5,6 +5,7 @@ import GroupTree from '../components/GroupTree.jsx';
 import TableTree from '../components/TableTree.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import { SkeletonPanel } from '../components/Skeleton.jsx';
+import { swr } from '../lib/cache.js';
 
 // Data-quality threshold bands (merged from the former Validate DQ overview).
 // completeness: higher is better; outlier/duplicate rates: lower is better.
@@ -115,41 +116,52 @@ export default function Profile() {
     (async () => {
       setLoading(true); setError(null);
       try {
-        const r = await fetch('/api/profile');
-        const data = await r.json().catch(() => ({}));
-        if (cancelled) return;
-        if (!r.ok) { setError(data.detail || `Request failed (${r.status})`); return; }
-        setProfiles(data.profiles || []);
-        setMessage(data.message || null);
+        // In-memory SWR tier (PERF-4): profile column stats can expose real data
+        // values, so this is never persisted to disk — instant on within-session
+        // revisit, skeleton-then-fetch on a hard reload.
+        await swr('/api/profile', async () => {
+          const r = await fetch('/api/profile');
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(data.detail || `Request failed (${r.status})`);
+          return data;
+        }, (data) => {
+          if (cancelled) return;
+          setProfiles(data.profiles || []);
+          setMessage(data.message || null);
+          setLoading(false);
+        });
       } catch (e) {
-        if (!cancelled) setError(e.message || 'Network error');
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) { setError(e.message || 'Network error'); setLoading(false); }
       }
     })();
     (async () => {
       try {
-        const r = await fetch('/api/questions');
-        const data = await r.json().catch(() => ({}));
-        if (cancelled || !r.ok) return;
-        const qs = data.questions || [];
-        setQuestionsByColumn(indexQuestionsByColumn(qs));
-        const m = {};
-        for (const q of qs) if (q.group) m[q.group.replace(/\//g, '_')] = q.group;
-        setSan2slash(m);
+        await swr('/api/questions', async () => (await (await fetch('/api/questions')).json()), (data) => {
+          if (cancelled) return;
+          const qs = data.questions || [];
+          setQuestionsByColumn(indexQuestionsByColumn(qs));
+          const m = {};
+          for (const q of qs) if (q.group) m[q.group.replace(/\//g, '_')] = q.group;
+          setSan2slash(m);
+        });
       } catch { /* keep flat */ }
     })();
     // Data-quality metrics (completeness / outlier rate / duplicate rate),
     // merged into the column tables. Best-effort.
     (async () => {
       try {
-        const r = await fetch('/api/data-quality');
-        const body = await r.json().catch(() => ({}));
-        if (cancelled || !r.ok || !body.has_data) return;
-        const byCol = (rows) => { const mm = new Map(); for (const row of rows || []) mm.set(row.column, row); return mm; };
-        const m = { main: byCol(body.rows) };
-        for (const t of body.tables || []) m[t.name] = byCol(t.rows);
-        setDq(m);
+        // In-memory SWR tier (PERF-4): column stats can expose data values → never
+        // persisted to disk.
+        await swr('/api/data-quality', async () => {
+          const r = await fetch('/api/data-quality');
+          return await r.json().catch(() => ({}));
+        }, (body) => {
+          if (cancelled || !body || !body.has_data) return;
+          const byCol = (rows) => { const mm = new Map(); for (const row of rows || []) mm.set(row.column, row); return mm; };
+          const m = { main: byCol(body.rows) };
+          for (const t of body.tables || []) m[t.name] = byCol(t.rows);
+          setDq(m);
+        });
       } catch { /* no metrics */ }
     })();
     return () => { cancelled = true; };
