@@ -26,6 +26,7 @@ def get_storage() -> Storage:
     needed = ("S3_ENDPOINT_URL", "S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_BUCKET")
     if all(os.environ.get(k) for k in needed):
         import boto3
+        from botocore.config import Config as BotocoreConfig
         from web.storage.s3 import S3Storage
         client = boto3.client(
             "s3",
@@ -33,6 +34,7 @@ def get_storage() -> Storage:
             aws_access_key_id=os.environ["S3_ACCESS_KEY"],
             aws_secret_access_key=os.environ["S3_SECRET_KEY"],
             region_name=os.environ.get("S3_REGION", "us-east-1"),
+            config=BotocoreConfig(connect_timeout=5, read_timeout=30, retries={"max_attempts": 2}),
         )
         _storage = S3Storage(client, os.environ["S3_BUCKET"])
         return _storage
