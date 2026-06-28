@@ -4,6 +4,10 @@ config.yml
 data/raw/
 data/processed/
 /reports/
+**/data/raw/
+**/data/processed/
+**/reports/
+scratchpad/
 __pycache__/
 *.pyc
 .DS_Store
