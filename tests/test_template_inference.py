@@ -516,6 +516,40 @@ def test_infer_specs_makes_one_batched_chat_call(monkeypatch):
     assert isinstance(out, list) and out, "infer_specs returned no proposals"
 
 
+# MNT-7 — infer_specs raises RuntimeError on malformed LLM responses, not silent []
+# --------------------------------------------------------------------------- #
+import pytest
+
+@pytest.mark.parametrize("bad_response", [
+    "",                         # empty string
+    "null",                     # JSON null
+    "{}",                       # empty object — no "proposals" key
+    '{"error": "oops"}',        # error-shaped — no "proposals" key
+    '{"proposals": null}',      # proposals key present but null, not a list
+    '{"proposals": "nope"}',    # proposals is a string, not a list
+    "not json at all",          # completely unparseable
+])
+def test_infer_specs_raises_on_malformed_llm_response(monkeypatch, bad_response):
+    """MNT-7: infer_specs must raise RuntimeError (not return []) when the LLM
+    response cannot be parsed as {proposals: list}. The endpoint's except Exception
+    then surfaces HTTP 500 instead of a silent empty list."""
+    monkeypatch.setattr(
+        ti.lf_client, "get_prompt",
+        lambda *a, **k: ([{"role": "user", "content": "x"}], {}),
+    )
+    monkeypatch.setattr(ti.lf_client, "chat", lambda *a, **k: bad_response)
+
+    nl_tokens = [
+        ti.Token(raw="[Total beneficiaries]", inner="Total beneficiaries",
+                 delimiter="[", kind="nl", location=ti.Location()),
+    ]
+    catalog = ask_engine.build_catalog(_profile_xtf2())
+    ai_cfg = {"provider": "openai", "model": "gpt-x", "api_key": "sk-test"}
+
+    with pytest.raises(RuntimeError, match="proposals"):
+        ti.infer_specs(nl_tokens, catalog, ai_cfg)
+
+
 # =========================================================================== #
 # XTF-3 — Apply: persist config + resolve template (apply_inference)
 # =========================================================================== #

@@ -263,7 +263,9 @@ def infer_specs(nl_tokens: List["Token"], catalog: Dict, ai_cfg: Dict) -> List[P
     Builds a single prompt over ALL ``nl_tokens`` (their ``inner`` text) plus the
     Ask-engine ``catalog``, calls ``lf_client.get_prompt("template_inference", …)``
     + ``lf_client.chat(trace_name="template_inference", json_mode=True)`` exactly
-    once, and returns one :data:`Proposal` per token. Returns ``[]`` on failure.
+    once, and returns one :data:`Proposal` per token. Raises ``RuntimeError`` when
+    the LLM response cannot be parsed as ``{"proposals": [...]}``, so the caller's
+    ``except Exception`` can surface a meaningful HTTP 500 instead of a silent empty list.
     """
     if not nl_tokens:
         return []
@@ -297,7 +299,10 @@ def infer_specs(nl_tokens: List["Token"], catalog: Dict, ai_cfg: Dict) -> List[P
     data = ask_engine._loads_lenient(raw)
     items = (data or {}).get("proposals")
     if not isinstance(items, list):
-        return []
+        raise RuntimeError(
+            f"LLM response for 'template_inference' did not return a 'proposals' list. "
+            f"Raw response (first 300 chars): {str(raw)[:300]!r}"
+        )
 
     proposals: List[Proposal] = []
     for it in items:
