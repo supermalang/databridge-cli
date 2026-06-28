@@ -21,7 +21,9 @@ A card is startable only when all of the following hold:
   text); E2E and UAT may be `N/A (reason)` for non-UI/CLI cards (UAT moves in lockstep with E2E)
 - All affected files are identified
 - All blocking dependencies are resolved
-- Scope is limited to one deliverable
+- Scope is limited to one deliverable (**INVEST: Independent + Small** — completable in one
+  session/sprint without depending on unshipped sibling tasks)
+- Priority is declared: `P0` (must-ship/blocking) · `P1` (important, non-blocking) · `P2` (nice-to-have)
 - Work is on a derived branch (`feature/ fix/ chore/`) off `develop`
 
 ## Definition of Done
