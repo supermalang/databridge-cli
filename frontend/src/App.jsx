@@ -242,6 +242,8 @@ export default function App() {
       // a switch (no invalidation) — see lib/cache.js (PERF-4).
       setCacheProject(id);
       setActiveProjectId(id);
+      setStageId('home');
+      setSubId(null);
       setProjMenuOpen(false);
       window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
     } finally {
