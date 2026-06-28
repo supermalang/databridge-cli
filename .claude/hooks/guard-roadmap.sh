@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PreToolUse guard: docs/ROADMAP.md may only be written via /roadmap, and the written content
-# must carry the task-card template (header DoR + DoD + Global status; each card AC/Unit/E2E/UAT).
+# must carry the task-card template (header DoR + DoD + Global status; each card AC/Unit/E2E/UAT/Created).
 set -euo pipefail
 input="$(cat)"
 fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""')"
@@ -19,6 +19,7 @@ function flush(   miss){
   if (body !~ /Unit tests/)          miss=miss " Unit-tests"
   if (body !~ /E2E/)                 miss=miss " E2E"
   if (body !~ /UAT/)                 miss=miss " UAT"
+  if (body !~ /\*\*Created:\*\*/)    miss=miss " Created"
   if (miss!="") printf("  %s missing:%s\n", id, miss)
   id=""; body=""
 }

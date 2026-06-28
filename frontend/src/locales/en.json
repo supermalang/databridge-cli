@@ -278,7 +278,7 @@
       "checkAiKeyNotSet": "AI key not set",
       "checkUnconfigured": "unconfigured",
       "tips": "Tips",
-      "tip1": "Prefix the token with <c1></c1> (e.g. <c2></c2>) to read it from an environment variable instead of saving the literal value.",
+      "tip1": "Prefix the token with <c1>env:</c1> (e.g. <c2>env:KOBO_TOKEN</c2>) to read it from an environment variable instead of saving the literal value.",
       "tip2": "Run <b>Test connection</b> before fetching questions — it checks the API URL, token, and form UID.",
       "tip3": "Re-fetching questions preserves your edits: renamed columns and adjusted categories carry over, and only new fields are added."
     },

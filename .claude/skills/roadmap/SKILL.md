@@ -29,19 +29,27 @@ content, `Write` the whole file.
   `N/A (reason)` for non-UI), `**UAT:**` (manual numbered steps for UI-facing cards; `N/A (reason)`
   for non-UI/CLI cards — UAT moves in lockstep with E2E). Plus Files / Config impact /
   Verify. ID = `AREA-N`. Each sprint adds golden-path `SP-N-E` + sprint UAT.
+- **Date fields (required on every card, stamped automatically):**
+  - `**Created:** YYYY-MM-DD` — stamped when the card is first written; never changed
+  - `**Started:** YYYY-MM-DD` — stamped (inline on the Created line) when the active-task marker is written
+  - `**Completed:** YYYY-MM-DD` — stamped (inline on the Created line) when the card flips `[x]`
+  - Format: `**Created:** 2026-06-28 · **Completed:** 2026-06-28` (dot-separated on one line)
+  - The guard checks for `**Created:**` on every card; missing it is a template violation.
 
 ## Operations
 - **Add/edit a task:** read roadmap → write the whole file with the card following the
-  template → keep Global status counts in sync. (Optionally dispatch `roadmap-planner` to draft
-  and `roadmap-card-reviewer` to validate Readiness.)
+  template → keep Global status counts in sync. Stamp `**Created:** YYYY-MM-DD` on the new card.
+  (Optionally dispatch `roadmap-planner` to draft and `roadmap-card-reviewer` to validate Readiness.)
 - **Start a task (unlocks coding):** confirm it's `- [ ]` **and Ready** (DoR). Write
-  `.claude/.active-task.json` = `{"id":"AREA-N","started_at":"<ISO8601 UTC>"}`. `guard-ready`
+  `.claude/.active-task.json` = `{"id":"AREA-N","started_at":"<ISO8601 UTC>"}`. Also update the
+  card in the roadmap to append `· **Started:** YYYY-MM-DD` to its Created line. `guard-ready`
   refuses the marker for a card that isn't open + structurally Ready. Then tests-first.
 - **Tests-first, separate authors:** `roadmap-test-author` writes tests from the Acceptance
   criteria and proves they FAIL (red) before any code. `roadmap-task-implementer` makes them
   pass and MUST NOT edit tests. A test believed wrong is escalated, not edited.
 - **Complete a task:** dispatch `roadmap-verifier` (DoD exit gate). Only on `DONE` → write the
-  roadmap with `- [x]` + updated Global status → delete `.claude/.active-task.json`.
+  roadmap with `- [x]` + append `· **Completed:** YYYY-MM-DD` to the card's Created line +
+  updated Global status → delete `.claude/.active-task.json`.
 
 ## Gate before coding
 No feature/bug/fix code without the task existing here and started via this skill. Minor
