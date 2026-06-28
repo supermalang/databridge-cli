@@ -6,7 +6,8 @@ import { useConfirm } from '../components/ConfirmDialog.jsx';
 import FrameworkPicker from '../components/FrameworkPicker.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useCommand } from '../hooks/useCommand.js';
-import { loadConfig, saveConfigPatch } from '../lib/config.js';
+import { saveConfigPatch } from '../lib/config.js';
+import { useConfig } from '../lib/ConfigContext.jsx';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 import { useFieldErrors } from '../lib/fieldError.js';
 import PageHeader from './PageHeader.jsx';
@@ -158,7 +159,7 @@ export default function Composition({ sections } = {}) {
   const toast = useToast();
   const { confirm, confirmDialog } = useConfirm();
   const { markAiFailed } = useAiStatus();
-  const [cfg,        setCfg]       = useState({});
+  const { cfg = {} } = useConfig() ?? {};
   const [filters,    setFilters]   = useState([]);
   const [charts,     setCharts]    = useState([]);
   const [indicators, setIndicators]= useState([]);
@@ -427,9 +428,12 @@ export default function Composition({ sections } = {}) {
     }
   };
 
-  const reload = useCallback(async () => {
-    const c = await loadConfig();
-    setCfg(c);
+  // Initialize editable sections from context once per mount.
+  const cfgInitialized = useRef(false);
+  useEffect(() => {
+    if (!cfg || cfgInitialized.current) return;
+    cfgInitialized.current = true;
+    const c = cfg;
     setFilters(Array.isArray(c.filters) ? c.filters : []);
     setCharts(Array.isArray(c.charts) ? c.charts : []);
     setIndicators(Array.isArray(c.indicators) ? c.indicators : []);
@@ -444,6 +448,9 @@ export default function Composition({ sections } = {}) {
       summaries: Array.isArray(c.summaries) ? c.summaries : [],
       views: Array.isArray(c.views) ? c.views : [],
     }));
+  }, [cfg]);
+
+  const loadTemplates = useCallback(async () => {
     try {
       const [t, a] = await Promise.all([
         fetch('/api/templates').then(r => r.json()),
@@ -454,7 +461,7 @@ export default function Composition({ sections } = {}) {
     } catch {}
   }, []);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { loadTemplates(); }, [loadTemplates]);
 
   const saveAll = async () => {
     try {

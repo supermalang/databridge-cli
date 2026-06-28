@@ -9,7 +9,7 @@ import { usePerms } from '../lib/perms.js';
 import { useRun } from '../lib/run.js';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 import BuildOptions from '../components/BuildOptions.jsx';
-import { loadConfig } from '../lib/config.js';
+import { useConfig } from '../lib/ConfigContext.jsx';
 
 const KINDS = ['chart', 'indicator', 'summary', 'table', 'narrative', 'metadata'];
 
@@ -80,9 +80,9 @@ function ExpressFlow({ onClose }) {
   // that into apply so a freshly-uploaded .docx survives the round-trip (XTF-6).
   const [templateRef, setTemplateRef] = useState(null);
   // config.questions feeds the build-options split-by selector (main-table columns).
-  const [questions, setQuestions] = useState([]);
+  const { cfg } = useConfig() ?? {};
+  const questions = cfg?.questions || [];
   const [buildOpts, setBuildOpts] = useState({});
-  useEffect(() => { loadConfig().then(c => setQuestions(c?.questions || [])); }, []);
 
   const onPick = (e) => {
     setFile(e.target.files?.[0] || null);

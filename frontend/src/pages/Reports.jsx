@@ -10,7 +10,7 @@ import { useToast } from '../components/Toast.jsx';
 import { usePerms } from '../lib/perms.js';
 import { useRun } from '../lib/run.js';
 import { RailLayout, StatusCard, QuickActionsCard, RailIcons } from '../components/Rail.jsx';
-import { loadConfig } from '../lib/config.js';
+import { useConfig } from '../lib/ConfigContext.jsx';
 import { swr } from '../lib/cache.js';
 import BuildOptions from '../components/BuildOptions.jsx';
 
@@ -23,7 +23,7 @@ export default function Reports() {
   const [reports, setReports] = useState(null);
   const [sessions, setSessions] = useState(null);
   const [templates, setTemplates] = useState(null);
-  const [cfg, setCfg] = useState(null);
+  const { cfg } = useConfig() ?? {};
 
   // Compare modal state
   const [showCompare, setShowCompare] = useState(false);
@@ -54,7 +54,6 @@ export default function Reports() {
   }, []);
 
   useEffect(() => { loadReports(); loadSessions(); loadTemplates(); }, [loadReports, loadSessions, loadTemplates]);
-  useEffect(() => { loadConfig().then(setCfg); }, []);
 
   // build-report is only runnable once its inputs exist: an API connection,
   // fetched questions, downloaded data, and a report template. Gate the action

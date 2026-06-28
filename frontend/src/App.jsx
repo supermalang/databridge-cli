@@ -23,6 +23,7 @@ import { PermsProvider } from './lib/perms.js';
 import { RunProvider } from './lib/run.js';
 import { DirtyProvider } from './lib/dirty.js';
 import { AiStatusProvider } from './lib/aiStatus.js';
+import { ConfigProvider } from './lib/ConfigContext.jsx';
 import { tabProps, panelProps, panelId, makeTabKeydown } from './lib/tabs.js';
 import { setLanguage } from './lib/i18n.js';
 import { setActiveProject as setCacheProject, swr } from './lib/cache.js';
@@ -672,6 +673,7 @@ export default function App() {
         </nav>
       )}
 
+      <ConfigProvider activeProjectId={activeProjectId}>
       <PermsProvider value={{ role: activeRole, isSuperadmin }}>
         <RunProvider value={{ run, stop, running, activeCmd }}>
          <DirtyProvider value={dirtyRef}>
@@ -711,6 +713,7 @@ export default function App() {
          </DirtyProvider>
         </RunProvider>
       </PermsProvider>
+      </ConfigProvider>
 
       <BottomTerminal
         project={formAlias || 'databridge'}
