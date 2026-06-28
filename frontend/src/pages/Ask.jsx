@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import PageHeader from './PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import EmptyState from '../components/EmptyState.jsx';
@@ -33,6 +34,7 @@ if (typeof window !== 'undefined') {
 }
 
 export default function Ask() {
+  const { t } = useTranslation();
   const { aiReady } = useAiStatus();
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -140,10 +142,10 @@ export default function Ask() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Step 4 of 5 · Ask"
-        title="Ask your"
-        accent="data."
-        sub="Ask a question in plain language — get charts computed from your data, with captions grounded in the actual numbers."
+        eyebrow={t('ask.eyebrow')}
+        title={t('ask.title')}
+        accent={t('ask.accent')}
+        sub={t('ask.sub')}
       />
       {!aiReady && (
         <div className="empty-state" style={{ padding: 12, marginBottom: 10, border: '1px solid var(--border)', borderRadius: 8 }}>
@@ -155,7 +157,7 @@ export default function Ask() {
           value={question}
           onChange={e => setQuestion(e.target.value)}
           disabled={!aiReady}
-          placeholder="e.g. How many submissions by region?"
+          placeholder={t('ask.placeholder')}
           style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line, #e5e7eb)' }}
         />
         <button type="submit" disabled={loading || !aiReady} title={aiReady ? '' : AI_LOCK_TIP}
@@ -173,8 +175,8 @@ export default function Ask() {
       {/* First-run guidance: what you can ask + one-click examples. */}
       {!loading && !error && !result && (
         <EmptyState
-          title="Ask anything about your data"
-          description="Counts, distributions, trends, comparisons and rankings all work. Each answer is computed from your downloaded data — charts and big-number indicators you can save with one click. (Needs an AI connection and a completed Download.)"
+          title={t('ask.emptyTitle')}
+          description={t('ask.emptyBody')}
           action={
             <div className="ask-examples">
               {examples.map(ex => (
@@ -188,8 +190,8 @@ export default function Ask() {
       )}
 
       {error && (
-        <EmptyState tone="error" title="Couldn’t answer that"
-          description={error.includes('data') ? `${error} — if you haven’t downloaded submissions yet, run Download from the Dashboard first.` : error} />
+        <EmptyState tone="error" title={t('ask.errorTitle')}
+          description={error.includes('data') ? t('validate.errorBody', { error }) : error} />
       )}
       {result?.message && !(result?.proposals?.length) && (
         <div style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)' }}>{result.message}</div>
@@ -224,7 +226,7 @@ export default function Ask() {
                   <input
                     value={refineInputs[i] || ''}
                     onChange={e => setRefineInputs(s => ({ ...s, [i]: e.target.value }))}
-                    placeholder="Refine — e.g. make it a line chart, split by sex"
+                    placeholder={t('ask.refinePlaceholder')}
                     style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--line, #e5e7eb)', fontSize: 12.5 }}
                   />
                   <button className="btn btn-ghost btn-sm" onClick={() => refine(i, p.recipe, p.kind)} disabled={refining[i]}

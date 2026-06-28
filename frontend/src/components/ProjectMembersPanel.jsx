@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { useConfirm } from './ConfirmDialog.jsx';
 import { useToast } from './Toast.jsx';
 import { roleAtLeast } from '../lib/perms.js';
@@ -31,6 +32,7 @@ const memberLabel = (m) =>
 
 // Roster + role changes + invites for one project. No Modal chrome — embed anywhere.
 export default function ProjectMembersPanel({ project }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const { confirm, confirmDialog } = useConfirm();
   const [data, setData] = useState(null);
@@ -83,7 +85,7 @@ export default function ProjectMembersPanel({ project }) {
     catch (e) { toast(e.message, 'err'); }
   };
 
-  if (!data) return <p style={{ color: 'var(--muted)' }}>Loading…</p>;
+  if (!data) return <p style={{ color: 'var(--muted)' }}>{t('members.loading')}</p>;
   // Tolerate a malformed/partial payload so a bad /members response can't crash
   // the whole form (A11Y-2: the Members tab must render when reached by keyboard).
   const members = Array.isArray(data.members) ? data.members : [];
@@ -97,8 +99,8 @@ export default function ProjectMembersPanel({ project }) {
       <table className="members-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ textAlign: 'left', color: 'var(--muted)', fontSize: 13 }}>
-            <th style={{ padding: '6px 4px' }}>Member</th>
-            <th style={{ padding: '6px 4px' }}>Role</th>
+            <th style={{ padding: '6px 4px' }}>{t('members.colMember')}</th>
+            <th style={{ padding: '6px 4px' }}>{t('members.colRole')}</th>
             <th></th>
           </tr>
         </thead>
@@ -120,7 +122,7 @@ export default function ProjectMembersPanel({ project }) {
               </td>
               <td style={{ padding: '8px 4px', textAlign: 'right' }}>
                 {isAdmin && !locked(m) && (
-                  <button className="btn btn-danger btn-sm" onClick={() => remove(m)}>Remove</button>
+                  <button className="btn btn-danger btn-sm" onClick={() => remove(m)}>{t('members.remove')}</button>
                 )}
               </td>
             </tr>
@@ -130,7 +132,7 @@ export default function ProjectMembersPanel({ project }) {
 
       {invitations.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4 }}>Pending invites</div>
+          <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4 }}>{t('members.pendingInvites')}</div>
           {invitations.map(i => (
             <div key={i.email} style={{ fontSize: 13, padding: '2px 0' }}>
               {i.email} — <strong>{i.role}</strong> <span style={{ color: 'var(--muted)' }}>({i.status})</span>
@@ -141,11 +143,11 @@ export default function ProjectMembersPanel({ project }) {
 
       {isAdmin ? (
         <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>Invite someone</div>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>{t('members.inviteSomeone')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input aria-label="Invite email address" type="email" placeholder="email@example.com" value={email}
+            <input aria-label={t('members.inviteEmailAria')} type="email" placeholder={t('members.inviteEmailPlaceholder')} value={email}
                    onChange={e => setEmail(e.target.value)} style={{ flex: 1 }} />
-            <select aria-label="Invite role" value={role} onChange={e => setRole(e.target.value)}>
+            <select aria-label={t('members.inviteRoleAria')} value={role} onChange={e => setRole(e.target.value)}>
               {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
             <button className="btn btn-primary btn-sm" disabled={busy} onClick={invite}>
@@ -155,7 +157,7 @@ export default function ProjectMembersPanel({ project }) {
         </div>
       ) : (
         <p style={{ marginTop: 12, color: 'var(--muted)', fontSize: 13 }}>
-          You have <strong>{myRole}</strong> access. Only admins can invite or change roles.
+          <Trans i18nKey="members.accessNote" values={{ role: myRole }} components={{ b: <strong /> }} />
         </p>
       )}
       {confirmDialog}
