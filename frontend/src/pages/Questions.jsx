@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useToast } from '../components/Toast.jsx';
-import { loadConfig } from '../lib/config.js';
+import { useConfig } from '../lib/ConfigContext.jsx';
 import { usePerms } from '../lib/perms.js';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 import { isHidden, buildGroupTree } from '../lib/questionGroups.js';
@@ -72,7 +72,7 @@ export default function Questions() {
   const [filter,    setFilter]    = useState('all');       // all | renamed | used
   const [suggesting, setSuggesting] = useState(null);      // null | 'hidden' | 'pii'
   const [reviewModal, setReviewModal] = useState(null);    // null | { kind, title, hint, noun, items:[{idx,name,label,checked}] }
-  const [cfg, setCfg] = useState({});
+  const { cfg = {} } = useConfig() ?? {};
   // When a save is blocked by duplicate export labels we "reveal" just the
   // offending rows: a frozen set of indices (stable membership so an input
   // doesn't vanish mid-edit) + a bump signal that drives the scroll-into-view.
@@ -93,7 +93,6 @@ export default function Questions() {
         setQuestions(list);
         setOriginal(snapshot(list));
       });
-      setCfg(await loadConfig());
     } catch (e) { toast(String(e), 'err'); }
   }, [toast]);
 

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import yaml from 'js-yaml';
 import { useToast } from '../components/Toast.jsx';
-import { loadConfig, loadConfigText, saveConfigPatch, saveConfigText } from '../lib/config.js';
+import { saveConfigText } from '../lib/config.js';
+import { useConfig } from '../lib/ConfigContext.jsx';
 import PageHeader from './PageHeader.jsx';
 import StageHelp from '../components/StageHelp.jsx';
 import { useRun } from '../lib/run.js';
@@ -68,26 +69,38 @@ const FORMATS = [
 export default function Sources({ section = 'setup' } = {}) {
   const { t } = useTranslation();
   const toast = useToast();
-  const [cfg,      setCfg]      = useState(null);
-  const [original, setOriginal] = useState(null);
-  const [yamlText, setYamlText] = useState('');
+
+  // Config comes from the shared context — loaded once per project activation.
+  // If already available when Sources mounts, the lazy useState initializers pick
+  // it up synchronously (no skeleton flash on navigation). If context is still
+  // loading, the fallback useEffect initializes once cfg arrives.
+  const { cfg: ctxCfg, cfgText: ctxCfgText, isLoading: cfgLoading, updateCfg } = useConfig() ?? {};
+
+  const [cfg,      setCfg]      = useState(() => ctxCfg ?? null);
+  const [original, setOriginal] = useState(() => ctxCfg ? yaml.dump(ctxCfg, { indent: 2, lineWidth: -1 }) : null);
+  const [yamlText, setYamlText] = useState(() => ctxCfgText ?? '');
   const [view,     setView]     = useState('form');
   const [showToken,setShowToken]= useState(false);
   const [questionCount, setQuestionCount] = useState(0);
   const [lastCheck, setLastCheck] = useState(null);
 
-  const reload = useCallback(async () => {
-    const c = await loadConfig();
-    setCfg(c);
-    setOriginal(yaml.dump(c, { indent: 2, lineWidth: -1 }));
-    setYamlText(await loadConfigText());
-    try {
-      const d = await (await fetch('/api/questions')).json();
-      setQuestionCount(d.questions?.length || 0);
-    } catch {}
-  }, []);
+  // Fallback: if context was still loading when Sources mounted, initialize once
+  // ctxCfg becomes available. ctxInitialized guards against overwriting local edits.
+  const ctxInitialized = useRef(!!ctxCfg);
+  useEffect(() => {
+    if (!ctxCfg || ctxInitialized.current) return;
+    ctxInitialized.current = true;
+    setCfg(ctxCfg);
+    setOriginal(yaml.dump(ctxCfg, { indent: 2, lineWidth: -1 }));
+    setYamlText(ctxCfgText);
+  }, [ctxCfg, ctxCfgText]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    fetch('/api/questions')
+      .then(r => r.json())
+      .then(d => setQuestionCount(d.questions?.length || 0))
+      .catch(() => {});
+  }, []);
 
   const dirty = cfg && original && yaml.dump(cfg, { indent: 2, lineWidth: -1 }) !== original;
   useUnsavedGuard(!!dirty);
@@ -112,8 +125,7 @@ export default function Sources({ section = 'setup' } = {}) {
       await saveConfigText(text);
       setOriginal(text);
       setYamlText(text);
-      // Re-check AI status: saving may make a just-tested config the saved one,
-      // which unlocks the AI buttons without a manual page refresh.
+      updateCfg?.(cfg, text);
       window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'sources' } }));
       toast(t('common.saved'), 'ok');
       return true;
@@ -123,8 +135,12 @@ export default function Sources({ section = 'setup' } = {}) {
   const saveYaml = async () => {
     try {
       await saveConfigText(yamlText);
+      const parsed = yaml.load(yamlText || '') || {};
+      setCfg(parsed);
+      setOriginal(yamlText);
+      updateCfg?.(parsed, yamlText);
       window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { source: 'sources' } }));
-      toast(t('common.saved'), 'ok'); reload();
+      toast(t('common.saved'), 'ok');
     }
     catch (e) { toast(e.message, 'err'); }
   };
@@ -162,7 +178,7 @@ export default function Sources({ section = 'setup' } = {}) {
   };
 
   // ── early states ─────────────────────────────────────────────────────────
-  if (cfg === null) return <div className="page"><SkeletonPanel rows={5} rowHeight={48} label={t('sources.loadingConfig')} /></div>;
+  if (!cfg) return <div className="page"><SkeletonPanel rows={5} rowHeight={48} label={t('sources.loadingConfig')} /></div>;
 
   // ── render ───────────────────────────────────────────────────────────────
   // The "output" section lives under the Deliver stage; setup + ai are Extract.
