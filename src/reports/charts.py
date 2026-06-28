@@ -44,11 +44,11 @@ if "axes.titleloc" in plt.rcParams:
 plt.rcParams.update(_rc)
 CHART_DIR = Path("data/processed/charts")
 
-def generate_chart(chart_cfg: Dict, df: pd.DataFrame, out_dir: Path = CHART_DIR) -> Optional[Path]:
+def generate_chart(chart_cfg: Dict, df: pd.DataFrame, out_dir: Path = CHART_DIR, language: str = "English") -> Optional[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     name = chart_cfg.get("name","chart"); chart_type = chart_cfg.get("type","bar")
     title = chart_cfg.get("title",name); questions = chart_cfg.get("questions",[])
-    opts = chart_cfg.get("options",{}); out_path = out_dir / f"{name}.png"
+    opts = {**(chart_cfg.get("options",{}) or {}), "language": language}; out_path = out_dir / f"{name}.png"
     missing = [q for q in questions if q not in df.columns]
     if missing: log.warning(f"Chart '{name}': columns not found: {missing}"); return None
     # distinct_by: deduplicate df by a column before charting
@@ -111,8 +111,29 @@ def _sort(counts, opts):
         return counts
     return counts.sort_values()  # default: by value ascending
 
+# Translations for the finite set of hardcoded chart strings.
+# Unknown languages fall back to the English key (see _t).
+_CHART_STRINGS = {
+    "French": {
+        "Count": "Nombre",
+        "Percent": "Pourcentage",
+        "Value": "Valeur",
+        "Frequency": "Fréquence",
+        "Category": "Catégorie",
+        "Score": "Score",
+        "Rank": "Rang",
+    },
+}
+
+def _t(opts, s):
+    """Translate a hardcoded chart string into opts['language']; English fallback."""
+    lang = (opts or {}).get("language")
+    if not lang:
+        return s
+    return _CHART_STRINGS.get(lang, {}).get(s, s)
+
 def _labels(opts, default_x="", default_y=""):
-    return opts.get("xlabel", default_x), opts.get("ylabel", default_y)
+    return opts.get("xlabel", _t(opts, default_x)), opts.get("ylabel", _t(opts, default_y))
 
 def _label_color(hex_color):
     """Return 'black' or 'white' for readable text on the given background hex color."""
@@ -405,8 +426,10 @@ def chart_funnel(df, q, title, out, opts):
 
 def chart_table(df, q, title, out, opts):
     c = q[0]; counts = _top(df[c].dropna(), opts.get("top_n", 15)).reset_index()
-    counts.columns = [c, "Count"]
-    counts["Percent"] = (counts["Count"] / counts["Count"].sum() * 100).round(1).astype(str) + "%"
+    counts.columns = [c, _t(opts, "Count")]
+    pct_col = _t(opts, "Percent")
+    count_col = _t(opts, "Count")
+    counts[pct_col] = (counts[count_col] / counts[count_col].sum() * 100).round(1).astype(str) + "%"
     fig, ax = plt.subplots(figsize=_fs(opts, (6, max(2, len(counts)*0.35+1))))
     ax.axis("off")
     tbl = ax.table(cellText=counts.values, colLabels=counts.columns, cellLoc="center", loc="center")

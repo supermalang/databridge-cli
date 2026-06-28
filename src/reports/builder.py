@@ -302,6 +302,7 @@ class ReportBuilder:
 
     def _generate_charts(self, tpl, df, repeat_tables: Dict, per_form: Optional[Dict] = None):
         CHART_DIR.mkdir(parents=True, exist_ok=True)
+        _language = (self.cfg.get("ai") or {}).get("language") or "English"
         key_to_label = {
             q["kobo_key"]: q.get("export_label") or q.get("label") or q["kobo_key"]
             for q in self.cfg.get("questions", [])
@@ -382,7 +383,7 @@ class ReportBuilder:
                 enriched_opts = {**(resolved.get("options", {}) or {}), "periods": periods_payload}
                 resolved = {**resolved, "options": enriched_opts}
 
-            png = generate_chart(resolved, chart_df)
+            png = generate_chart(resolved, chart_df, language=_language)
             width = Inches(c.get("options", {}).get("width_inches", 5.5))
             images[f"chart_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
         return images
