@@ -48,30 +48,16 @@ A card is startable only when all of the following hold:
 | Area | Planned | Progress |
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
-| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 9 / 9 |
-| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
+| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 10 | 9 / 10 |
+| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 10 / 10 |
-| [M&E capabilities](#me-capabilities) | 7 | 6 / 7 |
-| [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
-| [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
+| [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 25 | 25 / 25 |
-| [Express Template Fill](#express-template-fill) | 25 | 24 / 25 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
-| [Internationalization (i18n)](#internationalization-i18n) | 4 | 2 / 4 |
-| [Performance](#performance) | 2 | 2 / 2 |
-| [Maintenance & hardening](#maintenance--hardening) | 3 | 1 / 3 |
-| [Internationalization (i18n)](#internationalization-i18n) | 5 | 3 / 5 |
+| [Internationalization (i18n)](#internationalization-i18n) | 5 | 4 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
-| [Performance](#performance) | 4 | 3 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 4 | 0 / 4 |
-| [Performance](#performance) | 3 | 3 / 3 |
-| [Maintenance & hardening](#maintenance--hardening) | 4 | 1 / 4 |
-
-> **Shipped foundations** (delivered, not tracked here): results framework / logframe
-> (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
-> data-quality framework (`{{ data_quality }}`, completeness / outlier / duplicate rates),
-> multi-period tracking (`periods:`), per-project Postgres + Minio storage, and per-project
-> RBAC. See `CLAUDE.md`.
+| [Performance](#performance) | 4 | 4 / 4 |
+| [Maintenance & hardening](#maintenance--hardening) | 5 | 4 / 5 |
 
 ---
 
@@ -378,6 +364,40 @@ A card is startable only when all of the following hold:
   3. Switch projects rapidly in succession and confirm no visual glitch or double-hydration occurs.
 
 ---
+- [ ] **UX-10 — Navigate to Home tab on project switch (P2)**
+
+  When a user switches project via the project picker, they remain on whatever tab they
+  were on. Tab content may be stale or project-specific (e.g. Extract showing the old
+  project's config). Switching project should always land on Home.
+
+  **Files:** `frontend/src/App.jsx` (`switchProject` function, ~line 220)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - After switching to any project the active tab is Home, regardless of which tab was
+    active before the switch
+  - The Home dashboard renders the new project's content (correct name, stage cards)
+  - No extra flash or double-render during the switch
+  - If the user was already on Home the tab selection is unchanged (no flicker)
+
+  **Unit tests:** N/A (frontend-only; Vitest not installed — covered by Playwright E2E).
+
+  **E2E:** `frontend/tests/e2e/project-switch-home.spec.ts` — navigate to Reports tab,
+  switch to a second project, assert the active stage is Home and the project name in the
+  header reflects the new project. `toHaveScreenshot` baselines at mobile (390×844),
+  tablet (820×1180), desktop (1440×900). Impeccable audit/critique on the settled Home view.
+
+  **UAT:**
+  1. Open the app on the Reports tab.
+  2. Switch to a different project via the project picker.
+  3. Confirm the active tab is immediately Home, not Reports.
+  4. Confirm the Home dashboard shows the new project's content.
+
+  **Verify:** `cd frontend && npx playwright test project-switch-home.spec.ts`
+
+---
+
 
 ## Accessibility (WCAG 2.1 AA)
 
@@ -740,7 +760,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **A11Y-8 — Deferred a11y polish: home-card subtext contrast + picker focus ring (P2)**
+- [x] **A11Y-8 — Deferred a11y polish: home-card subtext contrast + picker focus ring (P2)**
 
   Two small WCAG gaps deferred earlier. (a) `.home-card__sub` muted text is ~3.15:1 (`#858c98` on
   `#f5f7fa`) — fails WCAG 2.1 AA 1.4.3 (needs 4.5:1). (b) The ProjectForm color swatches / icon
@@ -1530,7 +1550,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **ME-6 — Surface below-threshold indicators in the Validate panel (P2)**
+- [x] **ME-6 — Surface below-threshold indicators in the Validate panel (P2)**
 
   Follow-up from ME-2 (which computes `ind_<name>_status` RAG + a `flagged_indicators` context but
   does not surface them in the Validate panel). Add a validate-side detector so indicators below
@@ -2858,80 +2878,6 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-25 — Express Template Fill: extractor must read Word content controls (w:sdt) (P2)**
-- [ ] **XTF-25 — Express Template Fill: extractor must read Word content controls (w:sdt) (P2)**
-
-  `_tokens_in_paragraph` in `src/reports/template_inference.py` iterates only
-  `paragraph.runs` (top-level `w:r` elements). Text inside gray-shaded Word **content
-  controls** (`w:sdt → w:sdtContent → w:r → w:t`) is invisible to the extractor, so any
-  `[[placeholder]]` typed inside a content control is silently skipped and the Express UI
-  shows "Aucun espace réservé à examiner." Fix by walking `paragraph._p.iter()` for all
-  descendant `w:t` elements, which covers both plain-paragraph runs and content-control runs
-  in a single pass. Non-UI, non-CLI — Python extractor only.
-
-  **Files:** `src/reports/template_inference.py` (`_tokens_in_paragraph` function) ·
-  `tests/test_template_inference.py` (new or extend)
-
-  **Config/schema impact:** None.
-
-  **Acceptance criteria**
-  - A `.docx` whose paragraph text is wrapped in a content control (`w:sdt`) and contains
-    `[[PLACEHOLDER]]` is correctly detected by `_tokens_in_paragraph` — the placeholder
-    appears in the returned token list
-  - A plain-paragraph `[[PLACEHOLDER]]` (no content control) continues to be detected as
-    before (no regression)
-  - A paragraph with both a plain run and a content-control run returns tokens from both
-  - `extract_placeholders` (the caller) therefore lists placeholders from content-control
-    paragraphs; the Express UI no longer shows "Aucun espace réservé à examiner" for a
-    template that only uses content-control placeholders
-
-  **Unit tests:** `tests/test_template_inference.py` — (1) build a minimal `python-docx`
-  document that wraps `[[TOKEN_IN_SDT]]` inside a `w:sdt` content control and assert
-  `_tokens_in_paragraph` returns `["TOKEN_IN_SDT"]`; (2) assert a plain-run `[[TOKEN_PLAIN]]`
-  paragraph still returns `["TOKEN_PLAIN"]`; (3) assert a paragraph containing both a plain
-  run and an `sdt` run returns both tokens; (4) assert that the regression path
-  (`extract_placeholders` on such a doc) returns a non-empty list.
-
-  **E2E:** N/A (Python-only extractor; no UI surface — verified via unit tests + the verifier
-  + PR review).
-
-  **UAT:** N/A (non-UI/CLI card — the human gate is PR review + unit tests green).
-- [ ] **XTF-25 — Extractor reads Word content controls (`w:sdt`) so bracket placeholders in gray-shaded boxes are found**
-
-  `extract_placeholders` (`src/reports/template_inference.py`) builds paragraph text from
-  `paragraph.runs` (python-docx top-level runs only). Text inside a Word **content control**
-  (`w:sdt` — the gray-shaded fill-in box) lives under `w:sdt/w:sdtContent/w:r/w:t` and is
-  NOT returned by `paragraph.runs`, so any `[[placeholder]]` inside a content control is
-  invisible and the UI shows "Aucun espace réservé à examiner."
-  Fix: extend `_tokens_in_paragraph` to collect ALL `w:t` elements from the paragraph's
-  raw XML element (including those nested inside `w:sdt` subtrees) so bracket tokens are
-  found regardless of whether they sit in a plain run or a content control.
-  Non-UI/non-CLI; Python only.
-
-  **Files:** `src/reports/template_inference.py` · `tests/test_template_inference.py`
-
-  **Config/schema impact:** None — read-only parsing change.
-
-  **Acceptance criteria**
-  - A `[[placeholder]]` inside a Word content control is returned by `extract_placeholders`
-    with correct `raw`, `inner`, and `delimiter` — no longer invisible
-  - Same fix covers `[single-bracket]` and `{{ double-brace }}` tokens in content controls
-  - Tokens in plain runs are still found and their data is unchanged (no regression)
-  - A template mixing plain-run and content-control placeholders returns all of them in order
-  - Zero placeholders found only when there are genuinely no bracket tokens anywhere
-
-  **Unit tests:** `tests/test_template_inference.py` (extend) — build a `.docx` fixture using
-  python-docx's lxml interface to insert a `w:sdt` content control containing `[[name]]`.
-  Cases: (1) `[[placeholder]]` inside a content control is found with correct delimiter/inner;
-  (2) `[single]` and `{{ literal }}` inside content controls are also found; (3) mixed
-  content-control and plain-run tokens both returned; (4) all existing test cases still pass.
-
-  **E2E:** N/A (no UI surface — pure parsing function; verified via unit tests + PR review).
-
-  **UAT:** N/A (no UI surface — verified via unit tests, the verifier, and PR review).
-
-  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py`
-
----
 
 ## Visual / E2E harness
 
@@ -3240,7 +3186,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **I18N-4 — Native French review + correction of fr.json (P2)**
+- [x] **I18N-4 — Native French review + correction of fr.json (P2)**
 
   Follow-up from I18N-1/I18N-2: `fr.json` is best-effort assistant translation. A native French speaker
   familiar with M&E / humanitarian terminology reviews + corrects every value for accuracy + natural
@@ -3741,7 +3687,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PERF-4 — Client-side stale-while-revalidate cache (instant UI on reload / project-switch / refresh) (P2)**
+- [x] **PERF-4 — Client-side stale-while-revalidate cache (instant UI on reload / project-switch / refresh) (P2)**
 
   Follow-up to PERF-1/2 (server cache) + PERF-3 (skeletons). Keep-alive panes already make
   *within-session* tab revisits instant, but a **full reload / cold start / re-login**, a
@@ -3819,7 +3765,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **MNT-1 — Stabilize the order-dependent ask-save indicator test (P2)**
+- [x] **MNT-1 — Stabilize the order-dependent ask-save indicator test (P2)**
 
   `tests/test_ask_api.py::test_ask_save_indicator_appends_to_indicators` passes in the full suite but
   FAILS run in isolation — a test-isolation/ordering bug (leaked shared/config state). Pre-existing on
@@ -3873,7 +3819,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **MNT-3 — I18N-1 backend hygiene: double-commit + verbatim Zitadel error (P3)**
+- [x] **MNT-3 — I18N-1 backend hygiene: double-commit + verbatim Zitadel error (P3)**
 
   Two Low items from the I18N-1 security review. (a) `PATCH /api/me` commits twice — `set_user_language()`
   commits internally and `patch_me` commits again (redundant). (b) The Zitadel sync error path echoes the
@@ -3946,6 +3892,45 @@ A card is startable only when all of the following hold:
   **Verify:** `cd frontend && npx playwright test toast-i18n.spec.ts && npm run check:i18n`
 
 ---
+- [ ] **MNT-5 — Guard period API fetches when no project is active (P2)**
+
+  `ActivePeriodChip` (`App.jsx`), `PeriodPicker` (`PeriodPicker.jsx`), `Reports.jsx`, and
+  `Sources.jsx` all call `/api/periods` or `/api/periods/date-range` on mount. Before the
+  user activates a project `_load_cfg()` on the server raises 400 (`"No active project"`),
+  producing console errors. Each call site must skip the fetch when `activeProjectId` is
+  null/undefined.
+
+  **Files:**
+  - `frontend/src/App.jsx` (`ActivePeriodChip`, ~lines 102–118)
+  - `frontend/src/components/PeriodPicker.jsx` (~line 11)
+  - `frontend/src/pages/Reports.jsx` (~line 80)
+  - `frontend/src/pages/Sources.jsx` (~line 896)
+
+  **Config/schema impact:** None — client-side guard only.
+
+  **Acceptance criteria**
+  - Opening the app without an active project produces **zero** 400 errors for
+    `/api/periods` or `/api/periods/date-range` in the browser console
+  - When a project is activated the period chips and pickers load normally
+  - No visible regression: period data loads correctly when a project is active
+  - All four call sites are guarded consistently
+
+  **Unit tests:** N/A (frontend-only; Vitest not installed — covered by Playwright E2E).
+
+  **E2E:** `frontend/tests/e2e/no-active-project.spec.ts` — intercept `/api/me` to return
+  a user with `active_project_id: null`; assert no requests reach `/api/periods` or
+  `/api/periods/date-range`. `toHaveScreenshot` baselines at all three viewports.
+
+  **UAT:**
+  1. Open the app with network devtools open before any project is active (fresh session or
+     cleared local storage).
+  2. Confirm no 400 errors appear in the console for `/api/periods`.
+  3. Select a project. Confirm period chips and pickers load without errors.
+
+  **Verify:** `cd frontend && npx playwright test no-active-project.spec.ts`
+
+---
+
 
 ## Backlog — parked (out of scope for now)
 
