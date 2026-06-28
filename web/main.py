@@ -2360,6 +2360,9 @@ def _save_cfg(cfg: dict) -> None:
 
 @app.get("/api/periods")
 async def get_periods():
+    path = _config_path()
+    if not path.exists():
+        return {"current": None, "baseline": None, "registry": []}
     cfg = _load_cfg()
     p = cfg.get("periods") or {}
     return {
