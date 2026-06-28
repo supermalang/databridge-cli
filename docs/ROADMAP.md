@@ -48,22 +48,16 @@ A card is startable only when all of the following hold:
 | Area | Planned | Progress |
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
-| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 9 | 9 / 9 |
-| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 7 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 9 / 10 |
-| [M&E capabilities](#me-capabilities) | 7 | 5 / 7 |
-| [Express Template Fill](#express-template-fill) | 24 | 24 / 24 |
+| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 10 | 9 / 10 |
+| [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 10 / 10 |
+| [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
+| [Express Template Fill](#express-template-fill) | 25 | 25 / 25 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
-| [Internationalization (i18n)](#internationalization-i18n) | 5 | 3 / 5 |
+| [Internationalization (i18n)](#internationalization-i18n) | 5 | 4 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
-| [Performance](#performance) | 3 | 3 / 3 |
-| [Maintenance & hardening](#maintenance--hardening) | 4 | 0 / 4 |
-
-> **Shipped foundations** (delivered, not tracked here): results framework / logframe
-> (`framework:`, `{{ logframe }}`), indicator baseline+target with `pct_achievement`, the
-> data-quality framework (`{{ data_quality }}`, completeness / outlier / duplicate rates),
-> multi-period tracking (`periods:`), per-project Postgres + Minio storage, and per-project
-> RBAC. See `CLAUDE.md`.
+| [Performance](#performance) | 4 | 4 / 4 |
+| [Maintenance & hardening](#maintenance--hardening) | 5 | 4 / 5 |
 
 ---
 
@@ -370,6 +364,40 @@ A card is startable only when all of the following hold:
   3. Switch projects rapidly in succession and confirm no visual glitch or double-hydration occurs.
 
 ---
+- [ ] **UX-10 — Navigate to Home tab on project switch (P2)**
+
+  When a user switches project via the project picker, they remain on whatever tab they
+  were on. Tab content may be stale or project-specific (e.g. Extract showing the old
+  project's config). Switching project should always land on Home.
+
+  **Files:** `frontend/src/App.jsx` (`switchProject` function, ~line 220)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - After switching to any project the active tab is Home, regardless of which tab was
+    active before the switch
+  - The Home dashboard renders the new project's content (correct name, stage cards)
+  - No extra flash or double-render during the switch
+  - If the user was already on Home the tab selection is unchanged (no flicker)
+
+  **Unit tests:** N/A (frontend-only; Vitest not installed — covered by Playwright E2E).
+
+  **E2E:** `frontend/tests/e2e/project-switch-home.spec.ts` — navigate to Reports tab,
+  switch to a second project, assert the active stage is Home and the project name in the
+  header reflects the new project. `toHaveScreenshot` baselines at mobile (390×844),
+  tablet (820×1180), desktop (1440×900). Impeccable audit/critique on the settled Home view.
+
+  **UAT:**
+  1. Open the app on the Reports tab.
+  2. Switch to a different project via the project picker.
+  3. Confirm the active tab is immediately Home, not Reports.
+  4. Confirm the Home dashboard shows the new project's content.
+
+  **Verify:** `cd frontend && npx playwright test project-switch-home.spec.ts`
+
+---
+
 
 ## Accessibility (WCAG 2.1 AA)
 
@@ -732,7 +760,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **A11Y-8 — Deferred a11y polish: home-card subtext contrast + picker focus ring (P2)**
+- [x] **A11Y-8 — Deferred a11y polish: home-card subtext contrast + picker focus ring (P2)**
 
   Two small WCAG gaps deferred earlier. (a) `.home-card__sub` muted text is ~3.15:1 (`#858c98` on
   `#f5f7fa`) — fails WCAG 2.1 AA 1.4.3 (needs 4.5:1). (b) The ProjectForm color swatches / icon
@@ -1347,7 +1375,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **PUX-10 — Auto-save the connection before Fetch/Download (no stale-config runs) (P2)**
+- [x] **PUX-10 — Auto-save the connection before Fetch/Download (no stale-config runs) (P2)**
 
   Follow-up to PUX-7. **Test connection** probes the *in-form* values (URL/token/Form UID are
   sent in the request body), but **Fetch questions** / **Download data** run the CLI against the
@@ -1522,7 +1550,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **ME-6 — Surface below-threshold indicators in the Validate panel (P2)**
+- [x] **ME-6 — Surface below-threshold indicators in the Validate panel (P2)**
 
   Follow-up from ME-2 (which computes `ind_<name>_status` RAG + a `flagged_indicators` context but
   does not surface them in the Validate panel). Add a validate-side detector so indicators below
@@ -1560,7 +1588,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **ME-7 — Chart `form:` selector for multi-form (P2)**
+- [x] **ME-7 — Chart `form:` selector for multi-form (P2)**
 
   Follow-up from ME-4 (multi-form data layer + INDICATOR `form:` selector shipped; the analogous CHART
   selector was scoped out). Let a chart render against a specific form alias's DataFrame (`form:
@@ -2849,6 +2877,8 @@ A card is startable only when all of the following hold:
 
 ---
 
+- [x] **XTF-25 — Express Template Fill: extractor must read Word content controls (w:sdt) (P2)**
+
 ## Visual / E2E harness
 
 > The Definition of Done requires Playwright `toHaveScreenshot` baselines at mobile/tablet/desktop
@@ -3184,7 +3214,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **I18N-4 — Native French review + correction of fr.json (P2)**
+- [x] **I18N-4 — Native French review + correction of fr.json (P2)**
 
   Follow-up from I18N-1/I18N-2: `fr.json` is best-effort assistant translation. A native French speaker
   familiar with M&E / humanitarian terminology reviews + corrects every value for accuracy + natural
@@ -3685,6 +3715,77 @@ A card is startable only when all of the following hold:
 
 ---
 
+- [x] **PERF-4 — Client-side stale-while-revalidate cache (instant UI on reload / project-switch / refresh) (P2)**
+
+  Follow-up to PERF-1/2 (server cache) + PERF-3 (skeletons). Keep-alive panes already make
+  *within-session* tab revisits instant, but a **full reload / cold start / re-login**, a
+  **project switch**, and the hourly / `databridge:data-changed` epoch bump all remount and
+  refetch from scratch (skeleton every time). Add a client-side **stale-while-revalidate** cache:
+  render the last-known response **instantly**, revalidate in the background, and only show the
+  skeleton on a true cold miss. Two tiers, split by data sensitivity (localStorage is readable by
+  any XSS, so secrets/PII must never be persisted):
+
+  - **Persisted tier (localStorage/IndexedDB, per-project namespace):** only small, non-sensitive
+    metadata — `/api/state`, `/api/questions`, `/api/templates`, `/api/reports`,
+    `/api/data/sessions`, `/api/periods`. Makes hard reloads paint instantly.
+  - **In-memory tier only (never written to disk):** `/api/config` (may carry a token),
+    `/api/profile`, `/api/data-quality` (column stats can expose data values). Instant on
+    within-session revisit, but not across a hard reload.
+
+  **Files:** `frontend/src/lib/cache.js` (new — the SWR cache: `swr(key, fetcher, {persist})` that
+  serves cache-then-revalidates, an in-memory map + a localStorage backend gated by a persist
+  whitelist, per-active-project namespacing, a `CACHE_VERSION`, a TTL backstop, and
+  `clearCache(scope)`) · `frontend/src/lib/auth.js` (wipe the whole cache on logout / `handle401`) ·
+  `frontend/src/App.jsx` (clear/namespace on project switch; clear the active project's cache on
+  `databridge:data-changed`) · the data-loading sites that should adopt it —
+  `frontend/src/pages/{Questions,Reports,Profile,Sources}.jsx` (+ any shared loader in
+  `frontend/src/lib/config.js`) wrap their mount fetch in `swr(...)` so a cache hit renders before
+  the network resolves (no skeleton on a hit) · `frontend/tests/e2e/client-cache.spec.ts` (new)
+
+  **Config/schema impact:** None — client-side only; no API/DB change (it consumes the same
+  endpoints, complementing the PERF-1 server cache).
+
+  **Acceptance criteria**
+  - On a **second load** of a tab whose data is cached (e.g. reopen after a reload, for a persisted
+    endpoint), the real content renders **without a skeleton flash**, and a background revalidation
+    request is still issued (stale-while-revalidate) and updates the view if the data changed
+  - **Persisted tier** writes ONLY the whitelisted non-sensitive endpoints to storage; `/api/config`,
+    `/api/profile`, `/api/data-quality` are **never** written to disk (asserted) — they use the
+    in-memory tier only
+  - Cache entries are **namespaced per active project**; switching to project B never serves
+    project A's cached data, and switching back to A is instant
+  - The cache is **invalidated** on `databridge:data-changed` (post-download / config save) so a
+    stale value is never served after the data changes, and is **fully cleared on logout**
+  - A `CACHE_VERSION` bump and a TTL backstop prevent indefinitely-stale or schema-mismatched
+    entries from being served
+  - No correctness regression: a cache miss behaves exactly as today (skeleton → fetch → content)
+  - **Security:** no secret or PII value is persisted to browser storage (verified against the
+    whitelist + a test that inspects localStorage after loading config/profile)
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed — the SWR behaviour, the persist
+  whitelist, per-project namespacing, and invalidation are asserted by the Playwright E2E below).
+
+  **E2E:** `frontend/tests/e2e/client-cache.spec.ts` (new) — network-mocked: (1) load a tab, reload
+  the page, and assert the cached content is visible immediately (before the revalidation response
+  is fulfilled) with no skeleton, and that a revalidation request still fires; (2) after loading
+  Connection (config) and Profile, assert `localStorage` contains NONE of the config token /
+  profile values (sensitivity whitelist holds); (3) trigger `databridge:data-changed` and assert the
+  next read refetches (cache invalidated); (4) switch projects and assert project A's cached value
+  is not shown for project B. (No `toHaveScreenshot` baseline — behavioural.)
+
+  **UAT:**
+  1. Load the app, visit a few tabs, then **hard-reload**. Confirm the previously-seen tabs paint
+     instantly (no skeleton), and data still refreshes a moment later.
+  2. Switch to another project and back; confirm the return is instant and shows the right project's
+     data (never the other project's).
+  3. Run a download (or save config); confirm the affected views refresh rather than showing stale
+     data.
+  4. Log out and back in; confirm no stale data persists across the logout.
+
+  **Verify:** `cd frontend && npx playwright test client-cache.spec.ts`
+
+---
+
 ## Maintenance & hardening
 
 > Tracked tech-debt / hardening surfaced during the 2026-06 build-out. Not feature work — small,
@@ -3692,7 +3793,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **MNT-1 — Stabilize the order-dependent ask-save indicator test (P2)**
+- [x] **MNT-1 — Stabilize the order-dependent ask-save indicator test (P2)**
 
   `tests/test_ask_api.py::test_ask_save_indicator_appends_to_indicators` passes in the full suite but
   FAILS run in isolation — a test-isolation/ordering bug (leaked shared/config state). Pre-existing on
@@ -3718,7 +3819,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **MNT-2 — Clear dev-dependency CVEs (vite High + esbuild Moderate) (P2)**
+- [x] **MNT-2 — Clear dev-dependency CVEs (vite High + esbuild Moderate) (P2)**
 
   `npm audit` flags pre-existing advisories in the frontend DEV toolchain: vite (High — needs >= 8.1) +
   esbuild (Moderate — needs >= 0.25, dragged by the vite bump). Dev-only (not in the shipped bundle) but
@@ -3746,7 +3847,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **MNT-3 — I18N-1 backend hygiene: double-commit + verbatim Zitadel error (P3)**
+- [x] **MNT-3 — I18N-1 backend hygiene: double-commit + verbatim Zitadel error (P3)**
 
   Two Low items from the I18N-1 security review. (a) `PATCH /api/me` commits twice — `set_user_language()`
   commits internally and `patch_me` commits again (redundant). (b) The Zitadel sync error path echoes the
@@ -3774,7 +3875,7 @@ A card is startable only when all of the following hold:
 
 ---
 
-- [ ] **MNT-4 — Fix Toast crash: i18n `t` shadowed by the toasts.map variable (P1)**
+- [x] **MNT-4 — Fix Toast crash: i18n `t` shadowed by the toasts.map variable (P1)**
 
   `frontend/src/components/Toast.jsx` destructures the i18n function as `t`
   (`const { t } = useTranslation()`), then renders `toasts.map(t => …)` — the map
@@ -3819,6 +3920,45 @@ A card is startable only when all of the following hold:
   **Verify:** `cd frontend && npx playwright test toast-i18n.spec.ts && npm run check:i18n`
 
 ---
+- [ ] **MNT-5 — Guard period API fetches when no project is active (P2)**
+
+  `ActivePeriodChip` (`App.jsx`), `PeriodPicker` (`PeriodPicker.jsx`), `Reports.jsx`, and
+  `Sources.jsx` all call `/api/periods` or `/api/periods/date-range` on mount. Before the
+  user activates a project `_load_cfg()` on the server raises 400 (`"No active project"`),
+  producing console errors. Each call site must skip the fetch when `activeProjectId` is
+  null/undefined.
+
+  **Files:**
+  - `frontend/src/App.jsx` (`ActivePeriodChip`, ~lines 102–118)
+  - `frontend/src/components/PeriodPicker.jsx` (~line 11)
+  - `frontend/src/pages/Reports.jsx` (~line 80)
+  - `frontend/src/pages/Sources.jsx` (~line 896)
+
+  **Config/schema impact:** None — client-side guard only.
+
+  **Acceptance criteria**
+  - Opening the app without an active project produces **zero** 400 errors for
+    `/api/periods` or `/api/periods/date-range` in the browser console
+  - When a project is activated the period chips and pickers load normally
+  - No visible regression: period data loads correctly when a project is active
+  - All four call sites are guarded consistently
+
+  **Unit tests:** N/A (frontend-only; Vitest not installed — covered by Playwright E2E).
+
+  **E2E:** `frontend/tests/e2e/no-active-project.spec.ts` — intercept `/api/me` to return
+  a user with `active_project_id: null`; assert no requests reach `/api/periods` or
+  `/api/periods/date-range`. `toHaveScreenshot` baselines at all three viewports.
+
+  **UAT:**
+  1. Open the app with network devtools open before any project is active (fresh session or
+     cleared local storage).
+  2. Confirm no 400 errors appear in the console for `/api/periods`.
+  3. Select a project. Confirm period chips and pickers load without errors.
+
+  **Verify:** `cd frontend && npx playwright test no-active-project.spec.ts`
+
+---
+
 
 ## Backlog — parked (out of scope for now)
 

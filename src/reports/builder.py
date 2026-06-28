@@ -71,6 +71,31 @@ def _pick_df(
     return best_df
 
 
+def _resolve_chart_df(
+    chart_cfg: Dict,
+    df: "pd.DataFrame",
+    repeat_tables: Dict,
+    per_form: Optional[Dict] = None,
+) -> "tuple":
+    """Return (chart_df, chart_repeat_tables) for a single chart config.
+
+    When the chart carries a ``form:`` key the DataFrame is sourced from the
+    matching ``per_form`` bundle instead of the default ``df``.  An unknown alias
+    (or a ``form:`` key with no ``per_form`` bundle at all) raises ``ValueError``
+    rather than silently rendering against wrong data (AC4).
+    """
+    form_alias = chart_cfg.get("form")
+    if form_alias:
+        if not per_form or form_alias not in per_form:
+            raise ValueError(
+                f"chart '{chart_cfg.get('name', '?')}' references unknown form alias "
+                f"'{form_alias}'. Available aliases: {list(per_form or {})}"
+            )
+        bundle = per_form[form_alias]
+        return bundle["df"], bundle.get("repeat_tables", {})
+    return df, repeat_tables
+
+
 def _filter_repeat_tables_by_split(
     df: "pd.DataFrame",
     repeat_tables: Dict,
@@ -194,8 +219,25 @@ class ReportBuilder:
 
         self._last_per_period = per_period   # exposed for Task 18 (chart payload)
 
+        # ME-7: build per_form bundle so charts can use `form: <alias>` selector.
+        self._per_form: Optional[Dict] = None
+        forms_list = (self.cfg.get("api") or {}).get("forms")
+        if forms_list:
+            self._per_form = {}
+            for form_entry in forms_list:
+                alias = form_entry.get("alias")
+                if not alias:
+                    continue
+                alias_cfg = {**self.cfg, "form": {"alias": alias, "uid": form_entry.get("uid", "")}}
+                try:
+                    f_df, f_repeats = load_processed_data(alias_cfg)
+                    self._per_form[alias] = {"df": f_df, "repeat_tables": f_repeats}
+                except FileNotFoundError:
+                    log.warning(f"No data found for form alias '{alias}' — skipping per_form entry")
+
         indicators  = compute_indicators(
-            self.cfg.get("indicators", []), df, repeat_tables, per_period=per_period
+            self.cfg.get("indicators", []), df, repeat_tables, per_period=per_period,
+            per_form=self._per_form,
         )
         logframe = build_logframe(self.cfg, indicators)
         # ME-2: red/amber/green progress table + below-threshold flags.
@@ -246,7 +288,7 @@ class ReportBuilder:
             "stats_table":   stats_table,
             **indicators,
             **summaries,
-            **self._generate_charts(tpl, df, repeat_tables),
+            **self._generate_charts(tpl, df, repeat_tables, per_form=self._per_form),
             **self._generate_tables(tpl, df, repeat_tables),
         }
         tpl.render(context, jinja_env=sandboxed_jinja_env())
@@ -258,7 +300,7 @@ class ReportBuilder:
         log.info(f"Report saved → {out_path}")
         return out_path
 
-    def _generate_charts(self, tpl, df, repeat_tables: Dict):
+    def _generate_charts(self, tpl, df, repeat_tables: Dict, per_form: Optional[Dict] = None):
         CHART_DIR.mkdir(parents=True, exist_ok=True)
         key_to_label = {
             q["kobo_key"]: q.get("export_label") or q.get("label") or q["kobo_key"]
@@ -270,9 +312,12 @@ class ReportBuilder:
             if not name:
                 continue
 
+            # ME-7: resolve the base DataFrame for this chart (form: selector).
+            chart_base_df, chart_base_repeats = _resolve_chart_df(c, df, repeat_tables, per_form)
+
             # Resolve question names (kobo_key → export_label)
             resolved_questions = [
-                key_to_label.get(q, q) if q not in df.columns else q
+                key_to_label.get(q, q) if q not in chart_base_df.columns else q
                 for q in c.get("questions", [])
             ]
 
@@ -289,14 +334,14 @@ class ReportBuilder:
             else:
                 resolved = {**c, "questions": resolved_questions}
 
-            # 1. Select explicit source or auto-pick
+            # 1. Select explicit source or auto-pick (within the resolved base tables)
             source = c.get("source")
-            chart_df = _pick_df(resolved_questions, df, repeat_tables, source=source)
+            chart_df = _pick_df(resolved_questions, chart_base_df, chart_base_repeats, source=source)
 
             # 1b. Join parent fields into repeat table if requested
             join_parent = c.get("join_parent")
             if join_parent and source and source != "main":
-                chart_df = join_repeat_to_main(chart_df, df, join_parent)
+                chart_df = join_repeat_to_main(chart_df, chart_base_df, join_parent)
 
             # 2. Apply per-chart filter and sample
             filter_expr = c.get("filter")

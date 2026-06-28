@@ -1,11 +1,19 @@
 import yaml from 'js-yaml';
 import { handle401 } from './auth.js';
+import { swr } from './cache.js';
 
 // GET /api/config → parsed JS object. Returns {} if not found / unparseable.
+// Uses the SWR cache's IN-MEMORY tier only (PERF-4): /api/config carries the
+// API token, so it is NOT on the persist whitelist and is never written to disk.
+// Within a session a revisit is instant; a hard reload re-fetches.
 export async function loadConfig() {
   try {
-    const data = await (await fetch('/api/config')).json();
-    return yaml.load(data.content || '') || {};
+    return await swr('/api/config', async () => {
+      const res = await fetch('/api/config');
+      if (!res.ok) { handle401(res); return {}; }
+      const data = await res.json();
+      return yaml.load(data.content || '') || {};
+    });
   } catch {
     return {};
   }
@@ -47,7 +55,9 @@ export async function saveConfigText(content) {
 
 export async function loadConfigText() {
   try {
-    const data = await (await fetch('/api/config')).json();
+    const res = await fetch('/api/config');
+    if (!res.ok) { handle401(res); return ''; }
+    const data = await res.json();
     return data.content || '';
   } catch {
     return '';

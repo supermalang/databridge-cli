@@ -222,6 +222,57 @@ def find_orphan_framework_refs(cfg: Dict) -> List[Dict]:
     ]
 
 
+def find_below_threshold_indicators(
+    cfg: Dict, df: "pd.DataFrame", repeat_tables: Optional[Dict] = None
+) -> List[Dict]:
+    """Flag indicators whose pct_achievement is below their warning/critical threshold.
+
+    Returns [] when no indicators have thresholds, or when no data is available.
+    Each finding carries: severity ("warning"|"critical"), column (indicator name),
+    kind "below_threshold", message, count 0, pct 0.0, and examples with
+    target/actual/achievement strings.
+    """
+    indicators_cfg = cfg.get("indicators") or []
+    with_thresholds = [
+        i for i in indicators_cfg
+        if i.get("warning") is not None or i.get("critical") is not None
+    ]
+    if not with_thresholds or df is None or df.empty:
+        return []
+
+    from src.reports.indicators import compute_indicators
+    context = compute_indicators(with_thresholds, df, repeat_tables or {})
+
+    findings = []
+    for ind in with_thresholds:
+        name = ind.get("name")
+        if not name:
+            continue
+        status = context.get(f"ind_{name}_status", "ok")
+        if status == "ok":
+            continue
+        target = ind.get("target", "—")
+        actual = context.get(f"ind_{name}", "—")
+        pct = context.get(f"ind_{name}_pct_achievement", "—")
+        findings.append({
+            "severity": "critical" if status == "critical" else "warning",
+            "column":   name,
+            "kind":     "below_threshold",
+            "message":  (
+                f"Indicator '{name}' is at {pct} of target {target}; "
+                f"actual: {actual} — status: {status}"
+            ),
+            "count":    0,
+            "pct":      0.0,
+            "examples": [
+                f"target: {target}",
+                f"actual: {actual}",
+                f"achievement: {pct}",
+            ],
+        })
+    return findings
+
+
 def validate_dataset(cfg: Dict, df: pd.DataFrame, repeat_tables: Dict[str, pd.DataFrame]) -> Dict:
     """Run all detectors against the main DataFrame and return a report envelope.
 
@@ -242,6 +293,7 @@ def validate_dataset(cfg: Dict, df: pd.DataFrame, repeat_tables: Dict[str, pd.Da
     findings += find_duplicates(df)
     findings += find_type_issues(df, questions)
     findings += find_orphan_framework_refs(cfg)
+    findings += find_below_threshold_indicators(cfg, df, repeat_tables)
     pii_findings = find_potential_pii(df, questions)
     declared_pii_cols = {r.get("column") for r in (cfg.get("pii", {}).get("redact") or [])}
     findings += [f for f in pii_findings if f["column"] not in declared_pii_cols]

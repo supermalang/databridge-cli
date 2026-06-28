@@ -1,7 +1,12 @@
+import { clearCache } from './cache.js';
+
 // On a 401 from any API call, the session is gone/expired — bounce to the IdP login.
 // Returns true if it handled (redirected), so callers can stop processing.
+// The whole SWR cache is wiped first so no stale (or another user's) data can
+// persist across the logout / re-login (PERF-4).
 export function handle401(res) {
   if (res && res.status === 401) {
+    clearCache();
     window.location.href = '/auth/login';
     return true;
   }

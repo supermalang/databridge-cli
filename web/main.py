@@ -336,8 +336,8 @@ def patch_me(payload: ProfilePatchPayload, request: Request,
         try:
             zitadel_admin.update_human_user(user.zitadel_sub, given, family)
             z_status = "updated"
-        except Exception as e:  # noqa: BLE001 — surface, don't fail the local save
-            z_status = f"error: {e}"
+        except Exception:  # noqa: BLE001 — surface, don't fail the local save
+            z_status = "sync_error"
     return {"sub": user.zitadel_sub, "email": user.email, "name": user.name,
             "language": db_repo.get_user_language(user), "zitadel": z_status}
 
