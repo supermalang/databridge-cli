@@ -38,7 +38,7 @@ ASSETS_DIR    = STATIC_DIR / "assets"
 
 @asynccontextmanager
 async def _lifespan(app):
-    db_bootstrap.init_db()
+    await asyncio.to_thread(db_bootstrap.init_db)
     yield
 
 app = FastAPI(title="databridge-cli", docs_url=None, redoc_url=None, lifespan=_lifespan)
