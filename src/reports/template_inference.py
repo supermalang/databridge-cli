@@ -284,16 +284,22 @@ def infer_specs(nl_tokens: List["Token"], catalog: Dict, ai_cfg: Dict) -> List[P
         "language": ai_cfg.get("language") or "English",
     }
     messages, _config = lf_client.get_prompt("template_inference", variables)
+    # Always supply the output_schema for structured output (Anthropic tool_use /
+    # OpenAI json_schema). Fall back to the bundled seed schema so a Langfuse
+    # config fetch that comes back empty never silently loses it.
+    from src.utils.seed_prompts import SEED_PROMPTS as _SEEDS
+    _seed_schema = _SEEDS.get("template_inference", {}).get("config", {}).get("output_schema")
+    output_schema = _config.get("output_schema") or _seed_schema
     raw = lf_client.chat(
         messages,
         model=ai_cfg.get("model", "gpt-4o"),
         provider=provider,
         api_key=ai_cfg.get("api_key", ""),
-        max_tokens=max(int(ai_cfg.get("max_tokens", 1500)), 2000),
+        max_tokens=max(int(ai_cfg.get("max_tokens", 1500)), 4096),
         trace_name="template_inference",
         base_url=ai_cfg.get("base_url"),
         json_mode=True,
-        output_schema=_config.get("output_schema"),
+        output_schema=output_schema,
     )
 
     data = ask_engine._loads_lenient(raw)

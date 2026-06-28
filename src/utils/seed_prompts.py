@@ -900,22 +900,25 @@ _ASK_EXAMPLES_OUTPUT_SCHEMA = {
 # is modeled as a single fully-closed superset object — every possible field is
 # present and nullable; unused fields are left null. The Python layer reads only
 # the fields each kind needs and validates locally against the profile afterwards.
+_STR_OR_NULL = {"anyOf": [{"type": "string"}, {"type": "null"}]}
+_ARR_OR_NULL = {"anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}]}
+
 _TEMPLATE_INFERENCE_SPEC_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["name", "title", "type", "questions", "question", "stat",
                  "group_by", "filter", "filter_value", "prompt"],
     "properties": {
-        "name":         {"type": ["string", "null"]},
-        "title":        {"type": ["string", "null"]},
-        "type":         {"type": ["string", "null"]},
-        "questions":    {"type": ["array", "null"], "items": {"type": "string"}},
-        "question":     {"type": ["string", "null"]},
-        "stat":         {"type": ["string", "null"]},
-        "group_by":     {"type": ["string", "null"]},
-        "filter":       {"type": ["string", "null"]},
-        "filter_value": {"type": ["string", "null"]},
-        "prompt":       {"type": ["string", "null"]},
+        "name":         _STR_OR_NULL,
+        "title":        _STR_OR_NULL,
+        "type":         _STR_OR_NULL,
+        "questions":    _ARR_OR_NULL,
+        "question":     _STR_OR_NULL,
+        "stat":         _STR_OR_NULL,
+        "group_by":     _STR_OR_NULL,
+        "filter":       _STR_OR_NULL,
+        "filter_value": _STR_OR_NULL,
+        "prompt":       _STR_OR_NULL,
     },
 }
 
