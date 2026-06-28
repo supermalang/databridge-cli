@@ -48,16 +48,16 @@ A card is startable only when all of the following hold:
 | Area | Planned | Progress |
 |---|---|---|
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
-| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 10 | 9 / 10 |
+| [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 10 | 10 / 10 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 10 / 10 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 25 | 25 / 25 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
-| [Internationalization (i18n)](#internationalization-i18n) | 5 | 4 / 5 |
+| [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 5 | 4 / 5 |
+| [Maintenance & hardening](#maintenance--hardening) | 5 | 5 / 5 |
 
 ---
 
@@ -364,7 +364,7 @@ A card is startable only when all of the following hold:
   3. Switch projects rapidly in succession and confirm no visual glitch or double-hydration occurs.
 
 ---
-- [ ] **UX-10 — Navigate to Home tab on project switch (P2)**
+- [x] **UX-10 — Navigate to Home tab on project switch (P2)**
 
   When a user switches project via the project picker, they remain on whatever tab they
   were on. Tab content may be stale or project-specific (e.g. Extract showing the old
@@ -3147,7 +3147,7 @@ A card is startable only when all of the following hold:
 
   **Verify:** `cd frontend && npm run check:i18n` ·
   `cd frontend && npx playwright test i18n-coverage.spec.ts`
-- [ ] **I18N-3 — Externalize the remaining untranslated surfaces to EN/FR + close the guard blind spots (P2)**
+- [x] **I18N-3 — Externalize the remaining untranslated surfaces to EN/FR + close the guard blind spots (P2)**
 
   Follow-up from I18N-2. A full translation audit (2026-06) found the locale bundles are perfectly
   key-aligned (0 missing / 0 empty), but several surfaces render **hardcoded English** because the
@@ -3920,7 +3920,7 @@ A card is startable only when all of the following hold:
   **Verify:** `cd frontend && npx playwright test toast-i18n.spec.ts && npm run check:i18n`
 
 ---
-- [ ] **MNT-5 — Guard period API fetches when no project is active (P2)**
+- [x] **MNT-5 — Guard period API fetches when no project is active (P2)**
 
   `ActivePeriodChip` (`App.jsx`), `PeriodPicker` (`PeriodPicker.jsx`), `Reports.jsx`, and
   `Sources.jsx` all call `/api/periods` or `/api/periods/date-range` on mount. Before the
