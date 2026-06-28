@@ -278,7 +278,7 @@
       "checkAiKeyNotSet": "Clé d'IA non définie",
       "checkUnconfigured": "non configuré",
       "tips": "Astuces",
-      "tip1": "Préfixez le jeton par <c1></c1> (ex. <c2></c2>) pour le lire depuis une variable d'environnement au lieu d'enregistrer la valeur littérale.",
+      "tip1": "Préfixez le jeton par <c1>env:</c1> (ex. <c2>env:KOBO_TOKEN</c2>) pour le lire depuis une variable d'environnement au lieu d'enregistrer la valeur littérale.",
       "tip2": "Exécutez <b>Tester la connexion</b> avant de récupérer les questions — cela vérifie l'URL de l'API, le jeton et l'UID du formulaire.",
       "tip3": "La récupération des questions conserve vos modifications : les colonnes renommées et les catégories ajustées sont conservées, et seuls les nouveaux champs sont ajoutés."
     },

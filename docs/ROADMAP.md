@@ -74,14 +74,14 @@ Sprint exit — checked by /report + /retro:
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 10 | 10 / 10 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 10 / 10 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 11 | 10 / 11 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 25 | 25 / 25 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 7 | 6 / 7 |
+| [Maintenance & hardening](#maintenance--hardening) | 12 | 8 / 12 |
 
 ---
 
@@ -97,6 +97,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **OUT-1 — JSON export (records array)**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
 
   Surface JSON in the format chip-tabs and verify the `_export_file` JSON branch end-to-end.
 
@@ -120,6 +122,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **OUT-2 — MySQL remote table export**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
 
   Enable the MySQL target (credentials in `export.database`) once verified against a live DB.
 
@@ -145,6 +149,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **OUT-3 — PostgreSQL remote table export**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
 
   Same as OUT-2 for PostgreSQL.
 
@@ -179,6 +185,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **UX-1 — Show project color & icon**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
+
   The create/edit form collects a color + emoji icon, but they're rendered nowhere — the
   switcher avatar still shows `name.slice(0,2)` and menu rows are text-only.
 
@@ -202,6 +210,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **UX-2 — Keyboard-accessible project switcher**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
 
   Menu rows are `<div onClick>` with no `role`/`tabIndex`/key handlers; the trigger lacks
   `aria-expanded`/`aria-haspopup`; dropdowns don't close on `Escape`.
@@ -230,6 +240,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **UX-3 — Archived rows look clickable but do nothing**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
+
   Archived project rows reuse active-row styling (hover highlight) but have no row `onClick` —
   only the gear works.
 
@@ -254,6 +266,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **UX-4 — Unsaved-changes guard on the project form**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   [frontend/src/pages/ProjectForm.jsx](../frontend/src/pages/ProjectForm.jsx) has no dirty
   tracking; editing Details then hitting ← Back discards silently.
 
@@ -277,6 +291,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **UX-5 — Member rows fall back to a raw UUID**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
 
   [frontend/src/components/ProjectMembersPanel.jsx](../frontend/src/components/ProjectMembersPanel.jsx)
   renders `m.email || m.name || m.user_id`, so members without email/name show a UUID.
@@ -304,6 +320,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **UX-6 — Inline validation for required name (ProjectForm)**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   Currently a toast only. Add an inline error + disable submit until valid.
 
   **Files:** `frontend/src/pages/ProjectForm.jsx` · **Impact:** None.
@@ -325,6 +343,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **UX-7 — Explain read-only email (ProfileForm)**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   Add "Managed by your sign-in provider" helper text so the disabled field doesn't look broken.
 
   **Files:** ProfileForm · **Impact:** None.
@@ -345,6 +365,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **UX-8 — Accessible labels on color swatches / icon buttons**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
 
   They convey meaning by color/emoji alone; add `aria-label` + `aria-pressed` on the selected one.
 
@@ -368,6 +390,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **UX-9 — Global "switching…" feedback**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
+
   A brief unified indicator while a project switch hydrates (minor now that `pull_workspace`
   is parallelized).
 
@@ -389,6 +413,8 @@ Sprint exit — checked by /report + /retro:
 
 ---
 - [x] **UX-10 — Navigate to Home tab on project switch (P2)**
+
+  **Created:** 2026-06-27 · **Completed:** 2026-06-28
 
   When a user switches project via the project picker, they remain on whatever tab they
   were on. Tab content may be stale or project-specific (e.g. Extract showing the old
@@ -837,6 +863,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **PUX-1 — Plain-language relabeling of data-engineering vocabulary (P1)**
 
+  **Created:** 2026-06-20 · **Completed:** 2026-06-22
+
   The Home workflow stages and several field labels use analyst / data-engineering terms the
   target non-expert users don't understand (fails *Match system ↔ real world*, 2/4). Examples:
   Home stage 03 **"Model"** is described as *"Build derived views — virtual tables of joins and
@@ -901,6 +929,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **PUX-2 — First-run / empty-state onboarding with a single recommended next action (P1)**
 
+  **Created:** 2026-06-20 · **Completed:** 2026-06-21
+
   On first load the Home screen presents five equal-weight stage cards with no "start here"
   guidance (`frontend/src/pages/Home.jsx` `home-cards` ~75–100) — a confused first-timer has no
   recommended path (fails *Make the safe path the default* + *Help & documentation*, 2/4). Give a
@@ -954,6 +984,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **PUX-3 — Reduce Composition cognitive load via progressive disclosure (P1)**
+
+  **Created:** 2026-06-20 · **Completed:** 2026-06-22
 
   The Composition surface (`frontend/src/pages/Composition.jsx`) presents several construct types at
   once — charts, indicators, tables, summaries — a wall of options at exactly
@@ -1012,6 +1044,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **PUX-4 — In-app contextual help per stage (P2)**
 
+  **Created:** 2026-06-20 · **Completed:** 2026-06-22
+
   Help currently lives only in repo docs (`docs/reference/*`); non-expert field staff won't leave
   the app to read them (this is the **Help & documentation** heuristic, scored 2/4). Each stage /
   tab should expose concise contextual help in-app, reachable without leaving the current context,
@@ -1068,6 +1102,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **PUX-5 — Reduce setup-before-value friction (demo / sample path) (P2)**
+
+  **Created:** 2026-06-20 · **Completed:** 2026-06-22
 
   Today an API token **and** an AI key are required before any value appears — a steep wall for a
   non-expert evaluating the tool (fails *Make the safe path the default*; compounds *Help &
@@ -1133,6 +1169,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **PUX-6 — Harden Home first-run readiness fetch (error + project-switch) (P2)**
 
+  **Created:** 2026-06-21 · **Completed:** 2026-06-22
+
   Follow-up from PUX-2. The `/api/state` readiness effect in `frontend/src/App.jsx` (~296-310)
   has two robustness gaps. (1) `homeReady` is not reset to `null` when `activeProjectId` changes,
   so switching projects briefly shows the previous project's Home state (first-run vs full view)
@@ -1181,6 +1219,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **PUX-7 — Gate Fetch/Download on a confirmed connection; flip the sample-data affordance (P2)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
 
   On Extract → Connection, **Fetch questions** and **Download data** are always clickable
   (disabled only on `running || !canEdit`, `frontend/src/pages/Sources.jsx` ~497/502), so a
@@ -1267,6 +1307,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **PUX-8 — Primary navigation labels adopt the PUX-1 plain-language stage names (P2)**
 
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
+
   PUX-1 reworded the Home stage cards to plain language for non-experts
   (`home.stages.transform.label` = "Clean & check" / "Nettoyer et vérifier";
   `home.stages.model.label` = "Combine data" / "Combiner les données"), but the horizontal top-nav
@@ -1326,6 +1368,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **PUX-9 — Copy-placeholder buttons for charts / indicators / summaries / tables on the Analyze tab (P2)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
 
   On Analyze → "Charts & indicators" (`frontend/src/pages/Composition.jsx`, `ANALYZE_SECTIONS`),
   every chart / indicator / summary / table the user defines maps to a docxtpl placeholder they
@@ -1401,6 +1445,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **PUX-10 — Auto-save the connection before Fetch/Download (no stale-config runs) (P2)**
 
+  **Created:** 2026-06-27 · **Completed:** 2026-06-27
+
   Follow-up to PUX-7. **Test connection** probes the *in-form* values (URL/token/Form UID are
   sent in the request body), but **Fetch questions** / **Download data** run the CLI against the
   *saved* config (`run('fetch-questions')` / `run('download')` → `POST /api/run/<cmd>`, which
@@ -1454,6 +1500,51 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
+- [ ] **PUX-11 — Inline live preview in the chart editor modal (P1)**
+
+  **Created:** 2026-06-28
+
+  Today the chart editor (`ChartModal`) and the chart preview are two separate modals —
+  users configure blind, then close and open a second modal to see the result. Merge them:
+  the chart editor modal gains a live preview pane (right column on desktop, below fields on
+  mobile) that calls `/api/charts/preview` with the current form state, debounced ~600 ms,
+  and re-renders the chart image as the user types. The existing standalone preview modal
+  is removed; all chart interaction goes through the unified editor.
+
+  **Files:** `frontend/src/pages/Composition.jsx` · `frontend/tests/e2e/composition.spec.ts`
+  (or a new `chart-editor.spec.ts`)
+
+  **Config/schema impact:** None — frontend-only; uses existing `/api/charts/preview` endpoint.
+
+  **Acceptance criteria**
+  - Opening the chart editor (add or edit) shows the chart preview pane alongside the form fields
+  - The preview re-fetches and updates within ~600 ms of any field change (title, type, questions,
+    color, top_n, etc.) without the user clicking a separate button
+  - While the preview is loading a skeleton/spinner is shown; on error a legible inline message
+    is shown (not a blank pane)
+  - The standalone "Preview" button / separate preview modal is removed from the Composition tab
+  - The modal is responsive: two-column on desktop (≥ 820 px), stacked on mobile (< 820 px)
+  - All existing Composition tab tests remain green
+
+  **Unit tests:** N/A (UI interaction; covered by E2E).
+
+  **E2E:** `frontend/tests/e2e/composition.spec.ts` (or `chart-editor.spec.ts`) —
+  - Open chart editor; assert preview pane is visible
+  - Change the chart title; assert the preview image src changes (new request fired)
+  - Stub `/api/charts/preview` to return 500; assert inline error message is shown
+  - `toHaveScreenshot('chart-editor-modal.png')` at all three viewports (mobile / tablet / desktop)
+
+  **UAT:**
+  1. Open Composition tab → click Edit on any chart
+  2. Confirm the preview renders inside the modal without clicking a separate button
+  3. Change the title — confirm the preview updates automatically within ~600 ms
+  4. Confirm layout is correct at mobile width (< 820 px, stacked), tablet width (820 px, stacked), and desktop width (≥ 820 px, two-column)
+
+  **Verify:** `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
+  `cd frontend && npm run test:e2e` (full suite green)
+
+---
+
 ## M&E capabilities
 
 > Still-open gaps from the 2026-04-07 M&E audit. The audit's top findings have **shipped** —
@@ -1463,6 +1554,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **ME-1 — Equity / inclusion lens**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
 
   Indicators support `disaggregate_by`, but there's no automatic cross-group comparison that
   *surfaces* inequities (gaps, convergence, exclusion) — let alone significance.
@@ -1487,6 +1580,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **ME-2 — Variance / traffic-light dashboards**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   `pct_achievement` is computed per indicator and per framework node, but nothing flags
   indicators below threshold or renders a red/amber/green progress table.
 
@@ -1509,6 +1604,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **ME-3 — Indicator metadata catalog**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   Indicators carry computation params + `direction`, but not `unit`, `source`, `frequency`,
   or `responsible`, so the donor-style indicator reference annex can't be auto-generated.
 
@@ -1529,6 +1626,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **ME-4 — Multi-form / longitudinal linkage**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
 
   The platform connects to exactly one form. Many frameworks need baseline ↔ endline (matched
   on beneficiary ID), monitoring ↔ registration, activity ↔ outcome. Largest change here.
@@ -1554,6 +1653,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **ME-5 — Sampling weights**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   No support for survey weights — all aggregates assume equal weighting. (`--sample N` is for
   testing only, not statistical sampling.)
 
@@ -1575,6 +1676,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **ME-6 — Surface below-threshold indicators in the Validate panel (P2)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
 
   Follow-up from ME-2 (which computes `ind_<name>_status` RAG + a `flagged_indicators` context but
   does not surface them in the Validate panel). Add a validate-side detector so indicators below
@@ -1613,6 +1716,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **ME-7 — Chart `form:` selector for multi-form (P2)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
 
   Follow-up from ME-4 (multi-form data layer + INDICATOR `form:` selector shipped; the analogous CHART
   selector was scoped out). Let a chart render against a specific form alias's DataFrame (`form:
@@ -1665,6 +1770,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-1 — Placeholder extraction from .docx (`extract_placeholders`)**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
+
   Parse all three delimiters out of an uploaded `.docx` into structured `Token`s. Pure
   function, no AI, no network. Foundation for the rest of the express path.
 
@@ -1710,6 +1817,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-2 — Batched inference + local validation (`infer_specs`, `annotate_proposals`)**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   One batched LLM call turns NL placeholders + the data catalog into config-shaped `Proposal`s,
   then deterministic local validation flags anything unsupported. Depends on **XTF-1**.
@@ -1763,6 +1872,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-3 — Apply: persist config + resolve template (`apply_inference`)**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
+
   Write approved specs into `config.yml` without clobbering, and rewrite each token's run span to
   a single clean `{{ canonical }}` run so docxtpl renders it (critical for charts). Depends on
   **XTF-1** and **XTF-2**.
@@ -1801,6 +1912,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-4 — CLI commands (`infer-template`, `apply-template`)**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   Two-phase CLI so review can happen between inference and apply, with a JSON proposal artifact
   and an optional `--build` chain. Depends on **XTF-1**, **XTF-2**, **XTF-3**.
@@ -1841,6 +1954,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-5 — Web review/approve panel + discoverability**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   The user-facing card: a Templates-tab review/approve panel over the proposals, the two API
   endpoints, and a discoverability banner/button. Depends on **XTF-1**, **XTF-2**, **XTF-3**,
@@ -1905,6 +2020,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-6 — Fix: persist the uploaded template across infer → apply**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
+
   Bug found in review: `POST /api/template/infer` writes the uploaded `.docx` to a throwaway
   temp file and never persists it; the panel then calls `POST /api/template/apply` with only the
   client `file.name`, which `apply` resolves by basename against `TEMPLATES_DIR` — where a
@@ -1963,6 +2080,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-7 — Gate the Express "Infer" button on AI-tested status (parity with other AI buttons)**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
+
   The Express **Infer** button is enabled as soon as a file is chosen (`disabled={!file || loading}`)
   — unlike every other interactive AI control, which stays disabled until the AI connection is
   configured **and** verified via `/api/ai/test` (`useAiStatus().aiReady` + `AI_LOCK_TIP`). Bring
@@ -2005,6 +2124,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-8 — Fix: Express apply persists the resolved template to durable storage + a relative `report.template`**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   Bug found in review: `api_template_apply` (web/main.py ~2562) sets
   `cfg["report"]["template"]` to the **absolute** resolved path and never `put_project_file`s the
@@ -2059,6 +2180,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-9 — Gate the "In a hurry?" Express banner on questions + data**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
+
   The `ExpressBanner` (frontend/src/pages/Templates.jsx ~14) always renders enabled, but inference
   can't validate proposals without real columns — `/api/template/infer` returns the
   `EXPRESS_NO_DATA_MESSAGE` precondition when no data is downloaded. Disable the banner with a hint
@@ -2104,6 +2227,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-10 — Replace the run badge with a fixed "report building…" alert + stop/cancel**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   Today an active run shows a small `run-indicator` button in the top nav (App.jsx ~323–329) that
   only toggles the terminal — there is no way to cancel a run from the UI even though
@@ -2155,6 +2280,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-11 — Terminal: show ~5s during a build then auto-collapse; auto-expand on error**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-19
 
   Today `onStatus` (App.jsx ~146–166) opens the terminal on `running`, and on `success` collapses it
   after a fixed 1400 ms; on `error` it forces it open. Change the build behavior so the terminal
@@ -2208,6 +2335,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-12 — Reports page: "Delete all reports" + bulk-delete endpoint**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-19
+
   `Reports.jsx` deletes reports one at a time (`deleteReport`, ~82) against
   `DELETE /api/reports/{filename}` (web/main.py ~1845, editor-gated). There is no bulk delete. Add a
   bulk `DELETE /api/reports` endpoint (same editor/admin RBAC as the single delete) and a "Delete all
@@ -2258,6 +2387,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-13 — Build options for Express & regular build: split-by (main-table columns) + sample preview (`--split-sample`)**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-19
 
   Expose two build options on both build surfaces: a **split-by** selector populated with
   **main-table `export_label`s only** (not repeat-group columns) and a "build all (default) vs first
@@ -2328,6 +2459,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-14 — Reposition the run alert in-page (below the title, content width) + icon Stop**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-19
+
   Refinement of XTF-10. The run alert currently renders as a fixed bar pinned above the top
   nav (App.jsx ~265, outside the page). Move it to flow **inside the page content** — below the
   top nav and the page title/header, immediately before the page's main container — constrained
@@ -2382,6 +2515,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-15 — Remove the redundant rail "Build report" Quick Action on the Reports page**
 
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
+
   Follow-up from XTF-13/14 review. The Reports page now shows TWO "Build report" buttons: the
   Quick Actions rail action (`Reports.jsx` ~127, `run('build-report')` with no options) and the
   XTF-13 BuildOptions control's `build-run` button (split-by + sample). The BuildOptions entry
@@ -2428,6 +2563,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-16 — build-report clears the reports output dir so each build is the current set**
 
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
+
   Bug from review: `build-report` only `mkdir`s the reports `output_dir` (`src/reports/builder.py`
   ~233) and never removes prior outputs, so reports ACCUMULATE across runs. Two symptoms: (a) a
   "first N groups" (`--split-sample`) preview correctly builds only N new files but the dir still
@@ -2471,6 +2608,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-17 — Searchable split-by dropdown in the build options**
+
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
 
   The split-by control (`frontend/src/components/BuildOptions.jsx`) is a plain `<select>`. For
   forms with many main-table columns it's hard to scan. Make it a **searchable/filterable**
@@ -2519,6 +2658,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-18 — Fix: express-path terminal does not auto-collapse after ~5s**
 
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
+
   Bug from review: XTF-11's auto-collapse (terminal opens on a build run, collapses after
   `window.__TERM_COLLAPSE_MS ?? 5000`, `App.jsx` `onStatus` ~184-199) works for the regular build
   but NOT when the build is launched from the Express **Apply & build** flow (`Templates.jsx`
@@ -2563,6 +2704,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-19 — Storage push mirrors output categories (fixes split-preview leaving stale reports)**
+
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
 
   Bug from the follow-up batch (issue ① in the spec). `push_outputs`
   (`web/storage/workspace.py` ~64–72) is **merge-only**: a split preview that builds 2 reports into
@@ -2623,6 +2766,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-20 — Reports listing shows storage build-time (with local-mtime fallback)**
 
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
+
   Bug from the follow-up batch (issue ② in the spec, read/listing half). `GET /api/reports`
   (`web/main.py` ~1826–1835) reports each file's **local mtime**, but `pull_workspace`'s S3
   `download_file` resets local mtime to pull-time — so every pulled report shows "today" regardless
@@ -2669,6 +2814,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-21 — Express split-by dropdown no longer clipped (CSS stacking)**
+
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
 
   Bug from the follow-up batch (issue ③ in the spec). In the Express review panel (shown after
   Infer), the "Split by" combobox menu is clipped/hidden behind sibling content when opened:
@@ -2727,6 +2874,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-22 — Deterministic auto-modeling resolver for cross-table columns**
+
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
 
   Feature from the follow-up batch (issue ④ in the spec). Infer rejects placeholders whose column
   lives in a repeat-group base table because validation defaults `source` to `"main"`
@@ -2798,6 +2947,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-23 — DELETE /api/reports (all + single) deletes durable storage objects**
 
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
+
   Bug from the follow-up batch (issue ② in the spec, durable-delete half). `DELETE /api/reports`
   (`web/main.py` ~1848) and `DELETE /api/reports/{filename}` (~1858) only `unlink` local files, so a
   delete is undone by the next run's `pull_workspace` (the durable storage object survives and is
@@ -2837,6 +2988,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **XTF-24 — Restrict split-by dropdown to select_one columns**
+
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
 
   The "Split by" combobox in `BuildOptions` (`frontend/src/components/BuildOptions.jsx`, the
   `splitCols` useMemo ~46–52) currently lists EVERY main-table column (any question with no
@@ -2903,6 +3056,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **XTF-25 — Express Template Fill: extractor must read Word content controls (w:sdt) (P2)**
 
+  **Created:** 2026-06-27 · **Completed:** 2026-06-27
+
 ## Visual / E2E harness
 
 > The Definition of Done requires Playwright `toHaveScreenshot` baselines at mobile/tablet/desktop
@@ -2912,6 +3067,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **VIS-1 — Playwright visual harness (mobile/tablet/desktop)**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   Install and configure Playwright with three viewport projects, a deterministic smoke spec with
   committed baselines, a CI job, and the governance updates that make the three-viewport rule
@@ -2964,6 +3121,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **VIS-2 — Reconcile drifted visual baselines (A11Y-1/-2/-3, PUX-1)**
+
+  **Created:** 2026-06-21 · **Completed:** 2026-06-22
 
   Several merged cards' candidate visual baselines drifted stale because later merges changed
   *shared* surfaces: PUX-1 (plain-language relabel) and PUX-2 (first-run state) modified Home and
@@ -3351,6 +3510,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **PLANG-1 — Project language is set once at creation and drives the AI output language (backend + config mirroring)**
 
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
+
   `project.meta.language` already exists (offered in `ProjectForm` as
   English/French/Spanish/Portuguese/Arabic) but (a) it is **editable post-creation** via
   `PATCH /api/projects/{id}` (`web/main.py` ~278–284; `_META_KEYS` includes `language`;
@@ -3406,6 +3567,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **PLANG-2 — Create-only language field + read-only language in AI config (UI)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
 
   With PLANG-1 making the project language immutable + authoritative, reflect that in the UI. In
   `ProjectForm` the language `<select>` (`frontend/src/pages/ProjectForm.jsx` ~11/50/188–191) is
@@ -3465,6 +3628,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **PLANG-3 — Generate AI output (narrative, summaries, suggestions, Ask) in the project language**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
 
   With PLANG-1 feeding the project language into `config.ai.language`, ensure **every** AI generation
   site honours it so generated text comes out in the project language (per the confirmed scope —
@@ -3532,6 +3697,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **PERF-1 — Cache the expensive read-only server computations on a (data-session + config) fingerprint**
 
+  **Created:** 2026-06-20 · **Completed:** 2026-06-20
+
   Add a server-side cache layer in front of the three heavy read-only endpoints (`/api/profile`,
   `/api/data-quality`, `/api/base-tables`) keyed on a fingerprint of the **active project's data
   session + config**. Identical repeat requests (the common case when a user navigates back and forth
@@ -3594,6 +3761,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **PERF-2 — Shared (cross-worker) cache backend for the perf cache**
+
+  **Created:** 2026-06-20 · **Completed:** 2026-06-25
 
   Follow-up to PERF-1 (shipped: an in-process dict cache in `web/perf_cache.py` fronting
   `/api/profile`, `/api/data-quality`, `/api/base-tables`, invalidated on config-save and
@@ -3660,6 +3829,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **PERF-3 — Per-page skeleton loaders for the data-driven tabs (perceived performance)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
 
   A complement to PERF-1/PERF-2 (server-side cache) on the **client** side: today every
   data-driven tab initialises its data to `null` and renders a single centred grey "Loading…"
@@ -3741,6 +3912,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **PERF-4 — Client-side stale-while-revalidate cache (instant UI on reload / project-switch / refresh) (P2)**
 
+  **Created:** 2026-06-27 · **Completed:** 2026-06-27
+
   Follow-up to PERF-1/2 (server cache) + PERF-3 (skeletons). Keep-alive panes already make
   *within-session* tab revisits instant, but a **full reload / cold start / re-login**, a
   **project switch**, and the hourly / `databridge:data-changed` epoch bump all remount and
@@ -3819,6 +3992,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **MNT-1 — Stabilize the order-dependent ask-save indicator test (P2)**
 
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
+
   `tests/test_ask_api.py::test_ask_save_indicator_appends_to_indicators` passes in the full suite but
   FAILS run in isolation — a test-isolation/ordering bug (leaked shared/config state). Pre-existing on
   `develop`. Make it deterministic regardless of run order.
@@ -3844,6 +4019,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **MNT-2 — Clear dev-dependency CVEs (vite High + esbuild Moderate) (P2)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
 
   `npm audit` flags pre-existing advisories in the frontend DEV toolchain: vite (High — needs >= 8.1) +
   esbuild (Moderate — needs >= 0.25, dragged by the vite bump). Dev-only (not in the shipped bundle) but
@@ -3873,6 +4050,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **MNT-3 — I18N-1 backend hygiene: double-commit + verbatim Zitadel error (P3)**
 
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
+
   Two Low items from the I18N-1 security review. (a) `PATCH /api/me` commits twice — `set_user_language()`
   commits internally and `patch_me` commits again (redundant). (b) The Zitadel sync error path echoes the
   raw exception verbatim in the PATCH response (could embed internal URLs). Single commit site + sanitize
@@ -3900,6 +4079,8 @@ Sprint exit — checked by /report + /retro:
 ---
 
 - [x] **MNT-4 — Fix Toast crash: i18n `t` shadowed by the toasts.map variable (P1)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
 
   `frontend/src/components/Toast.jsx` destructures the i18n function as `t`
   (`const { t } = useTranslation()`), then renders `toasts.map(t => …)` — the map
@@ -3946,6 +4127,8 @@ Sprint exit — checked by /report + /retro:
 ---
 - [x] **MNT-5 — Guard period API fetches when no project is active (P2)**
 
+  **Created:** 2026-06-27 · **Completed:** 2026-06-28
+
   `ActivePeriodChip` (`App.jsx`), `PeriodPicker` (`PeriodPicker.jsx`), `Reports.jsx`, and
   `Sources.jsx` all call `/api/periods` or `/api/periods/date-range` on mount. Before the
   user activates a project `_load_cfg()` on the server raises 400 (`"No active project"`),
@@ -3986,6 +4169,8 @@ Sprint exit — checked by /report + /retro:
 
 - [x] **MNT-6 — Remove dead code (components, exports, imports) (P3)**
 
+  **Created:** 2026-06-28 · **Completed:** 2026-06-28
+
   Audit and remove unused exports, components, functions, and imports across `frontend/src/`
   and `src/` + `web/`. Known candidate: `frontend/src/components/PeriodPicker.jsx` is defined
   but never imported anywhere. No behaviour change — all tests must stay green after removal.
@@ -4014,6 +4199,8 @@ Sprint exit — checked by /report + /retro:
 
 
 - [ ] **MNT-7 — Fix Express Fill silent empty state when LLM response is malformed (P1)**
+
+  **Created:** 2026-06-28 · **Started:** 2026-06-28
 
   `infer_specs` in `src/reports/template_inference.py` (line 300) silently `return []`
   when the LLM response can't be parsed as `{"proposals": [...]}`. The endpoint's outer
@@ -4045,7 +4232,11 @@ Sprint exit — checked by /report + /retro:
   - Assert the empty-placeholder state (`templates.noPlaceholders`) is NOT rendered
   - `toHaveScreenshot('express-infer-error.png')` at all three viewports
 
-  **UAT:** N/A (backend fix; E2E covers the observable UI behaviour at all three viewports).
+  **UAT:**
+  1. Open the Templates tab → click the Express Fill banner.
+  2. Upload a `.docx` template and click **Infer**.
+  3. When the server returns an error, confirm an error message is displayed — NOT the "Aucun espace réservé à examiner." empty state.
+  4. Confirm the error text is visible and the empty-placeholder state is not rendered.
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -q` ·
   `cd frontend && npm run test:e2e -- --grep "infer.*error|error.*infer"` ·
@@ -4053,6 +4244,233 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
+
+- [ ] **MNT-8 — Strip residual `[[` `]]` delimiters from built report output (P1)**
+
+  **Created:** 2026-06-28
+
+  After `docxtpl` renders the Word template, any `[[...]]` tokens that were not resolved by
+  the Express Fill pipeline remain in the output docx with their raw brackets (e.g. `[[NOM]]`
+  renders literally in the document). The fix is a post-render pass in `builder.py` that opens
+  the just-written `.docx`, iterates all paragraphs + table cells, and replaces the pattern
+  `[[<inner>]]` with `<inner>` in every run's text, then saves.
+
+  **Files:** `src/reports/builder.py`
+
+  **Config/schema impact:** None — behaviour fix only.
+
+  **Acceptance criteria**
+  - After `build_report` completes, no paragraph or table cell in the output `.docx` contains
+    the literal substrings `[[` or `]]`
+  - Inner text is preserved: `[[NOM]]` → `NOM`, `[[LISTE DES PARTENAIRES]]` → `LISTE DES PARTENAIRES`
+  - Existing `{{ }}` Jinja2 placeholders that were properly filled are unaffected
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_builder.py`:
+  - `test_strip_double_bracket_tokens`: template with `[[NOM]]` in a paragraph → assert output contains `NOM`, does not contain `[[` or `]]`.
+  - `test_strip_multiword_token`: template with `[[LISTE DES PARTENAIRES]]` → assert `LISTE DES PARTENAIRES` is preserved.
+  - `test_strip_token_split_across_runs`: construct a docx programmatically where `[[` and `NOM]]` are in separate runs of the same paragraph; assert post-render stripping still works.
+  - `test_jinja_placeholders_unaffected`: template with a normally-filled `{{ report_title }}` → assert it resolves correctly and no `[[` artifacts appear.
+
+  **E2E:** N/A (no new UI surface; behaviour is in the Python report-build path).
+
+  **UAT:** N/A (non-UI fix; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+---
+
+- [x] **MNT-9 — Translate chart hardcoded strings to project language (P1)**
+
+  **Created:** 2026-06-28 · **Completed:** 2026-06-28
+
+  Charts rendered by `charts.py` use hardcoded English strings for axis labels, table column
+  headers ("Count", "Percent", "Value", "Frequency", etc.), and fallback titles.
+  When `ai.language` in `config.yml` is set to a non-English language (e.g. "French"),
+  these strings remain in English, creating a mixed-language report.
+  Fix: thread `ai.language` from the config into the chart dispatch and translate the finite set
+  of hardcoded strings via a small lookup dict (at minimum: French; graceful English fallback for
+  unknown languages).
+
+  **Files:** `src/reports/charts.py` · `src/reports/builder.py`
+
+  **Config/schema impact:** None — reads existing `ai.language` field, no schema change.
+
+  **Acceptance criteria**
+  - All hardcoded English column headers and axis labels in `charts.py` ("Count", "Percent",
+    "Value", "Frequency", "Category", "Score", "Rank") are translated when
+    `ai.language` is "French"
+  - `builder.py` passes `ai.language` into the chart dispatch call
+  - Unknown / unsupported languages fall back to English (no crash)
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_charts.py` — for at least two chart types (`bar`, `table`):
+  - `test_bar_chart_french_axis_labels`: call `bar()` with `language="French"`; assert `ax.get_xlabel()` or `ax.get_ylabel()` contains the French translation (e.g. `"Nombre"` not `"Count"`).
+  - `test_table_chart_french_column_headers`: call `table()` with `language="French"`; assert the column header text in the rendered table contains `"Nombre"` and `"Pourcentage"` instead of `"Count"` and `"Percent"`.
+  - `test_unknown_language_falls_back_to_english`: call with an unsupported language; assert no exception and English strings are used.
+
+  **E2E:** N/A (chart rendering is a Python-only path; no UI surface).
+
+  **UAT:** N/A (non-UI fix; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+- [x] **MNT-10 — Fix Tips card blank inline-code placeholders in `<Trans>` (P1)**
+
+  **Created:** 2026-06-28 · **Completed:** 2026-06-28
+
+  `sources.tip1` in both `en.json` and `fr.json` used empty tags (`<c1></c1>`, `<c2></c2>`).
+  `react-i18next` `<Trans>` derives children from the translation string, so empty tags
+  rendered `<code></code>` (blank box) instead of `<code>env:</code>` /
+  `<code>env:KOBO_TOKEN</code>`. Fixed by moving the text inside the tags in both locales.
+
+  **Files:** `frontend/src/locales/en.json` · `frontend/src/locales/fr.json`
+
+  **Config/schema impact:** None — locale content only.
+
+  **Acceptance criteria**
+  - `sources.tip1` in both locales has `<c1>env:</c1>` and `<c2>env:KOBO_TOKEN</c2>`
+  - Tips card renders the two `env:` code badges without blank boxes
+
+  **Unit tests:** N/A (locale content fix; no logic changed).
+
+  **E2E:** N/A (locale content fix).
+
+  **UAT:** N/A (locale content fix; verified by visual inspection).
+
+  **Verify:** Inspect the Tips card in the Sources tab — both `env:` badges render with text.
+
+---
+- [ ] **MNT-11 — Named chart colour palettes selectable from `config.yml` (P1)**
+
+  **Created:** 2026-06-28
+
+  Replace the hardcoded `PALETTE` constant in `charts.py` with a curated set of named,
+  sober palettes suited to institutional/NGO reports (muted, desaturated, print-safe —
+  not consumer SaaS brights). Users set `brand.palette: slate` in `config.yml`; the name
+  resolves to a 10-colour sequence used across every chart type — multi-series charts
+  (stacked/grouped bar, pie, donut, heatmap, likert, …) draw colours from the sequence in
+  order; single-series charts use the first colour. Per-chart `color:` opt remains a working
+  escape hatch. Projects without `brand.palette` fall back to the current default palette
+  (no breaking change).
+
+  **Design constraint — sober / institutional:** all palettes must be desaturated enough
+  to read clearly in black-and-white print and on low-contrast screens. Reference aesthetic:
+  UN, WFP, GIZ, World Bank data reports — not playful or brand-loud. Each palette leads
+  with its strongest (darkest) hue and steps down in luminosity so series order is legible.
+
+  **Proposed palettes (hex values are a starting point — implementer may refine within the
+  sober constraint, but must not introduce saturated consumer-style colours):**
+
+  - `slate`  (default — cool institutional blue/grey):
+    `#1D3557, #2E6DA4, #5A8FC0, #8AAFD4, #BDD0E5, #4A5568, #718096, #A0AEC0, #CBD5E0, #E8EDF3`
+  - `teal`   (humanitarian / health — WFP-adjacent):
+    `#134E4A, #0F766E, #2A9D8F, #52B8AC, #8DD5CE, #3D6B65, #6A9E99, #A0C8C4, #CAE3E1, #EAF5F4`
+  - `earth`  (field / food-security / development):
+    `#5C3317, #8B5E3C, #B07D52, #C9A07A, #DEC4A4, #6B5B45, #957A5E, #BFA98E, #D9CBBA, #F0EAE0`
+  - `indigo` (governance / protection — UNHCR-adjacent):
+    `#1E2A5E, #2E4099, #5468C4, #8394D8, #B3BFEC, #4A5175, #7178A0, #A0A5C0, #CDD0E0, #ECEEF7`
+  - `olive`  (environment / agriculture / resilience):
+    `#2D3E1F, #4A6741, #6A9162, #8FB585, #B8D1B3, #5C5E3A, #888A5A, #B0B27A, #CCCFA0, #E8EAD2`
+
+  **Files:** `src/reports/charts.py` · `src/utils/config.py` · `src/reports/builder.py` ·
+  `sample.config.yml` · `docs/reference/config.md` · `tests/test_charts.py`
+
+  **Config/schema impact:** New optional `brand.palette` string field in `config.yml`.
+  No migration needed — absent field falls back to default.
+
+  **Acceptance criteria**
+  - `charts.py` defines the 5 named palettes above (`slate`, `teal`, `earth`, `indigo`, `olive`),
+    each a list of exactly 10 hex colours, all meeting the sober/institutional constraint
+  - `config.py` exposes a `get_palette(cfg)` helper that returns the named palette list, or
+    the default (`slate`) if `brand.palette` is absent or unrecognised
+  - `builder.py` passes the resolved palette into the chart dispatch so all charts in a report
+    share the same colour sequence
+  - `_palette()` and `_color()` in `charts.py` accept an optional `palette` argument and use
+    it instead of the module-level `PALETTE` constant
+  - Per-chart `color:` opt still overrides the first slot as before
+  - An unknown palette name logs a warning and falls back to `slate` (no crash)
+  - `sample.config.yml` documents the `brand.palette` field with all five names and a one-line
+    description of each palette's character
+
+  **Unit tests:** `tests/test_charts.py`:
+  - `test_palette_bar_uses_slate_sequence`: call `bar()` with `palette="slate"`; assert `r, g, b, _ = ax.patches[0].get_facecolor()` and `(round(r*255), round(g*255), round(b*255)) == (0x1D, 0x35, 0x57)`.
+  - `test_palette_pie_uses_teal_sequence`: call `pie()` with `palette="teal"`; assert `r, g, b, _ = ax.patches[0].get_facecolor()` and `(round(r*255), round(g*255), round(b*255)) == (0x13, 0x4E, 0x4A)`.
+  - `test_unknown_palette_falls_back_to_slate`: call `get_palette({"brand": {"palette": "nonexistent"}})`; assert result equals `PALETTES["slate"]` and use `with pytest.warns(UserWarning, match="unknown palette")` or `caplog.at_level(logging.WARNING)` to confirm a warning is emitted.
+  - `test_get_palette_absent_returns_slate`: call `get_palette({})`; assert result equals `PALETTES["slate"]`.
+
+  **E2E:** N/A (chart rendering is a Python-only path; no UI surface).
+
+  **UAT:** N/A (non-UI; verified via unit tests + visual inspection of a sample report + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+---
+- [ ] **MNT-12 — Fix N+1 role queries in `/api/projects` list endpoint (P1)**
+
+  `_project_dict()` in `web/main.py` calls `db_repo.role_for(user, project, db)` once per
+  project in the list; `role_for` issues a separate `SELECT … FROM project_memberships` per
+  call. A user with N projects triggers N+1 DB round-trips on every `/api/projects` load.
+  Fix: batch-fetch all `ProjectMembership` rows for the user in a single query before the
+  list comprehension, then resolve roles from the result map in memory.
+
+  **Files:** `web/main.py` · `web/db/repository.py`
+
+  **Config/schema impact:** None — query optimisation only, no model change.
+
+  **Acceptance criteria**
+  - `/api/projects` for a user with N projects issues exactly 1 membership query (not N+1)
+  - A new `get_memberships_for_user(user_id, db)` (or equivalent) repository method returns
+    all `ProjectMembership` rows for a user in one `SELECT … WHERE user_id = :uid` query
+  - `_project_dict()` resolves role from the pre-fetched map without hitting the DB
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_bridge.py` (or a new `tests/test_projects_api.py`) —
+  - `test_project_list_single_membership_query`: mock `db` session; assert `role_for` is NOT
+    called (or called 0 times) when `_project_dict` / the list endpoint resolves roles from
+    the pre-fetched map.
+
+  **E2E:** N/A (backend query optimisation; no UI surface change).
+
+  **UAT:** N/A (non-UI; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/ -q`
+
+---
+
+- [ ] **MNT-13 — Fix unbounded `select(User)` in `apply_superadmin_emails` (P1)**
+
+  `apply_superadmin_emails` in `web/db/repository.py` executes `db.scalars(select(User))`
+  — a full table scan with no `WHERE` or `LIMIT` — then Python-filters by email. As the
+  user table grows this is a DoS risk on every startup. Fix: replace with
+  `select(User).where(User.email.in_(wanted_emails))` so the DB does the filtering.
+
+  **Files:** `web/db/repository.py`
+
+  **Config/schema impact:** None — query fix only, no model change.
+
+  **Acceptance criteria**
+  - `apply_superadmin_emails` issues a `SELECT … WHERE email IN (…)` query, not a full scan
+  - When `SUPERADMIN_EMAILS` is empty the function issues no DB query at all
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_bridge.py` (or a new `tests/test_repository.py`) —
+  - `test_apply_superadmin_emails_filtered_query`: mock `db` session; assert the emitted SQL
+    contains a `WHERE` clause on `email`; assert no full-scan `SELECT * FROM users` is issued.
+  - `test_apply_superadmin_emails_empty_noop`: call with empty `SUPERADMIN_EMAILS`; assert
+    `db.scalars` is not called.
+
+  **E2E:** N/A (backend query fix; no UI surface change).
+
+  **UAT:** N/A (non-UI; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/ -q`
+
+---
+---
 ## Backlog — parked (out of scope for now)
 
 > Captured so they aren't lost; not scheduled. Promote into a domain section above when picked up.
