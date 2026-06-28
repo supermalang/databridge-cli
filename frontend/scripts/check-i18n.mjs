@@ -23,7 +23,9 @@
  *       What it scans:
  *         • JSX text nodes — visible text between `>` and `<` (e.g. `<span>Save</span>`).
  *         • A small set of user-facing string-literal ATTRIBUTES:
- *           title, aria-label, placeholder, alt, saveLabel, confirmLabel.
+ *           title, aria-label, placeholder, alt, saveLabel, confirmLabel,
+ *           eyebrow, sub, hint (the PageHeader/ModalField prose props — I18N-3
+ *           closed this blind spot so an un-wired eyebrow/sub/hint is flagged).
  *
  *       What counts as a FLAGGED literal (must be externalized):
  *         • contains a run of ≥2 ASCII letters AND at least one ASCII SPACE
@@ -59,10 +61,10 @@ const SRC = join(ROOT, 'src');
 // ── The audited surfaces (I18N-2 scope). check (C) scans exactly these. ──────
 // Scope: the six primary tabs + the shell + the shared components that render
 // INSIDE those tabs (build options, period/framework pickers, group/table trees,
-// file table, AI spinner, bottom terminal, toasts, user menu). OUT of scope (and
-// deliberately not audited here): the standalone Ask panel, the Validate panel,
-// and ProjectForm/ProjectMembersPanel/ProjectMembersModal — reached from
-// sub-panels/ribbon rather than the six primary tabs; a separate follow-up.
+// file table, AI spinner, bottom terminal, toasts, user menu). I18N-3 extended
+// this set to the remaining audited surfaces (Profile / Ask / Validate /
+// ProjectForm / ProjectMembersPanel) so those blind spots can no longer hide an
+// un-wired user-facing literal.
 const AUDITED = [
   'App.jsx',
   'pages/Home.jsx',
@@ -72,6 +74,12 @@ const AUDITED = [
   'pages/Reports.jsx',
   'pages/Templates.jsx',
   'pages/PageHeader.jsx',
+  // I18N-3: the previously-unaudited surfaces.
+  'pages/Profile.jsx',
+  'pages/Ask.jsx',
+  'pages/Validate.jsx',
+  'pages/ProjectForm.jsx',
+  'components/ProjectMembersPanel.jsx',
   'components/StageHelp.jsx',
   'components/Rail.jsx',
   'components/Modal.jsx',
@@ -171,7 +179,7 @@ for (const file of AUDITED) {
   }
 
   // User-facing string-literal attributes.
-  const attrRe = /\b(title|aria-label|placeholder|alt|saveLabel|confirmLabel)\s*=\s*"([^"]*)"/g;
+  const attrRe = /\b(title|aria-label|placeholder|alt|saveLabel|confirmLabel|eyebrow|sub|hint)\s*=\s*"([^"]*)"/g;
   const attrLits = [];
   while ((m = attrRe.exec(src))) attrLits.push(m[2]);
 

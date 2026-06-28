@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useConfirm } from '../components/ConfirmDialog.jsx';
 import { useFieldErrors } from '../lib/fieldError.js';
 import { useUnsavedGuard } from '../hooks/useUnsavedGuard.js';
@@ -22,6 +23,7 @@ const ICON_NAMES = ['Chart', 'Health', 'Globe', 'Education', 'Water', 'Plant', '
 // object (edit). Calls onDone(projectId|null) when finished/closed; onChanged() to
 // ask the parent to refresh its project list.
 export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChanged }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const { confirm, confirmDialog } = useConfirm();
   const editing = mode !== 'create';
@@ -149,43 +151,43 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
       <div
         className="project-form__tabs"
         role="tablist"
-        aria-label="Project settings sections"
+        aria-label={t('projectForm.sectionsAria')}
         data-tab-group="projectform"
         onKeyDown={makeTabKeydown('projectform', pfTabIds, tab, setTab)}
       >
         <button type="button" className={`pf-tab ${tab === 'details' ? 'active' : ''}`}
                 {...tabProps('projectform', 'details', tab === 'details')}
-                onClick={() => setTab('details')}>Details</button>
+                onClick={() => setTab('details')}>{t('projectForm.tabDetails')}</button>
         <button type="button"
                 className={`pf-tab ${tab === 'members' ? 'active' : ''} ${membersDisabled ? 'disabled' : ''}`}
                 {...tabProps('projectform', 'members', tab === 'members')}
                 aria-disabled={membersDisabled ? 'true' : undefined}
                 onClick={() => !membersDisabled && setTab('members')}
-                title={membersDisabled ? 'Create the project first' : ''}>Members</button>
+                title={membersDisabled ? 'Create the project first' : ''}>{t('projectForm.tabMembers')}</button>
         {editing && canAdmin && (
           <button type="button" className={`pf-tab ${tab === 'danger' ? 'active' : ''}`}
                   {...tabProps('projectform', 'danger', tab === 'danger')}
-                  onClick={() => setTab('danger')}>Danger zone</button>
+                  onClick={() => setTab('danger')}>{t('projectForm.tabDanger')}</button>
         )}
       </div>
 
       <div className="project-form__body">
         {tab === 'details' && (
           <div className="pf-panel" {...panelProps('projectform', 'details')}>
-            <div className="profile-field"><label>Name *</label>
+            <div className="profile-field"><label>{t('projectForm.name')}</label>
               <input autoFocus value={name}
                      aria-invalid={fe.errorFor('name') ? 'true' : 'false'}
                      aria-describedby={fe.errorFor('name') ? nameErrorId : undefined}
-                     onChange={e => setNameAndValidate(e.target.value)} placeholder="e.g. Q3 Monitoring" />
+                     onChange={e => setNameAndValidate(e.target.value)} placeholder={t('projectForm.namePlaceholder')} />
               {fe.errorFor('name') && (
                 <div id={nameErrorId} role="alert" className="pf-field-error">{fe.errorFor('name')}</div>
               )}</div>
-            <div className="profile-field"><label>Description</label>
+            <div className="profile-field"><label>{t('projectForm.description')}</label>
               <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)}
-                        placeholder="What is this project about?" /></div>
-            <div className="profile-field"><label>Tags</label>
-              <input value={tagsText} onChange={e => setTagsText(e.target.value)} placeholder="comma, separated, tags" /></div>
-            <div className="profile-field"><label htmlFor="pf-language">Default language</label>
+                        placeholder={t('projectForm.descriptionPlaceholder')} /></div>
+            <div className="profile-field"><label>{t('projectForm.tags')}</label>
+              <input value={tagsText} onChange={e => setTagsText(e.target.value)} placeholder={t('projectForm.tagsPlaceholder')} /></div>
+            <div className="profile-field"><label htmlFor="pf-language">{t('projectForm.defaultLanguage')}</label>
               {editing ? (
                 <>
                   <select id="pf-language" className="pf-readonly-select" value={language}
@@ -198,7 +200,7 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
                   </select>
                   <div id="pf-language-note" className="pf-field-note"
                        style={{ color: 'var(--ink-3)', fontSize: 11.5, marginTop: 6, lineHeight: 1.45 }}>
-                    The language is set when the project is created and cannot be changed.
+                    {t('projectForm.languageNote')}
                   </div>
                 </>
               ) : (
@@ -206,7 +208,7 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
                   {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
                 </select>
               )}</div>
-            <div className="profile-field"><label>Color</label>
+            <div className="profile-field"><label>{t('projectForm.color')}</label>
               <div className="pf-swatches">
                 {COLORS.map((c, i) => (
                   <button key={c} type="button" className={`pf-swatch ${color === c ? 'sel' : ''}`}
@@ -214,7 +216,7 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
                           style={{ background: c }} onClick={() => setColor(c)} />
                 ))}
               </div></div>
-            <div className="profile-field"><label>Icon</label>
+            <div className="profile-field"><label>{t('projectForm.icon')}</label>
               <div className="pf-icons">
                 {ICONS.map((ic, i) => (
                   <button key={ic} type="button" className={`pf-icon ${icon === ic ? 'sel' : ''}`}
@@ -250,10 +252,10 @@ export default function ProjectForm({ mode, canAdmin, initialTab, onDone, onChan
             </div>
             <div className="pf-danger">
               <div>
-                <div className="pf-danger__title">Delete project</div>
-                <div className="pf-danger__desc">Permanently delete this project and all its data.</div>
+                <div className="pf-danger__title">{t('projectForm.deleteTitle')}</div>
+                <div className="pf-danger__desc">{t('projectForm.deleteDesc')}</div>
               </div>
-              <button className="btn btn-danger" onClick={doDelete}>Delete</button>
+              <button className="btn btn-danger" onClick={doDelete}>{t('projectForm.deleteButton')}</button>
             </div>
           </div>
         )}

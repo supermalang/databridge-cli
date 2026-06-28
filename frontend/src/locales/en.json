@@ -354,7 +354,8 @@
       "selectAll": "Select all",
       "selectNone": "Select none",
       "apply": "Apply",
-      "appliedNames": "Applied suggested names — review and Save changes"
+      "appliedNames": "Applied suggested names — review and Save changes",
+      "piiBadge": "PII"
     },
     "composition": {
       "viewsEyebrow": "Step 3 of 5 · Combine data",
@@ -367,7 +368,13 @@
       "composeSubLead": "Define what shows up in the report — charts, indicators, and summaries. Add manually, or let AI propose a set from your ",
       "composeSubTail": " questions.",
       "noUnsavedChanges": "No unsaved changes",
-      "kind": { "charts": "charts", "indicators": "indicators", "tables": "tables", "summaries": "summaries", "views": "views" },
+      "kind": {
+        "charts": "charts",
+        "indicators": "indicators",
+        "tables": "tables",
+        "summaries": "summaries",
+        "views": "views"
+      },
       "configured": "configured",
       "noneYet": "none yet — add one",
       "suggestKind": "Suggest {{kind}}",
@@ -606,7 +613,9 @@
       "removeChip": "Remove {{name}}",
       "dropColumn": "Drop column \"{{name}}\"",
       "renameColumn": "Rename column {{name}}",
-      "clickToRename": "Click to rename"
+      "clickToRename": "Click to rename",
+      "suggestSave": "Suggest",
+      "suggestHint": "Free-text guidance the AI will prioritise. Leave blank to let it choose freely from your questions."
     },
     "reports": {
       "eyebrow": "Step 5 of 5 · Reports",
@@ -740,80 +749,151 @@
       "deleteFailed": "Delete failed"
     },
     "components": {
-    "buildOptions": {
-      "title": "Build options",
-      "hint": "Split one report per value of a main-table column, and preview a few groups before running the full split build.",
-      "splitBy": "Split by",
-      "splitPlaceholder": "No split — type to filter columns",
-      "noSplit": "No split — one combined report",
-      "groupsToBuild": "Groups to build",
-      "groupsHint": "Choose a split-by column to preview groups",
-      "buildAll": "Build all groups (default)",
-      "firstN": "First N groups (preview)",
-      "previewNote": "Preview only — builds the first {{n}} group(s) so you can check the layout before committing to the full split build.",
-      "buildReport": "Build report",
-      "building": "Building…"
+      "buildOptions": {
+        "title": "Build options",
+        "hint": "Split one report per value of a main-table column, and preview a few groups before running the full split build.",
+        "splitBy": "Split by",
+        "splitPlaceholder": "No split — type to filter columns",
+        "noSplit": "No split — one combined report",
+        "groupsToBuild": "Groups to build",
+        "groupsHint": "Choose a split-by column to preview groups",
+        "buildAll": "Build all groups (default)",
+        "firstN": "First N groups (preview)",
+        "previewNote": "Preview only — builds the first {{n}} group(s) so you can check the layout before committing to the full split build.",
+        "buildReport": "Build report",
+        "building": "Building…"
+      },
+      "groupTree": {
+        "hidden": "Hidden ({{count}})",
+        "hiddenHint": "notes & non-analytical fields",
+        "pii": "PII ({{count}})",
+        "piiHint": "flagged personal data",
+        "hiddenCount": "· {{count}} hidden",
+        "piiCount": "· {{count}} PII"
+      },
+      "tableTree": {
+        "tableCount_one": "{{count}} table",
+        "tableCount_other": "{{count}} tables"
+      },
+      "frameworkPicker": {
+        "none": "(no framework link)"
+      },
+      "periodPicker": {
+        "none": "(no period)",
+        "baseline": "· baseline",
+        "add": "Add",
+        "addPeriod": "+ Period",
+        "placeholder": "e.g. Q3 2026"
+      },
+      "aiThinking": {
+        "working": "Working…",
+        "analyzing": "Analyzing your data…",
+        "almost": "Almost there…"
+      },
+      "terminal": {
+        "sessions": "Sessions",
+        "filter": "Filter",
+        "awaiting": "Awaiting log lines…",
+        "logLabel": "Pipeline execution log",
+        "barTitle": "terminal",
+        "running": "Running",
+        "idle": "Idle",
+        "open": "Open",
+        "close": "Close",
+        "openTerminal": "Open terminal",
+        "closeTerminal": "Close terminal",
+        "barAria": "Terminal — {{status}}. {{action}}.",
+        "barAriaRunning": "running {{cmd}}",
+        "barAriaIdle": "idle",
+        "expand": "Expand",
+        "collapse": "Collapse",
+        "stagePipeline": "Pipeline",
+        "stageExtract": "Extract",
+        "stageTransform": "Transform",
+        "stageModel": "Model",
+        "stageAnalyze": "Analyze",
+        "stageDeliver": "Deliver"
+      },
+      "toast": {
+        "dismiss": "Dismiss notification"
+      },
+      "userMenu": {
+        "account": "Account",
+        "profile": "Profile",
+        "signOut": "Sign out",
+        "superadmin": "superadmin"
+      }
     },
-    "groupTree": {
-      "hidden": "Hidden ({{count}})",
-      "hiddenHint": "notes & non-analytical fields",
-      "pii": "PII ({{count}})",
-      "piiHint": "flagged personal data",
-      "hiddenCount": "· {{count}} hidden",
-      "piiCount": "· {{count}} PII"
+    "dataProfile": {
+      "eyebrow": "Step 2 of 5 · Data profile",
+      "title": "Understand your",
+      "accent": "tables.",
+      "sub": "A read-only snapshot of every base table, arranged as a tree of accordions. Open a table to inspect its columns — completeness, outlier and duplicate rates (color-coded), distinct counts, ranges and outliers.",
+      "colColumn": "Column",
+      "colRole": "Role",
+      "colCompleteness": "Completeness",
+      "colOutlierRate": "Outlier rate",
+      "colDupRate": "Dup. rate",
+      "colDistinct": "Distinct",
+      "colDetail": "Detail",
+      "noVisibleColumns": "No visible columns.",
+      "loading": "Profiling…",
+      "errorTitle": "Profiling failed",
+      "errorBody": "{{error}} — if you haven’t downloaded submissions yet, run Download from the Dashboard first.",
+      "emptyTitle": "Nothing to profile yet",
+      "emptyBody": "The data profile is built from your downloaded submissions. Run Download from the Dashboard, then come back here to inspect every table."
     },
-    "tableTree": {
-      "tableCount_one": "{{count}} table",
-      "tableCount_other": "{{count}} tables"
+    "ask": {
+      "eyebrow": "Step 4 of 5 · Ask",
+      "title": "Ask your",
+      "accent": "data.",
+      "sub": "Ask a question in plain language — get charts computed from your data, with captions grounded in the actual numbers.",
+      "placeholder": "e.g. How many submissions by region?",
+      "refinePlaceholder": "Refine — e.g. make it a line chart, split by sex",
+      "emptyTitle": "Ask anything about your data",
+      "emptyBody": "Counts, distributions, trends, comparisons and rankings all work. Each answer is computed from your downloaded data — charts and big-number indicators you can save with one click. (Needs an AI connection and a completed Download.)",
+      "errorTitle": "Couldn’t answer that"
     },
-    "frameworkPicker": {
-      "none": "(no framework link)"
+    "validate": {
+      "eyebrow": "Step 2 of 5 · Validate",
+      "title": "Check your",
+      "accent": "data.",
+      "sub": "Scan the downloaded submissions for missingness, duplicates, outliers, and type problems. Hide a column or flag it as PII to resolve a finding.",
+      "loading": "Running validation…",
+      "errorTitle": "Validation failed",
+      "errorBody": "{{error}} — if you haven’t downloaded submissions yet, run Download from the Dashboard first.",
+      "noIssues": "No issues found on visible columns — your data looks clean."
     },
-    "periodPicker": {
-      "none": "(no period)",
-      "baseline": "· baseline",
-      "add": "Add",
-      "addPeriod": "+ Period",
-      "placeholder": "e.g. Q3 2026"
+    "projectForm": {
+      "sectionsAria": "Project settings sections",
+      "tabDetails": "Details",
+      "tabMembers": "Members",
+      "tabDanger": "Danger zone",
+      "name": "Name *",
+      "namePlaceholder": "e.g. Q3 Monitoring",
+      "description": "Description",
+      "descriptionPlaceholder": "What is this project about?",
+      "tags": "Tags",
+      "tagsPlaceholder": "comma, separated, tags",
+      "defaultLanguage": "Default language",
+      "color": "Color",
+      "icon": "Icon",
+      "deleteTitle": "Delete project",
+      "deleteDesc": "Permanently delete this project and all its data.",
+      "deleteButton": "Delete",
+      "languageNote": "The language is set when the project is created and cannot be changed."
     },
-    "aiThinking": {
-      "working": "Working…",
-      "analyzing": "Analyzing your data…",
-      "almost": "Almost there…"
-    },
-    "terminal": {
-      "sessions": "Sessions",
-      "filter": "Filter",
-      "awaiting": "Awaiting log lines…",
-      "logLabel": "Pipeline execution log",
-      "barTitle": "terminal",
-      "running": "Running",
-      "idle": "Idle",
-      "open": "Open",
-      "close": "Close",
-      "openTerminal": "Open terminal",
-      "closeTerminal": "Close terminal",
-      "barAria": "Terminal — {{status}}. {{action}}.",
-      "barAriaRunning": "running {{cmd}}",
-      "barAriaIdle": "idle",
-      "expand": "Expand",
-      "collapse": "Collapse",
-      "stagePipeline": "Pipeline",
-      "stageExtract": "Extract",
-      "stageTransform": "Transform",
-      "stageModel": "Model",
-      "stageAnalyze": "Analyze",
-      "stageDeliver": "Deliver"
-    },
-    "toast": {
-      "dismiss": "Dismiss notification"
-    },
-    "userMenu": {
-      "account": "Account",
-      "profile": "Profile",
-      "signOut": "Sign out",
-      "superadmin": "superadmin"
-    }
+    "members": {
+      "loading": "Loading…",
+      "colMember": "Member",
+      "colRole": "Role",
+      "remove": "Remove",
+      "pendingInvites": "Pending invites",
+      "inviteSomeone": "Invite someone",
+      "inviteEmailAria": "Invite email address",
+      "inviteEmailPlaceholder": "email@example.com",
+      "inviteRoleAria": "Invite role",
+      "accessNote": "You have <b>{{role}}</b> access. Only admins can invite or change roles."
     }
   }
 }

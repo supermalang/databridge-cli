@@ -645,12 +645,12 @@ export default function Composition({ sections } = {}) {
           title={`Suggest ${suggestSpec[suggestKind].plural} with AI`}
           onClose={() => setSuggestKind(null)}
           onSave={submitSuggestion}
-          saveLabel="Suggest"
+          saveLabel={t('composition.suggestSave')}
           width={560}
         >
           <ModalField
             label={`What ${suggestSpec[suggestKind].plural} would you like? (optional)`}
-            hint="Free-text guidance the AI will prioritise. Leave blank to let it choose freely from your questions."
+            hint={t('composition.suggestHint')}
           >
             <textarea
               aria-label={`Guidance for AI ${suggestSpec[suggestKind].plural} suggestions`}
@@ -679,7 +679,7 @@ export default function Composition({ sections } = {}) {
                 <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantRenderChart')}</div>
                 <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>{preview.error}</div>
                 <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
-                  <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>Download</code> }} />
+                  <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>{t('composition.download')}</code> }} />
                 </div>
               </div>
             )}
@@ -711,7 +711,7 @@ export default function Composition({ sections } = {}) {
                 <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantComputeView')}</div>
                 <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>{viewPreview.error}</div>
                 <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
-                  <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>Download</code> }} />
+                  <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>{t('composition.download')}</code> }} />
                 </div>
               </div>
             )}
@@ -1136,8 +1136,8 @@ function FrameworkCard() {
               <span className="framework-node__level">goal</span>
               <span className="framework-node__label">{fw.goal.label}</span>
               <span>
-                <button className="icon-btn" title="Edit" onClick={() => startEdit('goal')}>✎</button>
-                <button className="icon-btn" title="Delete" onClick={() => remove('goal')}>×</button>
+                <button className="icon-btn" title={t('composition.edit')} onClick={() => startEdit('goal')}>✎</button>
+                <button className="icon-btn" title={t('composition.delete')} onClick={() => remove('goal')}>×</button>
               </span>
             </div>
           )}
@@ -1148,8 +1148,8 @@ function FrameworkCard() {
                 <span className="framework-node__level">outcome</span>
                 <span className="framework-node__label">{oc.label}</span>
                 <span>
-                  <button className="icon-btn" title="Edit" onClick={() => startEdit('outcome', i)}>✎</button>
-                  <button className="icon-btn" title="Delete" onClick={() => remove('outcome', i)}>×</button>
+                  <button className="icon-btn" title={t('composition.edit')} onClick={() => startEdit('outcome', i)}>✎</button>
+                  <button className="icon-btn" title={t('composition.delete')} onClick={() => remove('outcome', i)}>×</button>
                 </span>
               </div>
               {(outputsByOutcome[oc.id] || []).map((op) => {
@@ -1160,8 +1160,8 @@ function FrameworkCard() {
                     <span className="framework-node__level">output</span>
                     <span className="framework-node__label">{op.label}</span>
                     <span>
-                      <button className="icon-btn" title="Edit" onClick={() => startEdit('output', opIdx)}>✎</button>
-                      <button className="icon-btn" title="Delete" onClick={() => remove('output', opIdx)}>×</button>
+                      <button className="icon-btn" title={t('composition.edit')} onClick={() => startEdit('output', opIdx)}>✎</button>
+                      <button className="icon-btn" title={t('composition.delete')} onClick={() => remove('output', opIdx)}>×</button>
                     </span>
                   </div>
                 );

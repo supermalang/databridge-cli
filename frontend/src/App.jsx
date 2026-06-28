@@ -102,16 +102,17 @@ const STAGES = [
   ] },
 ];
 
-function ActivePeriodChip() {
+function ActivePeriodChip({ projectId }) {
   const [cur, setCur] = useState(null);
   useEffect(() => {
+    if (!projectId) return;
     (async () => {
       try {
         const data = await (await fetch('/api/periods')).json();
         setCur(data.current);
       } catch { /* noop */ }
     })();
-  }, []);
+  }, [projectId]);
   if (!cur) return null;
   return (
     <span className="period-chip">
@@ -242,6 +243,8 @@ export default function App() {
       // a switch (no invalidation) — see lib/cache.js (PERF-4).
       setCacheProject(id);
       setActiveProjectId(id);
+      setStageId('home');
+      setSubId(null);
       setProjMenuOpen(false);
       window.dispatchEvent(new CustomEvent('databridge:data-changed', { detail: { project: id } }));
     } finally {
@@ -517,7 +520,7 @@ export default function App() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
-          <ActivePeriodChip />
+          <ActivePeriodChip projectId={activeProjectId} />
           <div style={{ position: 'relative' }}>
             <button className="project-switcher" title={t('shell.switchProject')} type="button"
                     ref={projSwitcherRef}
