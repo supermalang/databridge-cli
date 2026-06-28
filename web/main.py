@@ -157,6 +157,21 @@ def _require_view(request: Request):
     _require(request, "viewer")
 
 
+@app.get("/favicon.svg")
+async def favicon_svg():
+    from fastapi.responses import FileResponse, Response
+    path = STATIC_DIR / "favicon.svg"
+    if path.exists():
+        return FileResponse(path, media_type="image/svg+xml")
+    return Response(status_code=204)
+
+
+@app.get("/favicon.ico")
+async def favicon_ico():
+    from fastapi.responses import Response
+    return Response(status_code=204)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     index = STATIC_DIR / "index.html"
@@ -2360,6 +2375,9 @@ def _save_cfg(cfg: dict) -> None:
 
 @app.get("/api/periods")
 async def get_periods():
+    path = _config_path()
+    if not path.exists():
+        return {"current": None, "baseline": None, "registry": []}
     cfg = _load_cfg()
     p = cfg.get("periods") or {}
     return {
@@ -2532,6 +2550,8 @@ async def periods_date_range():
     the Output-tab year picker so it offers only the data's actual span. Returns
     nulls when there's no data or no captured `_submission_time`."""
     import pandas as pd
+    if not _config_path().exists():
+        return {"min_year": None, "max_year": None}
     cfg = _load_cfg()
     # Strip periods so loading neither date-filters nor slug-prefixes — we want
     # the full span of the latest plain download.
