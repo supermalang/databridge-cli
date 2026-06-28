@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Sprint retrospective — reads git history + roadmap outcomes, clusters patterns, writes docs/retros/<date>.md, routes action items. Read-only on code and roadmap.
+description: Sprint retrospective — the Agile continuous-improvement ceremony that also closes the sprint. Verifies the sprint-exit checklist (all tasks DoD-done or carried over, usability run on shipped UI, report generated), then reads git history + roadmap outcomes + review blockers and writes a structured retrospective to docs/retros/<date>.md — what went well, what didn't, and concrete action items (unmet exit checks become action items). Read-only on code. Run at the end of a sprint, after /report.
 ---
 
 # /retro — Sprint Retrospective (databridge-cli)
