@@ -2753,7 +2753,14 @@ async def api_template_infer(request: Request):
         proposals = ti.annotate_proposals(proposals, prof)
     except Exception as e:  # noqa: BLE001 — an AI failure re-locks the AI buttons
         _invalidate_ai(request)
+        from src.utils import lf_client as _lf
+        _lf.flush()
         raise HTTPException(status_code=500, detail=f"infer failed: {e}")
+    finally:
+        # Flush Langfuse traces — unlike CLI commands (which use command_trace()),
+        # the API endpoint has no automatic flush at request end.
+        from src.utils import lf_client as _lf
+        _lf.flush()
     # `template` is a resolvable ref (the persisted basename) the panel carries
     # into apply so a freshly-uploaded .docx survives the round-trip (XTF-6).
     return {"proposals": proposals, "message": None, "template": ref}

@@ -741,3 +741,64 @@ test.describe('XTF-18 — express Apply & build auto-collapses the terminal like
     await page.evaluate(() => { (window as any).__runStream.close(); });
   });
 });
+
+/**
+ * MNT-7 — Express infer API error must show an error message, NOT the empty-placeholder state.
+ *
+ * Bug: `infer_specs` in `src/reports/template_inference.py` returned `[]` silently when the
+ * LLM response was malformed. The endpoint then returned `{"proposals": [], "message": null}`,
+ * and the frontend rendered "Aucun espace réservé à examiner." (the `templates.noPlaceholders`
+ * empty state) instead of an error. The fix raises `RuntimeError` so the endpoint returns HTTP
+ * 500 with a `detail`, and the frontend renders the `.express-error` element.
+ *
+ * This describe block asserts the FIXED behaviour: a 500 from `/api/template/infer` must
+ * produce a visible error element, and the empty-placeholder state (`[data-testid="express-row"]`
+ * count = 0) must NOT appear alongside it.
+ */
+test.describe('MNT-7 — Express infer error shows error message, not empty-placeholder state', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await stubExpress(page);
+    await page.goto('http://localhost:51730/');
+  });
+
+  test('infer 500 → error message visible; empty-placeholder state absent', async ({ page }) => {
+    // Re-register infer AFTER beforeEach so this wins (Playwright: last-registered first).
+    // Simulate the MNT-7 fix: backend raises RuntimeError → endpoint returns 500.
+    await page.route('**/api/template/infer', (r) =>
+      r.fulfill({
+        status: 500,
+        json: { detail: 'infer failed: LLM response did not return a proposals list' },
+      }));
+
+    await expect(page.getByText('Test Project')).toBeVisible();
+
+    // Open the express flow.
+    await page.getByTestId('express-banner').first().click();
+
+    // Upload a .docx so the Infer button is enabled.
+    await page.getByTestId('express-upload').setInputFiles({
+      name: 'report.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: Buffer.from('PK fake docx'),
+    });
+
+    // Click Infer → hits the 500 stub.
+    await page.getByTestId('express-infer').click();
+
+    // An error element must be visible with the detail text.
+    const errorEl = page.locator('.express-error');
+    await expect(errorEl).toBeVisible();
+    await expect(errorEl).toContainText('infer failed');
+
+    // The empty-placeholder state must NOT be shown alongside the error.
+    // `.express-error` and `rows.length === 0` are mutually exclusive in the fixed flow.
+    await expect(page.getByTestId('express-row')).toHaveCount(0);
+    // The "noPlaceholders" empty state is a plain .empty-state paragraph; assert it's absent.
+    // We check via the review panel: it must not be present.
+    await expect(page.getByTestId('express-review-panel')).toHaveCount(0);
+
+    // Visual baseline of the error state (3 viewports via playwright.config.ts).
+    await expect(page).toHaveScreenshot('express-infer-error.png');
+  });
+});
