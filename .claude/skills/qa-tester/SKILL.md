@@ -31,6 +31,9 @@ cd frontend && npm run test:e2e 2>&1 | tail -20
 Review the produced screenshots in `frontend/tests/e2e/<spec>-snapshots/`.
 Check: layout correct, data visible, no broken states, readable on mobile.
 
+For manual UAT verification, save review screenshots to **`.scratch/uat/`** (gitignored —
+throwaway review aids, never committed). The real UAT is the human at the PR.
+
 ### 3 — Verify each AC
 
 For each acceptance criterion: is it satisfied end-to-end? Mark:

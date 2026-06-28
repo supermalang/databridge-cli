@@ -50,12 +50,28 @@ If you discover a bug while refactoring: note it, do NOT fix it here. Hand it to
 If you discover a feature gap: note it, do NOT implement it. Hand it to the roadmap.
 If any test turns red mid-refactor: revert the last step, reassess.
 
-### 5 — Verify and report
+### 5 — Update code map (if modules moved/renamed/removed)
+
+If any file was moved, renamed, or deleted, update `docs/ARCHITECTURE.md`:
+- Key symbols table — correct file path and line number
+- Storage layout or call-path diagrams if affected
+
+Scope: navigation tables only. No prose rewrite.
+
+### 6 — Verify and report
 
 ```bash
 PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q   # full suite
 cd frontend && npm run lint                          # if JSX changed
 ```
+
+Verification checklist before reporting done:
+- [ ] Full test suite green
+- [ ] Lint clean (if JSX touched)
+- [ ] No public signatures changed
+- [ ] No return types changed
+- [ ] No observable side effects added or removed
+- [ ] `docs/ARCHITECTURE.md` updated (if modules moved/renamed)
 
 Report: smell → target → files changed → test result before/after → confirmation of no
 behaviour change (public signatures and return values unchanged).

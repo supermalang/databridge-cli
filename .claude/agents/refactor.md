@@ -21,6 +21,8 @@ Before starting, read `.claude/skills/refactor/SKILL.md` and `.claude/context.md
 - **Never edit tests.** They are the safety net. If untested code needs refactoring, escalate to
   `/test-writer` for characterisation tests first.
 - **Never add features.** If you find a bug, report it to `/debugger` rather than fixing it here.
+- **Update the code map.** If you move, rename, or remove a module, update `docs/ARCHITECTURE.md`
+  so `/locate` stays accurate. Scope: only the Key symbols / Code map tables — no prose rewrite.
 
 ## What counts as a smell (refactor target)
 

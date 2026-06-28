@@ -99,6 +99,23 @@ Image generation (illustrated style — opt-in):
 
 ---
 
+## Generated files & artifacts
+
+Three buckets — facts belong in only one; agents must not commit throwaway files.
+
+| Bucket | Where | Git | Examples |
+|---|---|---|---|
+| **Knowledge** | `docs/` | ✅ committed | ARCHITECTURE.md, retros, story maps, usability reports |
+| **Non-reproducible deliverables** | `docs/reports/` · `docs/reports/assets/` | ✅ committed | Branded markdown reports, deck images |
+| **Regenerable outputs** | `out/` · `data/processed/` · `reports/` | ❌ gitignored | PPTX decks, chart PNGs, built .docx |
+| **Throwaway verification** | `.scratch/` | ❌ gitignored | UAT screenshots (`.scratch/uat/`), perf snapshots, debug dumps |
+
+Rule: if a file can be regenerated from source + config, it is ignored. If a human needs
+to review or approve it before it's meaningful, it is throwaway until approved, then
+committed to `docs/`.
+
+---
+
 ## SCA commands (for dep-audit)
 
 ```bash

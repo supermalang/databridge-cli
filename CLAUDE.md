@@ -349,6 +349,15 @@ verification-before-completion · isolate → using-git-worktrees · deliver →
 finishing-a-development-branch. (These govern *how* we engineer; the roadmap governs *what* + the
 quality bar — complementary layers.)
 
+### Methodology skills
+`/retro` — sprint retrospective: git + roadmap evidence → patterns → action items →
+`docs/retros/<date>.md`. Read-only; routes tasks to `/roadmap`.
+`/story-map` — story mapping + impact mapping from `PRODUCT.md` + roadmap →
+`docs/story-map.md`; flags journey gaps as ⚠️ GAP for `/roadmap`.
+`/usability-test heuristic|plan|synthesize` — Nielsen-10 heuristic eval (Claude runs it) /
+real-user test protocol (human runs it) / findings synthesis → `docs/usability/<slug>.md`.
+`/refactor` — behavior-preserving cleanup; updates `docs/ARCHITECTURE.md` on module moves.
+
 ### Context file
 `.claude/context.md` — Tier-1 operational facts: tech stack, commands, brand tokens (for
 `/report`), SCA commands (for `dep-audit`), absolute rules. Agents read this on every run.
