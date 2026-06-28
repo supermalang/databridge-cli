@@ -57,7 +57,7 @@ A card is startable only when all of the following hold:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 5 | 5 / 5 |
+| [Maintenance & hardening](#maintenance--hardening) | 7 | 6 / 7 |
 
 ---
 
@@ -3959,6 +3959,75 @@ A card is startable only when all of the following hold:
 
 ---
 
+
+- [x] **MNT-6 — Remove dead code (components, exports, imports) (P3)**
+
+  Audit and remove unused exports, components, functions, and imports across `frontend/src/`
+  and `src/` + `web/`. Known candidate: `frontend/src/components/PeriodPicker.jsx` is defined
+  but never imported anywhere. No behaviour change — all tests must stay green after removal.
+
+  **Files:** `frontend/src/components/PeriodPicker.jsx` (delete) · any other dead code found
+  during the audit across `frontend/src/`, `src/`, and `web/`.
+
+  **Config/schema impact:** None — removals only; no behaviour change.
+
+  **Acceptance criteria**
+  - `PeriodPicker.jsx` is deleted (confirmed never imported anywhere)
+  - Any other unused exports, components, functions, or imports found in the audit are removed
+  - `npm run build` succeeds after removals (no dangling imports)
+  - The full pytest suite (`PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`) stays green
+  - No behaviour regression: the app works identically for all user flows
+
+  **Unit tests:** N/A (removal-only; the verification is the full test suite staying green).
+
+  **E2E:** N/A (no UI surface change — the removed code is unused by definition).
+
+  **UAT:** N/A (no UI surface — verified via build + test suite green + PR review).
+
+  **Verify:** `cd frontend && npm run build` · `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+---
+
+
+- [ ] **MNT-7 — Fix Express Fill silent empty state when LLM response is malformed (P1)**
+
+  `infer_specs` in `src/reports/template_inference.py` (line 300) silently `return []`
+  when the LLM response can't be parsed as `{"proposals": [...]}`. The endpoint's outer
+  `except Exception` never fires, so it returns `{"proposals": [], "message": null}`, and
+  the frontend renders "Aucun espace réservé à examiner." (empty placeholder state) instead
+  of an error. Fix: raise `RuntimeError` with the raw snippet so the endpoint returns HTTP 500
+  and the frontend shows a real error message. Add an E2E test that stubs `/api/template/infer`
+  to return 500 and asserts the error is shown (not the empty-placeholder state).
+
+  **Files:** `src/reports/template_inference.py` (line 300) · `frontend/tests/e2e/express-template-fill.spec.ts`
+
+  **Config/schema impact:** None — behaviour fix only.
+
+  **Acceptance criteria**
+  - `infer_specs` raises `RuntimeError` (not `return []`) when `_loads_lenient(raw)` does not
+    produce a `{"proposals": list}` structure
+  - The `/api/template/infer` endpoint returns HTTP 500 with `detail` set when `infer_specs` raises
+  - A new E2E test stubs the infer endpoint to return 500 and asserts an error message is rendered,
+    NOT the empty-placeholder state ("Aucun espace réservé à examiner.")
+  - The E2E test includes a `toHaveScreenshot` baseline at all three viewports
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_template_inference.py` — add a case where `lf_client.chat` returns
+  malformed JSON; assert `infer_specs` raises `RuntimeError`.
+
+  **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` — new describe block or test:
+  - Stub `**/api/template/infer` to return 500 with `{"detail": "infer failed: LLM response malformed"}`
+  - Click banner → upload → infer → assert `.express-error` is visible with the error text
+  - Assert the empty-placeholder state (`templates.noPlaceholders`) is NOT rendered
+  - `toHaveScreenshot('express-infer-error.png')` at all three viewports
+
+  **UAT:** N/A (backend fix; E2E covers the observable UI behaviour at all three viewports).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -q` ·
+  `cd frontend && npm run test:e2e -- --grep "infer.*error|error.*infer"` ·
+  `cd frontend && npm run test:e2e` (full suite green)
+
+---
 
 ## Backlog — parked (out of scope for now)
 

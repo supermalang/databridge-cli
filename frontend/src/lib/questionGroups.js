@@ -76,20 +76,4 @@ export function indexQuestionsByColumn(questions) {
   return map;
 }
 
-// Given column-like rows (each having a `.name`) and a question index, build the
-// group tree for the columns. Columns with no matching question land in an
-// "Ungrouped" top-level bucket; their hidden state is false.
-export function buildColumnTree(columns, questionsByColumn) {
-  return buildGroupTree(columns, {
-    getPath: (c) => {
-      const q = questionsByColumn.get(c.name);
-      return q ? q.group : UNGROUPED;
-    },
-    getHidden: (c) => {
-      const q = questionsByColumn.get(c.name);
-      return q ? isHidden(q) : false;
-    },
-  });
-}
-
 export const GROUP_LABELS = { NO_GROUP, UNGROUPED };

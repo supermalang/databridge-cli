@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (JSON, Boolean, Integer, String, DateTime, ForeignKey,
                         UniqueConstraint, Uuid)
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
+from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped
 
 
 def _now() -> datetime:
