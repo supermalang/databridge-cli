@@ -56,6 +56,77 @@ from web.main import app
 client = TestClient(app)
 ```
 
+## Test structure (Component — Testing Library)
+
+For new React components or significant UI changes. Only write this layer if the task touches `frontend/src/components/` or a page component.
+
+Prerequisite: `vitest` + `@testing-library/react` + `jsdom` must be in `frontend/package.json`.
+
+```js
+// frontend/tests/unit/<Component>.test.jsx
+import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import MyComponent from '../../src/components/MyComponent'
+
+describe('MyComponent', () => {
+  it('renders the expected label', () => {
+    render(<MyComponent label="Test" />)
+    expect(screen.getByText('Test')).toBeInTheDocument()
+  })
+
+  it('calls onSave when button clicked', async () => {
+    const onSave = vi.fn()
+    render(<MyComponent onSave={onSave} />)
+    await userEvent.click(screen.getByRole('button', { name: /save/i }))
+    expect(onSave).toHaveBeenCalledOnce()
+  })
+})
+```
+
+Mock collaborators (API calls, hooks) — do not use real network or DB here.
+
+## Test structure (Integration — FastAPI + real DB)
+
+For API endpoint behaviour that spans the request handler, DB query, and response. Use the existing test self-provisioning (SQLite + `DATABRIDGE_SKIP_MIGRATIONS=1`).
+
+```python
+# tests/test_<endpoint>_integration.py
+import pytest
+from fastapi.testclient import TestClient
+from web.main import app
+
+@pytest.fixture
+def client():
+    with TestClient(app) as c:
+        yield c
+
+def test_<endpoint>_returns_<expected>(client, test_project):
+    resp = client.get('/api/<endpoint>', headers=auth_headers(test_project))
+    assert resp.status_code == 200
+    assert resp.json()['key'] == expected_value
+```
+
+**No mocks for the DB layer** — integration tests hit the real SQLite test DB. Mock only external services (Kobo API, Langfuse, S3) using `monkeypatch` or `respx`.
+
+## Test structure (Accessibility — axe)
+
+Add to any Playwright spec that introduces a new UI component or page:
+
+```js
+import { checkA11y, injectAxe } from 'axe-playwright'
+
+test('page has no a11y violations', async ({ page }) => {
+  await page.goto('/<route>')
+  await injectAxe(page)
+  await checkA11y(page, '.page:visible', {
+    detailedReport: true,
+    detailedReportOptions: { html: true },
+  })
+})
+```
+
+Only add the axe layer when a new component ships — not for pure logic changes.
+
 ## Test structure (Playwright — E2E)
 
 Functional assertions in `frontend/tests/e2e/<feature>.spec.js`:
@@ -76,9 +147,23 @@ await expect(page.locator('.page:visible')).toHaveScreenshot()
 
 Visual baselines are captured ONLY after `/ux-review` + `/qa-tester` sign-off. Never during RED.
 
+## Which layers to write
+
+Only write the layers the task actually touches:
+
+| Task touches | Write |
+|---|---|
+| Python logic / CLI | Unit (pytest) |
+| FastAPI endpoint | Unit + Integration |
+| New React component | Unit (Testing Library) + Component + Axe |
+| Full user flow | E2E (Playwright) |
+| UI appearance | Visual snapshot (after sign-off only) |
+
 ## Coverage targets
 
 - Python: one test per acceptance criterion; cover nominal + at least one edge/error case
+- Integration: cover the full request→DB→response path for each AC
+- Component: cover each prop/state combination described in the AC
 - Playwright: cover the full user flow described in the card's E2E field
 - Three viewports are automatic (playwright.config.ts): mobile/tablet/desktop
 

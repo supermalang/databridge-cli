@@ -213,15 +213,36 @@ await agent(
 
 // ── Phase 2: RED — author the failing tests ──────────────────────────────────
 phase('RED')
+const RED_SCHEMA = {
+  type: 'object',
+  required: ['testFiles', 'redConfirmed'],
+  properties: {
+    testFiles:    { type: 'array', items: { type: 'string' } },
+    redConfirmed: { type: 'boolean' },
+    failReason:   { type: 'string' },
+  },
+}
 const red = await agent(
   'Read .claude/agents/roadmap-test-author.md and follow it exactly for task ' + TASK_ID + '.\n' +
   'Write unit + (for UI-facing cards) Playwright E2E tests strictly from the Acceptance criteria. ' +
   'Do NOT read or write implementation. Prove the tests FAIL (red) for the right reason.\n\n' +
   'Card:\n' + dor.taskBlock + '\n\n' +
-  'Report the test files written and confirm they are red.',
-  { phase: 'RED', agentType: 'roadmap-test-author' }
+  'Return: testFiles (array of written test paths), ' +
+  'redConfirmed (true ONLY if tests fail because the behaviour is missing — not an import or fixture error), ' +
+  'failReason (one-line reason the tests fail).',
+  { schema: RED_SCHEMA, phase: 'RED', agentType: 'roadmap-test-author' }
 )
 if (!red) return { status: 'error', reason: 'Test author failed for ' + TASK_ID }
+if (!red.redConfirmed) {
+  log('🚫 RED gate: tests pass before any implementation — vacuous. Rewrite from AC so they fail.')
+  return {
+    status: 'blocked',
+    reason: 'RED gate failed: tests passed before implementation. A passing RED test proves nothing — ' +
+            'it is either vacuous or reverse-engineered from existing code. Rewrite from acceptance criteria.',
+    taskId: TASK_ID,
+  }
+}
+log('✅ RED confirmed — ' + (red.failReason || 'tests fail for the right reason'))
 
 // ── Phase 3: GREEN — implement (Feature) or debug (Fix), with bounded self-repair
 phase('GREEN')
@@ -354,6 +375,7 @@ Control returns to you only when:
 | Situation | What to do |
 |---|---|
 | DoR not met | Fix the card's missing fields via `/roadmap`, then re-run `/ship-task <ID>` |
+| RED gate fails | Tests passed before any implementation — rewrite tests so they fail for the right reason, re-run |
 | Tests still failing after 2 self-repair attempts | Review the failures, fix manually, re-run |
 | Review blockers (security/dep) | Resolve the listed blockers, then re-run |
 | PR opened | Run **human UAT** against the PR, tick the UAT checklist, review the diff + screenshots, then **merge** |
