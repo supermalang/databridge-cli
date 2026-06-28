@@ -57,7 +57,7 @@ A card is startable only when all of the following hold:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 5 | 5 / 5 |
+| [Maintenance & hardening](#maintenance--hardening) | 6 | 5 / 6 |
 
 ---
 
@@ -3956,6 +3956,35 @@ A card is startable only when all of the following hold:
   3. Select a project. Confirm period chips and pickers load without errors.
 
   **Verify:** `cd frontend && npx playwright test no-active-project.spec.ts`
+
+---
+
+
+- [ ] **MNT-6 — Remove dead code (components, exports, imports) (P3)**
+
+  Audit and remove unused exports, components, functions, and imports across `frontend/src/`
+  and `src/` + `web/`. Known candidate: `frontend/src/components/PeriodPicker.jsx` is defined
+  but never imported anywhere. No behaviour change — all tests must stay green after removal.
+
+  **Files:** `frontend/src/components/PeriodPicker.jsx` (delete) · any other dead code found
+  during the audit across `frontend/src/`, `src/`, and `web/`.
+
+  **Config/schema impact:** None — removals only; no behaviour change.
+
+  **Acceptance criteria**
+  - `PeriodPicker.jsx` is deleted (confirmed never imported anywhere)
+  - Any other unused exports, components, functions, or imports found in the audit are removed
+  - `npm run build` succeeds after removals (no dangling imports)
+  - The full pytest suite (`PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`) stays green
+  - No behaviour regression: the app works identically for all user flows
+
+  **Unit tests:** N/A (removal-only; the verification is the full test suite staying green).
+
+  **E2E:** N/A (no UI surface change — the removed code is unused by definition).
+
+  **UAT:** N/A (no UI surface — verified via build + test suite green + PR review).
+
+  **Verify:** `cd frontend && npm run build` · `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
 
 ---
 
