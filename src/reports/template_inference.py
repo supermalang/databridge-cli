@@ -281,22 +281,18 @@ def infer_specs(nl_tokens: List["Token"], catalog: Dict, ai_cfg: Dict) -> List[P
         "indicator_stats": ask_engine._INDICATOR_STATS_BLOCK,
         "language": ai_cfg.get("language") or "English",
     }
-    try:
-        messages, _config = lf_client.get_prompt("template_inference", variables)
-        raw = lf_client.chat(
-            messages,
-            model=ai_cfg.get("model", "gpt-4o"),
-            provider=provider,
-            api_key=ai_cfg.get("api_key", ""),
-            max_tokens=max(int(ai_cfg.get("max_tokens", 1500)), 2000),
-            trace_name="template_inference",
-            base_url=ai_cfg.get("base_url"),
-            json_mode=True,
-            output_schema=_config.get("output_schema"),
-        )
-    except Exception as e:  # noqa: BLE001
-        log.warning(f"template_inference: infer_specs failed: {e}")
-        return []
+    messages, _config = lf_client.get_prompt("template_inference", variables)
+    raw = lf_client.chat(
+        messages,
+        model=ai_cfg.get("model", "gpt-4o"),
+        provider=provider,
+        api_key=ai_cfg.get("api_key", ""),
+        max_tokens=max(int(ai_cfg.get("max_tokens", 1500)), 2000),
+        trace_name="template_inference",
+        base_url=ai_cfg.get("base_url"),
+        json_mode=True,
+        output_schema=_config.get("output_schema"),
+    )
 
     data = ask_engine._loads_lenient(raw)
     items = (data or {}).get("proposals")
