@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 12 | 7 / 12 |
+| [Maintenance & hardening](#maintenance--hardening) | 12 | 8 / 12 |
 
 ---
 
@@ -4281,9 +4281,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-9 — Translate chart hardcoded strings to project language (P1)**
+- [x] **MNT-9 — Translate chart hardcoded strings to project language (P1)**
 
-  **Created:** 2026-06-28
+  **Created:** 2026-06-28 · **Completed:** 2026-06-28
 
   Charts rendered by `charts.py` use hardcoded English strings for axis labels, table column
   headers ("Count", "Percent", "Value", "Frequency", etc.), and fallback titles.
