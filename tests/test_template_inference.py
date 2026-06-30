@@ -550,6 +550,66 @@ def test_infer_specs_raises_on_malformed_llm_response(monkeypatch, bad_response)
         ti.infer_specs(nl_tokens, catalog, ai_cfg)
 
 
+# --------------------------------------------------------------------------- #
+# MNT-7 named unit tests (individual scenarios, card §Unit tests)
+# --------------------------------------------------------------------------- #
+
+def _nl_token():
+    """A single NL token for infer_specs, matching the XTF-2 Token shape."""
+    return ti.Token(
+        raw="[Total beneficiaries]",
+        inner="Total beneficiaries",
+        delimiter="[",
+        kind="nl",
+        location=ti.Location(),
+    )
+
+
+def _ai_cfg_mnt7():
+    return {"provider": "openai", "model": "gpt-x", "api_key": "sk-test"}
+
+
+def test_infer_specs_raises_on_malformed_json(monkeypatch):
+    """MNT-7 AC: `infer_specs` raises RuntimeError (not `return []`) when
+    `lf_client.chat` returns a non-JSON string that `_loads_lenient` cannot
+    parse as a dict with a 'proposals' list.
+
+    Buggy behaviour: the function silently returns [], letting the endpoint
+    respond HTTP 200 with {"proposals": [], "message": null} and the frontend
+    renders the empty-placeholder state. Fixed behaviour: RuntimeError is raised
+    so the endpoint's `except Exception` returns HTTP 500 instead.
+    """
+    monkeypatch.setattr(
+        ti.lf_client, "get_prompt",
+        lambda *a, **k: ([{"role": "user", "content": "x"}], {}),
+    )
+    # Return a non-JSON string — _loads_lenient returns None, proposals is absent.
+    monkeypatch.setattr(ti.lf_client, "chat", lambda *a, **k: "not valid json at all")
+
+    with pytest.raises(RuntimeError, match="proposals"):
+        ti.infer_specs([_nl_token()], ask_engine.build_catalog(_profile_xtf2()), _ai_cfg_mnt7())
+
+
+def test_infer_specs_raises_on_missing_proposals_key(monkeypatch):
+    """MNT-7 AC: `infer_specs` raises RuntimeError (not `return []`) when
+    `_loads_lenient` succeeds (valid JSON) but the 'proposals' key is absent.
+
+    This is the boundary case: `{"result": []}` parses cleanly to a dict, so
+    `_loads_lenient` returns it. The bug was that `(data or {}).get("proposals")`
+    returned `None`, which is not a list, and the old code `return []`-ed silently.
+    The fix replaces that with `raise RuntimeError` when `items` is not a list.
+    """
+    monkeypatch.setattr(
+        ti.lf_client, "get_prompt",
+        lambda *a, **k: ([{"role": "user", "content": "x"}], {}),
+    )
+    # Valid JSON, but the 'proposals' key is absent — _loads_lenient returns {"result": []}
+    monkeypatch.setattr(ti.lf_client, "chat", lambda *a, **k: '{"result": []}')
+
+    with pytest.raises(RuntimeError, match="proposals"):
+        ti.infer_specs([_nl_token()], ask_engine.build_catalog(_profile_xtf2()), _ai_cfg_mnt7())
+
+
 # =========================================================================== #
 # XTF-3 — Apply: persist config + resolve template (apply_inference)
 # =========================================================================== #
