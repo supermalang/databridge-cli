@@ -4223,8 +4223,9 @@ Sprint exit — checked by /report + /retro:
   - The E2E test includes a `toHaveScreenshot` baseline at all three viewports
   - All existing tests remain green
 
-  **Unit tests:** `tests/test_template_inference.py` — add a case where `lf_client.chat` returns
-  malformed JSON; assert `infer_specs` raises `RuntimeError`.
+  **Unit tests:** `tests/test_template_inference.py`:
+  - `test_infer_specs_raises_on_malformed_json`: `lf_client.chat` returns a non-JSON string; assert `infer_specs` raises `RuntimeError`.
+  - `test_infer_specs_raises_on_missing_proposals_key`: `lf_client.chat` returns `{"result": []}`; assert `infer_specs` raises `RuntimeError` (boundary: `_loads_lenient` succeeds but the `proposals` key is absent).
 
   **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` — new describe block or test:
   - Stub `**/api/template/infer` to return 500 with `{"detail": "infer failed: LLM response malformed"}`
@@ -4236,7 +4237,8 @@ Sprint exit — checked by /report + /retro:
   **UAT:**
   1. Open the Templates tab → click the Express Fill banner.
   2. Upload a `.docx` template and click **Infer**.
-  3. When the server returns an error, confirm an error message is displayed — NOT the "Aucun espace réservé à examiner." empty state.
+  2a. *(To force the error)* Open browser DevTools → Network tab → right-click the pending `/api/template/infer` request → **Block request URL**, then click **Infer** again so the server receives no LLM response. Expected: server returns HTTP 500.
+  3. Confirm an error message is displayed — NOT the "Aucun espace réservé à examiner." empty state.
   4. Confirm the error text is visible and the empty-placeholder state is not rendered.
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -q` ·
