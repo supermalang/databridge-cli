@@ -76,7 +76,7 @@ Sprint exit — checked by /report + /retro:
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 11 | 10 / 11 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
-| [Express Template Fill](#express-template-fill) | 25 | 25 / 25 |
+| [Express Template Fill](#express-template-fill) | 26 | 26 / 26 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
@@ -3060,9 +3060,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **XTF-26 — Express Fill: auto-resolve proposals when column lives in a repeat table (P1)**
+- [x] **XTF-26 — Express Fill: auto-resolve proposals when column lives in a repeat table (P1)**
 
-  **Created:** 2026-06-30
+  **Created:** 2026-06-30 · **Completed:** 2026-06-30
 
   `annotate_proposals` in `src/reports/template_inference.py` validates each inferred proposal
   by looking up the target column in the main flat table only. When the column exists in a repeat
