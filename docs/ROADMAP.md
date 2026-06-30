@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 13 | 8 / 13 |
+| [Maintenance & hardening](#maintenance--hardening) | 13 | 9 / 13 |
 
 ---
 
@@ -4198,9 +4198,9 @@ Sprint exit — checked by /report + /retro:
 ---
 
 
-- [ ] **MNT-7 — Fix Express Fill silent empty state when LLM response is malformed (P1)**
+- [x] **MNT-7 — Fix Express Fill silent empty state when LLM response is malformed (P1)**
 
-  **Created:** 2026-06-28 · **Started:** 2026-06-28
+  **Created:** 2026-06-28 · **Started:** 2026-06-28 · **Completed:** 2026-06-30
 
   `infer_specs` in `src/reports/template_inference.py` (line 300) silently `return []`
   when the LLM response can't be parsed as `{"proposals": [...]}`. The endpoint's outer
