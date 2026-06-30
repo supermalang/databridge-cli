@@ -3135,7 +3135,7 @@ Sprint exit — checked by /report + /retro:
 
   **Files:** `src/reports/charts.py` · `src/reports/builder.py` ·
   `src/reports/template_generator.py` · `frontend/src/pages/Composition.jsx` ·
-  `tests/test_builder.py`
+  `tests/test_builder.py` · `frontend/tests/e2e/composition-bullet-list.spec.ts`
 
   **Config/schema impact:** New `type: bullet_list` value for chart configs. Template
   placeholder changes from `{{ chart_N }}` (image) to `{{ list_<name> }}` (text run).
@@ -3160,11 +3160,21 @@ Sprint exit — checked by /report + /retro:
   - `test_template_generator_emits_text_placeholder_for_bullet_list`: calling
     `generate_template` with a bullet_list chart produces a `.docx` containing
     `{{ list_<name> }}` as plain text, not an image frame
+  - `test_bullet_list_repeat_table_source`: given a repeat-table column as `source:`, the
+    builder context contains `list_<name>` with values drawn from the repeat table rows
 
-  **E2E:** N/A (CLI/backend rendering; no new UI interaction beyond the dropdown addition)
+  **E2E:** `frontend/tests/e2e/composition-bullet-list.spec.ts` — verify `bullet_list`
+  option is present in the chart type dropdown on the Composition tab;
+  `toHaveScreenshot` baselines at mobile 390×844, tablet 820×1180, desktop 1440×900;
+  `npx impeccable audit` + `npx impeccable critique` on the Composition tab clean before merge
 
-  **UAT:** N/A (non-UI rendering fix; verified via unit tests + manual `build-report` run
-  confirming bullet text appears in the output `.docx`)
+  **UAT:**
+  1. Open Composition tab → Add a chart → open the chart type dropdown → confirm `bullet_list`
+     appears in the list. Expected: option is visible and selectable.
+  2. Configure a `bullet_list` chart on the Village column, run
+     `python3 src/data/make.py build-report --sample 5` on a downloaded dataset, open the
+     output `.docx`. Expected: a `•`-prefixed text list appears at the placeholder position,
+     not an image.
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -q -k "bullet_list"` ·
   `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
