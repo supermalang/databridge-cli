@@ -4210,7 +4210,7 @@ Sprint exit — checked by /report + /retro:
   and the frontend shows a real error message. Add an E2E test that stubs `/api/template/infer`
   to return 500 and asserts the error is shown (not the empty-placeholder state).
 
-  **Files:** `src/reports/template_inference.py` (line 300) · `frontend/src/pages/Templates.jsx` · `frontend/tests/e2e/express-template-fill.spec.ts`
+  **Files:** `src/reports/template_inference.py` (line 300) · `frontend/src/pages/Templates.jsx` · `frontend/tests/e2e/express-template-fill.spec.ts` · `tests/test_api_template.py`
 
   **Config/schema impact:** None — behaviour fix only.
 
@@ -4218,14 +4218,18 @@ Sprint exit — checked by /report + /retro:
   - `infer_specs` raises `RuntimeError` (not `return []`) when `_loads_lenient(raw)` does not
     produce a `{"proposals": list}` structure
   - The `/api/template/infer` endpoint returns HTTP 500 with `detail` set when `infer_specs` raises
-  - A new E2E test stubs the infer endpoint to return 500 and asserts an error message is rendered,
-    NOT the empty-placeholder state ("Aucun espace réservé à examiner.")
-  - The E2E test includes a `toHaveScreenshot` baseline at all three viewports
+  - `frontend/src/pages/Templates.jsx` renders an element with class `express-error` (visible via `role="alert"`) when the infer response is non-2xx; the element is absent on success
+  - When `/api/template/infer` returns HTTP 500, the Templates tab displays an error banner and does NOT display the empty-placeholder state ("Aucun espace réservé à examiner.")
+  - The error state renders correctly at mobile/tablet/desktop viewports (screenshot baselines committed)
   - All existing tests remain green
 
-  **Unit tests:** `tests/test_template_inference.py`:
+  **Unit tests:**
+  `tests/test_template_inference.py`:
   - `test_infer_specs_raises_on_malformed_json`: `lf_client.chat` returns a non-JSON string; assert `infer_specs` raises `RuntimeError`.
   - `test_infer_specs_raises_on_missing_proposals_key`: `lf_client.chat` returns `{"result": []}`; assert `infer_specs` raises `RuntimeError` (boundary: `_loads_lenient` succeeds but the `proposals` key is absent).
+
+  `tests/test_api_template.py` (new or extend existing):
+  - `test_infer_endpoint_returns_500_when_infer_specs_raises`: using `TestClient`, patch `infer_specs` to raise `RuntimeError("LLM response malformed")`; POST to `/api/template/infer`; assert response status is 500 and `detail` is non-null.
 
   **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` — new describe block or test:
   - Stub `**/api/template/infer` to return 500 with `{"detail": "infer failed: LLM response malformed"}`
@@ -4235,16 +4239,17 @@ Sprint exit — checked by /report + /retro:
   - After baselines are committed, run `npx impeccable audit` + `npx impeccable critique` and confirm no new regressions are flagged on the error-state view
 
   **UAT:**
-  *(The Playwright E2E test covers the exact HTTP 500 path via a stub; UAT verifies the visible outcome in a real environment.)*
-  1. Open the Templates tab → click the Express Fill banner.
-  2. Upload a `.docx` template. Before clicking **Infer**, temporarily unset `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` in the server environment and restart uvicorn — this forces the LLM call to fail and the server to return HTTP 500.
-  3. Click **Infer**. Confirm an error message is displayed — NOT the "Aucun espace réservé à examiner." empty state.
-  4. Confirm the error text is visible and the empty-placeholder state is not rendered.
-  5. Restore the API key and restart uvicorn. Confirm a normal infer run succeeds.
+  *(The E2E test owns the HTTP-500-stub assertion and screenshot baselines. UAT verifies the error-display behavior in a real browser.)*
+  1. Review the committed E2E screenshots (`express-infer-error.png` at mobile/tablet/desktop) and confirm the error banner is legible and the empty-placeholder state is absent.
+  2. Open the Templates tab → click the Express Fill banner. Upload a `.docx` template.
+  3. In browser DevTools → Network → select the **Overrides** tab → enable **Override content** for `/api/template/infer` → set the response body to `{"detail": "infer failed: LLM response malformed"}` and status to 500. Click **Infer**.
+  4. Confirm an error message is displayed — NOT the "Aucun espace réservé à examiner." empty state.
+  5. Disable the override. Confirm a normal infer run succeeds (proposals list appears).
 
-  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -q` ·
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py tests/test_api_template.py -q` ·
   `cd frontend && npm run test:e2e -- --grep "infer.*error|error.*infer"` ·
-  `cd frontend && npm run test:e2e` (full suite green)
+  `cd frontend && npm run test:e2e` (full suite green) ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q` (full suite green)
 
 ---
 
