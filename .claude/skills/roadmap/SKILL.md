@@ -36,6 +36,22 @@ content, `Write` the whole file.
   - Format: `**Created:** 2026-06-28 · **Completed:** 2026-06-28` (dot-separated on one line)
   - The guard checks for `**Created:**` on every card; missing it is a template violation.
 
+## DoR authoring checklist (run before declaring a card Ready)
+
+Use this when writing or reviewing a new card. Each item must be satisfied before the card can
+be started. The card-reviewer checks all of these — failing any one blocks the task.
+
+| # | Check | Common failure mode |
+|---|---|---|
+| 1 | **AC = user-observable outcomes** | AC describes test implementation ("a new E2E test stubs X and asserts Y") instead of observable behavior ("when X happens, the UI shows Y") — move test detail to E2E field |
+| 2 | **AC covers every HTTP behavior** | An endpoint change (status code, response shape) has no AC clause — add one per distinct status code or field |
+| 3 | **Files = every modified file** | Only the backend file is listed; the frontend component or test file is missing — list `frontend/src/pages/Foo.jsx` and `tests/test_foo.py` explicitly |
+| 4 | **Unit tests = one named case per AC clause** | Unit tests says "add a test for X" without a function name — name each case and its assertion |
+| 5 | **Unit tests cover the endpoint if AC mentions HTTP** | AC says "endpoint returns 500" but unit tests only cover the Python function — add a `TestClient`-based case in `tests/test_api_*.py` |
+| 6 | **E2E includes impeccable audit/critique** | E2E lists `toHaveScreenshot` baselines but omits `npx impeccable audit` + `npx impeccable critique` on the new/changed view |
+| 7 | **UAT has a concrete trigger** | UAT says "when the server returns an error" without explaining how to force that error in a real running environment — add a step with a specific mechanism (unset env var, DevTools Override, etc.) |
+| 8 | **Global status count is current** | Adding a new card or changing card state without updating the `## Global status` row for that area — recount planned and done |
+
 ## Operations
 - **Add/edit a task:** read roadmap → write the whole file with the card following the
   template → keep Global status counts in sync. Stamp `**Created:** YYYY-MM-DD` on the new card.
@@ -50,6 +66,17 @@ content, `Write` the whole file.
 - **Complete a task:** dispatch `roadmap-verifier` (DoD exit gate). Only on `DONE` → write the
   roadmap with `- [x]` + append `· **Completed:** YYYY-MM-DD` to the card's Created line +
   updated Global status → delete `.claude/.active-task.json`.
+
+## End-of-session hygiene
+
+**Branch sweep (after every session):** Run `git branch -r --no-merged develop` and open PRs
+for any completed branches that have no open PR. Completed branches sitting without PRs are
+invisible finished work that can accumulate conflicts.
+
+**Manual-PR card closure:** When a card's implementation is completed across multiple manual
+PRs (bypassing ship-task), immediately do a cleanup commit on the last branch: flip `[x]`,
+update Global status count, delete `.claude/.active-task.json`. Don't leave the card open for
+the next session to discover via a RED-gate failure.
 
 ## Gate before coding
 No feature/bug/fix code without the task existing here and started via this skill. Minor

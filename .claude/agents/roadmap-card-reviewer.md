@@ -29,8 +29,27 @@ For the card(s) under review (a specific `AREA-N`, or the whole `docs/ROADMAP.md
 7. **Scope** — one independently-testable deliverable per card. Flag cards that bundle several.
 
 ## Output
+
+**CRITICAL: enumerate every gap in a single pass.** Do NOT stop at the first problem. Check
+all 7 dimensions above for the card, collect every failure, and return them all at once. A
+reviewer that stops early forces multiple correction cycles — that is a process failure.
+
 Return per card:
 - `PASS` or `FAIL`
-- For each problem: the field, what's wrong, and a concrete fix (rewrite the offending line).
+- For **every** problem found (not just the first): the field, what's wrong, and a concrete fix
+  (rewrite the offending line).
+
 Be specific and terse. Default to FAIL when a required field is missing or untestable — it is
 cheaper to tighten a card now than to discover the gap mid-implementation.
+
+### Common gaps to check exhaustively (all must pass before PASS)
+
+| Dimension | What to verify |
+|---|---|
+| **AC observable** | Each criterion describes a user-visible or API-level outcome — NOT test implementation ("a new E2E test stubs X" belongs in E2E, not AC) |
+| **Files complete** | Every file the implementation will touch is listed — backend, frontend component (e.g. `frontend/src/pages/`), AND test files |
+| **Unit tests named** | At least one named case per AC clause; boundary conditions called out; "add tests" is not acceptable |
+| **Unit tests cover the endpoint** | If an AC clause describes HTTP behavior (status code, response shape), a `TestClient`-based test case is named in Unit tests or a dedicated API test file |
+| **E2E has impeccable** | UI-facing cards must include `npx impeccable audit` + `npx impeccable critique` after baselines are committed |
+| **UAT mechanically triggerable** | Steps describe how to reach the error/success state in a real running server — not "when the server returns an error" without a concrete trigger method |
+| **Global status count** | `## Global status` row for this card's area matches the actual card count (planned = total cards in section; progress = done / total) |
