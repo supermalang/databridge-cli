@@ -17,6 +17,44 @@ from src.reports.data_quality import build_data_quality
 
 log = logging.getLogger(__name__)
 
+import re as _re
+from docx import Document as _Document
+
+def _strip_residual_brackets(path: Path) -> None:
+    """Remove [[ and ]] delimiters left by unresolved Express Fill tokens.
+
+    docxtpl only resolves {{ }} Jinja2 tags; any [[token]] that was not matched
+    by the Express Fill pipeline survives into the saved .docx verbatim.  This
+    pass reopens the file, strips the bracket pair from every run's text while
+    preserving the inner content, and saves in-place.
+    """
+    _OPEN = "[["; _CLOSE = "]]"
+
+    def _clean_runs(para):
+        for run in para.runs:
+            if _OPEN in run.text or _CLOSE in run.text:
+                run.text = run.text.replace(_OPEN, "").replace(_CLOSE, "")
+
+    def _walk_table(table):
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    _clean_runs(para)
+                for nested in cell.tables:
+                    _walk_table(nested)
+
+    doc = _Document(str(path))
+    for para in doc.paragraphs:
+        _clean_runs(para)
+    for table in doc.tables:
+        _walk_table(table)
+    for section in doc.sections:
+        for hf in (section.header, section.footer):
+            if hf:
+                for para in hf.paragraphs:
+                    _clean_runs(para)
+    doc.save(str(path))
+
 
 def sandboxed_jinja_env() -> SandboxedEnvironment:
     """Jinja2 environment used to render Word templates.
@@ -297,6 +335,7 @@ class ReportBuilder:
         alias = self.cfg.get("form",{}).get("alias","form")
         out_path = out_dir / f"{alias}_report{suffix}_{datetime.today().strftime('%Y%m%d')}.docx"
         tpl.save(out_path)
+        _strip_residual_brackets(out_path)
         log.info(f"Report saved → {out_path}")
         return out_path
 
