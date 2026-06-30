@@ -76,7 +76,7 @@ Sprint exit — checked by /report + /retro:
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 11 | 10 / 11 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
-| [Express Template Fill](#express-template-fill) | 25 | 25 / 25 |
+| [Express Template Fill](#express-template-fill) | 26 | 25 / 26 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
@@ -3057,6 +3057,62 @@ Sprint exit — checked by /report + /retro:
 - [x] **XTF-25 — Express Template Fill: extractor must read Word content controls (w:sdt) (P2)**
 
   **Created:** 2026-06-27 · **Completed:** 2026-06-27
+
+---
+
+- [ ] **XTF-26 — Express Fill: auto-resolve proposals when column lives in a repeat table (P1)**
+
+  **Created:** 2026-06-30
+
+  `annotate_proposals` in `src/reports/template_inference.py` validates each inferred proposal
+  by looking up the target column in the main flat table only. When the column exists in a repeat
+  group table (e.g. `Nombre de ménages` → demographics repeat, `Organisation` → collaborations
+  repeat, `Groupe socio-économique` → team repeat), the validator rejects it with "column X not
+  found in 'main'" and sets `status: needs_attention` with no `source:` suggestion. The user has
+  no actionable path — the placeholder remains blank in the resolved template.
+
+  Fix: when column lookup fails in `main`, search all loaded repeat tables. If the column is found
+  in exactly one repeat table, auto-set `source` to that table name and flip `status` to `ok`. If
+  found in multiple repeat tables, set `source` to the best-matching table (most rows) and
+  `status` to `review` with a note listing the alternatives.
+
+  **Type:** Fix
+  **Priority:** P1
+
+  **Files:** `src/reports/template_inference.py` · `tests/test_template_inference.py`
+
+  **Config/schema impact:** None — `apply-template` already handles the `source:` field on
+  proposals; this fix just populates it where it was previously left empty.
+
+  **Acceptance criteria**
+  - When a placeholder's target column is absent from `main` but present in exactly one repeat
+    table, `annotate_proposals` sets `source` to that repeat table name and `status` to `ok`
+  - When the column is present in multiple repeat tables, `annotate_proposals` sets `source` to
+    the repeat table with the most rows and `status` to `review`, with a note listing the
+    alternative table names
+  - When the column is not found in `main` or any repeat table, `status` remains `needs_attention`
+  - Running `infer-template` on the PCP form template (form UID 10702) produces the demographic
+    indicators (`nombre_menages`, `nombre_habitants`, `nombre_enfants`) and the socioeconomic
+    chart proposal (`groupe_socioeconomique_pct`) with `status: ok` and `source:` set to the
+    correct repeat table name
+
+  **Unit tests:** `tests/test_template_inference.py`:
+  - `test_annotate_sets_source_from_single_repeat_table`: catalog has column absent from main but
+    present in one repeat table; assert proposal gets `source` set to that table name and
+    `status == 'ok'`
+  - `test_annotate_sets_source_review_for_ambiguous_repeat`: column present in two repeat tables;
+    assert `status == 'review'`, `source` is the table with more rows, and the note mentions both
+    table names
+  - `test_annotate_keeps_needs_attention_when_column_nowhere`: column absent from main and all
+    repeat tables; assert `status == 'needs_attention'`
+
+  **E2E:** N/A (pure inference-engine fix; the Templates tab proposal review panel renders
+  whatever the API returns — no new UI component or interaction)
+
+  **UAT:** N/A (non-UI/CLI fix; verified via unit tests + `infer-template` CLI run + PR review)
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -q -k "repeat"` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
 
 ## Visual / E2E harness
 
