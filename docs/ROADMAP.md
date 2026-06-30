@@ -4231,6 +4231,7 @@ Sprint exit — checked by /report + /retro:
   - Click banner → upload → infer → assert `.express-error` is visible with the error text
   - Assert the empty-placeholder state (`templates.noPlaceholders`) is NOT rendered
   - `toHaveScreenshot('express-infer-error.png')` at all three viewports
+  - After baselines are committed, run `npx impeccable audit` + `npx impeccable critique` and confirm no new regressions are flagged on the error-state view
 
   **UAT:**
   1. Open the Templates tab → click the Express Fill banner.
