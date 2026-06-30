@@ -1689,3 +1689,306 @@ def test_xtf25_extract_placeholders_returns_nonempty_for_sdt_doc(tmp_path):
         "extract_placeholders returned [] for a doc whose only placeholder is "
         "inside a w:sdt content control"
     )
+
+
+# =========================================================================== #
+# XTF-26 — annotate_proposals auto-resolves repeat-table columns
+# =========================================================================== #
+# Bug: when a proposal's target column is absent from ``main`` but lives in a
+# repeat-group table, ``annotate_proposals`` sets ``status: needs_attention``
+# with no ``source`` suggestion, leaving the placeholder blank.
+#
+# Fix (derived strictly from the XTF-26 Acceptance criteria):
+#   1. Column absent from ``main`` but present in EXACTLY ONE repeat table
+#      → set ``source`` to that table name and ``status`` to ``"ok"``.
+#   2. Column present in MULTIPLE repeat tables
+#      → set ``source`` to the table with the most rows, ``status`` to
+#        ``"review"``, and include a ``note`` listing the alternative table names.
+#   3. Column not found in ``main`` or any repeat table
+#      → ``status`` remains ``"needs_attention"``.
+#
+# These tests call ``annotate_proposals`` directly (no intermediate
+# ``resolve_sources``) and are expected to be RED until the fix lands.
+# =========================================================================== #
+
+
+def _profile_xtf26_single_repeat():
+    """Profile: ``main`` has Region/Age; ``demographics`` repeat holds
+    ``nombre_menages`` and ``nombre_habitants``; ``collaborations`` repeat
+    holds ``organisation``."""
+    return {
+        "main": {
+            "name": "main", "rows": 10,
+            "columns": [
+                {"name": "_id", "role": "linkage", "distinct": 10, "missing_pct": 0.0},
+                {"name": "Region", "role": "categorical", "distinct": 3,
+                 "missing_pct": 0.0,
+                 "top_values": [{"value": "Nord", "count": 5},
+                                {"value": "Sud", "count": 5}]},
+                {"name": "Age", "role": "quantitative", "distinct": 10,
+                 "missing_pct": 0.0, "min": 18.0, "max": 65.0,
+                 "mean": 35.0, "median": 33.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "demographics": {
+            "name": "demographics", "rows": 25,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 10,
+                 "missing_pct": 0.0},
+                {"name": "_root_id", "role": "linkage", "distinct": 10,
+                 "missing_pct": 0.0},
+                {"name": "nombre_menages", "role": "quantitative", "distinct": 10,
+                 "missing_pct": 0.0, "min": 1.0, "max": 15.0,
+                 "mean": 5.0, "median": 4.0},
+                {"name": "nombre_habitants", "role": "quantitative", "distinct": 10,
+                 "missing_pct": 0.0, "min": 1.0, "max": 50.0,
+                 "mean": 12.0, "median": 10.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "collaborations": {
+            "name": "collaborations", "rows": 8,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 8,
+                 "missing_pct": 0.0},
+                {"name": "_root_id", "role": "linkage", "distinct": 8,
+                 "missing_pct": 0.0},
+                {"name": "organisation", "role": "categorical", "distinct": 6,
+                 "missing_pct": 0.0,
+                 "top_values": [{"value": "ONG A", "count": 3},
+                                {"value": "ONG B", "count": 3},
+                                {"value": "Autre", "count": 2}]},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+    }
+
+
+def _profile_xtf26_two_repeats_same_column():
+    """Profile: ``main`` has no user columns; two repeat tables (``facilities``
+    with 20 rows, ``staff`` with 5 rows) both carry ``groupe_socioeconomique``.
+    Used to test the ambiguous multi-repeat case (most-rows wins)."""
+    return {
+        "main": {
+            "name": "main", "rows": 5,
+            "columns": [
+                {"name": "_id", "role": "linkage", "distinct": 5, "missing_pct": 0.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "facilities": {
+            "name": "facilities", "rows": 20,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 5,
+                 "missing_pct": 0.0},
+                {"name": "groupe_socioeconomique", "role": "categorical",
+                 "distinct": 3, "missing_pct": 0.0,
+                 "top_values": [{"value": "A", "count": 10}, {"value": "B", "count": 10}]},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "staff": {
+            "name": "staff", "rows": 5,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 5,
+                 "missing_pct": 0.0},
+                {"name": "groupe_socioeconomique", "role": "categorical",
+                 "distinct": 3, "missing_pct": 0.0,
+                 "top_values": [{"value": "A", "count": 3}, {"value": "B", "count": 2}]},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+    }
+
+
+def _proposal_xtf26(kind, spec, name, confidence=_HIGH_CONF, token_index=0):
+    """A Proposal in the shape ``infer_specs`` returns (no status yet)."""
+    return {
+        "token_index": token_index,
+        "kind": kind,
+        "spec": dict(spec),
+        "name": name,
+        "confidence": confidence,
+        "reason": "proposed",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# AC1: column absent from main, present in exactly one repeat table
+#      → source set to that repeat table name, status "ok"
+# --------------------------------------------------------------------------- #
+
+def test_annotate_sets_source_from_single_repeat_table():
+    """XTF-26 AC1: when a placeholder's target column is absent from ``main``
+    but present in exactly one repeat table, ``annotate_proposals`` must set
+    ``source`` to that repeat table name and ``status`` to ``"ok"``.
+
+    ``nombre_menages`` lives only in the ``demographics`` repeat table; the
+    proposal's spec has no ``source``, so the current code defaults to ``"main"``
+    and rejects it with ``needs_attention``. The fix must auto-resolve it.
+    """
+    profile = _profile_xtf26_single_repeat()
+    proposals = [
+        _proposal_xtf26(
+            "chart",
+            {"name": "menages_chart", "title": "Nombre de ménages",
+             "type": "bar", "questions": ["nombre_menages"]},
+            name="menages_chart",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "ok", (
+        f"Expected status 'ok' but got '{_get(out[0], 'status')}'; "
+        f"reason: {_get(out[0], 'reason')!r}. "
+        "annotate_proposals must auto-resolve single-repeat-table columns."
+    )
+    source = _get(out[0], "spec").get("source")
+    assert source == "demographics", (
+        f"Expected source 'demographics' but got {source!r}. "
+        "annotate_proposals must set source to the repeat table name."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# AC2: column present in multiple repeat tables
+#      → source set to the table with most rows, status "review",
+#        note mentions both alternatives
+# --------------------------------------------------------------------------- #
+
+def test_annotate_sets_source_review_for_ambiguous_repeat():
+    """XTF-26 AC2: when a column is present in multiple repeat tables,
+    ``annotate_proposals`` must set ``source`` to the repeat table with the most
+    rows, ``status`` to ``"review"``, and include a note listing the alternative
+    table names.
+
+    ``groupe_socioeconomique`` is in ``facilities`` (20 rows) and ``staff``
+    (5 rows). The fix must pick ``facilities`` as source, set ``status: review``,
+    and mention both table names in the note.
+    """
+    profile = _profile_xtf26_two_repeats_same_column()
+    proposals = [
+        _proposal_xtf26(
+            "chart",
+            {"name": "socio_chart", "title": "Groupe socio-économique",
+             "type": "bar", "questions": ["groupe_socioeconomique"]},
+            name="socio_chart",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "review", (
+        f"Expected status 'review' for ambiguous multi-repeat column but got "
+        f"'{_get(out[0], 'status')}'; reason: {_get(out[0], 'reason')!r}."
+    )
+    source = _get(out[0], "spec").get("source")
+    assert source == "facilities", (
+        f"Expected source 'facilities' (most rows=20) but got {source!r}. "
+        "annotate_proposals must pick the repeat table with the most rows."
+    )
+    # The note/reason must mention both candidate table names.
+    note = _get(out[0], "reason") or ""
+    assert "facilities" in note and "staff" in note, (
+        f"Expected reason to mention both 'facilities' and 'staff' but got: {note!r}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# AC3: column absent from main and all repeat tables → status remains needs_attention
+# --------------------------------------------------------------------------- #
+
+def test_annotate_keeps_needs_attention_when_column_nowhere():
+    """XTF-26 AC3: when a proposal's column is not found in ``main`` or any
+    repeat table, ``status`` must remain ``"needs_attention"``.
+
+    ``ghost_column`` does not exist in any table of the profile; the proposal
+    must stay flagged after the fix (the fix must not swallow genuine misses).
+    """
+    profile = _profile_xtf26_single_repeat()
+    proposals = [
+        _proposal_xtf26(
+            "chart",
+            {"name": "ghost_chart", "title": "Ghost",
+             "type": "bar", "questions": ["ghost_column"]},
+            name="ghost_chart",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "needs_attention", (
+        f"Expected status 'needs_attention' for a column absent from all tables "
+        f"but got '{_get(out[0], 'status')}'; reason: {_get(out[0], 'reason')!r}."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# AC4 (fixture): fixture profile with demographic + socioeconomic repeat columns
+#   → each proposal gets correct source and status "ok"
+# --------------------------------------------------------------------------- #
+
+def test_annotate_resolves_known_repeat_columns_from_fixture_profile():
+    """XTF-26 AC4: fixture profile contains demographic columns
+    (``nombre_menages``, ``nombre_habitants``) in one repeat table and an
+    organisation column (``organisation``) in a second repeat table. Each
+    proposal must get the correct ``source`` and ``status == 'ok'``.
+
+    This mirrors the real-world case described in the bug report: columns from
+    different repeat groups all resolve cleanly to their respective tables.
+    """
+    profile = _profile_xtf26_single_repeat()
+
+    proposals = [
+        _proposal_xtf26(
+            "chart",
+            {"name": "menages", "title": "Nombre de ménages",
+             "type": "bar", "questions": ["nombre_menages"]},
+            name="menages", token_index=0,
+        ),
+        _proposal_xtf26(
+            "chart",
+            {"name": "habitants", "title": "Nombre d'habitants",
+             "type": "histogram", "questions": ["nombre_habitants"]},
+            name="habitants", token_index=1,
+        ),
+        _proposal_xtf26(
+            "chart",
+            {"name": "organisations", "title": "Organisations",
+             "type": "bar", "questions": ["organisation"]},
+            name="organisations", token_index=2,
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    # nombre_menages and nombre_habitants → demographics
+    assert _get(out[0], "status") == "ok", (
+        f"nombre_menages: expected ok, got '{_get(out[0], 'status')}' "
+        f"reason={_get(out[0], 'reason')!r}"
+    )
+    assert _get(out[0], "spec").get("source") == "demographics", (
+        f"nombre_menages: expected source='demographics', "
+        f"got {_get(out[0], 'spec').get('source')!r}"
+    )
+
+    assert _get(out[1], "status") == "ok", (
+        f"nombre_habitants: expected ok, got '{_get(out[1], 'status')}' "
+        f"reason={_get(out[1], 'reason')!r}"
+    )
+    assert _get(out[1], "spec").get("source") == "demographics", (
+        f"nombre_habitants: expected source='demographics', "
+        f"got {_get(out[1], 'spec').get('source')!r}"
+    )
+
+    # organisation → collaborations
+    assert _get(out[2], "status") == "ok", (
+        f"organisation: expected ok, got '{_get(out[2], 'status')}' "
+        f"reason={_get(out[2], 'reason')!r}"
+    )
+    assert _get(out[2], "spec").get("source") == "collaborations", (
+        f"organisation: expected source='collaborations', "
+        f"got {_get(out[2], 'spec').get('source')!r}"
+    )
