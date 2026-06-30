@@ -288,7 +288,8 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
   committed. `roadmap-verifier` gates it before a card flips `- [x]`.
 - **Roadmap edits go through `/roadmap`** (whole-file rewrite; `guard-roadmap` validates the
   template — header `## Definition of Ready` + `## Definition of Done` + `## Global status`;
-  each card carries the literal labels `Acceptance criteria`, `Unit tests`, `E2E`, `UAT`).
+  each card carries the literal labels `Acceptance criteria`, `Unit tests`, `E2E`, `UAT`, `**Created:**`;
+  done cards also carry `**Completed:**`; in-progress cards carry `**Started:**`).
 - **Branching (git-flow).** `main` (prod) + `develop` (integration) are **merge-only** —
   `guard-git-flow` + `guard-branch` block commits/code-edits on them. Work on `feature/ fix/
   chore/` branches off `develop`; PR → develop, release PR → main; delete branch after merge.
