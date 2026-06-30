@@ -4210,7 +4210,7 @@ Sprint exit — checked by /report + /retro:
   and the frontend shows a real error message. Add an E2E test that stubs `/api/template/infer`
   to return 500 and asserts the error is shown (not the empty-placeholder state).
 
-  **Files:** `src/reports/template_inference.py` (line 300) · `frontend/tests/e2e/express-template-fill.spec.ts`
+  **Files:** `src/reports/template_inference.py` (line 300) · `frontend/src/pages/Templates.jsx` · `frontend/tests/e2e/express-template-fill.spec.ts`
 
   **Config/schema impact:** None — behaviour fix only.
 
@@ -4235,11 +4235,12 @@ Sprint exit — checked by /report + /retro:
   - After baselines are committed, run `npx impeccable audit` + `npx impeccable critique` and confirm no new regressions are flagged on the error-state view
 
   **UAT:**
+  *(The Playwright E2E test covers the exact HTTP 500 path via a stub; UAT verifies the visible outcome in a real environment.)*
   1. Open the Templates tab → click the Express Fill banner.
-  2. Upload a `.docx` template and click **Infer**.
-  2a. *(To force the error)* Open browser DevTools → Network tab → right-click the pending `/api/template/infer` request → **Block request URL**, then click **Infer** again so the server receives no LLM response. Expected: server returns HTTP 500.
-  3. Confirm an error message is displayed — NOT the "Aucun espace réservé à examiner." empty state.
+  2. Upload a `.docx` template. Before clicking **Infer**, temporarily unset `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` in the server environment and restart uvicorn — this forces the LLM call to fail and the server to return HTTP 500.
+  3. Click **Infer**. Confirm an error message is displayed — NOT the "Aucun espace réservé à examiner." empty state.
   4. Confirm the error text is visible and the empty-placeholder state is not rendered.
+  5. Restore the API key and restart uvicorn. Confirm a normal infer run succeeds.
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -q` ·
   `cd frontend && npm run test:e2e -- --grep "infer.*error|error.*infer"` ·
