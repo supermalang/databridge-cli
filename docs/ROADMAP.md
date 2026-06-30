@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 12 | 8 / 12 |
+| [Maintenance & hardening](#maintenance--hardening) | 13 | 8 / 13 |
 
 ---
 
