@@ -76,7 +76,7 @@ Sprint exit — checked by /report + /retro:
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 11 | 10 / 11 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
-| [Express Template Fill](#express-template-fill) | 26 | 26 / 26 |
+| [Express Template Fill](#express-template-fill) | 28 | 26 / 28 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
@@ -3116,6 +3116,110 @@ Sprint exit — checked by /report + /retro:
   Optional smoke (requires a form with repeat groups already downloaded): run
   `python3 src/data/make.py infer-template` and confirm repeat-group columns resolve to
   `status: ok` with `source:` set to the correct repeat table name.
+
+---
+
+- [ ] **XTF-27 — Express Fill: bullet_list render type for column-value lists in reports (P1)**
+
+  **Created:** 2026-06-30
+
+  When a template placeholder expects a list of values (e.g. "Nom de tous les villages"),
+  there is no way to render it as bullet points — the existing `table` type renders a Word
+  table image, and there is no text-based list type. A `bullet_list` chart type should render
+  column values as a `•`-prefixed text paragraph injected directly into the docx (not as an
+  image), using docxtpl's `{{ list_<name> }}` text placeholder instead of `{{ chart_N }}`
+  InlineImage.
+
+  **Type:** Feature
+  **Priority:** P1
+
+  **Files:** `src/reports/charts.py` · `src/reports/builder.py` ·
+  `src/reports/template_generator.py` · `frontend/src/pages/Composition.jsx` ·
+  `tests/test_builder.py`
+
+  **Config/schema impact:** New `type: bullet_list` value for chart configs. Template
+  placeholder changes from `{{ chart_N }}` (image) to `{{ list_<name> }}` (text run).
+  `generate-template` must emit a text-run placeholder instead of an image placeholder for
+  this type.
+
+  **Acceptance criteria**
+  - When a chart config has `type: bullet_list` and `questions: [ColumnName]`, `build-report`
+    injects a text paragraph of the form `• value1\n• value2\n…` into the Word document at
+    the `{{ list_<name> }}` placeholder position, filtered to the current split slice
+  - The `generate-template` command creates a `{{ list_<name> }}` text-run placeholder (not
+    `{{ chart_N }}`) in the generated `.docx` when a `bullet_list` chart is configured
+  - `bullet_list` appears as a selectable type in the Composition tab's chart type dropdown
+  - Both main-table and repeat-table `source:` columns are supported
+
+  **Unit tests:** `tests/test_builder.py`:
+  - `test_bullet_list_renders_as_text_not_image`: given a DataFrame with a Village column and
+    a bullet_list chart config, the builder context contains `list_<name>` as a string (not an
+    InlineImage) with `•`-prefixed entries
+  - `test_bullet_list_filters_by_split_value`: when `split_by=Commune` and split_value=X,
+    only values from rows where Commune==X appear in the list
+  - `test_template_generator_emits_text_placeholder_for_bullet_list`: calling
+    `generate_template` with a bullet_list chart produces a `.docx` containing
+    `{{ list_<name> }}` as plain text, not an image frame
+
+  **E2E:** N/A (CLI/backend rendering; no new UI interaction beyond the dropdown addition)
+
+  **UAT:** N/A (non-UI rendering fix; verified via unit tests + manual `build-report` run
+  confirming bullet text appears in the output `.docx`)
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -q -k "bullet_list"` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+---
+
+- [ ] **XTF-28 — Express Fill: infer split_value placeholder from template context (P1)**
+
+  **Created:** 2026-06-30
+
+  When `infer-template` runs on a form configured with `split_by`, short-label placeholders
+  that clearly refer to the unit of analysis (e.g. `[[NOM]]`, `[[Nom du site]]`,
+  `[[Commune]]`) are not recognized as the `split_value` system placeholder — they are
+  inferred as low-confidence indicators or left as `needs_attention`. The resolved template
+  ends up with literal "NOM" in report titles instead of the commune name.
+
+  Fix: in `infer_specs`, add `split_value` as a recognized kind. When the config has a
+  `split_by` dimension, include it in the LLM prompt so the model can propose
+  `kind: split_value` for placeholder tokens that semantically map to the split dimension.
+  `annotate_proposals` validates these by checking that the config `split_by` field is set;
+  `apply-template` writes `{{ split_value }}` for accepted proposals.
+
+  **Type:** Fix
+  **Priority:** P1
+
+  **Files:** `src/reports/template_inference.py` · `src/data/make.py` ·
+  `tests/test_template_inference.py`
+
+  **Config/schema impact:** None — `{{ split_value }}` is an existing builder placeholder;
+  this fix just wires inference → apply-template to produce it automatically.
+
+  **Acceptance criteria**
+  - When `infer-template --template <docx>` is run on a form with `split_by: Commune`
+    configured, a placeholder token matching the split label (e.g. `[[NOM]]`) is proposed
+    with `kind: split_value` and `status: ok`
+  - `apply-template` writes `{{ split_value }}` for any accepted `split_value` proposal
+  - The built report title contains the commune name (e.g. "Bougadoum"), not the literal
+    placeholder text
+
+  **Unit tests:** `tests/test_template_inference.py`:
+  - `test_infer_specs_proposes_split_value_for_nom_token`: with `split_by: Commune` in
+    config and a `[[NOM]]` placeholder token, `infer_specs` returns at least one proposal
+    with `kind == "split_value"`
+  - `test_annotate_split_value_ok_when_split_by_set`: proposal with `kind: split_value`
+    gets `status: ok` when config has `split_by` set, `needs_attention` when it is not set
+  - `test_apply_template_writes_split_value_placeholder`: an accepted `split_value` proposal
+    causes `apply-template` to write `{{ split_value }}` into the resolved `.docx`
+
+  **E2E:** N/A (pure inference-engine fix; no new UI)
+
+  **UAT:** N/A (non-UI/CLI fix; verified via unit tests + `infer-template` CLI run +
+  PR review)
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -q -k "split_value"` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
 
 ## Visual / E2E harness
 
