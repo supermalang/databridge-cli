@@ -7,7 +7,7 @@ from docx.shared import Inches
 from docxtpl import DocxTemplate, InlineImage
 from jinja2.sandbox import SandboxedEnvironment
 from src.data.transform import load_processed_data, apply_local_scope, aggregate_repeat, join_repeat_to_main, apply_computed_columns, build_views
-from src.reports.charts import generate_chart, CHART_DIR
+from src.reports.charts import generate_chart, build_bullet_list_text, CHART_DIR
 from src.reports.indicators import compute_indicators, build_traffic_light_table, build_equity_charts
 from src.reports.narrator import generate_narrative
 from src.reports.summaries import compute_summaries
@@ -421,6 +421,13 @@ class ReportBuilder:
                 # Inject the payload into a COPY of resolved so the original config isn't mutated.
                 enriched_opts = {**(resolved.get("options", {}) or {}), "periods": periods_payload}
                 resolved = {**resolved, "options": enriched_opts}
+
+            # bullet_list is a text-injection render type — it bypasses the
+            # matplotlib/InlineImage pipeline entirely and fills a
+            # {{ list_<name> }} text placeholder instead of {{ chart_<name> }}.
+            if resolved.get("type") == "bullet_list":
+                images[f"list_{name}"] = build_bullet_list_text(chart_df, resolved_questions)
+                continue
 
             png = generate_chart(resolved, chart_df, language=_language)
             width = Inches(c.get("options", {}).get("width_inches", 5.5))
