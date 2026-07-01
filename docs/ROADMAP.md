@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 14 | 10 / 14 |
+| [Maintenance & hardening](#maintenance--hardening) | 15 | 10 / 15 |
 
 ---
 
@@ -4689,6 +4689,68 @@ Sprint exit — checked by /report + /retro:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -q` ·
   `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+---
+
+- [ ] **MNT-15 — Fix: manually-created charts can ship with a blank title (P2)**
+
+  **Created:** 2026-07-01
+
+  In the Composition tab's `ChartModal`, only `name` is validated as required — `title` has
+  no such check, and the submit handler always writes `title: title.trim()` into the chart
+  config, including `""` when the field is left blank. At render time,
+  `generate_chart` in `src/reports/charts.py` does
+  `title = chart_cfg.get("title", name)`, which only falls back to the chart's internal
+  `name` slug when the `title` **key is absent** — since the UI always writes the key (even
+  empty), that fallback never fires, so `ax.set_title("")` ships a chart with a blank header
+  in the built report. `--auto-charts` (`default_charts.py`, falls back through
+  `export_label`/`label`/`kobo_key`) and the AI chart suggester (`title` is a `required` field
+  in its forced structured-output schema) are unaffected — only charts a user hand-creates via
+  the Composition modal and skips the Title field on are at risk.
+
+  **Type:** Fix
+  **Priority:** P2
+
+  **Files:** `frontend/src/pages/Composition.jsx` (`ChartModal` ~1654-1666) ·
+  `src/reports/charts.py` (`generate_chart` ~line 50) · `tests/test_charts.py` (new) ·
+  `frontend/tests/e2e/composition-chart-title-required.spec.ts` (new)
+
+  **Config/schema impact:** None — validation + fallback hardening only; no new config field.
+
+  **Acceptance criteria**
+  - Submitting the `ChartModal` with an empty Title field shows a required-field validation
+    error (same pattern as the existing `name` check) and does not call `onSave`
+  - `generate_chart` falls back to the chart's `name` when `title` is falsy (empty string OR
+    missing), not only when the key is absent
+  - A chart config with `title: ""` renders with the `name` slug as its title, not a blank
+    header
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_charts.py` (new):
+  - `test_generate_chart_title_falls_back_to_name_when_missing`: chart config with no `title`
+    key → rendered title equals `name`
+  - `test_generate_chart_title_falls_back_to_name_when_empty_string`: chart config with
+    `title: ""` → rendered title equals `name`, not blank
+  - `test_generate_chart_title_uses_provided_title`: chart config with a non-empty `title` →
+    rendered title is unchanged
+
+  **E2E:** `frontend/tests/e2e/composition-chart-title-required.spec.ts` (new) + visual
+  (impeccable audit/critique + `toHaveScreenshot`) —
+  - Open Composition → Add chart → fill Name, leave Title blank → click Save → assert a
+    required-field error is shown and the modal stays open
+  - `toHaveScreenshot('composition-chart-title-required.png')` at mobile 390×844, tablet
+    820×1180, desktop 1440×900
+
+  **UAT:**
+  1. Composition tab → Add chart. Enter a Name, pick columns, leave Title blank, click Save.
+     Expected: a "Title is required" validation message appears and the modal does not close.
+  2. Fill in a Title and save. Run `python3 src/data/make.py build-report --sample 5` on a
+     downloaded dataset and open the output `.docx`. Expected: the chart shows the entered
+     title, not blank.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q` ·
+  `cd frontend && npx playwright test composition-chart-title-required.spec.ts`
 
 ---
 ---
