@@ -1703,40 +1703,43 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
             <textarea aria-label={t('composition.chartOptionsYaml')} value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
           </ModalField>
         </div>
-        <div
-          data-testid="chart-editor-preview"
-          role="status"
-          aria-live="polite"
-          style={{
-            flex: '1 1 0', minWidth: 0, minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16,
-          }}
-        >
-          {previewLoading && (
-            <div data-testid="chart-editor-preview-loading" style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center' }}>
-              <div className="skeleton" style={{ width: '100%', height: 140, borderRadius: 6, marginBottom: 10 }} />
-              {t('composition.renderingPreview')}
-            </div>
-          )}
-          {!previewLoading && previewError && (
-            <div data-testid="chart-editor-preview-error" style={{ background: 'var(--rose-soft)', borderRadius: 6, padding: '10px 12px', color: '#7F1D1D', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantRenderChart')}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{previewError}</div>
-              <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
-                <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>{t('composition.download')}</code> }} />
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+          <h4 style={{ marginTop: 0 }}>{t('composition.preview')}</h4>
+          <div
+            data-testid="chart-editor-preview"
+            role="status"
+            aria-live="polite"
+            style={{
+              minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16,
+            }}
+          >
+            {previewLoading && (
+              <div data-testid="chart-editor-preview-loading" style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center' }}>
+                <div className="skeleton" style={{ width: '100%', height: 140, borderRadius: 6, marginBottom: 10 }} />
+                {t('composition.renderingPreview')}
               </div>
-            </div>
-          )}
-          {!previewLoading && !previewError && previewImage && (
-            <img
-              src={`data:image/png;base64,${previewImage}`}
-              alt={title || name || 'chart preview'}
-              style={{ maxWidth: '100%', height: 'auto', borderRadius: 4 }}
-            />
-          )}
-          {!previewLoading && !previewError && !previewImage && (
-            <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>{t('composition.previewIdle')}</div>
-          )}
+            )}
+            {!previewLoading && previewError && (
+              <div data-testid="chart-editor-preview-error" style={{ background: 'var(--rose-soft)', borderRadius: 6, padding: '10px 12px', color: '#7F1D1D', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantRenderChart')}</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{previewError}</div>
+                <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
+                  <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>{t('composition.download')}</code> }} />
+                </div>
+              </div>
+            )}
+            {!previewLoading && !previewError && previewImage && (
+              <img
+                src={`data:image/png;base64,${previewImage}`}
+                alt={title || name || 'chart preview'}
+                style={{ maxWidth: '100%', height: 'auto', borderRadius: 4 }}
+              />
+            )}
+            {!previewLoading && !previewError && !previewImage && (
+              <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>{t('composition.previewIdle')}</div>
+            )}
+          </div>
         </div>
       </div>
     </Modal>
