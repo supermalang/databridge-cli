@@ -76,7 +76,7 @@ Sprint exit — checked by /report + /retro:
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 11 | 10 / 11 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
-| [Express Template Fill](#express-template-fill) | 28 | 26 / 28 |
+| [Express Template Fill](#express-template-fill) | 28 | 27 / 28 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
@@ -3058,6 +3058,44 @@ Sprint exit — checked by /report + /retro:
 
   **Created:** 2026-06-27 · **Completed:** 2026-06-27
 
+  `_tokens_in_paragraph` in `src/reports/template_inference.py` iterates only
+  `paragraph.runs` (top-level `w:r` elements). Text inside gray-shaded Word **content
+  controls** (`w:sdt → w:sdtContent → w:r → w:t`) is invisible to the extractor, so any
+  `[[placeholder]]` typed inside a content control is silently skipped and the Express UI
+  shows "Aucun espace réservé à examiner." Fix by walking `paragraph._p.iter()` for all
+  descendant `w:t` elements, which covers both plain-paragraph runs and content-control runs
+  in a single pass. Non-UI, non-CLI — Python extractor only.
+
+  **Files:** `src/reports/template_inference.py` (`_tokens_in_paragraph` function) ·
+  `tests/test_template_inference.py` (new or extend)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - A `.docx` whose paragraph text is wrapped in a content control (`w:sdt`) and contains
+    `[[PLACEHOLDER]]` is correctly detected by `_tokens_in_paragraph` — the placeholder
+    appears in the returned token list
+  - A plain-paragraph `[[PLACEHOLDER]]` (no content control) continues to be detected as
+    before (no regression)
+  - A paragraph with both a plain run and a content-control run returns tokens from both
+  - `extract_placeholders` (the caller) therefore lists placeholders from content-control
+    paragraphs; the Express UI no longer shows "Aucun espace réservé à examiner" for a
+    template that only uses content-control placeholders
+
+  **Unit tests:** `tests/test_template_inference.py` — (1) build a minimal `python-docx`
+  document that wraps `[[TOKEN_IN_SDT]]` inside a `w:sdt` content control and assert
+  `_tokens_in_paragraph` returns `["TOKEN_IN_SDT"]`; (2) assert a plain-run `[[TOKEN_PLAIN]]`
+  paragraph still returns `["TOKEN_PLAIN"]`; (3) assert a paragraph containing both a plain
+  run and an `sdt` run returns both tokens; (4) assert that the regression path
+  (`extract_placeholders` on such a doc) returns a non-empty list.
+
+  **E2E:** N/A (Python-only extractor; no UI surface — verified via unit tests + the verifier
+  + PR review).
+
+  **UAT:** N/A (non-UI/CLI card — the human gate is PR review + unit tests green).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py`
+
 ---
 
 - [x] **XTF-26 — Express Fill: auto-resolve proposals when column lives in a repeat table (P1)**
@@ -3181,9 +3219,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **XTF-28 — Express Fill: infer split_value placeholder from template context (P1)**
+- [x] **XTF-28 — Express Fill: infer split_value placeholder from template context (P1)**
 
-  **Created:** 2026-06-30
+  **Created:** 2026-06-30 · **Completed:** 2026-07-01
 
   When `infer-template` runs on a form configured with `split_by`, short-label placeholders
   that clearly refer to the unit of analysis (e.g. `[[NOM]]`, `[[Nom du site]]`,
@@ -4592,6 +4630,10 @@ Sprint exit — checked by /report + /retro:
 
 ---
 - [ ] **MNT-12 — Fix N+1 role queries in `/api/projects` list endpoint (P1)**
+
+  **Created:** 2026-06-28
+
+  **Type:** Fix
 
   `_project_dict()` in `web/main.py` calls `db_repo.role_for(user, project, db)` once per
   project in the list; `role_for` issues a separate `SELECT … FROM project_memberships` per
