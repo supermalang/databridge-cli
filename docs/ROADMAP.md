@@ -4661,10 +4661,17 @@ Sprint exit — checked by /report + /retro:
   - `_project_dict()` resolves role from the pre-fetched map without hitting the DB
   - All existing tests remain green
 
-  **Unit tests:** `tests/test_bridge.py` (or a new `tests/test_projects_api.py`) —
-  - `test_project_list_single_membership_query`: mock `db` session; assert `role_for` is NOT
-    called (or called 0 times) when `_project_dict` / the list endpoint resolves roles from
-    the pre-fetched map.
+  **Unit tests:** `tests/test_repository.py` (same real-SQL-capture pattern as MNT-13's
+  `test_apply_superadmin_emails_filtered_query` — a SQLAlchemy `before_cursor_execute`
+  listener capturing actual emitted statements, not a mock) —
+  - `test_get_memberships_for_user_single_query`: seed a user with N `ProjectMembership` rows
+    across N projects; call the new `get_memberships_for_user(user_id, db)` method; assert
+    exactly one `SELECT ... FROM project_memberships ... WHERE ... user_id ...` statement was
+    captured (not N), and assert the returned map/dict contains all N project→role entries.
+  - `test_project_list_resolves_roles_without_per_project_query`: call the `/api/projects`
+    list path (or `_project_dict` directly) for a user with N projects; assert the total
+    number of captured `SELECT`s against `project_memberships` is 1 regardless of N (e.g.
+    parametrize N=1 and N=5 and assert the count doesn't grow with N).
 
   **E2E:** N/A (backend query optimisation; no UI surface change).
 
@@ -4762,7 +4769,6 @@ Sprint exit — checked by /report + /retro:
   the Composition modal and skips the Title field on are at risk.
 
   **Type:** Fix
-  **Priority:** P2
 
   **Files:** `frontend/src/pages/Composition.jsx` (`ChartModal` ~1654-1666) ·
   `src/reports/charts.py` (`generate_chart` ~line 50) · `tests/test_charts.py` (new) ·
@@ -4779,13 +4785,23 @@ Sprint exit — checked by /report + /retro:
     header
   - All existing tests remain green
 
-  **Unit tests:** `tests/test_charts.py` (new):
+  **Unit tests:** `tests/test_charts.py` (new) — covers the Python-side fallback fully:
   - `test_generate_chart_title_falls_back_to_name_when_missing`: chart config with no `title`
     key → rendered title equals `name`
   - `test_generate_chart_title_falls_back_to_name_when_empty_string`: chart config with
     `title: ""` → rendered title equals `name`, not blank
   - `test_generate_chart_title_uses_provided_title`: chart config with a non-empty `title` →
     rendered title is unchanged
+
+  The frontend `ChartModal` Title-required guard has no separate unit-test entry: this repo
+  has no frontend unit-test framework (no Vitest/Jest/RTL — only Playwright E2E exists per
+  `CLAUDE.md`'s stated stack), and the guard itself is a single-line check (block submit if
+  `title.trim()` is empty) with no isolable logic beyond what the E2E spec below already
+  exercises directly (asserts the error appears AND `onSave` is not called). Standing up a
+  new unit-test framework for one one-line guard is disproportionate; N/A is justified here
+  in a way the original blanket N/A was not — this is a trivial guard fully covered by E2E,
+  not complex state/timing logic (contrast with PUX-11's debounce/preview-state hook, which
+  does warrant a fast unit test and got one).
 
   **E2E:** `frontend/tests/e2e/composition-chart-title-required.spec.ts` (new) + visual
   (impeccable audit/critique + `toHaveScreenshot`) —
