@@ -76,7 +76,7 @@ Sprint exit — checked by /report + /retro:
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 11 | 10 / 11 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
-| [Express Template Fill](#express-template-fill) | 28 | 27 / 28 |
+| [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
@@ -3165,9 +3165,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **XTF-27 — Express Fill: bullet_list render type for column-value lists in reports (P1)**
+- [x] **XTF-27 — Express Fill: bullet_list render type for column-value lists in reports (P1)**
 
-  **Created:** 2026-06-30
+  **Created:** 2026-06-30 · **Completed:** 2026-07-01
 
   When a template placeholder expects a list of values (e.g. "Nom de tous les villages"),
   there is no way to render it as bullet points — the existing `table` type renders a Word
