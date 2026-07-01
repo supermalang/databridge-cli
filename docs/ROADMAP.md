@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 15 | 11 / 15 |
+| [Maintenance & hardening](#maintenance--hardening) | 15 | 12 / 15 |
 
 ---
 
@@ -4571,9 +4571,9 @@ Sprint exit — checked by /report + /retro:
   **Verify:** Inspect the Tips card in the Sources tab — both `env:` badges render with text.
 
 ---
-- [ ] **MNT-11 — Named chart colour palettes selectable from `config.yml` (P1)**
+- [x] **MNT-11 — Named chart colour palettes selectable from `config.yml` (P1)**
 
-  **Created:** 2026-06-28
+  **Created:** 2026-06-28 · **Completed:** 2026-07-01
 
   Replace the hardcoded `PALETTE` constant in `charts.py` with a curated set of named,
   sober palettes suited to institutional/NGO reports (muted, desaturated, print-safe —
