@@ -1631,7 +1631,14 @@ function TipsCard() {
 // editor's live-preview layout can switch from two-column (tablet/desktop) to
 // stacked (mobile) — both visually (CSS) and via the `data-orientation`
 // attribute the E2E spec asserts on.
-const MOBILE_BREAKPOINT = '(max-width: 480px)';
+//
+// 768px (not a lower value like 480px): the modal caps at `max-width: 92vw`,
+// so below ~720px viewport width the two columns don't have room to breathe
+// (e.g. at 500px viewport the modal is ~460px wide, ~210px per column after
+// the gap). Stacking instead of squeezing avoids a cramped in-between zone
+// that the mobile (390)/tablet (820)/desktop (1440) test viewports never
+// exercised on their own.
+const MOBILE_BREAKPOINT = '(max-width: 768px)';
 function useIsMobileLayout() {
   const [isMobile, setIsMobile] = useState(
     () => typeof window !== 'undefined' && window.matchMedia?.(MOBILE_BREAKPOINT).matches
@@ -1712,7 +1719,7 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
             </div>
           )}
           {!previewLoading && previewError && (
-            <div data-testid="chart-editor-preview-error" style={{ color: 'var(--rose)', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
+            <div data-testid="chart-editor-preview-error" style={{ background: 'var(--rose-soft)', borderRadius: 6, padding: '10px 12px', color: '#7F1D1D', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
               <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantRenderChart')}</div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{previewError}</div>
               <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
