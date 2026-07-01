@@ -76,12 +76,12 @@ Sprint exit — checked by /report + /retro:
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 11 | 10 / 11 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
-| [Express Template Fill](#express-template-fill) | 28 | 26 / 28 |
+| [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 14 | 9 / 14 |
+| [Maintenance & hardening](#maintenance--hardening) | 15 | 11 / 15 |
 
 ---
 
@@ -1523,10 +1523,17 @@ Sprint exit — checked by /report + /retro:
   - While the preview is loading a skeleton/spinner is shown; on error a legible inline message
     is shown (not a blank pane)
   - The standalone "Preview" button / separate preview modal is removed from the Composition tab
-  - The modal is responsive: two-column on desktop (≥ 820 px), stacked on mobile (< 820 px)
+  - Two-column layout at tablet (820 px) and desktop (1440 px) widths; stacked (single column)
+    at mobile (390 px) width
   - All existing Composition tab tests remain green
 
-  **Unit tests:** N/A (UI interaction; covered by E2E).
+  **Unit tests:** `frontend/src/hooks/useChartPreview.test.js` — the debounce + preview-state
+  logic (loading/error/success) is extracted into a `useChartPreview` hook so it's unit-testable
+  independent of Playwright:
+  - Rapid successive field changes within 600 ms fire exactly one `/api/charts/preview` request
+    (debounce collapses bursts, doesn't fire once per keystroke)
+  - Loading state is `true` from request start until the response resolves
+  - A non-2xx response sets an error state (not loading, not a stale success state)
 
   **E2E:** `frontend/tests/e2e/composition.spec.ts` (or `chart-editor.spec.ts`) —
   - Open chart editor; assert preview pane is visible
@@ -1538,7 +1545,8 @@ Sprint exit — checked by /report + /retro:
   1. Open Composition tab → click Edit on any chart
   2. Confirm the preview renders inside the modal without clicking a separate button
   3. Change the title — confirm the preview updates automatically within ~600 ms
-  4. Confirm layout is correct at mobile width (< 820 px, stacked), tablet width (820 px, stacked), and desktop width (≥ 820 px, two-column)
+  4. Confirm layout is stacked (single column) at mobile width (390×844), and two-column at
+     tablet width (820×1180) and desktop width (1440×900)
 
   **Verify:** `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
   `cd frontend && npm run test:e2e` (full suite green)
@@ -3058,6 +3066,44 @@ Sprint exit — checked by /report + /retro:
 
   **Created:** 2026-06-27 · **Completed:** 2026-06-27
 
+  `_tokens_in_paragraph` in `src/reports/template_inference.py` iterates only
+  `paragraph.runs` (top-level `w:r` elements). Text inside gray-shaded Word **content
+  controls** (`w:sdt → w:sdtContent → w:r → w:t`) is invisible to the extractor, so any
+  `[[placeholder]]` typed inside a content control is silently skipped and the Express UI
+  shows "Aucun espace réservé à examiner." Fix by walking `paragraph._p.iter()` for all
+  descendant `w:t` elements, which covers both plain-paragraph runs and content-control runs
+  in a single pass. Non-UI, non-CLI — Python extractor only.
+
+  **Files:** `src/reports/template_inference.py` (`_tokens_in_paragraph` function) ·
+  `tests/test_template_inference.py` (new or extend)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - A `.docx` whose paragraph text is wrapped in a content control (`w:sdt`) and contains
+    `[[PLACEHOLDER]]` is correctly detected by `_tokens_in_paragraph` — the placeholder
+    appears in the returned token list
+  - A plain-paragraph `[[PLACEHOLDER]]` (no content control) continues to be detected as
+    before (no regression)
+  - A paragraph with both a plain run and a content-control run returns tokens from both
+  - `extract_placeholders` (the caller) therefore lists placeholders from content-control
+    paragraphs; the Express UI no longer shows "Aucun espace réservé à examiner" for a
+    template that only uses content-control placeholders
+
+  **Unit tests:** `tests/test_template_inference.py` — (1) build a minimal `python-docx`
+  document that wraps `[[TOKEN_IN_SDT]]` inside a `w:sdt` content control and assert
+  `_tokens_in_paragraph` returns `["TOKEN_IN_SDT"]`; (2) assert a plain-run `[[TOKEN_PLAIN]]`
+  paragraph still returns `["TOKEN_PLAIN"]`; (3) assert a paragraph containing both a plain
+  run and an `sdt` run returns both tokens; (4) assert that the regression path
+  (`extract_placeholders` on such a doc) returns a non-empty list.
+
+  **E2E:** N/A (Python-only extractor; no UI surface — verified via unit tests + the verifier
+  + PR review).
+
+  **UAT:** N/A (non-UI/CLI card — the human gate is PR review + unit tests green).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py`
+
 ---
 
 - [x] **XTF-26 — Express Fill: auto-resolve proposals when column lives in a repeat table (P1)**
@@ -3119,9 +3165,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **XTF-27 — Express Fill: bullet_list render type for column-value lists in reports (P1)**
+- [x] **XTF-27 — Express Fill: bullet_list render type for column-value lists in reports (P1)**
 
-  **Created:** 2026-06-30
+  **Created:** 2026-06-30 · **Completed:** 2026-07-01
 
   When a template placeholder expects a list of values (e.g. "Nom de tous les villages"),
   there is no way to render it as bullet points — the existing `table` type renders a Word
@@ -3181,9 +3227,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **XTF-28 — Express Fill: infer split_value placeholder from template context (P1)**
+- [x] **XTF-28 — Express Fill: infer split_value placeholder from template context (P1)**
 
-  **Created:** 2026-06-30
+  **Created:** 2026-06-30 · **Completed:** 2026-07-01
 
   When `infer-template` runs on a form configured with `split_by`, short-label placeholders
   that clearly refer to the unit of analysis (e.g. `[[NOM]]`, `[[Nom du site]]`,
@@ -4427,9 +4473,9 @@ Sprint exit — checked by /report + /retro:
 ---
 
 
-- [ ] **MNT-8 — Strip residual `[[` `]]` delimiters from built report output (P1)**
+- [x] **MNT-8 — Strip residual `[[` `]]` delimiters from built report output (P1)**
 
-  **Created:** 2026-06-28
+  **Created:** 2026-06-28 · **Started:** 2026-07-01 · **Completed:** 2026-07-01
 
   After `docxtpl` renders the Word template, any `[[...]]` tokens that were not resolved by
   the Express Fill pipeline remain in the output docx with their raw brackets (e.g. `[[NOM]]`
@@ -4449,10 +4495,10 @@ Sprint exit — checked by /report + /retro:
   - All existing tests remain green
 
   **Unit tests:** `tests/test_builder.py`:
-  - `test_strip_double_bracket_tokens`: template with `[[NOM]]` in a paragraph → assert output contains `NOM`, does not contain `[[` or `]]`.
-  - `test_strip_multiword_token`: template with `[[LISTE DES PARTENAIRES]]` → assert `LISTE DES PARTENAIRES` is preserved.
-  - `test_strip_token_split_across_runs`: construct a docx programmatically where `[[` and `NOM]]` are in separate runs of the same paragraph; assert post-render stripping still works.
-  - `test_jinja_placeholders_unaffected`: template with a normally-filled `{{ report_title }}` → assert it resolves correctly and no `[[` artifacts appear.
+  - `test_no_double_bracket_open_in_output` / `test_no_double_bracket_close_in_output`: template with `[[NOM]]` in a paragraph → assert output contains `NOM`, does not contain `[[` or `]]`.
+  - `test_multiword_token_inner_text_preserved` / `test_nom_token_inner_text_preserved`: template with `[[LISTE DES PARTENAIRES]]` → assert `LISTE DES PARTENAIRES` is preserved.
+  - `test_strip_token_split_across_runs`: constructs a docx where `[[` and `NOM]]` are two genuinely separate python-docx `Run` objects in the same paragraph; asserts post-render stripping still works. **Note:** confirmed this specific split point (delimiter intact within a single run) works because `_clean_runs` strips per-run; a stricter split with a delimiter *character* itself broken across runs is NOT covered here — tracked separately as MNT-14.
+  - `test_jinja2_filled_values_unaffected`: template with a normally-filled `{{ report_title }}` → assert it resolves correctly and no `[[` artifacts appear.
 
   **E2E:** N/A (no new UI surface; behaviour is in the Python report-build path).
 
@@ -4593,6 +4639,10 @@ Sprint exit — checked by /report + /retro:
 ---
 - [ ] **MNT-12 — Fix N+1 role queries in `/api/projects` list endpoint (P1)**
 
+  **Created:** 2026-06-28
+
+  **Type:** Fix
+
   `_project_dict()` in `web/main.py` calls `db_repo.role_for(user, project, db)` once per
   project in the list; `role_for` issues a separate `SELECT … FROM project_memberships` per
   call. A user with N projects triggers N+1 DB round-trips on every `/api/projects` load.
@@ -4623,7 +4673,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-13 — Fix unbounded `select(User)` in `apply_superadmin_emails` (P1)**
+- [x] **MNT-13 — Fix unbounded `select(User)` in `apply_superadmin_emails` (P1)**
+
+  **Created:** 2026-07-01 · **Completed:** 2026-07-01
 
   `apply_superadmin_emails` in `web/db/repository.py` executes `db.scalars(select(User))`
   — a full table scan with no `WHERE` or `LIMIT` — then Python-filters by email. As the
@@ -4650,6 +4702,45 @@ Sprint exit — checked by /report + /retro:
   **UAT:** N/A (non-UI; verified via unit test + PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/ -q`
+
+---
+
+- [ ] **MNT-14 — Handle a `[[`/`]]` delimiter character split mid-token across docx runs (P2)**
+
+  **Created:** 2026-07-01
+
+  Follow-up from MNT-8. `_clean_runs` in `src/reports/builder.py` strips `[[...]]` tokens
+  per-run, which correctly handles a delimiter split *between* runs (e.g. `[[` in one run,
+  `NOM]]` in the next — each run still contains a complete, intact delimiter). It does not
+  handle a delimiter *character itself* broken across runs (e.g. `"["`, `"[NOM]"`, `"]"` as
+  three separate runs) — confirmed via a probe test during MNT-8 verification that this case
+  still leaves `[[NOM]]` unstripped in the output. Fix requires merging/joining run text within
+  a paragraph before pattern-matching, then redistributing the cleaned text back across runs
+  (or collapsing to a single run), rather than the current independent per-run replace.
+
+  **Files:** `src/reports/builder.py`
+
+  **Config/schema impact:** None — behaviour fix only.
+
+  **Acceptance criteria**
+  - A paragraph where a `[[...]]` or `]]`/`[[` delimiter character is itself split across two
+    or more separate runs is still fully stripped after `build_report`, with inner text preserved
+  - The existing MNT-8 cases (intra-run tokens, tokens split at a run boundary with each run
+    holding a complete delimiter) remain green — no regression
+  - Existing `{{ }}` Jinja2 placeholders that were properly filled remain unaffected
+
+  **Unit tests:** `tests/test_builder.py`:
+  - `test_strip_token_with_delimiter_char_split_across_runs`: construct a docx where the `[[`
+    or `]]` delimiter itself is broken mid-character across 2+ runs → assert output contains
+    the inner text and no `[[`/`]]`.
+  - Existing MNT-8 tests remain green (no regression).
+
+  **E2E:** N/A (no new UI surface; behaviour is in the Python report-build path).
+
+  **UAT:** N/A (non-UI fix; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
 
 ---
 

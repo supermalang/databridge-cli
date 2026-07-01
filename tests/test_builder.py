@@ -20,7 +20,7 @@ import yaml
 from docx import Document
 from docx.shared import Pt
 
-from src.reports.builder import ReportBuilder
+from src.reports.builder import ReportBuilder, _strip_residual_brackets
 from src.reports.template_generator import generate_template
 
 
@@ -259,6 +259,48 @@ def test_nom_token_inner_text_preserved(workspace_with_multiword_token):
     assert "NOM" in xml, (
         "Inner text 'NOM' was not found in the output docx. "
         "Short token content must be preserved after stripping delimiters."
+    )
+
+
+def test_strip_token_split_across_runs(tmp_path):
+    """AC1/AC2: [[ and NOM]] split across two separate runs of the same
+    paragraph must still be stripped by the post-render pass.
+
+    Word frequently splits a single visual token across multiple <w:r> runs
+    (e.g. because of spell-check boundaries, mid-edit formatting changes, or
+    copy/paste). This builds a paragraph with two genuinely separate
+    python-docx Run objects — one containing only "[[" and the next
+    containing only "NOM]]" — so the delimiters and inner text do not share
+    a single run's text attribute. It then invokes the same
+    ``_strip_residual_brackets`` post-render pass build() uses and asserts
+    the saved-and-reloaded document no longer contains the literal
+    substrings '[[' or ']]' anywhere in the paragraph.
+    """
+    doc_path = tmp_path / "cross_run.docx"
+
+    doc = Document()
+    p = doc.add_paragraph()
+    p.add_run("[[")
+    p.add_run("NOM]]")
+    assert len(p.runs) == 2, "fixture setup error: expected two distinct runs"
+    doc.save(str(doc_path))
+
+    _strip_residual_brackets(doc_path)
+
+    reloaded = Document(str(doc_path))
+    full_text = "".join(run.text for para in reloaded.paragraphs for run in para.runs)
+
+    assert "[[" not in full_text, (
+        "Output still contains raw '[[' after stripping a token split across "
+        f"separate runs. Reconstructed paragraph text: {full_text!r}"
+    )
+    assert "]]" not in full_text, (
+        "Output still contains raw ']]' after stripping a token split across "
+        f"separate runs. Reconstructed paragraph text: {full_text!r}"
+    )
+    assert "NOM" in full_text, (
+        "Inner text 'NOM' was lost when stripping a token split across "
+        f"separate runs. Reconstructed paragraph text: {full_text!r}"
     )
 
 

@@ -28,7 +28,11 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
         for c in charts:
             name=c.get("name",""); _heading(doc,c.get("title",name),2)
             _descriptor(doc,f"{c.get('type','').replace('_',' ').title()} — {', '.join(c.get('questions',[]))}")
-            _chart_ph(doc,f"{{{{ chart_{name} }}}}"); doc.add_paragraph()
+            if c.get("type") == "bullet_list":
+                _chart_ph(doc,f"{{{{ list_{name} }}}}")
+            else:
+                _chart_ph(doc,f"{{{{ chart_{name} }}}}")
+            doc.add_paragraph()
     else:
         _note(doc,"No charts in config.yml. Add charts and re-run generate-template.")
     _divider(doc)
@@ -129,7 +133,9 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
     out_path.parent.mkdir(parents=True,exist_ok=True)
     doc.save(out_path)
     log.info(f"Template saved → {out_path}")
-    for c in charts: log.info(f"  {{{{ chart_{c.get('name')} }}}}")
+    for c in charts:
+        ph = f"list_{c.get('name')}" if c.get("type") == "bullet_list" else f"chart_{c.get('name')}"
+        log.info(f"  {{{{ {ph} }}}}")
     for t in tables: log.info(f"  {{{{ table_{t.get('name')} }}}}")
     return out_path
 
@@ -217,7 +223,8 @@ def _ref_table(doc,cfg):
     for s in cfg.get("summaries",[]):
         rows.append((f"{{{{ summary_{s.get('name','')} }}}}",f"Summary: {s.get('label',s.get('name',''))}"))
     for c in cfg.get("charts",[]):
-        rows.append((f"{{{{ chart_{c.get('name','')} }}}}",f"Chart: {c.get('title','')}"))
+        ph = f"list_{c.get('name','')}" if c.get("type") == "bullet_list" else f"chart_{c.get('name','')}"
+        rows.append((f"{{{{ {ph} }}}}",f"Chart: {c.get('title','')}"))
     for t in cfg.get("tables",[]):
         rows.append((f"{{{{ table_{t.get('name','')} }}}}",f"Table: {t.get('title','')}"))
     table=doc.add_table(rows=1,cols=2); table.style="Table Grid"
