@@ -4604,7 +4604,8 @@ Sprint exit — checked by /report + /retro:
     `#2D3E1F, #4A6741, #6A9162, #8FB585, #B8D1B3, #5C5E3A, #888A5A, #B0B27A, #CCCFA0, #E8EAD2`
 
   **Files:** `src/reports/charts.py` · `src/utils/config.py` · `src/reports/builder.py` ·
-  `sample.config.yml` · `docs/reference/config.md` · `tests/test_charts.py`
+  `sample.config.yml` · `docs/reference/config.md` · `tests/test_charts.py` ·
+  `tests/test_builder.py`
 
   **Config/schema impact:** New optional `brand.palette` string field in `config.yml`.
   No migration needed — absent field falls back to default.

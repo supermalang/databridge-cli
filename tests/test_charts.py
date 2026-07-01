@@ -183,3 +183,71 @@ def test_named_palette_has_ten_hex_colours(name):
             f"like '#1D3557', got {color!r}"
         )
 
+
+# ---------------------------------------------------------------------------
+# AC (per-chart color override) — with a named palette resolved, an explicit
+# opts["color"] still overrides only the first slot; later slots still come
+# from the named palette's sequence.
+# ---------------------------------------------------------------------------
+
+def _make_grouped_df():
+    """3 group columns (A, B, C) x 2 category rows each — enough to exercise
+    3 colour slots in a grouped bar chart."""
+    return pd.DataFrame({
+        "Region": (["North", "South"] * 3),
+        "Group": (["A"] * 2 + ["B"] * 2 + ["C"] * 2),
+    })
+
+
+def test_grouped_bar_color_override_wins_first_slot_palette_fills_rest(tmp_path):
+    """AC: 'Per-chart color: opt still overrides the first slot as before' —
+    even with palette="teal" resolved, opts["color"] must win for the first
+    bar-group's colour, while the second and third groups still draw from
+    the teal palette's own sequence (index 1, index 2), proving the palette
+    is genuinely resolved underneath the override rather than the override
+    disabling the palette wiring entirely.
+    """
+    from src.reports.charts import chart_grouped_bar, PALETTES
+
+    out = tmp_path / "grouped_override.png"
+    df = _make_grouped_df()
+    opts = {"palette": "teal", "color": "#ABCDEF"}
+
+    with _CaptureFig() as cap:
+        chart_grouped_bar(df, ["Region", "Group"], "Test Grouped Bar", out, opts)
+
+    assert cap.axes, "chart_grouped_bar produced no axes — rendering may have crashed"
+    ax = cap.axes[0]
+    assert len(ax.containers) == 3, (
+        f"expected 3 bar-group containers (one per Group value A/B/C), "
+        f"got {len(ax.containers)} — cannot verify per-slot colours"
+    )
+
+    def _hex(container):
+        r, g, b, _ = container.patches[0].get_facecolor()
+        return "#{:02X}{:02X}{:02X}".format(
+            round(r * 255), round(g * 255), round(b * 255)
+        )
+
+    first_slot = _hex(ax.containers[0])
+    second_slot = _hex(ax.containers[1])
+    third_slot = _hex(ax.containers[2])
+
+    assert first_slot == "#ABCDEF", (
+        f"expected the first group's bars to use the explicit color override "
+        f"'#ABCDEF', got {first_slot!r}. Per-chart `color:` must still win the "
+        "first slot even when a named palette is resolved."
+    )
+    assert second_slot == PALETTES["teal"][1], (
+        f"expected the second group's bars to fall back to the teal palette's "
+        f"second colour {PALETTES['teal'][1]!r}, got {second_slot!r}. Later "
+        "slots must still come from the resolved named palette sequence, not "
+        "the override and not the default slate palette."
+    )
+    assert third_slot == PALETTES["teal"][2], (
+        f"expected the third group's bars to fall back to the teal palette's "
+        f"third colour {PALETTES['teal'][2]!r}, got {third_slot!r}. Later "
+        "slots must still come from the resolved named palette sequence, not "
+        "the override and not the default slate palette."
+    )
+

@@ -13,6 +13,7 @@ Acceptance criteria tested here:
 """
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -22,6 +23,7 @@ from docx.shared import Pt
 
 from src.reports.builder import ReportBuilder, _strip_residual_brackets
 from src.reports.template_generator import generate_template
+from src.utils.config import get_palette
 
 
 # ---------------------------------------------------------------------------
@@ -327,3 +329,112 @@ def test_jinja2_filled_values_unaffected(workspace_with_tokens):
         "Period 'Q2 2026' missing — the stripping pass must not corrupt "
         "text that was properly rendered by docxtpl."
     )
+
+
+# ---------------------------------------------------------------------------
+# MNT-11 — builder-level palette wiring: ReportBuilder._generate_charts must
+# resolve brand.palette via get_palette(cfg) and pass it into generate_chart().
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def workspace_with_brand_palette(tmp_path, monkeypatch):
+    """Minimal workspace identical in shape to workspace_with_tokens, but with
+    `brand.palette: "teal"` set in config.yml and a categorical bar chart."""
+    ws = tmp_path / "ws_palette"
+    (ws / "data" / "processed").mkdir(parents=True)
+    (ws / "templates").mkdir()
+    (ws / "reports").mkdir()
+
+    csv_path = ws / "data" / "processed" / "mnt11_data_20260101_120000.csv"
+    pd.DataFrame({"Region": ["North", "South", "North", "East", "South"]}).to_csv(
+        csv_path, index=False
+    )
+
+    template_path = ws / "templates" / "t.docx"
+
+    cfg = {
+        "api": {
+            "url": "https://kf.kobotoolbox.org/api/v2",
+            "token": "dummy",
+            "platform": "kobo",
+        },
+        "form": {"alias": "mnt11", "uid": "x"},
+        "questions": [
+            {
+                "kobo_key": "Region",
+                "label": "Region",
+                "type": "select_one",
+                "category": "categorical",
+                "group": "",
+                "export_label": "Region",
+            },
+        ],
+        "filters": [],
+        "brand": {"palette": "teal"},
+        "charts": [
+            {
+                "name": "region_bar",
+                "title": "Region",
+                "type": "bar",
+                "questions": ["Region"],
+                "options": {},
+            }
+        ],
+        "report": {
+            "template": str(template_path),
+            "output_dir": str(ws / "reports"),
+            "title": "MNT-11 Smoke",
+            "period": "Q2 2026",
+        },
+        "export": {
+            "format": "csv",
+            "output_dir": str(ws / "data" / "processed"),
+        },
+    }
+
+    generate_template(cfg, template_path)
+
+    (ws / "config.yml").write_text(yaml.dump(cfg, allow_unicode=True))
+    monkeypatch.chdir(ws)
+    return {"ws": ws, "cfg": cfg, "out_dir": ws / "reports"}
+
+
+def test_generate_charts_passes_resolved_brand_palette_to_generate_chart(
+    workspace_with_brand_palette,
+):
+    """MNT-11 AC: builder.py passes the resolved palette into the chart
+    dispatch so all charts in a report share the same colour sequence.
+
+    Patches src.reports.builder.generate_chart (the exact call site inside
+    ReportBuilder._generate_charts) and asserts it is invoked with a
+    `palette` kwarg equal to get_palette(cfg)'s resolved "teal" sequence —
+    not None, not the default "slate" sequence, and not merely "truthy".
+    """
+    cfg = workspace_with_brand_palette["cfg"]
+    expected_palette = get_palette(cfg)
+    assert expected_palette != get_palette({}), (
+        "test fixture sanity check: 'teal' must differ from the default "
+        "'slate' palette, otherwise this test could pass vacuously"
+    )
+
+    with patch(
+        "src.reports.builder.generate_chart", wraps=None, return_value=None
+    ) as mock_generate_chart:
+        ReportBuilder(cfg).build()
+
+    assert mock_generate_chart.called, (
+        "generate_chart was never called — _generate_charts must invoke it "
+        "for each configured chart"
+    )
+    for call in mock_generate_chart.call_args_list:
+        _, kwargs = call
+        assert "palette" in kwargs, (
+            "generate_chart was called without a 'palette' kwarg — "
+            "_generate_charts must pass palette=get_palette(self.cfg)"
+        )
+        assert kwargs["palette"] == expected_palette, (
+            f"generate_chart was called with palette={kwargs['palette']!r}, "
+            f"expected the resolved 'teal' palette {expected_palette!r} "
+            "from get_palette(cfg). The builder must wire brand.palette "
+            "through to every chart it generates."
+        )
