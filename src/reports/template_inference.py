@@ -228,7 +228,7 @@ def extract_placeholders(docx_path) -> List[Token]:
 Proposal = Dict
 
 # Kinds the inference path understands.
-_KINDS = ("chart", "indicator", "summary", "table", "narrative", "metadata")
+_KINDS = ("chart", "indicator", "summary", "table", "narrative", "metadata", "split_value")
 
 # Confidence below this is treated as low → needs_attention.
 _CONFIDENCE_THRESHOLD = 0.5
@@ -282,6 +282,10 @@ def infer_specs(nl_tokens: List["Token"], catalog: Dict, ai_cfg: Dict) -> List[P
         "chart_types": ask_engine._CHART_TYPES_BLOCK,
         "indicator_stats": ask_engine._INDICATOR_STATS_BLOCK,
         "language": ai_cfg.get("language") or "English",
+        # XTF-28: surface the configured split dimension so the LLM can propose
+        # kind: split_value for a short-label token that maps to the unit of
+        # analysis (e.g. "[[NOM]]" / "[[Commune]]"). Empty string when unset.
+        "split_by": str(ai_cfg.get("split_by") or ""),
     }
     messages, _config = lf_client.get_prompt("template_inference", variables)
     # Always supply the output_schema for structured output (Anthropic tool_use /
@@ -476,6 +480,23 @@ def annotate_proposals(proposals: List[Proposal], profile: Dict) -> List[Proposa
             ann = _route_narrative(ann)
         elif kind == "metadata":
             ann = _route_metadata(ann)
+        elif kind == "split_value":
+            # XTF-28: the {{ split_value }} system placeholder is only meaningful
+            # when a split dimension is configured. Validate against the split_by
+            # flag reachable from the same profile/context dict.
+            ann["name"] = "split_value"
+            if profile.get("split_by"):
+                ann["status"] = "ok"
+                ann["reason"] = (
+                    f"maps to split_by dimension '{profile.get('split_by')}'"
+                )
+            else:
+                ann["status"] = "needs_attention"
+                ann["reason"] = (
+                    "split_value placeholder but no split_by dimension is configured"
+                )
+            out.append(ann)
+            continue
         else:
             resolved, review_note = _autoresolve_repeat_source(
                 kind, ann.get("spec") or {}, profile
@@ -882,6 +903,11 @@ def apply_inference(
         elif kind == "metadata":
             _set_metadata(cfg, prop)
             canonical = None
+        elif kind == "split_value":
+            # XTF-28: {{ split_value }} is an existing builder system placeholder
+            # filled at build-report time from the split_by dimension — no config
+            # section entry, just the literal placeholder in the template.
+            canonical = "{{ split_value }}"
         else:
             section, prefix = _KIND_SECTION.get(kind, _KIND_SECTION["chart"])
             base_slug = _slugify(prop.get("name") or spec.get("name") or kind)

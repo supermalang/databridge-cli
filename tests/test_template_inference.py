@@ -1992,3 +1992,136 @@ def test_annotate_resolves_known_repeat_columns_from_fixture_profile():
         f"organisation: expected source='collaborations', "
         f"got {_get(out[2], 'spec').get('source')!r}"
     )
+
+
+# =========================================================================== #
+# XTF-28 — split_value placeholder inference
+# =========================================================================== #
+# Fix: infer_specs must recognize a "split_value" kind, informed by the config's
+# split_by dimension, so a short-label token that clearly refers to the unit of
+# analysis (e.g. "[[NOM]]", "[[Commune]]") is proposed as kind="split_value"
+# instead of a low-confidence indicator/needs_attention placeholder.
+#
+# AC1: infer_specs proposes kind == "split_value" for a NOM-like token when
+#      config has split_by: Commune.
+# AC2: annotate_proposals marks a split_value proposal "ok" when config split_by
+#      is set, "needs_attention" when it is not.
+# AC3: apply_inference (called by apply-template) writes the literal
+#      "{{ split_value }}" placeholder for an accepted split_value proposal.
+
+def test_infer_specs_proposes_split_value_for_nom_token(monkeypatch):
+    """AC1: with split_by: Commune configured and a [[NOM]] placeholder token,
+    infer_specs returns at least one proposal with kind == "split_value".
+
+    This pins the fix's actual mechanism (card body): "When the config has a
+    split_by dimension, include it in the LLM prompt so the model can propose
+    kind: split_value". So the prompt variables built by infer_specs must
+    surface the split_by dimension (e.g. under a "split_by" variable key) when
+    ai_cfg carries one — a real LLM can only propose "split_value" if it is
+    told what the split dimension is. Without that wiring the split_by value
+    never reaches get_prompt's variables, which this test catches directly.
+    """
+    captured_variables = {}
+
+    def _fake_get_prompt(name, variables):
+        captured_variables.update(variables or {})
+        return ([{"role": "user", "content": "x"}], {})
+
+    monkeypatch.setattr(ti.lf_client, "get_prompt", _fake_get_prompt)
+
+    def _fake_chat(*a, **k):
+        # Simulates the LLM correctly using the split_by context supplied in
+        # the prompt variables to propose kind: split_value for the NOM token.
+        return (
+            '{"proposals": ['
+            '{"token_index": 0, "kind": "split_value", "name": "split_value", '
+            '"spec": {}, "confidence": 0.95, "reason": "NOM maps to split_by Commune"}'
+            ']}'
+        )
+
+    monkeypatch.setattr(ti.lf_client, "chat", _fake_chat)
+
+    nl_tokens = [
+        ti.Token(raw="[[NOM]]", inner="NOM", delimiter="[[", kind="nl",
+                  location=ti.Location()),
+    ]
+    catalog = ask_engine.build_catalog(_profile_xtf2())
+    ai_cfg = {
+        "provider": "openai", "model": "gpt-x", "api_key": "sk-test",
+        "split_by": "Commune",
+    }
+
+    out = ti.infer_specs(nl_tokens, catalog, ai_cfg)
+
+    # The split_by dimension configured on ai_cfg must reach the prompt so the
+    # LLM has the context needed to propose kind: split_value.
+    joined_vars = " ".join(str(v) for v in captured_variables.values())
+    assert "Commune" in joined_vars, (
+        f"split_by dimension 'Commune' was not included in the prompt variables "
+        f"passed to get_prompt; variables={captured_variables}"
+    )
+
+    kinds = [_get(p, "kind") for p in out]
+    assert "split_value" in kinds, (
+        f"expected a 'split_value' proposal for the NOM token, got kinds={kinds}"
+    )
+
+
+def test_annotate_split_value_ok_when_split_by_set():
+    """AC2: a proposal with kind: split_value gets status "ok" when the config
+    has split_by set, and "needs_attention" when split_by is NOT set.
+
+    annotate_proposals takes a profile dict as its second argument; the
+    split_by flag must be reachable from that same call so the implementation
+    can validate against it (e.g. via a "split_by" key in the profile/context
+    passed to annotate_proposals, per the card's fix description).
+    """
+    proposal_ok = [
+        _proposal("split_value", {}, name="split_value", confidence=_HIGH_CONF),
+    ]
+    profile_with_split_by = dict(_profile_xtf2())
+    profile_with_split_by["split_by"] = "Commune"
+
+    out_ok = ti.annotate_proposals(proposal_ok, profile_with_split_by)
+    assert _get(out_ok[0], "status") == "ok", (
+        f"expected 'ok' when split_by is configured, got "
+        f"{_get(out_ok[0], 'status')!r} reason={_get(out_ok[0], 'reason')!r}"
+    )
+
+    proposal_missing = [
+        _proposal("split_value", {}, name="split_value", confidence=_HIGH_CONF),
+    ]
+    profile_without_split_by = _profile_xtf2()  # no split_by key at all
+
+    out_missing = ti.annotate_proposals(proposal_missing, profile_without_split_by)
+    assert _get(out_missing[0], "status") == "needs_attention", (
+        f"expected 'needs_attention' when split_by is NOT configured, got "
+        f"{_get(out_missing[0], 'status')!r}"
+    )
+
+
+def test_apply_template_writes_split_value_placeholder(tmp_path):
+    """AC3: an accepted split_value proposal causes apply_inference to write the
+    literal "{{ split_value }}" placeholder into the resolved .docx (so
+    build-report's existing split_value substitution fills it with the real
+    commune name instead of leaving the literal "NOM" text)."""
+    template = _docx_with_nl_placeholders(tmp_path, ["[[NOM]]"])
+    tokens = ti.extract_placeholders(template)
+    assert len(tokens) == 1
+
+    approved = [
+        _approved("split_value", {}, name="split_value", token_index=0),
+    ]
+    cfg = {"api": {}, "form": {}, "report": {"split_by": "Commune"}}
+
+    _cfg_out, resolved = ti.apply_inference(approved, cfg, template)
+
+    expected = "{{ split_value }}"
+    reopened = Document(str(resolved))
+    found = any(
+        expected in "".join(r.text for r in p.runs) for p in reopened.paragraphs
+    )
+    assert found, (
+        "resolved template does not contain the literal '{{ split_value }}' "
+        "placeholder for the accepted split_value proposal"
+    )
