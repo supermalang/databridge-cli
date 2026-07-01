@@ -726,6 +726,21 @@ def chart_period_line(df, questions, title, out_path, opts):
     plt.close(fig)
 
 
+def build_bullet_list_text(df: pd.DataFrame, questions: List[str]) -> str:
+    """Render the first *questions* column's values as a `•`-prefixed text block.
+
+    Used by ``bullet_list`` — a text-injection render type (docxtpl text run,
+    ``{{ list_<name> }}``) rather than an image, so it is not part of
+    ``CHART_DISPATCH`` / ``generate_chart``'s matplotlib pipeline. Empty/NaN
+    values are dropped; order follows the DataFrame's row order.
+    """
+    if not questions or questions[0] not in df.columns:
+        return ""
+    values = df[questions[0]].dropna().astype(str)
+    values = [v for v in values if v.strip() and v.strip().lower() != "nan"]
+    return "\n".join(f"• {v}" for v in values)
+
+
 CHART_DISPATCH = {
     "bar": chart_bar, "horizontal_bar": chart_horizontal_bar, "stacked_bar": chart_stacked_bar,
     "pie": chart_pie, "donut": chart_donut, "line": chart_line, "area": chart_area,
