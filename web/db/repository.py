@@ -325,7 +325,7 @@ def apply_superadmin_emails(db: Session, emails: List[str]) -> int:
     if not wanted:
         return 0
     n = 0
-    for u in db.scalars(select(User)):
+    for u in db.scalars(select(User).where(User.email.in_(wanted))):
         if u.email and u.email.lower() in wanted and not u.is_superadmin:
             u.is_superadmin = True
             n += 1
