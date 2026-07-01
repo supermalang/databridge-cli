@@ -1523,10 +1523,17 @@ Sprint exit — checked by /report + /retro:
   - While the preview is loading a skeleton/spinner is shown; on error a legible inline message
     is shown (not a blank pane)
   - The standalone "Preview" button / separate preview modal is removed from the Composition tab
-  - The modal is responsive: two-column on desktop (≥ 820 px), stacked on mobile (< 820 px)
+  - Two-column layout at tablet (820 px) and desktop (1440 px) widths; stacked (single column)
+    at mobile (390 px) width
   - All existing Composition tab tests remain green
 
-  **Unit tests:** N/A (UI interaction; covered by E2E).
+  **Unit tests:** `frontend/src/hooks/useChartPreview.test.js` — the debounce + preview-state
+  logic (loading/error/success) is extracted into a `useChartPreview` hook so it's unit-testable
+  independent of Playwright:
+  - Rapid successive field changes within 600 ms fire exactly one `/api/charts/preview` request
+    (debounce collapses bursts, doesn't fire once per keystroke)
+  - Loading state is `true` from request start until the response resolves
+  - A non-2xx response sets an error state (not loading, not a stale success state)
 
   **E2E:** `frontend/tests/e2e/composition.spec.ts` (or `chart-editor.spec.ts`) —
   - Open chart editor; assert preview pane is visible
@@ -1538,7 +1545,8 @@ Sprint exit — checked by /report + /retro:
   1. Open Composition tab → click Edit on any chart
   2. Confirm the preview renders inside the modal without clicking a separate button
   3. Change the title — confirm the preview updates automatically within ~600 ms
-  4. Confirm layout is correct at mobile width (< 820 px, stacked), tablet width (820 px, stacked), and desktop width (≥ 820 px, two-column)
+  4. Confirm layout is stacked (single column) at mobile width (390×844), and two-column at
+     tablet width (820×1180) and desktop width (1440×900)
 
   **Verify:** `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
   `cd frontend && npm run test:e2e` (full suite green)
