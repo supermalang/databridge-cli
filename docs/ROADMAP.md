@@ -74,7 +74,7 @@ Sprint exit — checked by /report + /retro:
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 10 | 10 / 10 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 11 | 11 / 11 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 11 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
@@ -1547,6 +1547,153 @@ Sprint exit — checked by /report + /retro:
   3. Change the title — confirm the preview updates automatically within ~600 ms
   4. Confirm layout is stacked (single column) at mobile width (390×844), and two-column at
      tablet width (820×1180) and desktop width (1440×900)
+
+  **Verify:** `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
+  `cd frontend && npm run test:e2e` (full suite green)
+
+---
+
+- [ ] **PUX-12 — Chart editor preview: keep last image visible during re-fetch (P2)**
+
+  **Created:** 2026-07-01
+
+  **Type:** Feature
+
+  **Depends on:** PUX-11 (must be done — this extends `useChartPreview` and `ChartModal`,
+  which PUX-11 introduces)
+
+  Follow-up from PUX-11's `/impeccable critique` (Design Health Score 28/40 — Good, none
+  blocking; this is finding 1 of 4, split into its own card per DoR scope review).
+  `useChartPreview` fully unmounts the last successful image and replaces it with a loading
+  skeleton on every debounced re-fetch — including small, low-risk edits (e.g. typing a title
+  character by character once the 600ms window lapses). For anxious non-expert users (this
+  product's core audience per PRODUCT.md), a previously-correct chart vanishing on every edit
+  reads as "did I break something?" rather than "it's updating."
+
+  **Files:** `frontend/src/hooks/useChartPreview.js` · `frontend/src/pages/Composition.jsx`
+  (`ChartModal`) · `frontend/src/hooks/useChartPreview.test.js`
+
+  **Config/schema impact:** None — frontend-only, no new config field.
+
+  **Acceptance criteria**
+  - A debounced re-fetch keeps the last successful preview image visible (e.g. dimmed, or with
+    a small corner spinner) instead of unmounting it
+  - Only the very first load with no prior image shows the full blanking skeleton
+  - A re-fetch that ends in an error does not clobber the last-good image with nothing — falls
+    back to the existing error state, but the transition doesn't flash a blank pane first
+  - All existing PUX-11/XTF-27/a11y-5 tests remain green
+
+  **Unit tests:** `frontend/src/hooks/useChartPreview.test.js` (extend) —
+  - `test_previous_image_persists_during_refetch`: after a successful preview, trigger a new
+    debounced fetch; assert `image` from the prior state is still returned (not nulled) while
+    `loading` is true, until the new response resolves
+  - `test_first_load_shows_full_skeleton`: with no prior image, assert `image` is `null` and
+    `loading` is `true` during the initial fetch (no persisted-image case to fall back to)
+
+  **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) —
+  - Change a field twice in quick succession; assert the previously-rendered preview `<img>`
+    remains in the DOM (not replaced by the skeleton testid) between requests
+  - `toHaveScreenshot('chart-editor-modal-refetch.png')` capturing the dimmed/in-progress state
+    at all three viewports, human-approved
+
+  **UAT:**
+  1. Open the chart editor, wait for the preview to render, then change the Title — confirm the
+     existing chart image stays visible (dimmed or with a small spinner) rather than
+     disappearing into a blank skeleton
+
+  **Verify:** `node --test frontend/src/hooks/useChartPreview.test.js` ·
+  `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
+  `cd frontend && npm run test:e2e` (full suite green)
+
+---
+
+- [ ] **PUX-13 — Chart editor: link preview errors back to the offending field (P2)**
+
+  **Created:** 2026-07-01
+
+  **Type:** Feature
+
+  **Depends on:** PUX-11 (must be done)
+
+  Follow-up from PUX-11's `/impeccable critique` (finding 3 of 4). When `/api/charts/preview`
+  fails, the message is generic backend text in the preview pane; the user must mentally diff
+  their Name/Title/Type/Columns/Options against the failure to guess what to fix — a "Memory
+  Bridge" cognitive load violation. `CHART_REQS` already encodes each chart type's column
+  requirement client-side, so a type/column-count mismatch is detectable without waiting for
+  the backend round-trip.
+
+  **Files:** `frontend/src/pages/Composition.jsx` (`ChartModal`)
+
+  **Config/schema impact:** None — frontend-only, no new config field.
+
+  **Acceptance criteria**
+  - When a preview error is a chart-type/column-count mismatch already knowable from
+    `CHART_REQS` (e.g. a `histogram` needs 1 numeric column, none selected), the Columns
+    `ModalField` row is visually flagged (reusing the existing rose-border pattern used for
+    filter errors) in addition to the generic pane message
+  - When the error is NOT attributable to a known client-side rule (e.g. a genuine backend/data
+    error), only the generic pane message shows — no field is falsely flagged
+  - All existing PUX-11/XTF-27/a11y-5 tests remain green
+
+  **Unit tests:** N/A (pure UI wiring — the `CHART_REQS`-to-field mapping is a small lookup
+  with no isolable logic beyond what E2E already exercises directly).
+
+  **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) —
+  - Select a chart type requiring a numeric column, pick a text column, wait for the preview
+    error; assert the Columns field carries the error-flagged style
+  - Trigger a non-`CHART_REQS` error (e.g. stub a 500 with an unrelated message); assert no
+    field is flagged
+  - `toHaveScreenshot('chart-editor-modal-field-error.png')` at all three viewports,
+    human-approved
+
+  **UAT:**
+  1. Pick a chart type that needs a numeric column, choose a text column instead — confirm the
+     Columns field itself is visually flagged as the likely cause, not just a generic error
+
+  **Verify:** `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
+  `cd frontend && npm run test:e2e` (full suite green)
+
+---
+
+- [ ] **PUX-14 — Chart editor: surface the live preview above the fold on mobile (P3)**
+
+  **Created:** 2026-07-01
+
+  **Type:** Feature
+
+  **Depends on:** PUX-11 (must be done)
+
+  Follow-up from PUX-11's `/impeccable critique` (finding 4 of 4). On the 390px stacked
+  layout, the live preview sits below all 4 form fields (Name/Title/Type/Columns/Options) — a
+  user must scroll past the whole form to see the result of an edit they just made,
+  undercutting the "live" framing on the one viewport where scroll friction matters most.
+
+  **Files:** `frontend/src/pages/Composition.jsx` (`ChartModal`)
+
+  **Config/schema impact:** None — frontend-only, no new config field.
+
+  **Acceptance criteria**
+  - On mobile (< 768px), the user can see or reach the live preview without scrolling past all
+    4 form fields — either the pane is reordered higher in the stack, or a compact status
+    indicator (e.g. "Preview ready" / "Rendering…") near the top scrolls the pane into view on
+    tap
+  - The reordering/indicator does not regress the desktop/tablet two-column layout
+  - All existing PUX-11/XTF-27/a11y-5 tests remain green
+
+  **Unit tests:** N/A (layout-only change; covered by E2E).
+
+  **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) —
+  - At mobile width, assert the preview pane (or its status indicator) is within the initial
+    viewport without scrolling, or that tapping the indicator scrolls it into view
+  - `toHaveScreenshot('chart-editor-modal-mobile-preview-position.png')` at mobile width,
+    human-approved
+
+  **UAT:**
+  1. On a phone-width browser window, open the chart editor — confirm you can see or reach the
+     preview without scrolling past the whole form
 
   **Verify:** `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
   `cd frontend && npm run test:e2e` (full suite green)
@@ -4833,3 +4980,9 @@ Sprint exit — checked by /report + /retro:
 - **True multi-user read isolation** — concurrent users with different active projects share
   the one `BASE_DIR` read-mirror (best-effort, last-writer-wins). Durable Minio/DB data is
   always correct; per-user read isolation is out of scope (see `CLAUDE.md` → run concurrency).
+- **Indicator/View/Summary preview consistency with the chart editor** — PUX-11 merged the
+  chart preview inline into `ChartModal`; the Indicator/View/Summary "Preview" actions in
+  `Composition.jsx` still open a separate titled modal, the exact pattern PUX-11 removed for
+  charts. Not urgent (no reported user confusion), but worth a deliberate look — either migrate
+  them to the same inline pattern, or record why charts specifically warranted it and the
+  others don't.
