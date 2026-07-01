@@ -12,6 +12,7 @@ from src.reports.indicators import compute_indicators, build_traffic_light_table
 from src.reports.narrator import generate_narrative
 from src.reports.summaries import compute_summaries
 from src.utils.provenance import build_provenance, data_mtime
+from src.utils.config import get_palette
 from src.reports.logframe import build_logframe
 from src.reports.data_quality import build_data_quality
 
@@ -429,7 +430,7 @@ class ReportBuilder:
                 images[f"list_{name}"] = build_bullet_list_text(chart_df, resolved_questions)
                 continue
 
-            png = generate_chart(resolved, chart_df, language=_language)
+            png = generate_chart(resolved, chart_df, language=_language, palette=get_palette(self.cfg))
             width = Inches(c.get("options", {}).get("width_inches", 5.5))
             images[f"chart_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
         return images

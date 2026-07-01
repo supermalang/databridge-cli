@@ -145,7 +145,30 @@ report:
   period: Q1 2025
   filename_pattern: "{form.alias}_{period}_{split}.docx"
   split_by: region                       # optional — generate one .docx per unique value
+
+brand:
+  palette: slate                         # optional — named chart colour palette (see below)
 ```
+
+## Chart colour palettes (`brand.palette`)
+
+`brand.palette` selects a named 10-colour sequence (`src/reports/charts.py: PALETTES`,
+resolved by `src/utils/config.py: get_palette()`) applied to every chart in the report —
+multi-series charts (stacked/grouped bar, pie, donut, heatmap, likert, …) draw colours from
+the sequence in order; single-series charts use the first colour. Per-chart `options.color`
+still overrides the first slot as an escape hatch. Absent or unrecognised names fall back to
+`slate` (unrecognised names log a warning; no crash).
+
+| Name | Character |
+|---|---|
+| `slate` (default) | Cool institutional blue/grey — general-purpose M&E reports |
+| `teal` | Humanitarian / health register — WFP-adjacent |
+| `earth` | Field / food-security / development register |
+| `indigo` | Governance / protection register — UNHCR-adjacent |
+| `olive` | Environment / agriculture / resilience register |
+
+All five are desaturated/print-safe (legible in black-and-white) and lead with their
+darkest hue so series order stays legible.
 
 ## Auto-categorization rules (src/data/questions.py)
 

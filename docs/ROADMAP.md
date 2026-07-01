@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 15 | 11 / 15 |
+| [Maintenance & hardening](#maintenance--hardening) | 15 | 12 / 15 |
 
 ---
 
@@ -4571,9 +4571,9 @@ Sprint exit — checked by /report + /retro:
   **Verify:** Inspect the Tips card in the Sources tab — both `env:` badges render with text.
 
 ---
-- [ ] **MNT-11 — Named chart colour palettes selectable from `config.yml` (P1)**
+- [x] **MNT-11 — Named chart colour palettes selectable from `config.yml` (P1)**
 
-  **Created:** 2026-06-28
+  **Created:** 2026-06-28 · **Completed:** 2026-07-01
 
   Replace the hardcoded `PALETTE` constant in `charts.py` with a curated set of named,
   sober palettes suited to institutional/NGO reports (muted, desaturated, print-safe —
@@ -4604,7 +4604,8 @@ Sprint exit — checked by /report + /retro:
     `#2D3E1F, #4A6741, #6A9162, #8FB585, #B8D1B3, #5C5E3A, #888A5A, #B0B27A, #CCCFA0, #E8EAD2`
 
   **Files:** `src/reports/charts.py` · `src/utils/config.py` · `src/reports/builder.py` ·
-  `sample.config.yml` · `docs/reference/config.md` · `tests/test_charts.py`
+  `sample.config.yml` · `docs/reference/config.md` · `tests/test_charts.py` ·
+  `tests/test_builder.py`
 
   **Config/schema impact:** New optional `brand.palette` string field in `config.yml`.
   No migration needed — absent field falls back to default.
