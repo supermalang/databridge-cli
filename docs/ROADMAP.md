@@ -74,7 +74,7 @@ Sprint exit — checked by /report + /retro:
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 10 | 10 / 10 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 11 | 10 / 11 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 11 | 11 / 11 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
@@ -1500,9 +1500,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **PUX-11 — Inline live preview in the chart editor modal (P1)**
+- [x] **PUX-11 — Inline live preview in the chart editor modal (P1)**
 
-  **Created:** 2026-06-28
+  **Created:** 2026-06-28 · **Completed:** 2026-07-01
 
   Today the chart editor (`ChartModal`) and the chart preview are two separate modals —
   users configure blind, then close and open a second modal to see the result. Merge them:
