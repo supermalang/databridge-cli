@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 13 | 9 / 13 |
+| [Maintenance & hardening](#maintenance--hardening) | 14 | 10 / 14 |
 
 ---
 
@@ -4427,9 +4427,9 @@ Sprint exit — checked by /report + /retro:
 ---
 
 
-- [ ] **MNT-8 — Strip residual `[[` `]]` delimiters from built report output (P1)**
+- [x] **MNT-8 — Strip residual `[[` `]]` delimiters from built report output (P1)**
 
-  **Created:** 2026-06-28
+  **Created:** 2026-06-28 · **Started:** 2026-07-01 · **Completed:** 2026-07-01
 
   After `docxtpl` renders the Word template, any `[[...]]` tokens that were not resolved by
   the Express Fill pipeline remain in the output docx with their raw brackets (e.g. `[[NOM]]`
@@ -4449,10 +4449,10 @@ Sprint exit — checked by /report + /retro:
   - All existing tests remain green
 
   **Unit tests:** `tests/test_builder.py`:
-  - `test_strip_double_bracket_tokens`: template with `[[NOM]]` in a paragraph → assert output contains `NOM`, does not contain `[[` or `]]`.
-  - `test_strip_multiword_token`: template with `[[LISTE DES PARTENAIRES]]` → assert `LISTE DES PARTENAIRES` is preserved.
-  - `test_strip_token_split_across_runs`: construct a docx programmatically where `[[` and `NOM]]` are in separate runs of the same paragraph; assert post-render stripping still works.
-  - `test_jinja_placeholders_unaffected`: template with a normally-filled `{{ report_title }}` → assert it resolves correctly and no `[[` artifacts appear.
+  - `test_no_double_bracket_open_in_output` / `test_no_double_bracket_close_in_output`: template with `[[NOM]]` in a paragraph → assert output contains `NOM`, does not contain `[[` or `]]`.
+  - `test_multiword_token_inner_text_preserved` / `test_nom_token_inner_text_preserved`: template with `[[LISTE DES PARTENAIRES]]` → assert `LISTE DES PARTENAIRES` is preserved.
+  - `test_strip_token_split_across_runs`: constructs a docx where `[[` and `NOM]]` are two genuinely separate python-docx `Run` objects in the same paragraph; asserts post-render stripping still works. **Note:** confirmed this specific split point (delimiter intact within a single run) works because `_clean_runs` strips per-run; a stricter split with a delimiter *character* itself broken across runs is NOT covered here — tracked separately as MNT-14.
+  - `test_jinja2_filled_values_unaffected`: template with a normally-filled `{{ report_title }}` → assert it resolves correctly and no `[[` artifacts appear.
 
   **E2E:** N/A (no new UI surface; behaviour is in the Python report-build path).
 
@@ -4650,6 +4650,45 @@ Sprint exit — checked by /report + /retro:
   **UAT:** N/A (non-UI; verified via unit test + PR review).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/ -q`
+
+---
+
+- [ ] **MNT-14 — Handle a `[[`/`]]` delimiter character split mid-token across docx runs (P2)**
+
+  **Created:** 2026-07-01
+
+  Follow-up from MNT-8. `_clean_runs` in `src/reports/builder.py` strips `[[...]]` tokens
+  per-run, which correctly handles a delimiter split *between* runs (e.g. `[[` in one run,
+  `NOM]]` in the next — each run still contains a complete, intact delimiter). It does not
+  handle a delimiter *character itself* broken across runs (e.g. `"["`, `"[NOM]"`, `"]"` as
+  three separate runs) — confirmed via a probe test during MNT-8 verification that this case
+  still leaves `[[NOM]]` unstripped in the output. Fix requires merging/joining run text within
+  a paragraph before pattern-matching, then redistributing the cleaned text back across runs
+  (or collapsing to a single run), rather than the current independent per-run replace.
+
+  **Files:** `src/reports/builder.py`
+
+  **Config/schema impact:** None — behaviour fix only.
+
+  **Acceptance criteria**
+  - A paragraph where a `[[...]]` or `]]`/`[[` delimiter character is itself split across two
+    or more separate runs is still fully stripped after `build_report`, with inner text preserved
+  - The existing MNT-8 cases (intra-run tokens, tokens split at a run boundary with each run
+    holding a complete delimiter) remain green — no regression
+  - Existing `{{ }}` Jinja2 placeholders that were properly filled remain unaffected
+
+  **Unit tests:** `tests/test_builder.py`:
+  - `test_strip_token_with_delimiter_char_split_across_runs`: construct a docx where the `[[`
+    or `]]` delimiter itself is broken mid-character across 2+ runs → assert output contains
+    the inner text and no `[[`/`]]`.
+  - Existing MNT-8 tests remain green (no regression).
+
+  **E2E:** N/A (no new UI surface; behaviour is in the Python report-build path).
+
+  **UAT:** N/A (non-UI fix; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
 
 ---
 ---
