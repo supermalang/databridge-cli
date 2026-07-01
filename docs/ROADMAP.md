@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 14 | 9 / 14 |
+| [Maintenance & hardening](#maintenance--hardening) | 14 | 10 / 14 |
 
 ---
 
@@ -4623,7 +4623,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-13 — Fix unbounded `select(User)` in `apply_superadmin_emails` (P1)**
+- [x] **MNT-13 — Fix unbounded `select(User)` in `apply_superadmin_emails` (P1)**
+
+  **Created:** 2026-07-01 · **Completed:** 2026-07-01
 
   `apply_superadmin_emails` in `web/db/repository.py` executes `db.scalars(select(User))`
   — a full table scan with no `WHERE` or `LIMIT` — then Python-filters by email. As the
