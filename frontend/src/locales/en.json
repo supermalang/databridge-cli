@@ -485,6 +485,7 @@
       "parentOutcome": "Parent outcome",
       "pickOne": "(pick one)",
       "renderingPreview": "Rendering preview…",
+      "previewIdle": "Preview appears here",
       "cantRenderChart": "Couldn’t render this chart",
       "previewTip": "Tip: previews need a downloaded data file in <c1></c1>. Run <c2></c2> first if you haven’t.",
       "computingView": "Computing view…",

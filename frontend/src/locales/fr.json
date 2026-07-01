@@ -485,6 +485,7 @@
       "parentOutcome": "Effet parent",
       "pickOne": "(choisir)",
       "renderingPreview": "Génération de l'aperçu…",
+      "previewIdle": "L'aperçu s'affiche ici",
       "cantRenderChart": "Impossible de générer ce graphique",
       "previewTip": "Astuce : les aperçus nécessitent un fichier de données téléchargé dans <c1></c1>. Exécutez <c2></c2> d'abord si ce n'est pas fait.",
       "computingView": "Calcul de la vue…",

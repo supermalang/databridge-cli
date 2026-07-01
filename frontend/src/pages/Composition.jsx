@@ -6,6 +6,7 @@ import { useConfirm } from '../components/ConfirmDialog.jsx';
 import FrameworkPicker from '../components/FrameworkPicker.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useCommand } from '../hooks/useCommand.js';
+import { useChartPreview } from '../hooks/useChartPreview.js';
 import { saveConfigPatch } from '../lib/config.js';
 import { useConfig } from '../lib/ConfigContext.jsx';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
@@ -178,7 +179,7 @@ export default function Composition({ sections } = {}) {
   const [suggestKind, setSuggestKind] = useState(null); // null | 'chart' | 'view' | 'summary'
   const [suggestText, setSuggestText] = useState('');
   const [suggesting,  setSuggesting]  = useState(null); // null | 'chart' | 'view' | 'summary' (which kind is running)
-  const [preview,     setPreview]     = useState(null); // null | { chart, loading?, image?, error? }
+  const [preview,     setPreview]     = useState(null); // null | { chart, loading?, image?, error? } — used by the Tables card's standalone preview only (PUX-11 moved the Charts card's preview inline into ChartModal)
   const [viewPreview, setViewPreview] = useState(null); // null | { view, loading?, columns?, rows?, n_rows?, error? }
   const [summaryPreview, setSummaryPreview] = useState(null); // null | { summary, loading?, text?, n_rows?, error? }
 
@@ -242,27 +243,6 @@ export default function Composition({ sections } = {}) {
     suggestLogRef.current = [];
     setSuggesting(kind);
     runCmd(suggestSpec[kind].command, { user_request: suggestText.trim() });
-  };
-
-  const openChartPreview = async (i) => {
-    const chart = charts[i];
-    if (!chart) return;
-    setPreview({ chart, loading: true });
-    try {
-      const resp = await fetch('/api/charts/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chart }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        setPreview({ chart, error: data.detail || `Request failed (${resp.status})` });
-        return;
-      }
-      setPreview({ chart, image: data.image });
-    } catch (e) {
-      setPreview({ chart, error: e.message || 'Network error' });
-    }
   };
 
   const openViewPreview = async (i) => {
@@ -574,7 +554,6 @@ export default function Composition({ sections } = {}) {
               onAdd={() => openEdit('chart', null)}
               onEdit={(i) => openEdit('chart', i)}
               onRemove={remove('chart', setCharts)}
-              onPreview={openChartPreview}
               toast={toast}
             />
           )}
@@ -979,7 +958,7 @@ function Header({ questionCount, sections = ALL_SECTIONS, onSave, dirty }) {
 }
 
 // ── Charts card ──────────────────────────────────────────────────────────────
-function ChartsCard({ charts, onAdd, onEdit, onRemove, onPreview, toast }) {
+function ChartsCard({ charts, onAdd, onEdit, onRemove, toast }) {
   const { t } = useTranslation();
   return (
     <div className="comp-card">
@@ -1016,10 +995,6 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onPreview, toast }) {
                 label={t('composition.copyPlaceholder')}
                 ariaLabel={t('composition.copyPlaceholderFor', { name: ch.name || t('composition.unnamed') })}
               />
-              <button className="btn btn-ghost" onClick={() => onPreview(i)}>
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-                {t('composition.preview')}
-              </button>
               <button className="icon-btn" title={t('composition.edit')} onClick={() => onEdit(i)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
               </button>
@@ -1652,6 +1627,33 @@ function TipsCard() {
 // Modals (chart / indicator / summary / view) — same shape as the previous
 // Composition page; condensed here.
 // ─────────────────────────────────────────────────────────────────────────────
+// Tracks whether the viewport is at/under the mobile breakpoint, so the chart
+// editor's live-preview layout can switch from two-column (tablet/desktop) to
+// stacked (mobile) — both visually (CSS) and via the `data-orientation`
+// attribute the E2E spec asserts on.
+//
+// 768px (not a lower value like 480px): the modal caps at `max-width: 92vw`,
+// so below ~720px viewport width the two columns don't have room to breathe
+// (e.g. at 500px viewport the modal is ~460px wide, ~210px per column after
+// the gap). Stacking instead of squeezing avoids a cramped in-between zone
+// that the mobile (390)/tablet (820)/desktop (1440) test viewports never
+// exercised on their own.
+const MOBILE_BREAKPOINT = '(max-width: 768px)';
+function useIsMobileLayout() {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.(MOBILE_BREAKPOINT).matches
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia(MOBILE_BREAKPOINT);
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener?.('change', onChange);
+    setIsMobile(mq.matches);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+  return isMobile;
+}
+
 function ChartModal({ initial, columns = [], onClose, onSave }) {
   const { t } = useTranslation();
   const [name, setName]       = useState(initial?.name || '');
@@ -1661,6 +1663,15 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
   const [optsY, setOptsY]     = useState(initial?.options ? yaml.dump(initial.options, { indent: 2, lineWidth: -1 }) : '');
   const [err, setErr]         = useState('');
   const fe = useFieldErrors();
+  const isMobile = useIsMobileLayout();
+
+  // Live preview draft — mirrors the form state so useChartPreview can debounce
+  // and re-fetch /api/charts/preview on every field change (PUX-11).
+  const draftChart = { name: name.trim() || initial?.name || 'preview', title: title.trim(), type, questions: fromCsv(cols) };
+  if (optsY.trim()) {
+    try { const o = yaml.load(optsY); if (o && Object.keys(o).length) draftChart.options = o; } catch { /* invalid YAML — preview keeps last valid options */ }
+  }
+  const { loading: previewLoading, error: previewError, image: previewImage } = useChartPreview(draftChart);
 
   const submit = () => {
     if (!name.trim()) return fe.setError('name', t('composition.nameRequired'));
@@ -1672,19 +1683,65 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
     onSave(item);
   };
   return (
-    <Modal title={initial ? t('composition.editChart', { name: initial.name }) : t('composition.addChartModal')} onClose={onClose} onSave={submit} width={560}>
+    <Modal title={initial ? t('composition.editChart', { name: initial.name }) : t('composition.addChartModal')} onClose={onClose} onSave={submit} width={isMobile ? 560 : 920}>
       <ModalError>{err}</ModalError>
-      <ModalField label={t('composition.fName')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.chartName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
-      <ModalField label={t('composition.fTitle')}><input aria-label={t('composition.chartTitle')} className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder={t('composition.chartTitlePlaceholder')} /></ModalField>
-      <ModalField label={t('composition.fType')} hint={CHART_REQS[type] ? t('composition.needs', { reqs: CHART_REQS[type] }) : undefined}>
-        <select aria-label={t('composition.chartType')} className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-      </ModalField>
-      <ModalField label={t('composition.fColumns')} hint={t('composition.columnsHint')}>
-        <ColumnPicker ariaLabel={t('composition.chartColumns')} value={cols} onChange={setCols} options={columns} placeholder={t('composition.searchColumns')} />
-      </ModalField>
-      <ModalField label={t('composition.fOptions')} hint={t('composition.optionsHint')}>
-        <textarea aria-label={t('composition.chartOptionsYaml')} value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
-      </ModalField>
+      <div
+        data-testid="chart-editor-layout"
+        data-orientation={isMobile ? 'column' : 'row'}
+        style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 20 }}
+      >
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+          <ModalField label={t('composition.fName')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.chartName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
+          <ModalField label={t('composition.fTitle')}><input aria-label={t('composition.chartTitle')} name="title" id="title" className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder={t('composition.chartTitlePlaceholder')} /></ModalField>
+          <ModalField label={t('composition.fType')} hint={CHART_REQS[type] ? t('composition.needs', { reqs: CHART_REQS[type] }) : undefined}>
+            <select aria-label={t('composition.chartType')} className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+          </ModalField>
+          <ModalField label={t('composition.fColumns')} hint={t('composition.columnsHint')}>
+            <ColumnPicker ariaLabel={t('composition.chartColumns')} value={cols} onChange={setCols} options={columns} placeholder={t('composition.searchColumns')} />
+          </ModalField>
+          <ModalField label={t('composition.fOptions')} hint={t('composition.optionsHint')}>
+            <textarea aria-label={t('composition.chartOptionsYaml')} value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
+          </ModalField>
+        </div>
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+          <h4 style={{ marginTop: 0 }}>{t('composition.preview')}</h4>
+          <div
+            data-testid="chart-editor-preview"
+            role="status"
+            aria-live="polite"
+            style={{
+              minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16,
+            }}
+          >
+            {previewLoading && (
+              <div data-testid="chart-editor-preview-loading" style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center' }}>
+                <div className="skeleton" style={{ width: '100%', height: 140, borderRadius: 6, marginBottom: 10 }} />
+                {t('composition.renderingPreview')}
+              </div>
+            )}
+            {!previewLoading && previewError && (
+              <div data-testid="chart-editor-preview-error" style={{ background: 'var(--rose-soft)', borderRadius: 6, padding: '10px 12px', color: '#7F1D1D', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantRenderChart')}</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{previewError}</div>
+                <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
+                  <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>{t('composition.download')}</code> }} />
+                </div>
+              </div>
+            )}
+            {!previewLoading && !previewError && previewImage && (
+              <img
+                src={`data:image/png;base64,${previewImage}`}
+                alt={title || name || 'chart preview'}
+                style={{ maxWidth: '100%', height: 'auto', borderRadius: 4 }}
+              />
+            )}
+            {!previewLoading && !previewError && !previewImage && (
+              <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>{t('composition.previewIdle')}</div>
+            )}
+          </div>
+        </div>
+      </div>
     </Modal>
   );
 }
