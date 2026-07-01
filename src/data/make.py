@@ -518,6 +518,14 @@ def cmd_infer_template(ctx, template, out):
     prof = profile.profile_dataset(cfg, df, repeat_tables)
     catalog = ti.ask_engine.build_catalog(prof, cfg)
 
+    # XTF-28: surface the configured split_by dimension so a short-label token
+    # that maps to the unit of analysis (e.g. "[[NOM]]"/"[[Commune]]") can be
+    # proposed + validated as the {{ split_value }} system placeholder.
+    split_by = (cfg.get("report") or {}).get("split_by")
+    if split_by:
+        ai_cfg = {**ai_cfg, "split_by": split_by}
+        prof = {**prof, "split_by": split_by}
+
     proposals = ti.infer_specs(nl_tokens, catalog, ai_cfg)
     proposals = ti.annotate_proposals(proposals, prof)
 
