@@ -1714,13 +1714,14 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
               background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16,
             }}
           >
-            {previewLoading && (
+            {/* First load only (no prior image): full blanking skeleton. */}
+            {previewLoading && !previewImage && (
               <div data-testid="chart-editor-preview-loading" style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center' }}>
                 <div className="skeleton" style={{ width: '100%', height: 140, borderRadius: 6, marginBottom: 10 }} />
                 {t('composition.renderingPreview')}
               </div>
             )}
-            {!previewLoading && previewError && (
+            {previewError && (
               <div data-testid="chart-editor-preview-error" style={{ background: 'var(--rose-soft)', borderRadius: 6, padding: '10px 12px', color: '#7F1D1D', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
                 <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantRenderChart')}</div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{previewError}</div>
@@ -1729,12 +1730,33 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
                 </div>
               </div>
             )}
-            {!previewLoading && !previewError && previewImage && (
-              <img
-                src={`data:image/png;base64,${previewImage}`}
-                alt={title || name || 'chart preview'}
-                style={{ maxWidth: '100%', height: 'auto', borderRadius: 4 }}
-              />
+            {/* Last-good image stays visible during a re-fetch (PUX-12) —
+                dimmed with a small corner spinner rather than unmounted. */}
+            {!previewError && previewImage && (
+              <div style={{ position: 'relative', maxWidth: '100%' }}>
+                <img
+                  src={`data:image/png;base64,${previewImage}`}
+                  alt={title || name || 'chart preview'}
+                  style={{
+                    maxWidth: '100%', height: 'auto', borderRadius: 4, display: 'block',
+                    opacity: previewLoading ? 0.45 : 1, transition: 'opacity .15s ease',
+                  }}
+                />
+                {previewLoading && (
+                  <div
+                    data-testid="chart-editor-preview-loading"
+                    title={t('composition.renderingPreview')}
+                    style={{
+                      position: 'absolute', top: 8, right: 8, display: 'flex', alignItems: 'center', gap: 6,
+                      background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 999,
+                      padding: '4px 10px 4px 8px', fontSize: 12, color: 'var(--ink-3)', boxShadow: '0 1px 3px rgba(0,0,0,.08)',
+                    }}
+                  >
+                    <span className="ai-spinner" aria-hidden="true" />
+                    {t('composition.renderingPreview')}
+                  </div>
+                )}
+              </div>
             )}
             {!previewLoading && !previewError && !previewImage && (
               <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>{t('composition.previewIdle')}</div>
