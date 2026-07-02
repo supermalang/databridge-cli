@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 15 | 12 / 15 |
+| [Maintenance & hardening](#maintenance--hardening) | 15 | 13 / 15 |
 
 ---
 
@@ -4785,9 +4785,9 @@ Sprint exit — checked by /report + /retro:
   `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
 
 ---
-- [ ] **MNT-12 — Fix N+1 role queries in `/api/projects` list endpoint (P1)**
+- [x] **MNT-12 — Fix N+1 role queries in `/api/projects` list endpoint (P1)**
 
-  **Created:** 2026-06-28
+  **Created:** 2026-06-28 · **Completed:** 2026-07-02
 
   **Type:** Fix
 

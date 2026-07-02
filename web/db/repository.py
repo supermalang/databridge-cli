@@ -61,6 +61,14 @@ def role_for(db: Session, user: User, project: Project) -> Optional[str]:
     return pm.role if pm else None
 
 
+def get_memberships_for_user(user_id, db: Session) -> dict:
+    """All of a user's ProjectMembership rows in ONE query, as a
+    {project_id: ProjectMembership} map. Lets callers resolve per-project roles
+    in memory instead of one SELECT per project (avoids N+1 in list endpoints)."""
+    rows = db.scalars(select(ProjectMembership).where(ProjectMembership.user_id == user_id))
+    return {pm.project_id: pm for pm in rows}
+
+
 def role_at_least(role: Optional[str], minimum: str) -> bool:
     """True when `role` meets/exceeds `minimum` in the rank order."""
     if role is None:
