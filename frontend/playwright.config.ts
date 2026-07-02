@@ -20,6 +20,14 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // All app-driven specs share ONE Vite dev server (see webServer below); running
+  // multiple Playwright workers against it concurrently causes spurious
+  // page.goto/toHaveScreenshot timeouts under load — the exact "waiting for fonts
+  // to load" / "element to be stable" flakiness repeatedly hit across a11y-*,
+  // i18n-*, ux-*, and other specs. Serializing in CI trades wall-clock time for
+  // a suite that actually passes; local dev keeps the default (CPU-based) worker
+  // count since a developer isn't also fighting a shared CI runner's resources.
+  workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['list']] : 'list',
   // Small tolerance absorbs sub-pixel font/antialiasing noise without hiding real regressions.
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
