@@ -74,7 +74,7 @@ Sprint exit — checked by /report + /retro:
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 10 | 10 / 10 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 11 / 14 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 12 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
 | [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
@@ -1553,9 +1553,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **PUX-12 — Chart editor preview: keep last image visible during re-fetch (P2)**
+- [x] **PUX-12 — Chart editor preview: keep last image visible during re-fetch (P2)**
 
-  **Created:** 2026-07-01
+  **Created:** 2026-07-01 · **Started:** 2026-07-02 · **Completed:** 2026-07-02
 
   **Type:** Feature
 
