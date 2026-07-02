@@ -173,3 +173,76 @@ test('a non-2xx response sets an error state, not loading and not a stale succes
     'a failed request must not leave a stale successful preview image'
   );
 });
+
+// --- PUX-12 -----------------------------------------------------------------
+// Acceptance criteria under test (see docs/ROADMAP.md, PUX-12):
+//  - A debounced re-fetch keeps the last successful preview image VISIBLE
+//    (dimmed / corner spinner) instead of unmounting it — i.e. the hook must
+//    keep returning the prior image while `loading` is true, until the new
+//    response resolves.
+//  - Only the very FIRST load with no prior image shows the full blanking
+//    skeleton — i.e. with no prior image, `image` is null while `loading` is
+//    true.
+
+test('previous image persists during a debounced re-fetch until the new response resolves', async () => {
+  const { Harness } = mountHook();
+  const chartV1 = { name: 'c1', title: 'Draft', type: 'bar', questions: ['q1'] };
+  await renderWithChart(Harness, chartV1);
+
+  // First successful preview establishes a "last-good" image.
+  await flushMs(650);
+  assert.equal(fetchCalls.length, 1, 'precondition: initial debounced request should have fired');
+  await act(async () => {
+    pendingResolvers[0].resolve(okResponse({ image: 'data:image/png;base64,FIRST' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const firstImage = hookState.image ?? hookState.src;
+  assert.ok(firstImage, 'precondition: first preview should have produced an image');
+
+  // Now the user edits the title — this triggers a new debounced fetch.
+  const chartV2 = { ...chartV1, title: 'Draft edited' };
+  await renderWithChart(Harness, chartV2);
+  await flushMs(650);
+  assert.equal(fetchCalls.length, 2, 'precondition: the edit should trigger a second request');
+
+  // While that second request is IN FLIGHT (loading true, not yet resolved),
+  // the previously-successful image must remain visible — not nulled out.
+  assert.equal(hookState.loading, true, 'the hook should be loading during the re-fetch');
+  assert.equal(
+    hookState.image ?? hookState.src ?? null,
+    firstImage,
+    'the last successful image must persist (stay visible) while a re-fetch is in flight, not be unmounted'
+  );
+
+  // Once the new response resolves, the image updates to the fresh one.
+  await act(async () => {
+    pendingResolvers[1].resolve(okResponse({ image: 'data:image/png;base64,SECOND' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  assert.equal(hookState.loading, false, 'loading should clear once the new response resolves');
+  assert.equal(
+    hookState.image ?? hookState.src,
+    'data:image/png;base64,SECOND',
+    'after the re-fetch resolves the fresh image should be shown'
+  );
+});
+
+test('first load with no prior image shows the full skeleton (image null while loading)', async () => {
+  const { Harness } = mountHook();
+  const chart = { name: 'c1', title: 'Draft', type: 'bar', questions: ['q1'] };
+  await renderWithChart(Harness, chart);
+
+  await flushMs(650);
+  assert.equal(fetchCalls.length, 1, 'precondition: initial debounced request should have fired');
+
+  // No prior successful image exists, so there is nothing to keep visible —
+  // this is the only case that should blank to a skeleton: image null + loading.
+  assert.equal(hookState.loading, true, 'the initial load should be in the loading state');
+  assert.equal(
+    hookState.image ?? hookState.src ?? null,
+    null,
+    'the very first load with no prior image must show the full skeleton (image is null)'
+  );
+});

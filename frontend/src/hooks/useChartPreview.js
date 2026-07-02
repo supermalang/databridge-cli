@@ -26,7 +26,11 @@ export function useChartPreview(chart) {
 
     timerRef.current = setTimeout(() => {
       const reqId = ++reqIdRef.current;
-      setState({ loading: true, error: null, image: null });
+      // Keep the last successful image visible while a re-fetch is in flight
+      // (PUX-12) — only a first load with no prior image blanks to a skeleton.
+      // The error handlers below still clear `image`, so a failed re-fetch
+      // falls back to the error state rather than a stale-but-wrong preview.
+      setState((prev) => ({ loading: true, error: null, image: prev.image }));
       fetch('/api/charts/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
