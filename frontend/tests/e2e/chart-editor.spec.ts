@@ -264,3 +264,102 @@ test.describe('PUX-11 — inline live preview in the chart editor modal', () => 
     await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal.png');
   });
 });
+
+/**
+ * PUX-12 — Chart editor preview: keep last image visible during re-fetch.
+ *
+ * Follow-up from PUX-11. Today `useChartPreview` unmounts the last successful
+ * image and swaps in the loading skeleton on every debounced re-fetch, so a
+ * previously-correct chart vanishes on every keystroke-triggered update. This
+ * card requires the last-good image to STAY in the DOM (dimmed / corner
+ * spinner) while a re-fetch is in flight, and only the very first load (no
+ * prior image) to blank to the skeleton.
+ *
+ * RED-FIRST: derived from the PUX-12 Acceptance criteria, NOT the current
+ * implementation. Expected to fail until the persist-last-image behaviour ships.
+ *
+ * Reuses the PUX-11 selector contract:
+ *   - preview pane:      data-testid="chart-editor-preview"
+ *   - preview <img>:     `chart-editor-preview img`
+ *   - loading skeleton:  data-testid="chart-editor-preview-loading"
+ */
+test.describe('PUX-12 — chart editor preview persists last image during re-fetch', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await bootApp(page);
+    await openComposition(page);
+  });
+
+  // AC1/AC2 — a debounced re-fetch keeps the last successful <img> in the DOM
+  // (not replaced by the skeleton testid) while the request is in flight.
+  test('AC1: previously-rendered preview image remains in the DOM during a re-fetch (not the skeleton)', async ({ page }) => {
+    // Delay preview responses so the in-flight window is observable, but keep
+    // the FIRST response fast enough that an initial image is rendered.
+    let previewHits = 0;
+    await page.route('**/api/charts/preview', async (r) => {
+      previewHits += 1;
+      // First call resolves quickly to establish a last-good image; later
+      // (re-fetch) calls are held open so we can inspect the in-flight state.
+      const delay = previewHits === 1 ? 0 : 1500;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      await r.fulfill({ json: { image: Buffer.from(`fake-png-${previewHits}`).toString('base64') } });
+    });
+
+    await openEditChartModal(page);
+
+    // Establish the first successful preview image.
+    await expect(previewImage(page)).toBeVisible({ timeout: 5000 });
+    const srcBefore = await previewImage(page).getAttribute('src');
+    expect(srcBefore, 'precondition: an initial preview image should be rendered').toBeTruthy();
+
+    // Edit a field twice in quick succession to trigger a debounced re-fetch.
+    const titleInput = editorDialog(page)
+      .locator('input[name="title"], input#title, input[value="Age distribution"]')
+      .first();
+    await titleInput.fill('Age distribution v2');
+    await titleInput.fill('Age distribution v3');
+
+    // While the re-fetch is in flight, the last-good <img> must still be in the
+    // DOM (dimmed / corner spinner), NOT unmounted and replaced by the skeleton.
+    await expect(async () => {
+      expect(previewHits).toBeGreaterThan(1);
+    }).toPass({ timeout: 3000 });
+
+    await expect(
+      previewImage(page),
+      'the last successful preview image must remain in the DOM during the re-fetch, not be unmounted',
+    ).toBeVisible();
+    const srcDuring = await previewImage(page).getAttribute('src');
+    expect(srcDuring, 'the persisted image should still be the last-good src while re-fetching').toBe(srcBefore);
+  });
+
+  // ── Visual baseline of the dimmed / in-progress re-fetch state ────────────
+  // Per-viewport via the project config (mobile/tablet/desktop) — no hard-coded
+  // viewport here.
+  test('visual: chart editor preview in the dimmed re-fetch state', async ({ page }) => {
+    await page.route('**/api/charts/preview', async (r, req) => {
+      // Hold re-fetches open (any request after the first) so the dimmed
+      // in-progress state is captured deterministically.
+      // Note: fixed payload so the baseline image content is stable.
+      const held = (previewCallCount += 1) > 1;
+      if (held) await new Promise((resolve) => setTimeout(resolve, 2000));
+      await r.fulfill({ json: { image: Buffer.from('fake-png-stable').toString('base64') } });
+    });
+
+    await openEditChartModal(page);
+    await expect(previewImage(page)).toBeVisible({ timeout: 5000 });
+
+    // Trigger the re-fetch and capture the dimmed / in-progress state.
+    const titleInput = editorDialog(page)
+      .locator('input[name="title"], input#title, input[value="Age distribution"]')
+      .first();
+    await titleInput.fill('Age distribution (re-fetch)');
+
+    // Wait for the debounce to fire and the loading indicator to appear over
+    // the still-visible last-good image.
+    await expect(previewLoading(page)).toBeVisible({ timeout: 3000 });
+    await expect(previewImage(page)).toBeVisible();
+
+    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-refetch.png');
+  });
+});
