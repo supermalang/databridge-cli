@@ -131,3 +131,105 @@ def test_apply_superadmin_emails_empty_noop(db, monkeypatch):
 
     assert n == 0
     scalars_mock.assert_not_called()
+
+
+# --- MNT-12: batch membership fetch — no N+1 role queries in /api/projects ---
+
+def _pm_select_statements(statements):
+    """Every captured SELECT that reads the project_memberships table."""
+    return [
+        s for s in statements
+        if "SELECT" in s.upper() and "project_memberships" in s.lower()
+    ]
+
+
+def _member_of_foreign_projects(db, owner, member, n):
+    """Create `n` projects OWNED BY `owner` and give `member` an explicit
+    ProjectMembership row on each. `member` is NOT the owner of any of them,
+    so their role must be resolved from the membership table (not the owner
+    short-circuit in role_for)."""
+    owner_org = repo.create_org(db, name="owner org", slug="owner-org", owner=owner)
+    repo.add_membership(db, user=owner, org=owner_org, role="owner")
+    projects = []
+    roles = ("viewer", "editor", "admin")
+    for i in range(n):
+        p = repo.create_project(db, user=owner, name=f"P{i}", org_id=owner_org.id)
+        role = roles[i % len(roles)]
+        db.add(repo.ProjectMembership(user_id=member.id, project_id=p.id, role=role))
+        projects.append((p, role))
+    db.commit()
+    return projects
+
+
+def test_get_memberships_for_user_single_query(db):
+    """AC: get_memberships_for_user(user_id, db) returns ALL of a user's
+    ProjectMembership rows in ONE `SELECT ... WHERE user_id = :uid` query,
+    and the returned map contains every project->role entry."""
+    owner, _ = _user_with_org(db, "owner", "owner@y.io")
+    member = repo.upsert_user(db, sub="member", email="member@y.io", name="M")
+    n = 4
+    seeded = _member_of_foreign_projects(db, owner, member, n)
+
+    statements = _capture_statements(db)
+
+    result = repo.get_memberships_for_user(member.id, db)
+
+    pm_selects = _pm_select_statements(statements)
+    assert len(pm_selects) == 1, (
+        f"expected exactly 1 SELECT on project_memberships, got {len(pm_selects)}: "
+        f"{pm_selects!r}"
+    )
+    for stmt in pm_selects:
+        upper = stmt.upper()
+        assert "WHERE" in upper and "USER_ID" in upper, (
+            f"membership fetch must filter by user_id: {stmt!r}"
+        )
+
+    # The returned structure must let a caller look up role per project.
+    for p, role in seeded:
+        assert _role_from_map(result, p.id) == role, (
+            f"membership map missing/incorrect role for project {p.id}"
+        )
+
+
+def _role_from_map(result, project_id):
+    """Resolve a project's role from whatever mapping shape
+    get_memberships_for_user returns (dict keyed by project_id, or an
+    iterable of ProjectMembership rows)."""
+    if isinstance(result, dict):
+        val = result.get(project_id)
+        if val is None:
+            return None
+        return getattr(val, "role", val)
+    for row in result:
+        if getattr(row, "project_id", None) == project_id:
+            return row.role
+    return None
+
+
+@pytest.mark.parametrize("n", [1, 5])
+def test_project_list_resolves_roles_without_per_project_query(db, n):
+    """AC: resolving roles for a user's N projects issues exactly ONE query
+    against project_memberships regardless of N (no N+1). Drives the same
+    role-resolution path _project_dict uses for the /api/projects list."""
+    from web.main import _project_dict
+
+    owner, _ = _user_with_org(db, "owner", "owner@y.io")
+    member = repo.upsert_user(db, sub="member", email="member@y.io", name="M")
+    _member_of_foreign_projects(db, owner, member, n)
+
+    projects = repo.list_projects_for_user(db, member)
+    assert len(projects) == n
+
+    statements = _capture_statements(db)
+
+    dicts = [_project_dict(db, member, p) for p in projects]
+
+    pm_selects = _pm_select_statements(statements)
+    assert len(pm_selects) == 1, (
+        f"building the project list for N={n} issued {len(pm_selects)} "
+        f"project_memberships SELECTs (N+1); expected exactly 1: {pm_selects!r}"
+    )
+
+    # Sanity: roles were actually resolved (not all None).
+    assert all(d["role"] is not None for d in dicts)
