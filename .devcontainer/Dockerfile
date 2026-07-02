@@ -13,6 +13,7 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list \
         curl \
         wget \
         jq \
+        tmux \
         git \
         git-lfs \
         htop \
