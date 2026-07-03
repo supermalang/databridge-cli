@@ -74,14 +74,14 @@ Sprint exit — checked by /report + /retro:
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 10 | 10 / 10 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 11 / 14 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 12 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
+| [Visual / E2E harness](#visual--e2e-harness) | 3 | 3 / 3 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 15 | 12 / 15 |
+| [Maintenance & hardening](#maintenance--hardening) | 15 | 13 / 15 |
 
 ---
 
@@ -1553,9 +1553,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **PUX-12 — Chart editor preview: keep last image visible during re-fetch (P2)**
+- [x] **PUX-12 — Chart editor preview: keep last image visible during re-fetch (P2)**
 
-  **Created:** 2026-07-01
+  **Created:** 2026-07-01 · **Started:** 2026-07-02 · **Completed:** 2026-07-02
 
   **Type:** Feature
 
@@ -3537,6 +3537,57 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
+- [x] **VIS-3 — Cap Playwright workers to stop parallel-worker browser crashes in the E2E suite (P1)**
+
+  **Created:** 2026-07-02 · **Started:** 2026-07-02 · **Completed:** 2026-07-03
+
+  **Type:** Fix
+
+  `frontend/playwright.config.ts` sets `fullyParallel: true` with no `workers` cap, so Playwright
+  runs the three viewport projects (mobile/tablet/desktop) concurrently against a single shared
+  Vite dev server (`webServer`). Under that contention the headless-chromium workers crash
+  mid-test — surfacing as `Page crashed` / `Target page, context or browser has been closed`
+  failures rather than assertion diffs. This stalled the `/ship-task open` batch for ~19 min on
+  PUX-12: `chart-editor.spec.ts` crashed on the tablet project in the full parallel run but passed
+  **33/33** across all three viewports when re-run with `--workers=1`. Fix: cap the worker count
+  so specs that pass in isolation also pass in the full suite. A stalled
+  `fix/ci-playwright-worker-contention` branch already drafted `workers: CI ? 1 : undefined` —
+  finish and verify it (its own commit note flags it INCOMPLETE / NOT-YET-SUFFICIENT), capping
+  locally too since this dev container hits the same contention.
+
+  **Out of scope (separate concern):** genuinely drifted screenshot baselines (e.g. A11Y-1, PUX-1,
+  PUX-3) that fail as pixel-diff mismatches even at `workers:1` — those are a baseline
+  reconciliation task (cf. VIS-2), NOT a contention crash, and must not be folded into this fix.
+
+  **Files:** `frontend/playwright.config.ts`
+
+  **Config/schema impact:** None — test-harness config only; no app config or DB change.
+
+  **Acceptance criteria**
+  - `playwright.config.ts` caps the Playwright worker count (e.g. `workers: 1`, or a small fixed
+    cap) so the three viewport projects no longer overwhelm the shared Vite dev server
+  - The full `npm run test:e2e` suite runs with **zero crash-class failures** — no `Page crashed`
+    / `Target ... closed` / worker-timeout errors (screenshot pixel-diff mismatches from
+    pre-existing baseline drift are explicitly excluded from this criterion)
+  - A spec that passes in isolation (`chart-editor.spec.ts` → 33/33) also passes as part of the
+    full suite, on all three viewports
+  - The cap applies both in CI (`process.env.CI`) and locally, since both share one dev server
+
+  **Unit tests:** N/A (Playwright harness config change — no isolable application logic; the E2E
+  harness itself is what changes).
+
+  **E2E:** Validated by the E2E harness itself — `cd frontend && npm run test:e2e` completes with
+  no crash-class failures across mobile/tablet/desktop. No new spec or `toHaveScreenshot` baseline
+  is added (this card changes runner config, not UI).
+
+  **UAT:** N/A (test-infra/CI change; no user-facing surface — PR review + a green CI run are the
+  human gate).
+
+  **Verify:** `cd frontend && npm run test:e2e` (full suite; assert no `Page crashed` / `Target closed` / worker-timeout failures) · `CI=true npx playwright test chart-editor.spec.ts` from `frontend/`
+
+---
+
+
 ## Internationalization (i18n)
 
 > Interface localization so French-speaking M&E officers + field coordinators (per `PRODUCT.md` /
@@ -4785,9 +4836,9 @@ Sprint exit — checked by /report + /retro:
   `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
 
 ---
-- [ ] **MNT-12 — Fix N+1 role queries in `/api/projects` list endpoint (P1)**
+- [x] **MNT-12 — Fix N+1 role queries in `/api/projects` list endpoint (P1)**
 
-  **Created:** 2026-06-28
+  **Created:** 2026-06-28 · **Completed:** 2026-07-02
 
   **Type:** Fix
 

@@ -4,15 +4,6 @@ name: databridge-dev
 # Dockerfile); `db` (Postgres) and `minio` (object storage) are siblings on the default
 # network, reachable from the app as `db:5432` / `minio:9000`. A one-shot `createbucket`
 # job ensures the `databridge` bucket exists. Data persists in named volumes across rebuilds.
-#
-# MEMORY BUDGET — sized for a 4 GB WSL VM running ONE project at a time:
-#   app   2048m  (the IDE lives here: VS Code Server + Pylance + Node + Claude + Playwright)
-#   db     512m
-#   minio  384m
-#   ----------- persistent total ~2944m, leaving ~1.1g for WSL2 + Docker daemon overhead.
-# createbucket (64m) is a one-shot that exits, so it doesn't count against the steady state.
-# NOTE: this does NOT leave room for a second project's stack. Run one at a time
-# (`docker compose stop` the other), or raise the VM to 8 GB to run both live.
 
 services:
   app:
@@ -20,14 +11,20 @@ services:
       context: .
       dockerfile: Dockerfile
     command: sleep infinity
-    # mem_limit is the hard ceiling (OOM-kills past it); mem_reservation is the soft floor.
-    # 2 GB because Pylance indexing alone can spike ~0.5–1 GB on top of the rest of the toolchain.
     mem_limit: 2048m
     mem_reservation: 1024m
     volumes:
       - ..:/workspaces/databridge-cli:cached
       - npm-global:/home/vscode/.npm-global
       - zsh-history:/home/vscode/.zsh_history
+    # Secrets live here (real API keys/tokens, e.g. GH_TOKEN), loaded as env vars. Path is
+    # relative to THIS compose file (.devcontainer/). Gitignore secrets.env; commit
+    # secrets.env.example instead. required: false so a fresh clone without the file still builds.
+    # PRECEDENCE: values in the `environment:` block below OVERRIDE anything in secrets.env.
+    # Keep secret keys OUT of `environment:` or they'll be silently overridden.
+    env_file:
+      - path: secrets.env
+        required: false
     environment:
       PYTHONUNBUFFERED: "1"
       # Auto-wired infra (service hostnames). Dev-only creds — safe to commit.
@@ -59,7 +56,7 @@ services:
       timeout: 3s
       retries: 20
     ports:
-      - "5432:5432"   # optional: connect from a host DB client
+      - "5432:5432" # optional: connect from a host DB client
 
   minio:
     image: minio/minio
@@ -72,8 +69,8 @@ services:
     volumes:
       - miniodata:/data
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # web console
+      - "9000:9000" # S3 API
+      - "9001:9001" # web console
 
   createbucket:
     image: minio/mc

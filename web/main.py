@@ -246,10 +246,33 @@ class ProjectPatchPayload(BaseModel):
 _META_KEYS = ("description", "tags", "language", "color", "icon")
 
 
-def _project_dict(db, user, p):
+def _role_from_memberships(user, project, memberships):
+    """Effective role using a pre-fetched {project_id: ProjectMembership} map —
+    mirrors db_repo.role_for's precedence (superadmin > owner > membership row)
+    without hitting the DB per project."""
+    if user is None:
+        return None
+    if getattr(user, "is_superadmin", False):
+        return "superadmin"
+    if project.owner_id is not None and project.owner_id == user.id:
+        return "admin"
+    pm = memberships.get(project.id)
+    return pm.role if pm else None
+
+
+def _project_dict(db, user, p, memberships=None):
     meta = p.meta or {}
+    if memberships is None:
+        # Memoize the user's membership map on the session so repeated
+        # _project_dict calls (e.g. the /api/projects list) share one query.
+        cache = getattr(db, "_pm_cache", None)
+        if cache is None or cache[0] != getattr(user, "id", None):
+            memberships = db_repo.get_memberships_for_user(user.id, db) if user else {}
+            db._pm_cache = (getattr(user, "id", None), memberships)
+        else:
+            memberships = cache[1]
     return {"id": str(p.id), "name": p.name, "slug": p.slug, "org_id": str(p.org_id),
-            "role": db_repo.role_for(db, user, p),
+            "role": _role_from_memberships(user, p, memberships),
             "is_owner": p.owner_id == user.id,
             "is_archived": p.archived_at is not None,
             "description": meta.get("description", ""),
@@ -265,10 +288,11 @@ def list_projects(request: Request, db: Session = Depends(db_session.get_db)):
     if user is None:
         return {"projects": [], "active_id": None}
     projects = db_repo.list_projects_for_user(db, user)
+    memberships = db_repo.get_memberships_for_user(user.id, db)
     return {
         "active_id": str(user.active_project_id) if user.active_project_id else None,
         "is_superadmin": bool(user.is_superadmin),
-        "projects": [_project_dict(db, user, p) for p in projects],
+        "projects": [_project_dict(db, user, p, memberships) for p in projects],
     }
 
 
