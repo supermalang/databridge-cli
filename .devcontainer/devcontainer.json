@@ -31,7 +31,7 @@
   "remoteEnv": {
     "PATH": "/home/vscode/.npm-global/bin:${containerEnv:PATH}"
   },
-  "forwardPorts": [8000, 51730, 9001, 5432, 9000, 3846, 9323],
+  "forwardPorts": [8000, 51730, 9001, 5432, 9000, 3846, 9323, 6006, 4444],
   "portsAttributes": {
     "8000": { "label": "app (uvicorn)", "onAutoForward": "notify" },
     "51730": { "label": "vite (dev HMR)", "onAutoForward": "silent" },
@@ -39,7 +39,9 @@
     "5432": { "label": "Postgres", "onAutoForward": "silent" },
     "9000": { "label": "Minio S3 API", "onAutoForward": "silent" },
     "3846": { "label": "vibe-annotations", "onAutoForward": "silent" },
-    "9323": { "label": "Playwright report", "onAutoForward": "notify" }
+    "9323": { "label": "Playwright report", "onAutoForward": "notify" },
+    "6006": { "label": "Storybook (VIS-4 Tier 2)", "onAutoForward": "notify" },
+    "4444": { "label": "Visual review app (VIS-4 Tier 3)", "onAutoForward": "notify" }
   },
   // claude-code is installed by the feature above, so it's removed from the npm -g list
   // to avoid two copies on PATH shadowing each other.
