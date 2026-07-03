@@ -5034,9 +5034,9 @@ Sprint exit — checked by /report + /retro:
   step (a human runs `npm run test:e2e:update`, reviews the diff, commits the PNGs). Nothing
   currently stops an agent from re-baselining a *failing* screenshot test via Bash instead of
   fixing the regression — silently defeating the visual gate. Add a `PreToolUse(Bash)` guard
-  that denies baseline-update commands. A draft implementation exists on branch
-  `feature/mnt-17` (produced by a hallucinated batch run); its tests were self-authored, so
-  the hook must be **re-derived pipeline-grade** (independent test author), not merged as-is.
+  that denies baseline-update commands. This card originated from a hallucinated batch run
+  whose untracked draft had self-authored tests, so the hook must be **authored
+  pipeline-grade** (independent test author) from the acceptance criteria below.
 
   **Type:** Feature
 
