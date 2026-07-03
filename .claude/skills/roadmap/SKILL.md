@@ -13,6 +13,16 @@ at marker write), `guard-git-flow` + `guard-branch` (no commits/code-edits on ma
 Never `Edit` `docs/ROADMAP.md` (the guard blocks partial edits). Read it, compute the full new
 content, `Write` the whole file.
 
+## Keeping the roadmap lean
+`docs/ROADMAP.md` is read by nearly every roadmap-pipeline agent, so it stays proportional to
+**active** work, not cumulative history. Delivered cards (`[x]` + a real `**Completed:**` date)
+can be swept out into `docs/roadmap/archive/<area-slug>.md` via `/roadmap-status archive`
+(`.claude/skills/roadmap-status/archive.mjs`), leaving a one-line row in the live file's
+`## ✅ Delivered (archived)` ledger. This is lossless, idempotent, and git holds full history
+regardless — see `.claude/skills/roadmap-status/SKILL.md`. When checking whether an ID is
+already used (next-free-number / duplicate check), check both the live cards **and** the
+`✅ Delivered (archived)` ledger — an archived ID is still taken.
+
 ## Template
 - The header carries, once: `## Definition of Ready` (entry gate), `## Definition of Done`
   (exit gate), and a `## Global status` table.
