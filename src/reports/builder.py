@@ -32,9 +32,25 @@ def _strip_residual_brackets(path: Path) -> None:
     _OPEN = "[["; _CLOSE = "]]"
 
     def _clean_runs(para):
-        for run in para.runs:
-            if _OPEN in run.text or _CLOSE in run.text:
-                run.text = run.text.replace(_OPEN, "").replace(_CLOSE, "")
+        runs = para.runs
+        if not runs:
+            return
+        joined = "".join(run.text for run in runs)
+        if _OPEN not in joined and _CLOSE not in joined:
+            return
+        # Join the paragraph's run text before pattern-matching so a delimiter
+        # split across runs — even mid-character (e.g. "[" | "[NOM]" | "]") — is
+        # matched as a whole. The current per-run replace only catches a
+        # delimiter that is intact within a single run.
+        cleaned = joined.replace(_OPEN, "").replace(_CLOSE, "")
+        if cleaned == joined:
+            return
+        # Redistribute the cleaned text: keep it in the first run (preserving its
+        # formatting) and blank the remaining runs. Only the surviving delimiter
+        # tokens are removed; all other text is preserved verbatim.
+        runs[0].text = cleaned
+        for run in runs[1:]:
+            run.text = ""
 
     def _walk_table(table):
         for row in table.rows:
