@@ -4,6 +4,14 @@ name: databridge-dev
 # Dockerfile); `db` (Postgres) and `minio` (object storage) are siblings on the default
 # network, reachable from the app as `db:5432` / `minio:9000`. A one-shot `createbucket`
 # job ensures the `databridge` bucket exists. Data persists in named volumes across rebuilds.
+#
+# MEMORY BUDGET — sized for an 8 GB VM running ONE project at a time:
+#   app   5120m  (the IDE lives here: VS Code Server + Pylance + Node + Claude + Playwright)
+#   db     512m
+#   minio  384m
+#   ----------- persistent total ~6016m, leaving ~1.7g for the host + Docker daemon overhead.
+# NOTE: `free -h` INSIDE the container reports the HOST's memory, not this cap. The real
+# ceiling is the cgroup limit — check with `cat /sys/fs/cgroup/memory.max`.
 
 services:
   app:
@@ -11,8 +19,11 @@ services:
       context: .
       dockerfile: Dockerfile
     command: sleep infinity
-    mem_limit: 2048m
-    mem_reservation: 1024m
+    hostname: xayma
+    # mem_limit is the hard ceiling (OOM-kills past it); mem_reservation is the soft floor.
+    # 5 GB so the extension host (node + Pylance + Claude + Playwright) doesn't hit the cap.
+    mem_limit: 5120m
+    mem_reservation: 2048m
     volumes:
       - ..:/workspaces/databridge-cli:cached
       - npm-global:/home/vscode/.npm-global

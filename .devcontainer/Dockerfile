@@ -10,10 +10,10 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list \
         fzf \
         ripgrep \
         bat \
+        tmux \
         curl \
         wget \
         jq \
-        tmux \
         git \
         git-lfs \
         htop \

@@ -4,6 +4,10 @@
   "service": "app",
   "workspaceFolder": "/workspaces/databridge-cli",
   "remoteUser": "vscode",
+  // Keep the container running when VS Code closes / the SSH tunnel drops, and give it a
+  // real init (tini) as PID 1 so detached processes (tmux) are reaped, not left as zombies.
+  "shutdownAction": "none",
+  "init": true,
   "features": {
     "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
     "ghcr.io/devcontainers/features/github-cli:1": {},
@@ -23,90 +27,47 @@
     "PLAYWRIGHT_BROWSERS_PATH": "/home/vscode/.cache/ms-playwright"
   },
   // Ensure npm global binaries (claude, tsx, vibe-annotations-server, tsc) are on PATH.
-  // They install to /home/vscode/.npm-global/bin via the --prefix below; without this,
-  // postStartCommand's `vibe-annotations-server` and the `claude plugin` calls silently fail.
+  // They install to /home/vscode/.npm-global/bin via the --prefix in postCreateCommand.
   "remoteEnv": {
     "PATH": "/home/vscode/.npm-global/bin:${containerEnv:PATH}"
   },
   "forwardPorts": [8000, 51730, 9001, 5432, 9000, 3846, 9323],
   "portsAttributes": {
-    "8000": {
-      "label": "app (uvicorn)",
-      "onAutoForward": "notify"
-    },
-    "51730": {
-      "label": "vite (dev HMR)",
-      "onAutoForward": "silent"
-    },
-    "9001": {
-      "label": "Minio console",
-      "onAutoForward": "silent"
-    },
-    "5432": {
-      "label": "Postgres",
-      "onAutoForward": "silent"
-    },
-    "9000": {
-      "label": "Minio S3 API",
-      "onAutoForward": "silent"
-    },
-    "3846": {
-      "label": "vibe-annotations",
-      "onAutoForward": "silent"
-    },
-    "9323": {
-      "label": "Playwright report",
-      "onAutoForward": "notify"
-    }
+    "8000": { "label": "app (uvicorn)", "onAutoForward": "notify" },
+    "51730": { "label": "vite (dev HMR)", "onAutoForward": "silent" },
+    "9001": { "label": "Minio console", "onAutoForward": "silent" },
+    "5432": { "label": "Postgres", "onAutoForward": "silent" },
+    "9000": { "label": "Minio S3 API", "onAutoForward": "silent" },
+    "3846": { "label": "vibe-annotations", "onAutoForward": "silent" },
+    "9323": { "label": "Playwright report", "onAutoForward": "notify" }
   },
   // claude-code is installed by the feature above, so it's removed from the npm -g list
   // to avoid two copies on PATH shadowing each other.
-  "postCreateCommand": "pip install -r requirements.txt && npm install -g --prefix=/home/vscode/.npm-global @playwright/mcp vibe-annotations-server typescript tsx && npx --yes playwright install chromium --with-deps && claude plugin marketplace add https://github.com/obra/superpowers.git && claude plugin marketplace add anthropics/claude-plugins-official && claude plugin install superpowers@superpowers-dev && mkdir -p ~/.claude/skills && ([ -d ~/.claude/skills/superpowers ] || git clone --depth=1 https://github.com/obra/superpowers.git ~/.claude/skills/superpowers) && { [ -d \"$PWD/.claude/skills/impeccable\" ] && ln -sfn \"$PWD/.claude/skills/impeccable\" ~/.claude/skills/impeccable || true; } && bash .devcontainer/setup-shell.sh",
-  "postStartCommand": "vibe-annotations-server start >/dev/null 2>&1 & printf '\\n\\xf0\\x9f\\x9a\\x80 Dev container ready\\n   claude                    \\xe2\\x86\\x92 start Claude Code\\n   ship                      \\xe2\\x86\\x92 Claude in a durable tmux session\\n   pytest                    \\xe2\\x86\\x92 run tests\\n   (vibe-annotations on :3846)\\n\\n'",
+  // Versions pinned so the persisted npm-global volume can't silently serve a stale copy
+  // after a Node bump — npm reconciles to these on each rebuild.
+  "postCreateCommand": "pip install -r requirements.txt && npm install -g --prefix=/home/vscode/.npm-global @playwright/mcp@latest vibe-annotations-server@latest typescript@5 tsx@4 && npx --yes playwright install chromium --with-deps && claude plugin marketplace add https://github.com/obra/superpowers.git && claude plugin marketplace add anthropics/claude-plugins-official && claude plugin install superpowers@superpowers-dev && mkdir -p ~/.claude/skills && ([ -d ~/.claude/skills/superpowers ] || git clone --depth=1 https://github.com/obra/superpowers.git ~/.claude/skills/superpowers) && { [ -d \"$PWD/.claude/skills/impeccable\" ] && ln -sfn \"$PWD/.claude/skills/impeccable\" ~/.claude/skills/impeccable || true; } && bash .devcontainer/setup-shell.sh",
+  "postStartCommand": "vibe-annotations-server start >/dev/null 2>&1 & printf '\\n\\xf0\\x9f\\x9a\\x80 Dev container ready\\n   claude                    \\xe2\\x86\\x92 start Claude Code\\n   ship                      \\xe2\\x86\\x92 start/resume Claude in a durable tmux session\\n   ship <name>               \\xe2\\x86\\x92 a second named durable session\\n   ships                     \\xe2\\x86\\x92 list durable sessions\\n   pytest                    \\xe2\\x86\\x92 run tests\\n   (vibe-annotations on :3846)\\n\\n'",
   "customizations": {
     "vscode": {
       "extensions": [
         "anthropic.claude-code",
-        "ms-python.python",
-        "ms-python.vscode-pylance",
-        "ms-python.black-formatter",
-        "charliermarsh.ruff",
-        "ms-python.mypy-type-checker",
-        "ms-ossdata.vscode-pgsql",
         "ms-playwright.playwright",
         "esbenp.prettier-vscode",
-        "eamodio.gitlens",
-        "mhutchie.git-graph",
         "GitHub.vscode-pull-request-github",
-        "usernamehw.errorlens",
-        "christian-kohler.path-intellisense",
-        "streetsidesoftware.code-spell-checker",
         "mikestead.dotenv",
         "yzhang.markdown-all-in-one"
       ],
       "settings": {
+        // Format-on-save via Prettier for the config/doc formats you read & tidy.
+        // NOTE: saving a JSON/YAML/MD file reformats it even if opened only to read.
+        // Set formatOnSave to false to format on demand (Shift+Alt+F) instead.
         "editor.formatOnSave": true,
-        "editor.codeActionsOnSave": {
-          "source.fixAll": "explicit"
-        },
-        "[python]": {
-          "editor.defaultFormatter": "charliermarsh.ruff",
-          "editor.formatOnSave": true,
-          "editor.codeActionsOnSave": {
-            "source.fixAll.ruff": "explicit",
-            "source.organizeImports.ruff": "explicit"
-          }
-        },
-        "python.defaultInterpreterPath": "/usr/local/bin/python",
-        "terminal.integrated.defaultProfile.linux": "zsh",
-        // --- Pylance memory diet (keeps the extension host under the 2 GB app cap) ---
-        // diagnosticMode openFilesOnly + indexing off are the big memory savers; the
-        // trade-off is weaker workspace-wide symbol search / auto-import. Re-enable
-        // indexing if you have headroom and want full project-wide IntelliSense.
-        "python.analysis.diagnosticMode": "openFilesOnly",
-        "python.analysis.indexing": false,
-        "python.analysis.userFileIndexingLimit": 2000,
-        "python.analysis.autoImportCompletions": false
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+        "[jsonc]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+        "[yaml]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+        "[markdown]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+        "terminal.integrated.defaultProfile.linux": "zsh"
       }
     }
   }
