@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 15 | 13 / 15 |
+| [Maintenance & hardening](#maintenance--hardening) | 15 | 14 / 15 |
 
 ---
 
@@ -4950,9 +4950,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-15 — Fix: manually-created charts can ship with a blank title (P2)**
+- [x] **MNT-15 — Fix: manually-created charts can ship with a blank title (P2)**
 
-  **Created:** 2026-07-01
+  **Created:** 2026-07-01 · **Started:** 2026-07-03 · **Completed:** 2026-07-03
 
   In the Composition tab's `ChartModal`, only `name` is validated as required — `title` has
   no such check, and the submit handler always writes `title: title.trim()` into the chart
