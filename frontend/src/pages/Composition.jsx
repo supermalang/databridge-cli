@@ -1757,6 +1757,89 @@ function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onS
     }
     onSave(item);
   };
+  // PUX-14: on mobile the preview pane must be reachable without scrolling
+  // past the whole form. Strategy A — reorder the pane above the form fields
+  // in the stacked (column) layout only; tablet/desktop keep the existing
+  // two-column ("row") order untouched (AC2 regression guard).
+  const formFields = (
+    <div style={{ flex: '1 1 0', minWidth: 0 }}>
+      <ModalField label={t('composition.fName')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.chartName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
+      <ModalField label={t('composition.fTitle')} error={fe.errorFor('title')} errorId={fe.errorId('title')}><input aria-label={t('composition.chartTitle')} name="title" id="title" className="src-input" value={title} {...fe.fieldProps('title')} onChange={e => { setTitle(e.target.value); if (e.target.value.trim()) fe.clearError('title'); }} placeholder={t('composition.chartTitlePlaceholder')} /></ModalField>
+      <ModalField label={t('composition.fType')} hint={CHART_REQS[type] ? t('composition.needs', { reqs: CHART_REQS[type] }) : undefined}>
+        <select aria-label={t('composition.chartType')} className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+      </ModalField>
+      <ModalField label={t('composition.fColumns')} hint={t('composition.columnsHint')}>
+        <ColumnPicker ariaLabel={t('composition.chartColumns')} value={cols} onChange={setCols} options={columns} placeholder={t('composition.searchColumns')} error={columnFieldError} errorId={fe.errorId('columns')} />
+      </ModalField>
+      <ModalField label={t('composition.fOptions')} hint={t('composition.optionsHint')}>
+        <textarea aria-label={t('composition.chartOptionsYaml')} value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
+      </ModalField>
+    </div>
+  );
+
+  const previewPane = (
+    <div style={{ flex: '1 1 0', minWidth: 0 }}>
+      <h4 style={{ marginTop: 0 }}>{t('composition.preview')}</h4>
+      <div
+        data-testid="chart-editor-preview"
+        role="status"
+        aria-live="polite"
+        style={{
+          minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16,
+        }}
+      >
+        {/* First load only (no prior image): full blanking skeleton. */}
+        {previewLoading && !previewImage && (
+          <div data-testid="chart-editor-preview-loading" style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center' }}>
+            <div className="skeleton" style={{ width: '100%', height: 140, borderRadius: 6, marginBottom: 10 }} />
+            {t('composition.renderingPreview')}
+          </div>
+        )}
+        {previewError && (
+          <div data-testid="chart-editor-preview-error" style={{ background: 'var(--rose-soft)', borderRadius: 6, padding: '10px 12px', color: '#7F1D1D', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantRenderChart')}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{previewError}</div>
+            <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
+              <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>{t('composition.download')}</code> }} />
+            </div>
+          </div>
+        )}
+        {/* Last-good image stays visible during a re-fetch (PUX-12) —
+            dimmed with a small corner spinner rather than unmounted. */}
+        {!previewError && previewImage && (
+          <div style={{ position: 'relative', maxWidth: '100%' }}>
+            <img
+              src={`data:image/png;base64,${previewImage}`}
+              alt={title || name || 'chart preview'}
+              style={{
+                maxWidth: '100%', height: 'auto', borderRadius: 4, display: 'block',
+                opacity: previewLoading ? 0.45 : 1, transition: 'opacity .15s ease',
+              }}
+            />
+            {previewLoading && (
+              <div
+                data-testid="chart-editor-preview-loading"
+                title={t('composition.renderingPreview')}
+                style={{
+                  position: 'absolute', top: 8, right: 8, display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 999,
+                  padding: '4px 10px 4px 8px', fontSize: 12, color: 'var(--ink-3)', boxShadow: '0 1px 3px rgba(0,0,0,.08)',
+                }}
+              >
+                <span className="ai-spinner" aria-hidden="true" />
+                {t('composition.renderingPreview')}
+              </div>
+            )}
+          </div>
+        )}
+        {!previewLoading && !previewError && !previewImage && (
+          <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>{t('composition.previewIdle')}</div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <Modal title={initial ? t('composition.editChart', { name: initial.name }) : t('composition.addChartModal')} onClose={onClose} onSave={submit} width={isMobile ? 560 : 920}>
       <ModalError>{err}</ModalError>
@@ -1765,79 +1848,17 @@ function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onS
         data-orientation={isMobile ? 'column' : 'row'}
         style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 20 }}
       >
-        <div style={{ flex: '1 1 0', minWidth: 0 }}>
-          <ModalField label={t('composition.fName')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.chartName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
-          <ModalField label={t('composition.fTitle')} error={fe.errorFor('title')} errorId={fe.errorId('title')}><input aria-label={t('composition.chartTitle')} name="title" id="title" className="src-input" value={title} {...fe.fieldProps('title')} onChange={e => { setTitle(e.target.value); if (e.target.value.trim()) fe.clearError('title'); }} placeholder={t('composition.chartTitlePlaceholder')} /></ModalField>
-          <ModalField label={t('composition.fType')} hint={CHART_REQS[type] ? t('composition.needs', { reqs: CHART_REQS[type] }) : undefined}>
-            <select aria-label={t('composition.chartType')} className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-          </ModalField>
-          <ModalField label={t('composition.fColumns')} hint={t('composition.columnsHint')}>
-            <ColumnPicker ariaLabel={t('composition.chartColumns')} value={cols} onChange={setCols} options={columns} placeholder={t('composition.searchColumns')} error={columnFieldError} errorId={fe.errorId('columns')} />
-          </ModalField>
-          <ModalField label={t('composition.fOptions')} hint={t('composition.optionsHint')}>
-            <textarea aria-label={t('composition.chartOptionsYaml')} value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
-          </ModalField>
-        </div>
-        <div style={{ flex: '1 1 0', minWidth: 0 }}>
-          <h4 style={{ marginTop: 0 }}>{t('composition.preview')}</h4>
-          <div
-            data-testid="chart-editor-preview"
-            role="status"
-            aria-live="polite"
-            style={{
-              minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16,
-            }}
-          >
-            {/* First load only (no prior image): full blanking skeleton. */}
-            {previewLoading && !previewImage && (
-              <div data-testid="chart-editor-preview-loading" style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center' }}>
-                <div className="skeleton" style={{ width: '100%', height: 140, borderRadius: 6, marginBottom: 10 }} />
-                {t('composition.renderingPreview')}
-              </div>
-            )}
-            {previewError && (
-              <div data-testid="chart-editor-preview-error" style={{ background: 'var(--rose-soft)', borderRadius: 6, padding: '10px 12px', color: '#7F1D1D', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantRenderChart')}</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{previewError}</div>
-                <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
-                  <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>{t('composition.download')}</code> }} />
-                </div>
-              </div>
-            )}
-            {/* Last-good image stays visible during a re-fetch (PUX-12) —
-                dimmed with a small corner spinner rather than unmounted. */}
-            {!previewError && previewImage && (
-              <div style={{ position: 'relative', maxWidth: '100%' }}>
-                <img
-                  src={`data:image/png;base64,${previewImage}`}
-                  alt={title || name || 'chart preview'}
-                  style={{
-                    maxWidth: '100%', height: 'auto', borderRadius: 4, display: 'block',
-                    opacity: previewLoading ? 0.45 : 1, transition: 'opacity .15s ease',
-                  }}
-                />
-                {previewLoading && (
-                  <div
-                    data-testid="chart-editor-preview-loading"
-                    title={t('composition.renderingPreview')}
-                    style={{
-                      position: 'absolute', top: 8, right: 8, display: 'flex', alignItems: 'center', gap: 6,
-                      background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 999,
-                      padding: '4px 10px 4px 8px', fontSize: 12, color: 'var(--ink-3)', boxShadow: '0 1px 3px rgba(0,0,0,.08)',
-                    }}
-                  >
-                    <span className="ai-spinner" aria-hidden="true" />
-                    {t('composition.renderingPreview')}
-                  </div>
-                )}
-              </div>
-            )}
-            {!previewLoading && !previewError && !previewImage && (
-              <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>{t('composition.previewIdle')}</div>
-            )}
-          </div>
-        </div>
+        {isMobile ? (
+          <>
+            {previewPane}
+            {formFields}
+          </>
+        ) : (
+          <>
+            {formFields}
+            {previewPane}
+          </>
+        )}
       </div>
     </Modal>
   );

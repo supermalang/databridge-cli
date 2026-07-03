@@ -500,3 +500,161 @@ test.describe('PUX-13 — preview errors are linked back to the offending field'
     await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-field-error.png');
   });
 });
+
+/**
+ * PUX-14 — Chart editor: surface the live preview above the fold on mobile.
+ *
+ * Follow-up from PUX-11's `/impeccable critique` (finding 4 of 4). On the
+ * 390px stacked layout, the live preview (`data-testid="chart-editor-preview"`,
+ * PUX-11) sits below all 4 form fields (Name/Title/Type/Columns/Options) — a
+ * user must scroll past the whole form to see the result of an edit they just
+ * made. This card requires that on mobile the user can see or reach the
+ * preview (or a compact status indicator for it) without scrolling past the
+ * whole form, WITHOUT regressing the existing two-column tablet/desktop
+ * layout (`data-orientation="row"`, PUX-11 AC5).
+ *
+ * RED-FIRST: derived from the PUX-14 Acceptance criteria, NOT the current
+ * implementation. Today, at mobile width, the stacked column places the
+ * preview pane after all form fields, well below the initial viewport height
+ * — every "reachable without scrolling past the whole form" assertion below
+ * is expected to fail until PUX-14 ships.
+ *
+ * The AC allows either fix strategy (reorder the pane higher, or add a
+ * tappable status indicator near the top that scrolls the pane into view), so
+ * the test tolerates either: it looks first for a compact status indicator
+ * (`data-testid="chart-editor-preview-status"`) and, if present, taps it and
+ * asserts the preview pane scrolls into view; if absent, it asserts the
+ * preview pane itself already sits at or above the bottom of the visible
+ * viewport before any scrolling, i.e. above/at the fold.
+ */
+
+// A compact status indicator near the top of the stacked mobile layout that,
+// on tap, scrolls the (reordered-lower or not) preview pane into view. This
+// is OPTIONAL per the AC — the alternative fix is reordering the pane itself
+// higher in the DOM/visual stack so no indicator is needed.
+const previewStatusIndicator = (page: Page): Locator => page.getByTestId('chart-editor-preview-status');
+
+test.describe('PUX-14 — live preview reachable above the fold on mobile', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await bootApp(page);
+    await openComposition(page);
+  });
+
+  // AC1 — on mobile, the preview (or its status indicator) must be reachable
+  // without scrolling past all 4 form fields (Name/Title/Type/Columns/Options).
+  test('AC1: on mobile, the live preview is visible or reachable without scrolling past the whole form', async ({ page }) => {
+    const viewport = page.viewportSize();
+    test.skip(!viewport || viewport.width >= 768, 'mobile-only assertion (< 768px)');
+
+    await openEditChartModal(page);
+    const dialog = editorDialog(page);
+    await expect(dialog).toBeVisible();
+
+    const indicator = previewStatusIndicator(page);
+    const hasIndicator = (await indicator.count()) > 0;
+
+    if (hasIndicator) {
+      // Strategy B: a compact status indicator near the top. It must itself be
+      // within the initial viewport (no scrolling needed to find/tap it) …
+      await expect(indicator, 'the preview status indicator must be visible without scrolling').toBeVisible();
+      const indicatorBox = await indicator.boundingBox();
+      expect(indicatorBox, 'preview status indicator must have a bounding box').not.toBeNull();
+      expect(
+        indicatorBox!.y,
+        'the preview status indicator must be within the initial viewport (above the fold)',
+      ).toBeLessThanOrEqual(viewport!.height);
+
+      // … and tapping it must scroll the preview pane into view.
+      await indicator.click();
+      await expect(previewPane(page)).toBeVisible();
+      await expect(async () => {
+        const paneBox = await previewPane(page).boundingBox();
+        expect(paneBox, 'preview pane must have a bounding box after tapping the indicator').not.toBeNull();
+        // "Scrolled into view" = the pane's box now intersects the viewport band.
+        expect(paneBox!.y, 'tapping the indicator must scroll the preview pane into the viewport').toBeLessThan(viewport!.height);
+        expect(paneBox!.y + paneBox!.height, 'the scrolled-to pane must not be entirely above the viewport').toBeGreaterThan(0);
+      }).toPass({ timeout: 2000 });
+    } else {
+      // Strategy A: the pane itself is reordered higher in the stack, so
+      // — WITHOUT scrolling the modal's own scroll container — the pane must
+      // already be substantially visible (not merely clipped by a sliver).
+      // Measure how much of the pane's height falls inside the scrollable
+      // container's UNSCROLLED client area (the "fold" a user sees on open).
+      await expect(previewPane(page), 'without a status indicator, the preview pane itself must be present').toBeVisible();
+
+      const visibility = await previewPane(page).evaluate((el) => {
+        const scrollParent = el.closest('.modal-body') || el.closest('[role="dialog"]') || document.body;
+        const parentRect = (scrollParent as Element).getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        const visibleTop = Math.max(elRect.top, parentRect.top);
+        const visibleBottom = Math.min(elRect.bottom, parentRect.bottom);
+        const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+        return { visibleHeight, elHeight: elRect.height };
+      });
+
+      expect(
+        visibility.visibleHeight / visibility.elHeight,
+        'the preview pane must be reordered so it is substantially (>=90%) visible without scrolling past the form — ' +
+          `today it is mostly below the fold (only ${Math.round((visibility.visibleHeight / visibility.elHeight) * 100)}% visible)`,
+      ).toBeGreaterThanOrEqual(0.9);
+    }
+  });
+
+  // AC2 — the reordering/indicator must NOT regress the desktop/tablet
+  // two-column layout: at those widths, the editor must still render
+  // data-orientation="row" (PUX-11 AC5) and the preview pane's left edge must
+  // sit to the right of the form fields (a genuine side-by-side column, not a
+  // stacked column masquerading as "row").
+  test('AC2: desktop/tablet keep the existing two-column layout (no regression)', async ({ page }) => {
+    const viewport = page.viewportSize();
+    test.skip(!viewport || viewport.width < 768, 'tablet/desktop-only regression guard');
+
+    await openEditChartModal(page);
+    const layout = page.getByTestId('chart-editor-layout');
+    await expect(layout).toBeVisible();
+    await expect(layout, 'tablet/desktop widths must keep the two-column ("row") layout').toHaveAttribute('data-orientation', 'row');
+
+    // The preview pane and a form field (Title input) must sit side-by-side:
+    // the pane's horizontal position must not be directly below the field
+    // (i.e. this is genuinely a row layout, not a stacked one).
+    const titleInput = editorDialog(page).locator('input[name="title"], input#title, input[value="Age distribution"]').first();
+    const fieldBox = await titleInput.boundingBox();
+    const paneBox = await previewPane(page).boundingBox();
+    expect(fieldBox, 'title field must have a bounding box').not.toBeNull();
+    expect(paneBox, 'preview pane must have a bounding box').not.toBeNull();
+    // Side-by-side: the two boxes' vertical (y) ranges overlap substantially,
+    // which would not be true if the pane were stacked below the whole form.
+    const verticalOverlap =
+      Math.min(fieldBox!.y + fieldBox!.height, paneBox!.y + paneBox!.height) - Math.max(fieldBox!.y, paneBox!.y);
+    expect(verticalOverlap, 'preview pane must sit beside the form fields (row layout), not below all of them').toBeGreaterThan(0);
+  });
+
+  // ── Visual baselines (mobile / tablet / desktop) ───────────────────────────
+  // Mobile: the reordered/indicator-enabled above-the-fold layout.
+  test('visual: chart editor modal preview position — mobile', async ({ page }) => {
+    const viewport = page.viewportSize();
+    test.skip(!viewport || viewport.width >= 768, 'mobile-only baseline');
+    await openEditChartModal(page);
+    await page.waitForTimeout(700);
+    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-mobile-preview-position.png');
+  });
+
+  // Tablet: regression guard baseline — two-column layout unchanged.
+  test('visual: chart editor modal preview position — tablet', async ({ page }) => {
+    const viewport = page.viewportSize();
+    test.skip(!viewport || viewport.width < 768 || viewport.width >= 1200, 'tablet-only baseline');
+    await openEditChartModal(page);
+    await page.waitForTimeout(700);
+    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-tablet-preview-position.png');
+  });
+
+  // Desktop: regression guard baseline — two-column layout unchanged.
+  test('visual: chart editor modal preview position — desktop', async ({ page }) => {
+    const viewport = page.viewportSize();
+    test.skip(!viewport || viewport.width < 1200, 'desktop-only baseline');
+    await openEditChartModal(page);
+    await page.waitForTimeout(700);
+    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-desktop-preview-position.png');
+  });
+});

@@ -41,14 +41,18 @@ $BEGIN_MARK
 #   setsid detaches the tmux server from this shell's process group, so a
 #   VS Code teardown or SSH drop can't signal it — it reparents to tini
 #   (PID 1; requires "init": true in devcontainer.json). Detach with Ctrl-b d.
-#   On a FRESH session it runs 'claude --continue' to resume the most recent
-#   conversation in this directory (state persisted in the ~/.claude volume),
-#   falling back to a new 'claude' if there's nothing to resume.
+#
+#   The Claude restart-loop is the pane's ROOT command (not sent via send-keys),
+#   so there's no shell-readiness race — the pane boots straight into Claude.
+#   If Claude exits it relaunches after 2s, so reattaching always lands you
+#   back in Claude rather than a stranded shell. 'claude --continue' resumes
+#   the prior conversation (state persisted in the ~/.claude volume).
+#   To STOP: press Ctrl-c during the 2s pause, or 'tmux kill-session -t <name>'.
 ship() {
   local session="\${1:-claude}"
   if ! tmux has-session -t "\$session" 2>/dev/null; then
-    setsid tmux new-session -d -s "\$session"
-    tmux send-keys -t "\$session" 'claude --continue 2>/dev/null || claude' C-m
+    setsid tmux new-session -d -s "\$session" \\
+      "while true; do claude --continue 2>/dev/null || claude || break; echo 'claude exited — restarting in 2s (Ctrl-c to stop)'; sleep 2; done"
   fi
   tmux attach -t "\$session"
 }
