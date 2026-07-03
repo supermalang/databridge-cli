@@ -228,7 +228,7 @@ def extract_placeholders(docx_path) -> List[Token]:
 Proposal = Dict
 
 # Kinds the inference path understands.
-_KINDS = ("chart", "indicator", "summary", "table", "narrative", "metadata")
+_KINDS = ("chart", "indicator", "summary", "table", "narrative", "metadata", "split_value")
 
 # Confidence below this is treated as low → needs_attention.
 _CONFIDENCE_THRESHOLD = 0.5
@@ -282,6 +282,10 @@ def infer_specs(nl_tokens: List["Token"], catalog: Dict, ai_cfg: Dict) -> List[P
         "chart_types": ask_engine._CHART_TYPES_BLOCK,
         "indicator_stats": ask_engine._INDICATOR_STATS_BLOCK,
         "language": ai_cfg.get("language") or "English",
+        # XTF-28: surface the configured split dimension so the LLM can propose
+        # kind: split_value for a short-label token that maps to the unit of
+        # analysis (e.g. "[[NOM]]" / "[[Commune]]"). Empty string when unset.
+        "split_by": str(ai_cfg.get("split_by") or ""),
     }
     messages, _config = lf_client.get_prompt("template_inference", variables)
     # Always supply the output_schema for structured output (Anthropic tool_use /
@@ -386,6 +390,70 @@ def _route_metadata(proposal: Proposal) -> Proposal:
     return proposal
 
 
+def _autoresolve_repeat_source(kind: str, spec: Dict, profile: Dict) -> "Tuple[bool, str | None]":
+    """Auto-stamp ``spec['source']`` for a data proposal whose columns live in a
+    repeat-group table (XTF-26).
+
+    Only acts when the spec has no explicit ``source`` and the referenced columns
+    are absent from ``main`` but present in one or more repeat tables that hold ALL
+    of them. The repeat table is then stamped onto ``spec['source']``.
+
+    Returns ``(resolved, review_note)``:
+
+    * ``(True, None)``  — resolved to a single repeat table (caller stamps ``ok``).
+    * ``(True, note)``  — the column lives in multiple repeat tables; the largest
+                          by row count is chosen and ``note`` lists the
+                          alternatives (caller stamps ``review``).
+    * ``(False, None)`` — not applicable / unresolved; ``spec`` is left untouched so
+                          the normal validation path runs (genuine misses stay
+                          ``needs_attention``).
+    """
+    if kind not in _DATA_KINDS:
+        return False, None
+    if spec.get("source"):
+        return False, None
+    cols = _referenced_columns(spec)
+    if not cols:
+        return False, None
+
+    main_cols = _table_columns(profile, "main")
+    # If every referenced column is already in main, nothing to resolve.
+    if all(c in main_cols for c in cols):
+        return False, None
+
+    # Candidate repeat tables that hold ALL referenced columns (a single table
+    # must be a valid standalone source).
+    full = [
+        t for t in profile
+        if t != "main" and not _is_auto_view_table(t)
+        and all(c in _table_columns(profile, t) for c in cols)
+    ]
+    if not full:
+        return False, None  # no single repeat table holds all columns → leave flagged
+
+    if len(full) == 1:
+        spec["source"] = full[0]
+        return True, None
+
+    # Multiple repeat tables hold all referenced columns → pick the one with the
+    # most rows and flag for review, naming the alternatives.
+    def _rows(t: str) -> int:
+        try:
+            return int((profile.get(t) or {}).get("rows") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    ranked = sorted(full, key=lambda t: (-_rows(t), t))
+    chosen = ranked[0]
+    spec["source"] = chosen
+    alternatives = ", ".join(sorted(full))
+    note = (
+        f"column present in multiple repeat tables ({alternatives}); "
+        f"defaulted source to '{chosen}' (most rows) — please review"
+    )
+    return True, note
+
+
 def annotate_proposals(proposals: List[Proposal], profile: Dict) -> List[Proposal]:
     """Local, deterministic validation of inferred proposals (no AI).
 
@@ -394,6 +462,12 @@ def annotate_proposals(proposals: List[Proposal], profile: Dict) -> List[Proposa
     validation fails, or a referenced column is absent. Narrative and metadata
     kinds are routed to their fixed slots. Canonical ``name``s are deduped with a
     numeric suffix on collision.
+
+    Before validating a data proposal, columns that are absent from ``main`` but
+    present in a repeat-group table are auto-resolved by stamping the spec's
+    ``source`` (XTF-26): a single matching repeat table validates clean
+    (``status: ok``); multiple matching repeat tables pick the largest by row
+    count and set ``status: review`` with a note listing the alternatives.
     """
     profile = profile or {}
     out: List[Proposal] = []
@@ -406,7 +480,42 @@ def annotate_proposals(proposals: List[Proposal], profile: Dict) -> List[Proposa
             ann = _route_narrative(ann)
         elif kind == "metadata":
             ann = _route_metadata(ann)
+        elif kind == "split_value":
+            # XTF-28: the {{ split_value }} system placeholder is only meaningful
+            # when a split dimension is configured. Validate against the split_by
+            # flag reachable from the same profile/context dict.
+            ann["name"] = "split_value"
+            if profile.get("split_by"):
+                ann["status"] = "ok"
+                ann["reason"] = (
+                    f"maps to split_by dimension '{profile.get('split_by')}'"
+                )
+            else:
+                ann["status"] = "needs_attention"
+                ann["reason"] = (
+                    "split_value placeholder but no split_by dimension is configured"
+                )
+            out.append(ann)
+            continue
         else:
+            resolved, review_note = _autoresolve_repeat_source(
+                kind, ann.get("spec") or {}, profile
+            )
+            if resolved:
+                # Source was auto-resolved to a repeat table that holds every
+                # referenced column — the column-lookup failure that previously
+                # blocked it is gone, so the proposal is actionable.
+                if review_note:
+                    ann["status"] = "review"
+                    ann["reason"] = review_note
+                else:
+                    ann["status"] = "ok"
+                    ann["reason"] = (
+                        f"resolved to repeat table "
+                        f"'{(ann.get('spec') or {}).get('source')}'"
+                    )
+                out.append(ann)
+                continue
             ok, reason = _validate_data_proposal(kind, ann.get("spec") or {}, profile)
             if not ok:
                 ann["status"] = "needs_attention"
@@ -794,6 +903,11 @@ def apply_inference(
         elif kind == "metadata":
             _set_metadata(cfg, prop)
             canonical = None
+        elif kind == "split_value":
+            # XTF-28: {{ split_value }} is an existing builder system placeholder
+            # filled at build-report time from the split_by dimension — no config
+            # section entry, just the literal placeholder in the template.
+            canonical = "{{ split_value }}"
         else:
             section, prefix = _KIND_SECTION.get(kind, _KIND_SECTION["chart"])
             base_slug = _slugify(prop.get("name") or spec.get("name") or kind)

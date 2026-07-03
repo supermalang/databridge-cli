@@ -550,6 +550,66 @@ def test_infer_specs_raises_on_malformed_llm_response(monkeypatch, bad_response)
         ti.infer_specs(nl_tokens, catalog, ai_cfg)
 
 
+# --------------------------------------------------------------------------- #
+# MNT-7 named unit tests (individual scenarios, card §Unit tests)
+# --------------------------------------------------------------------------- #
+
+def _nl_token():
+    """A single NL token for infer_specs, matching the XTF-2 Token shape."""
+    return ti.Token(
+        raw="[Total beneficiaries]",
+        inner="Total beneficiaries",
+        delimiter="[",
+        kind="nl",
+        location=ti.Location(),
+    )
+
+
+def _ai_cfg_mnt7():
+    return {"provider": "openai", "model": "gpt-x", "api_key": "sk-test"}
+
+
+def test_infer_specs_raises_on_malformed_json(monkeypatch):
+    """MNT-7 AC: `infer_specs` raises RuntimeError (not `return []`) when
+    `lf_client.chat` returns a non-JSON string that `_loads_lenient` cannot
+    parse as a dict with a 'proposals' list.
+
+    Buggy behaviour: the function silently returns [], letting the endpoint
+    respond HTTP 200 with {"proposals": [], "message": null} and the frontend
+    renders the empty-placeholder state. Fixed behaviour: RuntimeError is raised
+    so the endpoint's `except Exception` returns HTTP 500 instead.
+    """
+    monkeypatch.setattr(
+        ti.lf_client, "get_prompt",
+        lambda *a, **k: ([{"role": "user", "content": "x"}], {}),
+    )
+    # Return a non-JSON string — _loads_lenient returns None, proposals is absent.
+    monkeypatch.setattr(ti.lf_client, "chat", lambda *a, **k: "not valid json at all")
+
+    with pytest.raises(RuntimeError, match="proposals"):
+        ti.infer_specs([_nl_token()], ask_engine.build_catalog(_profile_xtf2()), _ai_cfg_mnt7())
+
+
+def test_infer_specs_raises_on_missing_proposals_key(monkeypatch):
+    """MNT-7 AC: `infer_specs` raises RuntimeError (not `return []`) when
+    `_loads_lenient` succeeds (valid JSON) but the 'proposals' key is absent.
+
+    This is the boundary case: `{"result": []}` parses cleanly to a dict, so
+    `_loads_lenient` returns it. The bug was that `(data or {}).get("proposals")`
+    returned `None`, which is not a list, and the old code `return []`-ed silently.
+    The fix replaces that with `raise RuntimeError` when `items` is not a list.
+    """
+    monkeypatch.setattr(
+        ti.lf_client, "get_prompt",
+        lambda *a, **k: ([{"role": "user", "content": "x"}], {}),
+    )
+    # Valid JSON, but the 'proposals' key is absent — _loads_lenient returns {"result": []}
+    monkeypatch.setattr(ti.lf_client, "chat", lambda *a, **k: '{"result": []}')
+
+    with pytest.raises(RuntimeError, match="proposals"):
+        ti.infer_specs([_nl_token()], ask_engine.build_catalog(_profile_xtf2()), _ai_cfg_mnt7())
+
+
 # =========================================================================== #
 # XTF-3 — Apply: persist config + resolve template (apply_inference)
 # =========================================================================== #
@@ -1628,4 +1688,440 @@ def test_xtf25_extract_placeholders_returns_nonempty_for_sdt_doc(tmp_path):
     assert len(tokens) > 0, (
         "extract_placeholders returned [] for a doc whose only placeholder is "
         "inside a w:sdt content control"
+    )
+
+
+# =========================================================================== #
+# XTF-26 — annotate_proposals auto-resolves repeat-table columns
+# =========================================================================== #
+# Bug: when a proposal's target column is absent from ``main`` but lives in a
+# repeat-group table, ``annotate_proposals`` sets ``status: needs_attention``
+# with no ``source`` suggestion, leaving the placeholder blank.
+#
+# Fix (derived strictly from the XTF-26 Acceptance criteria):
+#   1. Column absent from ``main`` but present in EXACTLY ONE repeat table
+#      → set ``source`` to that table name and ``status`` to ``"ok"``.
+#   2. Column present in MULTIPLE repeat tables
+#      → set ``source`` to the table with the most rows, ``status`` to
+#        ``"review"``, and include a ``note`` listing the alternative table names.
+#   3. Column not found in ``main`` or any repeat table
+#      → ``status`` remains ``"needs_attention"``.
+#
+# These tests call ``annotate_proposals`` directly (no intermediate
+# ``resolve_sources``) and are expected to be RED until the fix lands.
+# =========================================================================== #
+
+
+def _profile_xtf26_single_repeat():
+    """Profile: ``main`` has Region/Age; ``demographics`` repeat holds
+    ``nombre_menages`` and ``nombre_habitants``; ``collaborations`` repeat
+    holds ``organisation``."""
+    return {
+        "main": {
+            "name": "main", "rows": 10,
+            "columns": [
+                {"name": "_id", "role": "linkage", "distinct": 10, "missing_pct": 0.0},
+                {"name": "Region", "role": "categorical", "distinct": 3,
+                 "missing_pct": 0.0,
+                 "top_values": [{"value": "Nord", "count": 5},
+                                {"value": "Sud", "count": 5}]},
+                {"name": "Age", "role": "quantitative", "distinct": 10,
+                 "missing_pct": 0.0, "min": 18.0, "max": 65.0,
+                 "mean": 35.0, "median": 33.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "demographics": {
+            "name": "demographics", "rows": 25,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 10,
+                 "missing_pct": 0.0},
+                {"name": "_root_id", "role": "linkage", "distinct": 10,
+                 "missing_pct": 0.0},
+                {"name": "nombre_menages", "role": "quantitative", "distinct": 10,
+                 "missing_pct": 0.0, "min": 1.0, "max": 15.0,
+                 "mean": 5.0, "median": 4.0},
+                {"name": "nombre_habitants", "role": "quantitative", "distinct": 10,
+                 "missing_pct": 0.0, "min": 1.0, "max": 50.0,
+                 "mean": 12.0, "median": 10.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "collaborations": {
+            "name": "collaborations", "rows": 8,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 8,
+                 "missing_pct": 0.0},
+                {"name": "_root_id", "role": "linkage", "distinct": 8,
+                 "missing_pct": 0.0},
+                {"name": "organisation", "role": "categorical", "distinct": 6,
+                 "missing_pct": 0.0,
+                 "top_values": [{"value": "ONG A", "count": 3},
+                                {"value": "ONG B", "count": 3},
+                                {"value": "Autre", "count": 2}]},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+    }
+
+
+def _profile_xtf26_two_repeats_same_column():
+    """Profile: ``main`` has no user columns; two repeat tables (``facilities``
+    with 20 rows, ``staff`` with 5 rows) both carry ``groupe_socioeconomique``.
+    Used to test the ambiguous multi-repeat case (most-rows wins)."""
+    return {
+        "main": {
+            "name": "main", "rows": 5,
+            "columns": [
+                {"name": "_id", "role": "linkage", "distinct": 5, "missing_pct": 0.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "facilities": {
+            "name": "facilities", "rows": 20,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 5,
+                 "missing_pct": 0.0},
+                {"name": "groupe_socioeconomique", "role": "categorical",
+                 "distinct": 3, "missing_pct": 0.0,
+                 "top_values": [{"value": "A", "count": 10}, {"value": "B", "count": 10}]},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "staff": {
+            "name": "staff", "rows": 5,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 5,
+                 "missing_pct": 0.0},
+                {"name": "groupe_socioeconomique", "role": "categorical",
+                 "distinct": 3, "missing_pct": 0.0,
+                 "top_values": [{"value": "A", "count": 3}, {"value": "B", "count": 2}]},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+    }
+
+
+def _proposal_xtf26(kind, spec, name, confidence=_HIGH_CONF, token_index=0):
+    """A Proposal in the shape ``infer_specs`` returns (no status yet)."""
+    return {
+        "token_index": token_index,
+        "kind": kind,
+        "spec": dict(spec),
+        "name": name,
+        "confidence": confidence,
+        "reason": "proposed",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# AC1: column absent from main, present in exactly one repeat table
+#      → source set to that repeat table name, status "ok"
+# --------------------------------------------------------------------------- #
+
+def test_annotate_sets_source_from_single_repeat_table():
+    """XTF-26 AC1: when a placeholder's target column is absent from ``main``
+    but present in exactly one repeat table, ``annotate_proposals`` must set
+    ``source`` to that repeat table name and ``status`` to ``"ok"``.
+
+    ``nombre_menages`` lives only in the ``demographics`` repeat table; the
+    proposal's spec has no ``source``, so the current code defaults to ``"main"``
+    and rejects it with ``needs_attention``. The fix must auto-resolve it.
+    """
+    profile = _profile_xtf26_single_repeat()
+    proposals = [
+        _proposal_xtf26(
+            "chart",
+            {"name": "menages_chart", "title": "Nombre de ménages",
+             "type": "bar", "questions": ["nombre_menages"]},
+            name="menages_chart",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "ok", (
+        f"Expected status 'ok' but got '{_get(out[0], 'status')}'; "
+        f"reason: {_get(out[0], 'reason')!r}. "
+        "annotate_proposals must auto-resolve single-repeat-table columns."
+    )
+    source = _get(out[0], "spec").get("source")
+    assert source == "demographics", (
+        f"Expected source 'demographics' but got {source!r}. "
+        "annotate_proposals must set source to the repeat table name."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# AC2: column present in multiple repeat tables
+#      → source set to the table with most rows, status "review",
+#        note mentions both alternatives
+# --------------------------------------------------------------------------- #
+
+def test_annotate_sets_source_review_for_ambiguous_repeat():
+    """XTF-26 AC2: when a column is present in multiple repeat tables,
+    ``annotate_proposals`` must set ``source`` to the repeat table with the most
+    rows, ``status`` to ``"review"``, and include a note listing the alternative
+    table names.
+
+    ``groupe_socioeconomique`` is in ``facilities`` (20 rows) and ``staff``
+    (5 rows). The fix must pick ``facilities`` as source, set ``status: review``,
+    and mention both table names in the note.
+    """
+    profile = _profile_xtf26_two_repeats_same_column()
+    proposals = [
+        _proposal_xtf26(
+            "chart",
+            {"name": "socio_chart", "title": "Groupe socio-économique",
+             "type": "bar", "questions": ["groupe_socioeconomique"]},
+            name="socio_chart",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "review", (
+        f"Expected status 'review' for ambiguous multi-repeat column but got "
+        f"'{_get(out[0], 'status')}'; reason: {_get(out[0], 'reason')!r}."
+    )
+    source = _get(out[0], "spec").get("source")
+    assert source == "facilities", (
+        f"Expected source 'facilities' (most rows=20) but got {source!r}. "
+        "annotate_proposals must pick the repeat table with the most rows."
+    )
+    # The note/reason must mention both candidate table names.
+    note = _get(out[0], "reason") or ""
+    assert "facilities" in note and "staff" in note, (
+        f"Expected reason to mention both 'facilities' and 'staff' but got: {note!r}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# AC3: column absent from main and all repeat tables → status remains needs_attention
+# --------------------------------------------------------------------------- #
+
+def test_annotate_keeps_needs_attention_when_column_nowhere():
+    """XTF-26 AC3: when a proposal's column is not found in ``main`` or any
+    repeat table, ``status`` must remain ``"needs_attention"``.
+
+    ``ghost_column`` does not exist in any table of the profile; the proposal
+    must stay flagged after the fix (the fix must not swallow genuine misses).
+    """
+    profile = _profile_xtf26_single_repeat()
+    proposals = [
+        _proposal_xtf26(
+            "chart",
+            {"name": "ghost_chart", "title": "Ghost",
+             "type": "bar", "questions": ["ghost_column"]},
+            name="ghost_chart",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "needs_attention", (
+        f"Expected status 'needs_attention' for a column absent from all tables "
+        f"but got '{_get(out[0], 'status')}'; reason: {_get(out[0], 'reason')!r}."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# AC4 (fixture): fixture profile with demographic + socioeconomic repeat columns
+#   → each proposal gets correct source and status "ok"
+# --------------------------------------------------------------------------- #
+
+def test_annotate_resolves_known_repeat_columns_from_fixture_profile():
+    """XTF-26 AC4: fixture profile contains demographic columns
+    (``nombre_menages``, ``nombre_habitants``) in one repeat table and an
+    organisation column (``organisation``) in a second repeat table. Each
+    proposal must get the correct ``source`` and ``status == 'ok'``.
+
+    This mirrors the real-world case described in the bug report: columns from
+    different repeat groups all resolve cleanly to their respective tables.
+    """
+    profile = _profile_xtf26_single_repeat()
+
+    proposals = [
+        _proposal_xtf26(
+            "chart",
+            {"name": "menages", "title": "Nombre de ménages",
+             "type": "bar", "questions": ["nombre_menages"]},
+            name="menages", token_index=0,
+        ),
+        _proposal_xtf26(
+            "chart",
+            {"name": "habitants", "title": "Nombre d'habitants",
+             "type": "histogram", "questions": ["nombre_habitants"]},
+            name="habitants", token_index=1,
+        ),
+        _proposal_xtf26(
+            "chart",
+            {"name": "organisations", "title": "Organisations",
+             "type": "bar", "questions": ["organisation"]},
+            name="organisations", token_index=2,
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    # nombre_menages and nombre_habitants → demographics
+    assert _get(out[0], "status") == "ok", (
+        f"nombre_menages: expected ok, got '{_get(out[0], 'status')}' "
+        f"reason={_get(out[0], 'reason')!r}"
+    )
+    assert _get(out[0], "spec").get("source") == "demographics", (
+        f"nombre_menages: expected source='demographics', "
+        f"got {_get(out[0], 'spec').get('source')!r}"
+    )
+
+    assert _get(out[1], "status") == "ok", (
+        f"nombre_habitants: expected ok, got '{_get(out[1], 'status')}' "
+        f"reason={_get(out[1], 'reason')!r}"
+    )
+    assert _get(out[1], "spec").get("source") == "demographics", (
+        f"nombre_habitants: expected source='demographics', "
+        f"got {_get(out[1], 'spec').get('source')!r}"
+    )
+
+    # organisation → collaborations
+    assert _get(out[2], "status") == "ok", (
+        f"organisation: expected ok, got '{_get(out[2], 'status')}' "
+        f"reason={_get(out[2], 'reason')!r}"
+    )
+    assert _get(out[2], "spec").get("source") == "collaborations", (
+        f"organisation: expected source='collaborations', "
+        f"got {_get(out[2], 'spec').get('source')!r}"
+    )
+
+
+# =========================================================================== #
+# XTF-28 — split_value placeholder inference
+# =========================================================================== #
+# Fix: infer_specs must recognize a "split_value" kind, informed by the config's
+# split_by dimension, so a short-label token that clearly refers to the unit of
+# analysis (e.g. "[[NOM]]", "[[Commune]]") is proposed as kind="split_value"
+# instead of a low-confidence indicator/needs_attention placeholder.
+#
+# AC1: infer_specs proposes kind == "split_value" for a NOM-like token when
+#      config has split_by: Commune.
+# AC2: annotate_proposals marks a split_value proposal "ok" when config split_by
+#      is set, "needs_attention" when it is not.
+# AC3: apply_inference (called by apply-template) writes the literal
+#      "{{ split_value }}" placeholder for an accepted split_value proposal.
+
+def test_infer_specs_proposes_split_value_for_nom_token(monkeypatch):
+    """AC1: with split_by: Commune configured and a [[NOM]] placeholder token,
+    infer_specs returns at least one proposal with kind == "split_value".
+
+    This pins the fix's actual mechanism (card body): "When the config has a
+    split_by dimension, include it in the LLM prompt so the model can propose
+    kind: split_value". So the prompt variables built by infer_specs must
+    surface the split_by dimension (e.g. under a "split_by" variable key) when
+    ai_cfg carries one — a real LLM can only propose "split_value" if it is
+    told what the split dimension is. Without that wiring the split_by value
+    never reaches get_prompt's variables, which this test catches directly.
+    """
+    captured_variables = {}
+
+    def _fake_get_prompt(name, variables):
+        captured_variables.update(variables or {})
+        return ([{"role": "user", "content": "x"}], {})
+
+    monkeypatch.setattr(ti.lf_client, "get_prompt", _fake_get_prompt)
+
+    def _fake_chat(*a, **k):
+        # Simulates the LLM correctly using the split_by context supplied in
+        # the prompt variables to propose kind: split_value for the NOM token.
+        return (
+            '{"proposals": ['
+            '{"token_index": 0, "kind": "split_value", "name": "split_value", '
+            '"spec": {}, "confidence": 0.95, "reason": "NOM maps to split_by Commune"}'
+            ']}'
+        )
+
+    monkeypatch.setattr(ti.lf_client, "chat", _fake_chat)
+
+    nl_tokens = [
+        ti.Token(raw="[[NOM]]", inner="NOM", delimiter="[[", kind="nl",
+                  location=ti.Location()),
+    ]
+    catalog = ask_engine.build_catalog(_profile_xtf2())
+    ai_cfg = {
+        "provider": "openai", "model": "gpt-x", "api_key": "sk-test",
+        "split_by": "Commune",
+    }
+
+    out = ti.infer_specs(nl_tokens, catalog, ai_cfg)
+
+    # The split_by dimension configured on ai_cfg must reach the prompt so the
+    # LLM has the context needed to propose kind: split_value.
+    joined_vars = " ".join(str(v) for v in captured_variables.values())
+    assert "Commune" in joined_vars, (
+        f"split_by dimension 'Commune' was not included in the prompt variables "
+        f"passed to get_prompt; variables={captured_variables}"
+    )
+
+    kinds = [_get(p, "kind") for p in out]
+    assert "split_value" in kinds, (
+        f"expected a 'split_value' proposal for the NOM token, got kinds={kinds}"
+    )
+
+
+def test_annotate_split_value_ok_when_split_by_set():
+    """AC2: a proposal with kind: split_value gets status "ok" when the config
+    has split_by set, and "needs_attention" when split_by is NOT set.
+
+    annotate_proposals takes a profile dict as its second argument; the
+    split_by flag must be reachable from that same call so the implementation
+    can validate against it (e.g. via a "split_by" key in the profile/context
+    passed to annotate_proposals, per the card's fix description).
+    """
+    proposal_ok = [
+        _proposal("split_value", {}, name="split_value", confidence=_HIGH_CONF),
+    ]
+    profile_with_split_by = dict(_profile_xtf2())
+    profile_with_split_by["split_by"] = "Commune"
+
+    out_ok = ti.annotate_proposals(proposal_ok, profile_with_split_by)
+    assert _get(out_ok[0], "status") == "ok", (
+        f"expected 'ok' when split_by is configured, got "
+        f"{_get(out_ok[0], 'status')!r} reason={_get(out_ok[0], 'reason')!r}"
+    )
+
+    proposal_missing = [
+        _proposal("split_value", {}, name="split_value", confidence=_HIGH_CONF),
+    ]
+    profile_without_split_by = _profile_xtf2()  # no split_by key at all
+
+    out_missing = ti.annotate_proposals(proposal_missing, profile_without_split_by)
+    assert _get(out_missing[0], "status") == "needs_attention", (
+        f"expected 'needs_attention' when split_by is NOT configured, got "
+        f"{_get(out_missing[0], 'status')!r}"
+    )
+
+
+def test_apply_template_writes_split_value_placeholder(tmp_path):
+    """AC3: an accepted split_value proposal causes apply_inference to write the
+    literal "{{ split_value }}" placeholder into the resolved .docx (so
+    build-report's existing split_value substitution fills it with the real
+    commune name instead of leaving the literal "NOM" text)."""
+    template = _docx_with_nl_placeholders(tmp_path, ["[[NOM]]"])
+    tokens = ti.extract_placeholders(template)
+    assert len(tokens) == 1
+
+    approved = [
+        _approved("split_value", {}, name="split_value", token_index=0),
+    ]
+    cfg = {"api": {}, "form": {}, "report": {"split_by": "Commune"}}
+
+    _cfg_out, resolved = ti.apply_inference(approved, cfg, template)
+
+    expected = "{{ split_value }}"
+    reopened = Document(str(resolved))
+    found = any(
+        expected in "".join(r.text for r in p.runs) for p in reopened.paragraphs
+    )
+    assert found, (
+        "resolved template does not contain the literal '{{ split_value }}' "
+        "placeholder for the accepted split_value proposal"
     )

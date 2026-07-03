@@ -21,7 +21,9 @@ A card is startable only when all of the following hold:
   text); E2E and UAT may be `N/A (reason)` for non-UI/CLI cards (UAT moves in lockstep with E2E)
 - All affected files are identified
 - All blocking dependencies are resolved
-- Scope is limited to one deliverable
+- Scope is limited to one deliverable (**INVEST: Independent + Small** — completable in one
+  session/sprint without depending on unshipped sibling tasks)
+- Priority is declared: `P0` (must-ship/blocking) · `P1` (important, non-blocking) · `P2` (nice-to-have)
 - Work is on a derived branch (`feature/ fix/ chore/`) off `develop`
 
 ## Definition of Done
@@ -43,6 +45,28 @@ A card is startable only when all of the following hold:
   validates the claim against the diff
 - All changes committed and merged to the integration branch
 
+## Sprint rituals (cadence-level checks)
+
+The DoR/DoD above are per-task gates. Some work is per-sprint, not per-task — it can't be a
+task checkbox, so it lives here, verified by the sprint rituals that bracket a sprint.
+
+Sprint entry — checked by /sprint-start:
+- [ ] Every planned task satisfies the task DoR
+- [ ] The story map is current — the user journey is mapped and every journey gap is either
+      planned as a task or consciously deferred (/story-map)
+
+Sprint exit — checked by /report + /retro:
+- [ ] Every task taken into the sprint is DoD-done [x] or explicitly carried over
+- [ ] Usability checked on the user-facing features shipped this sprint — heuristic pass at
+      minimum, real-user sessions when scheduled (/usability-test); findings filed as /planner tasks
+- [ ] Progress report generated for the review (/report)
+- [ ] Retrospective held and action items captured (/retro)
+
+> Why here and not the DoD: story mapping and usability testing are about the product/journey
+> across many tasks, are periodic, and (for real-user testing) need humans — so they're
+> sprint-cadence checks, not per-task gates. Their outputs become tasks, which then pass the
+> normal DoD.
+
 ## Global status
 
 | Area | Planned | Progress |
@@ -50,14 +74,14 @@ A card is startable only when all of the following hold:
 | [Output / export formats](#output--export-formats) | 3 | 3 / 3 |
 | [Project management & top ribbon (UX)](#project-management--top-ribbon-ux) | 10 | 10 / 10 |
 | [Accessibility (WCAG 2.1 AA)](#accessibility-wcag-21-aa) | 8 | 8 / 8 |
-| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 10 | 10 / 10 |
+| [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 13 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
-| [Express Template Fill](#express-template-fill) | 25 | 25 / 25 |
-| [Visual / E2E harness](#visual--e2e-harness) | 2 | 2 / 2 |
+| [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
+| [Visual / E2E harness](#visual--e2e-harness) | 3 | 3 / 3 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 7 | 6 / 7 |
+| [Maintenance & hardening](#maintenance--hardening) | 15 | 14 / 15 |
 
 ---
 
@@ -73,6 +97,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **OUT-1 — JSON export (records array)**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
 
   Surface JSON in the format chip-tabs and verify the `_export_file` JSON branch end-to-end.
 
@@ -96,6 +122,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **OUT-2 — MySQL remote table export**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
 
   Enable the MySQL target (credentials in `export.database`) once verified against a live DB.
 
@@ -121,6 +149,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **OUT-3 — PostgreSQL remote table export**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
 
   Same as OUT-2 for PostgreSQL.
 
@@ -155,6 +185,8 @@ A card is startable only when all of the following hold:
 
 - [x] **UX-1 — Show project color & icon**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
+
   The create/edit form collects a color + emoji icon, but they're rendered nowhere — the
   switcher avatar still shows `name.slice(0,2)` and menu rows are text-only.
 
@@ -178,6 +210,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **UX-2 — Keyboard-accessible project switcher**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
 
   Menu rows are `<div onClick>` with no `role`/`tabIndex`/key handlers; the trigger lacks
   `aria-expanded`/`aria-haspopup`; dropdowns don't close on `Escape`.
@@ -206,6 +240,8 @@ A card is startable only when all of the following hold:
 
 - [x] **UX-3 — Archived rows look clickable but do nothing**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
+
   Archived project rows reuse active-row styling (hover highlight) but have no row `onClick` —
   only the gear works.
 
@@ -230,6 +266,8 @@ A card is startable only when all of the following hold:
 
 - [x] **UX-4 — Unsaved-changes guard on the project form**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   [frontend/src/pages/ProjectForm.jsx](../frontend/src/pages/ProjectForm.jsx) has no dirty
   tracking; editing Details then hitting ← Back discards silently.
 
@@ -253,6 +291,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **UX-5 — Member rows fall back to a raw UUID**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
 
   [frontend/src/components/ProjectMembersPanel.jsx](../frontend/src/components/ProjectMembersPanel.jsx)
   renders `m.email || m.name || m.user_id`, so members without email/name show a UUID.
@@ -280,6 +320,8 @@ A card is startable only when all of the following hold:
 
 - [x] **UX-6 — Inline validation for required name (ProjectForm)**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   Currently a toast only. Add an inline error + disable submit until valid.
 
   **Files:** `frontend/src/pages/ProjectForm.jsx` · **Impact:** None.
@@ -301,6 +343,8 @@ A card is startable only when all of the following hold:
 
 - [x] **UX-7 — Explain read-only email (ProfileForm)**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   Add "Managed by your sign-in provider" helper text so the disabled field doesn't look broken.
 
   **Files:** ProfileForm · **Impact:** None.
@@ -321,6 +365,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **UX-8 — Accessible labels on color swatches / icon buttons**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
 
   They convey meaning by color/emoji alone; add `aria-label` + `aria-pressed` on the selected one.
 
@@ -344,6 +390,8 @@ A card is startable only when all of the following hold:
 
 - [x] **UX-9 — Global "switching…" feedback**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-25
+
   A brief unified indicator while a project switch hydrates (minor now that `pull_workspace`
   is parallelized).
 
@@ -365,6 +413,8 @@ A card is startable only when all of the following hold:
 
 ---
 - [x] **UX-10 — Navigate to Home tab on project switch (P2)**
+
+  **Created:** 2026-06-27 · **Completed:** 2026-06-28
 
   When a user switches project via the project picker, they remain on whatever tab they
   were on. Tab content may be stale or project-specific (e.g. Extract showing the old
@@ -813,6 +863,8 @@ A card is startable only when all of the following hold:
 
 - [x] **PUX-1 — Plain-language relabeling of data-engineering vocabulary (P1)**
 
+  **Created:** 2026-06-20 · **Completed:** 2026-06-22
+
   The Home workflow stages and several field labels use analyst / data-engineering terms the
   target non-expert users don't understand (fails *Match system ↔ real world*, 2/4). Examples:
   Home stage 03 **"Model"** is described as *"Build derived views — virtual tables of joins and
@@ -877,6 +929,8 @@ A card is startable only when all of the following hold:
 
 - [x] **PUX-2 — First-run / empty-state onboarding with a single recommended next action (P1)**
 
+  **Created:** 2026-06-20 · **Completed:** 2026-06-21
+
   On first load the Home screen presents five equal-weight stage cards with no "start here"
   guidance (`frontend/src/pages/Home.jsx` `home-cards` ~75–100) — a confused first-timer has no
   recommended path (fails *Make the safe path the default* + *Help & documentation*, 2/4). Give a
@@ -930,6 +984,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **PUX-3 — Reduce Composition cognitive load via progressive disclosure (P1)**
+
+  **Created:** 2026-06-20 · **Completed:** 2026-06-22
 
   The Composition surface (`frontend/src/pages/Composition.jsx`) presents several construct types at
   once — charts, indicators, tables, summaries — a wall of options at exactly
@@ -988,6 +1044,8 @@ A card is startable only when all of the following hold:
 
 - [x] **PUX-4 — In-app contextual help per stage (P2)**
 
+  **Created:** 2026-06-20 · **Completed:** 2026-06-22
+
   Help currently lives only in repo docs (`docs/reference/*`); non-expert field staff won't leave
   the app to read them (this is the **Help & documentation** heuristic, scored 2/4). Each stage /
   tab should expose concise contextual help in-app, reachable without leaving the current context,
@@ -1044,6 +1102,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **PUX-5 — Reduce setup-before-value friction (demo / sample path) (P2)**
+
+  **Created:** 2026-06-20 · **Completed:** 2026-06-22
 
   Today an API token **and** an AI key are required before any value appears — a steep wall for a
   non-expert evaluating the tool (fails *Make the safe path the default*; compounds *Help &
@@ -1109,6 +1169,8 @@ A card is startable only when all of the following hold:
 
 - [x] **PUX-6 — Harden Home first-run readiness fetch (error + project-switch) (P2)**
 
+  **Created:** 2026-06-21 · **Completed:** 2026-06-22
+
   Follow-up from PUX-2. The `/api/state` readiness effect in `frontend/src/App.jsx` (~296-310)
   has two robustness gaps. (1) `homeReady` is not reset to `null` when `activeProjectId` changes,
   so switching projects briefly shows the previous project's Home state (first-run vs full view)
@@ -1157,6 +1219,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **PUX-7 — Gate Fetch/Download on a confirmed connection; flip the sample-data affordance (P2)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
 
   On Extract → Connection, **Fetch questions** and **Download data** are always clickable
   (disabled only on `running || !canEdit`, `frontend/src/pages/Sources.jsx` ~497/502), so a
@@ -1243,6 +1307,8 @@ A card is startable only when all of the following hold:
 
 - [x] **PUX-8 — Primary navigation labels adopt the PUX-1 plain-language stage names (P2)**
 
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
+
   PUX-1 reworded the Home stage cards to plain language for non-experts
   (`home.stages.transform.label` = "Clean & check" / "Nettoyer et vérifier";
   `home.stages.model.label` = "Combine data" / "Combiner les données"), but the horizontal top-nav
@@ -1302,6 +1368,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **PUX-9 — Copy-placeholder buttons for charts / indicators / summaries / tables on the Analyze tab (P2)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
 
   On Analyze → "Charts & indicators" (`frontend/src/pages/Composition.jsx`, `ANALYZE_SECTIONS`),
   every chart / indicator / summary / table the user defines maps to a docxtpl placeholder they
@@ -1377,6 +1445,8 @@ A card is startable only when all of the following hold:
 
 - [x] **PUX-10 — Auto-save the connection before Fetch/Download (no stale-config runs) (P2)**
 
+  **Created:** 2026-06-27 · **Completed:** 2026-06-27
+
   Follow-up to PUX-7. **Test connection** probes the *in-form* values (URL/token/Form UID are
   sent in the request body), but **Fetch questions** / **Download data** run the CLI against the
   *saved* config (`run('fetch-questions')` / `run('download')` → `POST /api/run/<cmd>`, which
@@ -1430,6 +1500,211 @@ A card is startable only when all of the following hold:
 
 ---
 
+- [x] **PUX-11 — Inline live preview in the chart editor modal (P1)**
+
+  **Created:** 2026-06-28 · **Completed:** 2026-07-01
+
+  Today the chart editor (`ChartModal`) and the chart preview are two separate modals —
+  users configure blind, then close and open a second modal to see the result. Merge them:
+  the chart editor modal gains a live preview pane (right column on desktop, below fields on
+  mobile) that calls `/api/charts/preview` with the current form state, debounced ~600 ms,
+  and re-renders the chart image as the user types. The existing standalone preview modal
+  is removed; all chart interaction goes through the unified editor.
+
+  **Files:** `frontend/src/pages/Composition.jsx` · `frontend/tests/e2e/composition.spec.ts`
+  (or a new `chart-editor.spec.ts`)
+
+  **Config/schema impact:** None — frontend-only; uses existing `/api/charts/preview` endpoint.
+
+  **Acceptance criteria**
+  - Opening the chart editor (add or edit) shows the chart preview pane alongside the form fields
+  - The preview re-fetches and updates within ~600 ms of any field change (title, type, questions,
+    color, top_n, etc.) without the user clicking a separate button
+  - While the preview is loading a skeleton/spinner is shown; on error a legible inline message
+    is shown (not a blank pane)
+  - The standalone "Preview" button / separate preview modal is removed from the Composition tab
+  - Two-column layout at tablet (820 px) and desktop (1440 px) widths; stacked (single column)
+    at mobile (390 px) width
+  - All existing Composition tab tests remain green
+
+  **Unit tests:** `frontend/src/hooks/useChartPreview.test.js` — the debounce + preview-state
+  logic (loading/error/success) is extracted into a `useChartPreview` hook so it's unit-testable
+  independent of Playwright:
+  - Rapid successive field changes within 600 ms fire exactly one `/api/charts/preview` request
+    (debounce collapses bursts, doesn't fire once per keystroke)
+  - Loading state is `true` from request start until the response resolves
+  - A non-2xx response sets an error state (not loading, not a stale success state)
+
+  **E2E:** `frontend/tests/e2e/composition.spec.ts` (or `chart-editor.spec.ts`) —
+  - Open chart editor; assert preview pane is visible
+  - Change the chart title; assert the preview image src changes (new request fired)
+  - Stub `/api/charts/preview` to return 500; assert inline error message is shown
+  - `toHaveScreenshot('chart-editor-modal.png')` at all three viewports (mobile / tablet / desktop)
+
+  **UAT:**
+  1. Open Composition tab → click Edit on any chart
+  2. Confirm the preview renders inside the modal without clicking a separate button
+  3. Change the title — confirm the preview updates automatically within ~600 ms
+  4. Confirm layout is stacked (single column) at mobile width (390×844), and two-column at
+     tablet width (820×1180) and desktop width (1440×900)
+
+  **Verify:** `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
+  `cd frontend && npm run test:e2e` (full suite green)
+
+---
+
+- [x] **PUX-12 — Chart editor preview: keep last image visible during re-fetch (P2)**
+
+  **Created:** 2026-07-01 · **Started:** 2026-07-02 · **Completed:** 2026-07-02
+
+  **Type:** Feature
+
+  **Depends on:** PUX-11 (must be done — this extends `useChartPreview` and `ChartModal`,
+  which PUX-11 introduces)
+
+  Follow-up from PUX-11's `/impeccable critique` (Design Health Score 28/40 — Good, none
+  blocking; this is finding 1 of 4, split into its own card per DoR scope review).
+  `useChartPreview` fully unmounts the last successful image and replaces it with a loading
+  skeleton on every debounced re-fetch — including small, low-risk edits (e.g. typing a title
+  character by character once the 600ms window lapses). For anxious non-expert users (this
+  product's core audience per PRODUCT.md), a previously-correct chart vanishing on every edit
+  reads as "did I break something?" rather than "it's updating."
+
+  **Files:** `frontend/src/hooks/useChartPreview.js` · `frontend/src/pages/Composition.jsx`
+  (`ChartModal`) · `frontend/src/hooks/useChartPreview.test.js`
+
+  **Config/schema impact:** None — frontend-only, no new config field.
+
+  **Acceptance criteria**
+  - A debounced re-fetch keeps the last successful preview image visible (e.g. dimmed, or with
+    a small corner spinner) instead of unmounting it
+  - Only the very first load with no prior image shows the full blanking skeleton
+  - A re-fetch that ends in an error does not clobber the last-good image with nothing — falls
+    back to the existing error state, but the transition doesn't flash a blank pane first
+  - All existing PUX-11/XTF-27/a11y-5 tests remain green
+
+  **Unit tests:** `frontend/src/hooks/useChartPreview.test.js` (extend) —
+  - `test_previous_image_persists_during_refetch`: after a successful preview, trigger a new
+    debounced fetch; assert `image` from the prior state is still returned (not nulled) while
+    `loading` is true, until the new response resolves
+  - `test_first_load_shows_full_skeleton`: with no prior image, assert `image` is `null` and
+    `loading` is `true` during the initial fetch (no persisted-image case to fall back to)
+
+  **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) —
+  - Change a field twice in quick succession; assert the previously-rendered preview `<img>`
+    remains in the DOM (not replaced by the skeleton testid) between requests
+  - `toHaveScreenshot('chart-editor-modal-refetch.png')` capturing the dimmed/in-progress state
+    at all three viewports, human-approved
+
+  **UAT:**
+  1. Open the chart editor, wait for the preview to render, then change the Title — confirm the
+     existing chart image stays visible (dimmed or with a small spinner) rather than
+     disappearing into a blank skeleton
+
+  **Verify:** `node --test frontend/src/hooks/useChartPreview.test.js` ·
+  `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
+  `cd frontend && npm run test:e2e` (full suite green)
+
+---
+
+- [x] **PUX-13 — Chart editor: link preview errors back to the offending field (P2)**
+
+  **Created:** 2026-07-01 · **Started:** 2026-07-03 · **Completed:** 2026-07-03
+
+  **Type:** Feature
+
+  **Depends on:** PUX-11 (must be done)
+
+  Follow-up from PUX-11's `/impeccable critique` (finding 3 of 4). When `/api/charts/preview`
+  fails, the message is generic backend text in the preview pane; the user must mentally diff
+  their Name/Title/Type/Columns/Options against the failure to guess what to fix — a "Memory
+  Bridge" cognitive load violation. `CHART_REQS` already encodes each chart type's column
+  requirement client-side, so a type/column-count mismatch is detectable without waiting for
+  the backend round-trip.
+
+  **Files:** `frontend/src/pages/Composition.jsx` (`ChartModal`)
+
+  **Config/schema impact:** None — frontend-only, no new config field.
+
+  **Acceptance criteria**
+  - When a preview error is a chart-type/column-count mismatch already knowable from
+    `CHART_REQS` (e.g. a `histogram` needs 1 numeric column, none selected), the Columns
+    `ModalField` row is visually flagged (reusing the existing rose-border pattern used for
+    filter errors) in addition to the generic pane message
+  - When the error is NOT attributable to a known client-side rule (e.g. a genuine backend/data
+    error), only the generic pane message shows — no field is falsely flagged
+  - All existing PUX-11/XTF-27/a11y-5 tests remain green
+
+  **Unit tests:** N/A (pure UI wiring — the `CHART_REQS`-to-field mapping is a small lookup
+  with no isolable logic beyond what E2E already exercises directly).
+
+  **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) + visual (impeccable
+  audit/critique + `toHaveScreenshot`) —
+  - Select a chart type requiring a numeric column, pick a text column, wait for the preview
+    error; assert the Columns field carries the error-flagged style
+  - Trigger a non-`CHART_REQS` error (e.g. stub a 500 with an unrelated message); assert no
+    field is flagged
+  - `toHaveScreenshot('chart-editor-modal-field-error.png')` at all three viewports,
+    human-approved
+
+  **UAT:**
+  1. Pick a chart type that needs a numeric column, choose a text column instead — confirm the
+     Columns field itself is visually flagged as the likely cause, not just a generic error
+
+  **Verify:** `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
+  `cd frontend && npm run test:e2e` (full suite green)
+
+---
+
+- [ ] **PUX-14 — Chart editor: surface the live preview above the fold on mobile (P3)**
+
+  **Created:** 2026-07-01
+
+  **Type:** Feature
+
+  **Depends on:** PUX-11 (must be done)
+
+  Follow-up from PUX-11's `/impeccable critique` (finding 4 of 4). On the 390px stacked
+  layout, the live preview sits below all 4 form fields (Name/Title/Type/Columns/Options) — a
+  user must scroll past the whole form to see the result of an edit they just made,
+  undercutting the "live" framing on the one viewport where scroll friction matters most.
+
+  **Files:** `frontend/src/pages/Composition.jsx` (`ChartModal`)
+
+  **Config/schema impact:** None — frontend-only, no new config field.
+
+  **Acceptance criteria**
+  - On mobile (< 768px), the user can see or reach the live preview without scrolling past all
+    4 form fields — either the pane is reordered higher in the stack, or a compact status
+    indicator (e.g. "Preview ready" / "Rendering…") near the top scrolls the pane into view on
+    tap
+  - The reordering/indicator does not regress the desktop/tablet two-column layout
+  - All existing PUX-11/XTF-27/a11y-5 tests remain green
+
+  **Unit tests:** N/A (layout-only change; covered by E2E).
+
+  **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) + visual (impeccable
+  audit/critique + `toHaveScreenshot` at all three viewports — mobile 390×844, tablet 820×1180,
+  desktop 1440×900) —
+  - At mobile width, assert the preview pane (or its status indicator) is within the initial
+    viewport without scrolling, or that tapping the indicator scrolls it into view
+  - `toHaveScreenshot('chart-editor-modal-mobile-preview-position.png')` at mobile width,
+    human-approved (the reordered/above-the-fold mobile layout)
+  - Regression guard for the "must not regress desktop/tablet" AC:
+    `toHaveScreenshot('chart-editor-modal-tablet-preview-position.png')` at tablet width and
+    `toHaveScreenshot('chart-editor-modal-desktop-preview-position.png')` at desktop width,
+    each asserting the two-column layout is unchanged, human-approved
+
+  **UAT:**
+  1. On a phone-width browser window, open the chart editor — confirm you can see or reach the
+     preview without scrolling past the whole form
+
+  **Verify:** `cd frontend && npm run test:e2e -- --grep "chart.*editor|editor.*chart"` ·
+  `cd frontend && npm run test:e2e` (full suite green)
+
+---
+
 ## M&E capabilities
 
 > Still-open gaps from the 2026-04-07 M&E audit. The audit's top findings have **shipped** —
@@ -1439,6 +1714,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **ME-1 — Equity / inclusion lens**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
 
   Indicators support `disaggregate_by`, but there's no automatic cross-group comparison that
   *surfaces* inequities (gaps, convergence, exclusion) — let alone significance.
@@ -1463,6 +1740,8 @@ A card is startable only when all of the following hold:
 
 - [x] **ME-2 — Variance / traffic-light dashboards**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   `pct_achievement` is computed per indicator and per framework node, but nothing flags
   indicators below threshold or renders a red/amber/green progress table.
 
@@ -1485,6 +1764,8 @@ A card is startable only when all of the following hold:
 
 - [x] **ME-3 — Indicator metadata catalog**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   Indicators carry computation params + `direction`, but not `unit`, `source`, `frequency`,
   or `responsible`, so the donor-style indicator reference annex can't be auto-generated.
 
@@ -1505,6 +1786,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **ME-4 — Multi-form / longitudinal linkage**
+
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
 
   The platform connects to exactly one form. Many frameworks need baseline ↔ endline (matched
   on beneficiary ID), monitoring ↔ registration, activity ↔ outcome. Largest change here.
@@ -1530,6 +1813,8 @@ A card is startable only when all of the following hold:
 
 - [x] **ME-5 — Sampling weights**
 
+  **Created:** 2026-06-17 · **Completed:** 2026-06-26
+
   No support for survey weights — all aggregates assume equal weighting. (`--sample N` is for
   testing only, not statistical sampling.)
 
@@ -1551,6 +1836,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **ME-6 — Surface below-threshold indicators in the Validate panel (P2)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
 
   Follow-up from ME-2 (which computes `ind_<name>_status` RAG + a `flagged_indicators` context but
   does not surface them in the Validate panel). Add a validate-side detector so indicators below
@@ -1589,6 +1876,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **ME-7 — Chart `form:` selector for multi-form (P2)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
 
   Follow-up from ME-4 (multi-form data layer + INDICATOR `form:` selector shipped; the analogous CHART
   selector was scoped out). Let a chart render against a specific form alias's DataFrame (`form:
@@ -1641,6 +1930,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-1 — Placeholder extraction from .docx (`extract_placeholders`)**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
+
   Parse all three delimiters out of an uploaded `.docx` into structured `Token`s. Pure
   function, no AI, no network. Foundation for the rest of the express path.
 
@@ -1686,6 +1977,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-2 — Batched inference + local validation (`infer_specs`, `annotate_proposals`)**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   One batched LLM call turns NL placeholders + the data catalog into config-shaped `Proposal`s,
   then deterministic local validation flags anything unsupported. Depends on **XTF-1**.
@@ -1739,6 +2032,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-3 — Apply: persist config + resolve template (`apply_inference`)**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
+
   Write approved specs into `config.yml` without clobbering, and rewrite each token's run span to
   a single clean `{{ canonical }}` run so docxtpl renders it (critical for charts). Depends on
   **XTF-1** and **XTF-2**.
@@ -1777,6 +2072,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-4 — CLI commands (`infer-template`, `apply-template`)**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   Two-phase CLI so review can happen between inference and apply, with a JSON proposal artifact
   and an optional `--build` chain. Depends on **XTF-1**, **XTF-2**, **XTF-3**.
@@ -1817,6 +2114,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-5 — Web review/approve panel + discoverability**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   The user-facing card: a Templates-tab review/approve panel over the proposals, the two API
   endpoints, and a discoverability banner/button. Depends on **XTF-1**, **XTF-2**, **XTF-3**,
@@ -1881,6 +2180,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-6 — Fix: persist the uploaded template across infer → apply**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
+
   Bug found in review: `POST /api/template/infer` writes the uploaded `.docx` to a throwaway
   temp file and never persists it; the panel then calls `POST /api/template/apply` with only the
   client `file.name`, which `apply` resolves by basename against `TEMPLATES_DIR` — where a
@@ -1939,6 +2240,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-7 — Gate the Express "Infer" button on AI-tested status (parity with other AI buttons)**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
+
   The Express **Infer** button is enabled as soon as a file is chosen (`disabled={!file || loading}`)
   — unlike every other interactive AI control, which stays disabled until the AI connection is
   configured **and** verified via `/api/ai/test` (`useAiStatus().aiReady` + `AI_LOCK_TIP`). Bring
@@ -1981,6 +2284,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-8 — Fix: Express apply persists the resolved template to durable storage + a relative `report.template`**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   Bug found in review: `api_template_apply` (web/main.py ~2562) sets
   `cfg["report"]["template"]` to the **absolute** resolved path and never `put_project_file`s the
@@ -2035,6 +2340,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-9 — Gate the "In a hurry?" Express banner on questions + data**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
+
   The `ExpressBanner` (frontend/src/pages/Templates.jsx ~14) always renders enabled, but inference
   can't validate proposals without real columns — `/api/template/infer` returns the
   `EXPRESS_NO_DATA_MESSAGE` precondition when no data is downloaded. Disable the banner with a hint
@@ -2080,6 +2387,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-10 — Replace the run badge with a fixed "report building…" alert + stop/cancel**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   Today an active run shows a small `run-indicator` button in the top nav (App.jsx ~323–329) that
   only toggles the terminal — there is no way to cancel a run from the UI even though
@@ -2131,6 +2440,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-11 — Terminal: show ~5s during a build then auto-collapse; auto-expand on error**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-19
 
   Today `onStatus` (App.jsx ~146–166) opens the terminal on `running`, and on `success` collapses it
   after a fixed 1400 ms; on `error` it forces it open. Change the build behavior so the terminal
@@ -2184,6 +2495,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-12 — Reports page: "Delete all reports" + bulk-delete endpoint**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-19
+
   `Reports.jsx` deletes reports one at a time (`deleteReport`, ~82) against
   `DELETE /api/reports/{filename}` (web/main.py ~1845, editor-gated). There is no bulk delete. Add a
   bulk `DELETE /api/reports` endpoint (same editor/admin RBAC as the single delete) and a "Delete all
@@ -2234,6 +2547,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-13 — Build options for Express & regular build: split-by (main-table columns) + sample preview (`--split-sample`)**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-19
 
   Expose two build options on both build surfaces: a **split-by** selector populated with
   **main-table `export_label`s only** (not repeat-group columns) and a "build all (default) vs first
@@ -2304,6 +2619,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-14 — Reposition the run alert in-page (below the title, content width) + icon Stop**
 
+  **Created:** 2026-06-18 · **Completed:** 2026-06-19
+
   Refinement of XTF-10. The run alert currently renders as a fixed bar pinned above the top
   nav (App.jsx ~265, outside the page). Move it to flow **inside the page content** — below the
   top nav and the page title/header, immediately before the page's main container — constrained
@@ -2358,6 +2675,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-15 — Remove the redundant rail "Build report" Quick Action on the Reports page**
 
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
+
   Follow-up from XTF-13/14 review. The Reports page now shows TWO "Build report" buttons: the
   Quick Actions rail action (`Reports.jsx` ~127, `run('build-report')` with no options) and the
   XTF-13 BuildOptions control's `build-run` button (split-by + sample). The BuildOptions entry
@@ -2404,6 +2723,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-16 — build-report clears the reports output dir so each build is the current set**
 
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
+
   Bug from review: `build-report` only `mkdir`s the reports `output_dir` (`src/reports/builder.py`
   ~233) and never removes prior outputs, so reports ACCUMULATE across runs. Two symptoms: (a) a
   "first N groups" (`--split-sample`) preview correctly builds only N new files but the dir still
@@ -2447,6 +2768,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-17 — Searchable split-by dropdown in the build options**
+
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
 
   The split-by control (`frontend/src/components/BuildOptions.jsx`) is a plain `<select>`. For
   forms with many main-table columns it's hard to scan. Make it a **searchable/filterable**
@@ -2495,6 +2818,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-18 — Fix: express-path terminal does not auto-collapse after ~5s**
 
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
+
   Bug from review: XTF-11's auto-collapse (terminal opens on a build run, collapses after
   `window.__TERM_COLLAPSE_MS ?? 5000`, `App.jsx` `onStatus` ~184-199) works for the regular build
   but NOT when the build is launched from the Express **Apply & build** flow (`Templates.jsx`
@@ -2539,6 +2864,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-19 — Storage push mirrors output categories (fixes split-preview leaving stale reports)**
+
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
 
   Bug from the follow-up batch (issue ① in the spec). `push_outputs`
   (`web/storage/workspace.py` ~64–72) is **merge-only**: a split preview that builds 2 reports into
@@ -2599,6 +2926,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-20 — Reports listing shows storage build-time (with local-mtime fallback)**
 
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
+
   Bug from the follow-up batch (issue ② in the spec, read/listing half). `GET /api/reports`
   (`web/main.py` ~1826–1835) reports each file's **local mtime**, but `pull_workspace`'s S3
   `download_file` resets local mtime to pull-time — so every pulled report shows "today" regardless
@@ -2645,6 +2974,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-21 — Express split-by dropdown no longer clipped (CSS stacking)**
+
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
 
   Bug from the follow-up batch (issue ③ in the spec). In the Express review panel (shown after
   Infer), the "Split by" combobox menu is clipped/hidden behind sibling content when opened:
@@ -2703,6 +3034,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-22 — Deterministic auto-modeling resolver for cross-table columns**
+
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
 
   Feature from the follow-up batch (issue ④ in the spec). Infer rejects placeholders whose column
   lives in a repeat-group base table because validation defaults `source` to `"main"`
@@ -2774,6 +3107,8 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-23 — DELETE /api/reports (all + single) deletes durable storage objects**
 
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
+
   Bug from the follow-up batch (issue ② in the spec, durable-delete half). `DELETE /api/reports`
   (`web/main.py` ~1848) and `DELETE /api/reports/{filename}` (~1858) only `unlink` local files, so a
   delete is undone by the next run's `pull_workspace` (the durable storage object survives and is
@@ -2813,6 +3148,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **XTF-24 — Restrict split-by dropdown to select_one columns**
+
+  **Created:** 2026-06-19 · **Completed:** 2026-06-19
 
   The "Split by" combobox in `BuildOptions` (`frontend/src/components/BuildOptions.jsx`, the
   `splitCols` useMemo ~46–52) currently lists EVERY main-table column (any question with no
@@ -2879,6 +3216,219 @@ A card is startable only when all of the following hold:
 
 - [x] **XTF-25 — Express Template Fill: extractor must read Word content controls (w:sdt) (P2)**
 
+  **Created:** 2026-06-27 · **Completed:** 2026-06-27
+
+  `_tokens_in_paragraph` in `src/reports/template_inference.py` iterates only
+  `paragraph.runs` (top-level `w:r` elements). Text inside gray-shaded Word **content
+  controls** (`w:sdt → w:sdtContent → w:r → w:t`) is invisible to the extractor, so any
+  `[[placeholder]]` typed inside a content control is silently skipped and the Express UI
+  shows "Aucun espace réservé à examiner." Fix by walking `paragraph._p.iter()` for all
+  descendant `w:t` elements, which covers both plain-paragraph runs and content-control runs
+  in a single pass. Non-UI, non-CLI — Python extractor only.
+
+  **Files:** `src/reports/template_inference.py` (`_tokens_in_paragraph` function) ·
+  `tests/test_template_inference.py` (new or extend)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - A `.docx` whose paragraph text is wrapped in a content control (`w:sdt`) and contains
+    `[[PLACEHOLDER]]` is correctly detected by `_tokens_in_paragraph` — the placeholder
+    appears in the returned token list
+  - A plain-paragraph `[[PLACEHOLDER]]` (no content control) continues to be detected as
+    before (no regression)
+  - A paragraph with both a plain run and a content-control run returns tokens from both
+  - `extract_placeholders` (the caller) therefore lists placeholders from content-control
+    paragraphs; the Express UI no longer shows "Aucun espace réservé à examiner" for a
+    template that only uses content-control placeholders
+
+  **Unit tests:** `tests/test_template_inference.py` — (1) build a minimal `python-docx`
+  document that wraps `[[TOKEN_IN_SDT]]` inside a `w:sdt` content control and assert
+  `_tokens_in_paragraph` returns `["TOKEN_IN_SDT"]`; (2) assert a plain-run `[[TOKEN_PLAIN]]`
+  paragraph still returns `["TOKEN_PLAIN"]`; (3) assert a paragraph containing both a plain
+  run and an `sdt` run returns both tokens; (4) assert that the regression path
+  (`extract_placeholders` on such a doc) returns a non-empty list.
+
+  **E2E:** N/A (Python-only extractor; no UI surface — verified via unit tests + the verifier
+  + PR review).
+
+  **UAT:** N/A (non-UI/CLI card — the human gate is PR review + unit tests green).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py`
+
+---
+
+- [x] **XTF-26 — Express Fill: auto-resolve proposals when column lives in a repeat table (P1)**
+
+  **Created:** 2026-06-30 · **Completed:** 2026-06-30
+
+  `annotate_proposals` in `src/reports/template_inference.py` validates each inferred proposal
+  by looking up the target column in the main flat table only. When the column exists in a repeat
+  group table (e.g. `Nombre de ménages` → demographics repeat, `Organisation` → collaborations
+  repeat, `Groupe socio-économique` → team repeat), the validator rejects it with "column X not
+  found in 'main'" and sets `status: needs_attention` with no `source:` suggestion. The user has
+  no actionable path — the placeholder remains blank in the resolved template.
+
+  Fix: when column lookup fails in `main`, search all loaded repeat tables. If the column is found
+  in exactly one repeat table, auto-set `source` to that table name and flip `status` to `ok`. If
+  found in multiple repeat tables, set `source` to the best-matching table (most rows) and
+  `status` to `review` with a note listing the alternatives.
+
+  **Type:** Fix
+  **Priority:** P1
+
+  **Files:** `src/reports/template_inference.py` · `tests/test_template_inference.py`
+
+  **Config/schema impact:** None — `apply-template` already handles the `source:` field on
+  proposals; this fix just populates it where it was previously left empty.
+
+  **Acceptance criteria**
+  - When a placeholder's target column is absent from `main` but present in exactly one repeat
+    table, `annotate_proposals` sets `source` to that repeat table name and `status` to `ok`
+  - When the column is present in multiple repeat tables, `annotate_proposals` sets `source` to
+    the repeat table with the most rows and `status` to `review`, with a note listing the
+    alternative table names
+  - When the column is not found in `main` or any repeat table, `status` remains `needs_attention`
+
+  **Unit tests:** `tests/test_template_inference.py`:
+  - `test_annotate_sets_source_from_single_repeat_table`: catalog has column absent from main but
+    present in one repeat table; assert proposal gets `source` set to that table name and
+    `status == 'ok'`
+  - `test_annotate_sets_source_review_for_ambiguous_repeat`: column present in two repeat tables;
+    assert `status == 'review'`, `source` is the table with more rows, and the note mentions both
+    table names
+  - `test_annotate_keeps_needs_attention_when_column_nowhere`: column absent from main and all
+    repeat tables; assert `status == 'needs_attention'`
+  - `test_annotate_resolves_known_repeat_columns_from_fixture_profile`: fixture profile contains
+    demographic columns (`nombre_menages`, `nombre_habitants`) in one repeat table and a
+    socioeconomic column (`groupe_socioeconomique`) in a second repeat table; assert each proposal
+    gets the correct `source` and `status == 'ok'`
+
+  **E2E:** N/A (pure inference-engine fix; the Templates tab proposal review panel renders
+  whatever the API returns — no new UI component or interaction)
+
+  **UAT:** N/A (non-UI/CLI fix; verified via unit tests + `infer-template` CLI run + PR review)
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -q -k "repeat"` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+  Optional smoke (requires a form with repeat groups already downloaded): run
+  `python3 src/data/make.py infer-template` and confirm repeat-group columns resolve to
+  `status: ok` with `source:` set to the correct repeat table name.
+
+---
+
+- [x] **XTF-27 — Express Fill: bullet_list render type for column-value lists in reports (P1)**
+
+  **Created:** 2026-06-30 · **Completed:** 2026-07-01
+
+  When a template placeholder expects a list of values (e.g. "Nom de tous les villages"),
+  there is no way to render it as bullet points — the existing `table` type renders a Word
+  table image, and there is no text-based list type. A `bullet_list` chart type should render
+  column values as a `•`-prefixed text paragraph injected directly into the docx (not as an
+  image), using docxtpl's `{{ list_<name> }}` text placeholder instead of `{{ chart_N }}`
+  InlineImage.
+
+  **Type:** Feature
+  **Priority:** P1
+
+  **Files:** `src/reports/charts.py` · `src/reports/builder.py` ·
+  `src/reports/template_generator.py` · `frontend/src/pages/Composition.jsx` ·
+  `tests/test_builder.py` · `frontend/tests/e2e/composition-bullet-list.spec.ts`
+
+  **Config/schema impact:** New `type: bullet_list` value for chart configs. Template
+  placeholder changes from `{{ chart_N }}` (image) to `{{ list_<name> }}` (text run).
+  `generate-template` must emit a text-run placeholder instead of an image placeholder for
+  this type.
+
+  **Acceptance criteria**
+  - When a chart config has `type: bullet_list` and `questions: [ColumnName]`, `build-report`
+    injects a text paragraph of the form `• value1\n• value2\n…` into the Word document at
+    the `{{ list_<name> }}` placeholder position, filtered to the current split slice
+  - The `generate-template` command creates a `{{ list_<name> }}` text-run placeholder (not
+    `{{ chart_N }}`) in the generated `.docx` when a `bullet_list` chart is configured
+  - `bullet_list` appears as a selectable type in the Composition tab's chart type dropdown
+  - Both main-table and repeat-table `source:` columns are supported
+
+  **Unit tests:** `tests/test_builder.py`:
+  - `test_bullet_list_renders_as_text_not_image`: given a DataFrame with a Village column and
+    a bullet_list chart config, the builder context contains `list_<name>` as a string (not an
+    InlineImage) with `•`-prefixed entries
+  - `test_bullet_list_filters_by_split_value`: when `split_by=Commune` and split_value=X,
+    only values from rows where Commune==X appear in the list
+  - `test_template_generator_emits_text_placeholder_for_bullet_list`: calling
+    `generate_template` with a bullet_list chart produces a `.docx` containing
+    `{{ list_<name> }}` as plain text, not an image frame
+  - `test_bullet_list_repeat_table_source`: given a repeat-table column as `source:`, the
+    builder context contains `list_<name>` with values drawn from the repeat table rows
+
+  **E2E:** `frontend/tests/e2e/composition-bullet-list.spec.ts` — verify `bullet_list`
+  option is present in the chart type dropdown on the Composition tab;
+  `toHaveScreenshot` baselines at mobile 390×844, tablet 820×1180, desktop 1440×900;
+  `npx impeccable audit` + `npx impeccable critique` on the Composition tab clean before merge
+
+  **UAT:**
+  1. Open Composition tab → Add a chart → open the chart type dropdown → confirm `bullet_list`
+     appears in the list. Expected: option is visible and selectable.
+  2. Configure a `bullet_list` chart on the Village column, run
+     `python3 src/data/make.py build-report --sample 5` on a downloaded dataset, open the
+     output `.docx`. Expected: a `•`-prefixed text list appears at the placeholder position,
+     not an image.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -q -k "bullet_list"` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+---
+
+- [x] **XTF-28 — Express Fill: infer split_value placeholder from template context (P1)**
+
+  **Created:** 2026-06-30 · **Completed:** 2026-07-01
+
+  When `infer-template` runs on a form configured with `split_by`, short-label placeholders
+  that clearly refer to the unit of analysis (e.g. `[[NOM]]`, `[[Nom du site]]`,
+  `[[Commune]]`) are not recognized as the `split_value` system placeholder — they are
+  inferred as low-confidence indicators or left as `needs_attention`. The resolved template
+  ends up with literal "NOM" in report titles instead of the commune name.
+
+  Fix: in `infer_specs`, add `split_value` as a recognized kind. When the config has a
+  `split_by` dimension, include it in the LLM prompt so the model can propose
+  `kind: split_value` for placeholder tokens that semantically map to the split dimension.
+  `annotate_proposals` validates these by checking that the config `split_by` field is set;
+  `apply-template` writes `{{ split_value }}` for accepted proposals.
+
+  **Type:** Fix
+  **Priority:** P1
+
+  **Files:** `src/reports/template_inference.py` · `src/data/make.py` ·
+  `tests/test_template_inference.py`
+
+  **Config/schema impact:** None — `{{ split_value }}` is an existing builder placeholder;
+  this fix just wires inference → apply-template to produce it automatically.
+
+  **Acceptance criteria**
+  - When `infer-template --template <docx>` is run on a form with `split_by: Commune`
+    configured, a placeholder token matching the split label (e.g. `[[NOM]]`) is proposed
+    with `kind: split_value` and `status: ok`
+  - `apply-template` writes `{{ split_value }}` for any accepted `split_value` proposal
+  - The built report title contains the commune name (e.g. "Bougadoum"), not the literal
+    placeholder text
+
+  **Unit tests:** `tests/test_template_inference.py`:
+  - `test_infer_specs_proposes_split_value_for_nom_token`: with `split_by: Commune` in
+    config and a `[[NOM]]` placeholder token, `infer_specs` returns at least one proposal
+    with `kind == "split_value"`
+  - `test_annotate_split_value_ok_when_split_by_set`: proposal with `kind: split_value`
+    gets `status: ok` when config has `split_by` set, `needs_attention` when it is not set
+  - `test_apply_template_writes_split_value_placeholder`: an accepted `split_value` proposal
+    causes `apply-template` to write `{{ split_value }}` into the resolved `.docx`
+
+  **E2E:** N/A (pure inference-engine fix; no new UI)
+
+  **UAT:** N/A (non-UI/CLI fix; verified via unit tests + `infer-template` CLI run +
+  PR review)
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -q -k "split_value"` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
 ## Visual / E2E harness
 
 > The Definition of Done requires Playwright `toHaveScreenshot` baselines at mobile/tablet/desktop
@@ -2888,6 +3438,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **VIS-1 — Playwright visual harness (mobile/tablet/desktop)**
+
+  **Created:** 2026-06-18 · **Completed:** 2026-06-18
 
   Install and configure Playwright with three viewport projects, a deterministic smoke spec with
   committed baselines, a CI job, and the governance updates that make the three-viewport rule
@@ -2941,6 +3493,8 @@ A card is startable only when all of the following hold:
 
 - [x] **VIS-2 — Reconcile drifted visual baselines (A11Y-1/-2/-3, PUX-1)**
 
+  **Created:** 2026-06-21 · **Completed:** 2026-06-22
+
   Several merged cards' candidate visual baselines drifted stale because later merges changed
   *shared* surfaces: PUX-1 (plain-language relabel) and PUX-2 (first-run state) modified Home and
   Questions **after** A11Y-1 / A11Y-3 / PUX-1 captured their baselines, and A11Y-2's ProjectForm
@@ -2987,6 +3541,57 @@ A card is startable only when all of the following hold:
   **Verify:** `cd frontend && npx playwright test a11y-1 a11y-2 a11y-3 a11y-4 a11y-5 pux-1 pux-2`
 
 ---
+
+- [x] **VIS-3 — Cap Playwright workers to stop parallel-worker browser crashes in the E2E suite (P1)**
+
+  **Created:** 2026-07-02 · **Started:** 2026-07-02 · **Completed:** 2026-07-03
+
+  **Type:** Fix
+
+  `frontend/playwright.config.ts` sets `fullyParallel: true` with no `workers` cap, so Playwright
+  runs the three viewport projects (mobile/tablet/desktop) concurrently against a single shared
+  Vite dev server (`webServer`). Under that contention the headless-chromium workers crash
+  mid-test — surfacing as `Page crashed` / `Target page, context or browser has been closed`
+  failures rather than assertion diffs. This stalled the `/ship-task open` batch for ~19 min on
+  PUX-12: `chart-editor.spec.ts` crashed on the tablet project in the full parallel run but passed
+  **33/33** across all three viewports when re-run with `--workers=1`. Fix: cap the worker count
+  so specs that pass in isolation also pass in the full suite. A stalled
+  `fix/ci-playwright-worker-contention` branch already drafted `workers: CI ? 1 : undefined` —
+  finish and verify it (its own commit note flags it INCOMPLETE / NOT-YET-SUFFICIENT), capping
+  locally too since this dev container hits the same contention.
+
+  **Out of scope (separate concern):** genuinely drifted screenshot baselines (e.g. A11Y-1, PUX-1,
+  PUX-3) that fail as pixel-diff mismatches even at `workers:1` — those are a baseline
+  reconciliation task (cf. VIS-2), NOT a contention crash, and must not be folded into this fix.
+
+  **Files:** `frontend/playwright.config.ts`
+
+  **Config/schema impact:** None — test-harness config only; no app config or DB change.
+
+  **Acceptance criteria**
+  - `playwright.config.ts` caps the Playwright worker count (e.g. `workers: 1`, or a small fixed
+    cap) so the three viewport projects no longer overwhelm the shared Vite dev server
+  - The full `npm run test:e2e` suite runs with **zero crash-class failures** — no `Page crashed`
+    / `Target ... closed` / worker-timeout errors (screenshot pixel-diff mismatches from
+    pre-existing baseline drift are explicitly excluded from this criterion)
+  - A spec that passes in isolation (`chart-editor.spec.ts` → 33/33) also passes as part of the
+    full suite, on all three viewports
+  - The cap applies both in CI (`process.env.CI`) and locally, since both share one dev server
+
+  **Unit tests:** N/A (Playwright harness config change — no isolable application logic; the E2E
+  harness itself is what changes).
+
+  **E2E:** Validated by the E2E harness itself — `cd frontend && npm run test:e2e` completes with
+  no crash-class failures across mobile/tablet/desktop. No new spec or `toHaveScreenshot` baseline
+  is added (this card changes runner config, not UI).
+
+  **UAT:** N/A (test-infra/CI change; no user-facing surface — PR review + a green CI run are the
+  human gate).
+
+  **Verify:** `cd frontend && npm run test:e2e` (full suite; assert no `Page crashed` / `Target closed` / worker-timeout failures) · `CI=true npx playwright test chart-editor.spec.ts` from `frontend/`
+
+---
+
 
 ## Internationalization (i18n)
 
@@ -3327,6 +3932,8 @@ A card is startable only when all of the following hold:
 
 - [x] **PLANG-1 — Project language is set once at creation and drives the AI output language (backend + config mirroring)**
 
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
+
   `project.meta.language` already exists (offered in `ProjectForm` as
   English/French/Spanish/Portuguese/Arabic) but (a) it is **editable post-creation** via
   `PATCH /api/projects/{id}` (`web/main.py` ~278–284; `_META_KEYS` includes `language`;
@@ -3382,6 +3989,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **PLANG-2 — Create-only language field + read-only language in AI config (UI)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
 
   With PLANG-1 making the project language immutable + authoritative, reflect that in the UI. In
   `ProjectForm` the language `<select>` (`frontend/src/pages/ProjectForm.jsx` ~11/50/188–191) is
@@ -3441,6 +4050,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **PLANG-3 — Generate AI output (narrative, summaries, suggestions, Ask) in the project language**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
 
   With PLANG-1 feeding the project language into `config.ai.language`, ensure **every** AI generation
   site honours it so generated text comes out in the project language (per the confirmed scope —
@@ -3508,6 +4119,8 @@ A card is startable only when all of the following hold:
 
 - [x] **PERF-1 — Cache the expensive read-only server computations on a (data-session + config) fingerprint**
 
+  **Created:** 2026-06-20 · **Completed:** 2026-06-20
+
   Add a server-side cache layer in front of the three heavy read-only endpoints (`/api/profile`,
   `/api/data-quality`, `/api/base-tables`) keyed on a fingerprint of the **active project's data
   session + config**. Identical repeat requests (the common case when a user navigates back and forth
@@ -3570,6 +4183,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **PERF-2 — Shared (cross-worker) cache backend for the perf cache**
+
+  **Created:** 2026-06-20 · **Completed:** 2026-06-25
 
   Follow-up to PERF-1 (shipped: an in-process dict cache in `web/perf_cache.py` fronting
   `/api/profile`, `/api/data-quality`, `/api/base-tables`, invalidated on config-save and
@@ -3636,6 +4251,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **PERF-3 — Per-page skeleton loaders for the data-driven tabs (perceived performance)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-26
 
   A complement to PERF-1/PERF-2 (server-side cache) on the **client** side: today every
   data-driven tab initialises its data to `null` and renders a single centred grey "Loading…"
@@ -3717,6 +4334,8 @@ A card is startable only when all of the following hold:
 
 - [x] **PERF-4 — Client-side stale-while-revalidate cache (instant UI on reload / project-switch / refresh) (P2)**
 
+  **Created:** 2026-06-27 · **Completed:** 2026-06-27
+
   Follow-up to PERF-1/2 (server cache) + PERF-3 (skeletons). Keep-alive panes already make
   *within-session* tab revisits instant, but a **full reload / cold start / re-login**, a
   **project switch**, and the hourly / `databridge:data-changed` epoch bump all remount and
@@ -3795,6 +4414,8 @@ A card is startable only when all of the following hold:
 
 - [x] **MNT-1 — Stabilize the order-dependent ask-save indicator test (P2)**
 
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
+
   `tests/test_ask_api.py::test_ask_save_indicator_appends_to_indicators` passes in the full suite but
   FAILS run in isolation — a test-isolation/ordering bug (leaked shared/config state). Pre-existing on
   `develop`. Make it deterministic regardless of run order.
@@ -3820,6 +4441,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **MNT-2 — Clear dev-dependency CVEs (vite High + esbuild Moderate) (P2)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
 
   `npm audit` flags pre-existing advisories in the frontend DEV toolchain: vite (High — needs >= 8.1) +
   esbuild (Moderate — needs >= 0.25, dragged by the vite bump). Dev-only (not in the shipped bundle) but
@@ -3849,6 +4472,8 @@ A card is startable only when all of the following hold:
 
 - [x] **MNT-3 — I18N-1 backend hygiene: double-commit + verbatim Zitadel error (P3)**
 
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
+
   Two Low items from the I18N-1 security review. (a) `PATCH /api/me` commits twice — `set_user_language()`
   commits internally and `patch_me` commits again (redundant). (b) The Zitadel sync error path echoes the
   raw exception verbatim in the PATCH response (could embed internal URLs). Single commit site + sanitize
@@ -3876,6 +4501,8 @@ A card is startable only when all of the following hold:
 ---
 
 - [x] **MNT-4 — Fix Toast crash: i18n `t` shadowed by the toasts.map variable (P1)**
+
+  **Created:** 2026-06-26 · **Completed:** 2026-06-27
 
   `frontend/src/components/Toast.jsx` destructures the i18n function as `t`
   (`const { t } = useTranslation()`), then renders `toasts.map(t => …)` — the map
@@ -3922,6 +4549,8 @@ A card is startable only when all of the following hold:
 ---
 - [x] **MNT-5 — Guard period API fetches when no project is active (P2)**
 
+  **Created:** 2026-06-27 · **Completed:** 2026-06-28
+
   `ActivePeriodChip` (`App.jsx`), `PeriodPicker` (`PeriodPicker.jsx`), `Reports.jsx`, and
   `Sources.jsx` all call `/api/periods` or `/api/periods/date-range` on mount. Before the
   user activates a project `_load_cfg()` on the server raises 400 (`"No active project"`),
@@ -3962,6 +4591,8 @@ A card is startable only when all of the following hold:
 
 - [x] **MNT-6 — Remove dead code (components, exports, imports) (P3)**
 
+  **Created:** 2026-06-28 · **Completed:** 2026-06-28
+
   Audit and remove unused exports, components, functions, and imports across `frontend/src/`
   and `src/` + `web/`. Known candidate: `frontend/src/components/PeriodPicker.jsx` is defined
   but never imported anywhere. No behaviour change — all tests must stay green after removal.
@@ -3989,7 +4620,9 @@ A card is startable only when all of the following hold:
 ---
 
 
-- [ ] **MNT-7 — Fix Express Fill silent empty state when LLM response is malformed (P1)**
+- [x] **MNT-7 — Fix Express Fill silent empty state when LLM response is malformed (P1)**
+
+  **Created:** 2026-06-28 · **Started:** 2026-06-28 · **Completed:** 2026-06-30
 
   `infer_specs` in `src/reports/template_inference.py` (line 300) silently `return []`
   when the LLM response can't be parsed as `{"proposals": [...]}`. The endpoint's outer
@@ -3999,7 +4632,7 @@ A card is startable only when all of the following hold:
   and the frontend shows a real error message. Add an E2E test that stubs `/api/template/infer`
   to return 500 and asserts the error is shown (not the empty-placeholder state).
 
-  **Files:** `src/reports/template_inference.py` (line 300) · `frontend/tests/e2e/express-template-fill.spec.ts`
+  **Files:** `src/reports/template_inference.py` (line 300) · `frontend/src/pages/Templates.jsx` · `frontend/tests/e2e/express-template-fill.spec.ts` · `tests/test_api_template.py`
 
   **Config/schema impact:** None — behaviour fix only.
 
@@ -4007,28 +4640,392 @@ A card is startable only when all of the following hold:
   - `infer_specs` raises `RuntimeError` (not `return []`) when `_loads_lenient(raw)` does not
     produce a `{"proposals": list}` structure
   - The `/api/template/infer` endpoint returns HTTP 500 with `detail` set when `infer_specs` raises
-  - A new E2E test stubs the infer endpoint to return 500 and asserts an error message is rendered,
-    NOT the empty-placeholder state ("Aucun espace réservé à examiner.")
-  - The E2E test includes a `toHaveScreenshot` baseline at all three viewports
+  - `frontend/src/pages/Templates.jsx` renders an element with class `express-error` (visible via `role="alert"`) when the infer response is non-2xx; the element is absent on success
+  - When `/api/template/infer` returns HTTP 500, the Templates tab displays an error banner and does NOT display the empty-placeholder state ("Aucun espace réservé à examiner.")
+  - The error state renders correctly at mobile/tablet/desktop viewports (screenshot baselines committed)
   - All existing tests remain green
 
-  **Unit tests:** `tests/test_template_inference.py` — add a case where `lf_client.chat` returns
-  malformed JSON; assert `infer_specs` raises `RuntimeError`.
+  **Unit tests:**
+  `tests/test_template_inference.py`:
+  - `test_infer_specs_raises_on_malformed_json`: `lf_client.chat` returns a non-JSON string; assert `infer_specs` raises `RuntimeError`.
+  - `test_infer_specs_raises_on_missing_proposals_key`: `lf_client.chat` returns `{"result": []}`; assert `infer_specs` raises `RuntimeError` (boundary: `_loads_lenient` succeeds but the `proposals` key is absent).
+
+  `tests/test_api_template.py` (new or extend existing):
+  - `test_infer_endpoint_returns_500_when_infer_specs_raises`: using `TestClient`, patch `infer_specs` to raise `RuntimeError("LLM response malformed")`; POST to `/api/template/infer`; assert response status is 500 and `detail` is non-null.
 
   **E2E:** `frontend/tests/e2e/express-template-fill.spec.ts` — new describe block or test:
   - Stub `**/api/template/infer` to return 500 with `{"detail": "infer failed: LLM response malformed"}`
   - Click banner → upload → infer → assert `.express-error` is visible with the error text
   - Assert the empty-placeholder state (`templates.noPlaceholders`) is NOT rendered
   - `toHaveScreenshot('express-infer-error.png')` at all three viewports
+  - After baselines are committed, run `npx impeccable audit` + `npx impeccable critique` and confirm no new regressions are flagged on the error-state view
 
-  **UAT:** N/A (backend fix; E2E covers the observable UI behaviour at all three viewports).
+  **UAT:**
+  *(The E2E test owns the HTTP-500-stub assertion and screenshot baselines. UAT verifies the error-display behavior in a real browser.)*
+  1. Review the committed E2E screenshots (`express-infer-error.png` at mobile/tablet/desktop) and confirm the error banner is legible and the empty-placeholder state is absent.
+  2. Open the Templates tab → click the Express Fill banner. Upload a `.docx` template.
+  3. In browser DevTools → Network → select the **Overrides** tab → enable **Override content** for `/api/template/infer` → set the response body to `{"detail": "infer failed: LLM response malformed"}` and status to 500. Click **Infer**.
+  4. Confirm an error message is displayed — NOT the "Aucun espace réservé à examiner." empty state.
+  5. Disable the override. Confirm a normal infer run succeeds (proposals list appears).
 
-  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -q` ·
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py tests/test_api_template.py -q` ·
   `cd frontend && npm run test:e2e -- --grep "infer.*error|error.*infer"` ·
-  `cd frontend && npm run test:e2e` (full suite green)
+  `cd frontend && npm run test:e2e` (full suite green) ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q` (full suite green)
 
 ---
 
+
+- [x] **MNT-8 — Strip residual `[[` `]]` delimiters from built report output (P1)**
+
+  **Created:** 2026-06-28 · **Started:** 2026-07-01 · **Completed:** 2026-07-01
+
+  After `docxtpl` renders the Word template, any `[[...]]` tokens that were not resolved by
+  the Express Fill pipeline remain in the output docx with their raw brackets (e.g. `[[NOM]]`
+  renders literally in the document). The fix is a post-render pass in `builder.py` that opens
+  the just-written `.docx`, iterates all paragraphs + table cells, and replaces the pattern
+  `[[<inner>]]` with `<inner>` in every run's text, then saves.
+
+  **Files:** `src/reports/builder.py`
+
+  **Config/schema impact:** None — behaviour fix only.
+
+  **Acceptance criteria**
+  - After `build_report` completes, no paragraph or table cell in the output `.docx` contains
+    the literal substrings `[[` or `]]`
+  - Inner text is preserved: `[[NOM]]` → `NOM`, `[[LISTE DES PARTENAIRES]]` → `LISTE DES PARTENAIRES`
+  - Existing `{{ }}` Jinja2 placeholders that were properly filled are unaffected
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_builder.py`:
+  - `test_no_double_bracket_open_in_output` / `test_no_double_bracket_close_in_output`: template with `[[NOM]]` in a paragraph → assert output contains `NOM`, does not contain `[[` or `]]`.
+  - `test_multiword_token_inner_text_preserved` / `test_nom_token_inner_text_preserved`: template with `[[LISTE DES PARTENAIRES]]` → assert `LISTE DES PARTENAIRES` is preserved.
+  - `test_strip_token_split_across_runs`: constructs a docx where `[[` and `NOM]]` are two genuinely separate python-docx `Run` objects in the same paragraph; asserts post-render stripping still works. **Note:** confirmed this specific split point (delimiter intact within a single run) works because `_clean_runs` strips per-run; a stricter split with a delimiter *character* itself broken across runs is NOT covered here — tracked separately as MNT-14.
+  - `test_jinja2_filled_values_unaffected`: template with a normally-filled `{{ report_title }}` → assert it resolves correctly and no `[[` artifacts appear.
+
+  **E2E:** N/A (no new UI surface; behaviour is in the Python report-build path).
+
+  **UAT:** N/A (non-UI fix; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+---
+
+- [x] **MNT-9 — Translate chart hardcoded strings to project language (P1)**
+
+  **Created:** 2026-06-28 · **Completed:** 2026-06-28
+
+  Charts rendered by `charts.py` use hardcoded English strings for axis labels, table column
+  headers ("Count", "Percent", "Value", "Frequency", etc.), and fallback titles.
+  When `ai.language` in `config.yml` is set to a non-English language (e.g. "French"),
+  these strings remain in English, creating a mixed-language report.
+  Fix: thread `ai.language` from the config into the chart dispatch and translate the finite set
+  of hardcoded strings via a small lookup dict (at minimum: French; graceful English fallback for
+  unknown languages).
+
+  **Files:** `src/reports/charts.py` · `src/reports/builder.py`
+
+  **Config/schema impact:** None — reads existing `ai.language` field, no schema change.
+
+  **Acceptance criteria**
+  - All hardcoded English column headers and axis labels in `charts.py` ("Count", "Percent",
+    "Value", "Frequency", "Category", "Score", "Rank") are translated when
+    `ai.language` is "French"
+  - `builder.py` passes `ai.language` into the chart dispatch call
+  - Unknown / unsupported languages fall back to English (no crash)
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_charts.py` — for at least two chart types (`bar`, `table`):
+  - `test_bar_chart_french_axis_labels`: call `bar()` with `language="French"`; assert `ax.get_xlabel()` or `ax.get_ylabel()` contains the French translation (e.g. `"Nombre"` not `"Count"`).
+  - `test_table_chart_french_column_headers`: call `table()` with `language="French"`; assert the column header text in the rendered table contains `"Nombre"` and `"Pourcentage"` instead of `"Count"` and `"Percent"`.
+  - `test_unknown_language_falls_back_to_english`: call with an unsupported language; assert no exception and English strings are used.
+
+  **E2E:** N/A (chart rendering is a Python-only path; no UI surface).
+
+  **UAT:** N/A (non-UI fix; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+- [x] **MNT-10 — Fix Tips card blank inline-code placeholders in `<Trans>` (P1)**
+
+  **Created:** 2026-06-28 · **Completed:** 2026-06-28
+
+  `sources.tip1` in both `en.json` and `fr.json` used empty tags (`<c1></c1>`, `<c2></c2>`).
+  `react-i18next` `<Trans>` derives children from the translation string, so empty tags
+  rendered `<code></code>` (blank box) instead of `<code>env:</code>` /
+  `<code>env:KOBO_TOKEN</code>`. Fixed by moving the text inside the tags in both locales.
+
+  **Files:** `frontend/src/locales/en.json` · `frontend/src/locales/fr.json`
+
+  **Config/schema impact:** None — locale content only.
+
+  **Acceptance criteria**
+  - `sources.tip1` in both locales has `<c1>env:</c1>` and `<c2>env:KOBO_TOKEN</c2>`
+  - Tips card renders the two `env:` code badges without blank boxes
+
+  **Unit tests:** N/A (locale content fix; no logic changed).
+
+  **E2E:** N/A (locale content fix).
+
+  **UAT:** N/A (locale content fix; verified by visual inspection).
+
+  **Verify:** Inspect the Tips card in the Sources tab — both `env:` badges render with text.
+
+---
+- [x] **MNT-11 — Named chart colour palettes selectable from `config.yml` (P1)**
+
+  **Created:** 2026-06-28 · **Completed:** 2026-07-01
+
+  Replace the hardcoded `PALETTE` constant in `charts.py` with a curated set of named,
+  sober palettes suited to institutional/NGO reports (muted, desaturated, print-safe —
+  not consumer SaaS brights). Users set `brand.palette: slate` in `config.yml`; the name
+  resolves to a 10-colour sequence used across every chart type — multi-series charts
+  (stacked/grouped bar, pie, donut, heatmap, likert, …) draw colours from the sequence in
+  order; single-series charts use the first colour. Per-chart `color:` opt remains a working
+  escape hatch. Projects without `brand.palette` fall back to the current default palette
+  (no breaking change).
+
+  **Design constraint — sober / institutional:** all palettes must be desaturated enough
+  to read clearly in black-and-white print and on low-contrast screens. Reference aesthetic:
+  UN, WFP, GIZ, World Bank data reports — not playful or brand-loud. Each palette leads
+  with its strongest (darkest) hue and steps down in luminosity so series order is legible.
+
+  **Proposed palettes (hex values are a starting point — implementer may refine within the
+  sober constraint, but must not introduce saturated consumer-style colours):**
+
+  - `slate`  (default — cool institutional blue/grey):
+    `#1D3557, #2E6DA4, #5A8FC0, #8AAFD4, #BDD0E5, #4A5568, #718096, #A0AEC0, #CBD5E0, #E8EDF3`
+  - `teal`   (humanitarian / health — WFP-adjacent):
+    `#134E4A, #0F766E, #2A9D8F, #52B8AC, #8DD5CE, #3D6B65, #6A9E99, #A0C8C4, #CAE3E1, #EAF5F4`
+  - `earth`  (field / food-security / development):
+    `#5C3317, #8B5E3C, #B07D52, #C9A07A, #DEC4A4, #6B5B45, #957A5E, #BFA98E, #D9CBBA, #F0EAE0`
+  - `indigo` (governance / protection — UNHCR-adjacent):
+    `#1E2A5E, #2E4099, #5468C4, #8394D8, #B3BFEC, #4A5175, #7178A0, #A0A5C0, #CDD0E0, #ECEEF7`
+  - `olive`  (environment / agriculture / resilience):
+    `#2D3E1F, #4A6741, #6A9162, #8FB585, #B8D1B3, #5C5E3A, #888A5A, #B0B27A, #CCCFA0, #E8EAD2`
+
+  **Files:** `src/reports/charts.py` · `src/utils/config.py` · `src/reports/builder.py` ·
+  `sample.config.yml` · `docs/reference/config.md` · `tests/test_charts.py` ·
+  `tests/test_builder.py`
+
+  **Config/schema impact:** New optional `brand.palette` string field in `config.yml`.
+  No migration needed — absent field falls back to default.
+
+  **Acceptance criteria**
+  - `charts.py` defines the 5 named palettes above (`slate`, `teal`, `earth`, `indigo`, `olive`),
+    each a list of exactly 10 hex colours, all meeting the sober/institutional constraint
+  - `config.py` exposes a `get_palette(cfg)` helper that returns the named palette list, or
+    the default (`slate`) if `brand.palette` is absent or unrecognised
+  - `builder.py` passes the resolved palette into the chart dispatch so all charts in a report
+    share the same colour sequence
+  - `_palette()` and `_color()` in `charts.py` accept an optional `palette` argument and use
+    it instead of the module-level `PALETTE` constant
+  - Per-chart `color:` opt still overrides the first slot as before
+  - An unknown palette name logs a warning and falls back to `slate` (no crash)
+  - `sample.config.yml` documents the `brand.palette` field with all five names and a one-line
+    description of each palette's character
+
+  **Unit tests:** `tests/test_charts.py`:
+  - `test_palette_bar_uses_slate_sequence`: call `bar()` with `palette="slate"`; assert `r, g, b, _ = ax.patches[0].get_facecolor()` and `(round(r*255), round(g*255), round(b*255)) == (0x1D, 0x35, 0x57)`.
+  - `test_palette_pie_uses_teal_sequence`: call `pie()` with `palette="teal"`; assert `r, g, b, _ = ax.patches[0].get_facecolor()` and `(round(r*255), round(g*255), round(b*255)) == (0x13, 0x4E, 0x4A)`.
+  - `test_unknown_palette_falls_back_to_slate`: call `get_palette({"brand": {"palette": "nonexistent"}})`; assert result equals `PALETTES["slate"]` and use `with pytest.warns(UserWarning, match="unknown palette")` or `caplog.at_level(logging.WARNING)` to confirm a warning is emitted.
+  - `test_get_palette_absent_returns_slate`: call `get_palette({})`; assert result equals `PALETTES["slate"]`.
+
+  **E2E:** N/A (chart rendering is a Python-only path; no UI surface).
+
+  **UAT:** N/A (non-UI; verified via unit tests + visual inspection of a sample report + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+---
+- [x] **MNT-12 — Fix N+1 role queries in `/api/projects` list endpoint (P1)**
+
+  **Created:** 2026-06-28 · **Completed:** 2026-07-02
+
+  **Type:** Fix
+
+  `_project_dict()` in `web/main.py` calls `db_repo.role_for(user, project, db)` once per
+  project in the list; `role_for` issues a separate `SELECT … FROM project_memberships` per
+  call. A user with N projects triggers N+1 DB round-trips on every `/api/projects` load.
+  Fix: batch-fetch all `ProjectMembership` rows for the user in a single query before the
+  list comprehension, then resolve roles from the result map in memory.
+
+  **Files:** `web/main.py` · `web/db/repository.py`
+
+  **Config/schema impact:** None — query optimisation only, no model change.
+
+  **Acceptance criteria**
+  - `/api/projects` for a user with N projects issues exactly 1 membership query (not N+1)
+  - A new `get_memberships_for_user(user_id, db)` (or equivalent) repository method returns
+    all `ProjectMembership` rows for a user in one `SELECT … WHERE user_id = :uid` query
+  - `_project_dict()` resolves role from the pre-fetched map without hitting the DB
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_repository.py` (same real-SQL-capture pattern as MNT-13's
+  `test_apply_superadmin_emails_filtered_query` — a SQLAlchemy `before_cursor_execute`
+  listener capturing actual emitted statements, not a mock) —
+  - `test_get_memberships_for_user_single_query`: seed a user with N `ProjectMembership` rows
+    across N projects; call the new `get_memberships_for_user(user_id, db)` method; assert
+    exactly one `SELECT ... FROM project_memberships ... WHERE ... user_id ...` statement was
+    captured (not N), and assert the returned map/dict contains all N project→role entries.
+  - `test_project_list_resolves_roles_without_per_project_query`: call the `/api/projects`
+    list path (or `_project_dict` directly) for a user with N projects; assert the total
+    number of captured `SELECT`s against `project_memberships` is 1 regardless of N (e.g.
+    parametrize N=1 and N=5 and assert the count doesn't grow with N).
+
+  **E2E:** N/A (backend query optimisation; no UI surface change).
+
+  **UAT:** N/A (non-UI; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/ -q`
+
+---
+
+- [x] **MNT-13 — Fix unbounded `select(User)` in `apply_superadmin_emails` (P1)**
+
+  **Created:** 2026-07-01 · **Completed:** 2026-07-01
+
+  `apply_superadmin_emails` in `web/db/repository.py` executes `db.scalars(select(User))`
+  — a full table scan with no `WHERE` or `LIMIT` — then Python-filters by email. As the
+  user table grows this is a DoS risk on every startup. Fix: replace with
+  `select(User).where(User.email.in_(wanted_emails))` so the DB does the filtering.
+
+  **Files:** `web/db/repository.py`
+
+  **Config/schema impact:** None — query fix only, no model change.
+
+  **Acceptance criteria**
+  - `apply_superadmin_emails` issues a `SELECT … WHERE email IN (…)` query, not a full scan
+  - When `SUPERADMIN_EMAILS` is empty the function issues no DB query at all
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_bridge.py` (or a new `tests/test_repository.py`) —
+  - `test_apply_superadmin_emails_filtered_query`: mock `db` session; assert the emitted SQL
+    contains a `WHERE` clause on `email`; assert no full-scan `SELECT * FROM users` is issued.
+  - `test_apply_superadmin_emails_empty_noop`: call with empty `SUPERADMIN_EMAILS`; assert
+    `db.scalars` is not called.
+
+  **E2E:** N/A (backend query fix; no UI surface change).
+
+  **UAT:** N/A (non-UI; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/ -q`
+
+---
+
+- [x] **MNT-14 — Handle a `[[`/`]]` delimiter character split mid-token across docx runs (P2)**
+
+  **Created:** 2026-07-01 · **Started:** 2026-07-03 · **Completed:** 2026-07-03
+
+  Follow-up from MNT-8. `_clean_runs` in `src/reports/builder.py` strips `[[...]]` tokens
+  per-run, which correctly handles a delimiter split *between* runs (e.g. `[[` in one run,
+  `NOM]]` in the next — each run still contains a complete, intact delimiter). It does not
+  handle a delimiter *character itself* broken across runs (e.g. `"["`, `"[NOM]"`, `"]"` as
+  three separate runs) — confirmed via a probe test during MNT-8 verification that this case
+  still leaves `[[NOM]]` unstripped in the output. Fix requires merging/joining run text within
+  a paragraph before pattern-matching, then redistributing the cleaned text back across runs
+  (or collapsing to a single run), rather than the current independent per-run replace.
+
+  **Files:** `src/reports/builder.py`
+
+  **Config/schema impact:** None — behaviour fix only.
+
+  **Acceptance criteria**
+  - A paragraph where a `[[...]]` or `]]`/`[[` delimiter character is itself split across two
+    or more separate runs is still fully stripped after `build_report`, with inner text preserved
+  - The existing MNT-8 cases (intra-run tokens, tokens split at a run boundary with each run
+    holding a complete delimiter) remain green — no regression
+  - Existing `{{ }}` Jinja2 placeholders that were properly filled remain unaffected
+
+  **Unit tests:** `tests/test_builder.py`:
+  - `test_strip_token_with_delimiter_char_split_across_runs`: construct a docx where the `[[`
+    or `]]` delimiter itself is broken mid-character across 2+ runs → assert output contains
+    the inner text and no `[[`/`]]`.
+  - Existing MNT-8 tests remain green (no regression).
+
+  **E2E:** N/A (no new UI surface; behaviour is in the Python report-build path).
+
+  **UAT:** N/A (non-UI fix; verified via unit test + PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q`
+
+---
+
+- [x] **MNT-15 — Fix: manually-created charts can ship with a blank title (P2)**
+
+  **Created:** 2026-07-01 · **Started:** 2026-07-03 · **Completed:** 2026-07-03
+
+  In the Composition tab's `ChartModal`, only `name` is validated as required — `title` has
+  no such check, and the submit handler always writes `title: title.trim()` into the chart
+  config, including `""` when the field is left blank. At render time,
+  `generate_chart` in `src/reports/charts.py` does
+  `title = chart_cfg.get("title", name)`, which only falls back to the chart's internal
+  `name` slug when the `title` **key is absent** — since the UI always writes the key (even
+  empty), that fallback never fires, so `ax.set_title("")` ships a chart with a blank header
+  in the built report. `--auto-charts` (`default_charts.py`, falls back through
+  `export_label`/`label`/`kobo_key`) and the AI chart suggester (`title` is a `required` field
+  in its forced structured-output schema) are unaffected — only charts a user hand-creates via
+  the Composition modal and skips the Title field on are at risk.
+
+  **Type:** Fix
+
+  **Files:** `frontend/src/pages/Composition.jsx` (`ChartModal` ~1654-1666) ·
+  `src/reports/charts.py` (`generate_chart` ~line 50) · `tests/test_charts.py` (new) ·
+  `frontend/tests/e2e/composition-chart-title-required.spec.ts` (new)
+
+  **Config/schema impact:** None — validation + fallback hardening only; no new config field.
+
+  **Acceptance criteria**
+  - Submitting the `ChartModal` with an empty Title field shows a required-field validation
+    error (same pattern as the existing `name` check) and does not call `onSave`
+  - `generate_chart` falls back to the chart's `name` when `title` is falsy (empty string OR
+    missing), not only when the key is absent
+  - A chart config with `title: ""` renders with the `name` slug as its title, not a blank
+    header
+  - All existing tests remain green
+
+  **Unit tests:** `tests/test_charts.py` (new) — covers the Python-side fallback fully:
+  - `test_generate_chart_title_falls_back_to_name_when_missing`: chart config with no `title`
+    key → rendered title equals `name`
+  - `test_generate_chart_title_falls_back_to_name_when_empty_string`: chart config with
+    `title: ""` → rendered title equals `name`, not blank
+  - `test_generate_chart_title_uses_provided_title`: chart config with a non-empty `title` →
+    rendered title is unchanged
+
+  The frontend `ChartModal` Title-required guard has no separate unit-test entry: this repo
+  has no frontend unit-test framework (no Vitest/Jest/RTL — only Playwright E2E exists per
+  `CLAUDE.md`'s stated stack), and the guard itself is a single-line check (block submit if
+  `title.trim()` is empty) with no isolable logic beyond what the E2E spec below already
+  exercises directly (asserts the error appears AND `onSave` is not called). Standing up a
+  new unit-test framework for one one-line guard is disproportionate; N/A is justified here
+  in a way the original blanket N/A was not — this is a trivial guard fully covered by E2E,
+  not complex state/timing logic (contrast with PUX-11's debounce/preview-state hook, which
+  does warrant a fast unit test and got one).
+
+  **E2E:** `frontend/tests/e2e/composition-chart-title-required.spec.ts` (new) + visual
+  (impeccable audit/critique + `toHaveScreenshot`) —
+  - Open Composition → Add chart → fill Name, leave Title blank → click Save → assert a
+    required-field error is shown and the modal stays open
+  - `toHaveScreenshot('composition-chart-title-required.png')` at mobile 390×844, tablet
+    820×1180, desktop 1440×900
+
+  **UAT:**
+  1. Composition tab → Add chart. Enter a Name, pick columns, leave Title blank, click Save.
+     Expected: a "Title is required" validation message appears and the modal does not close.
+  2. Fill in a Title and save. Run `python3 src/data/make.py build-report --sample 5` on a
+     downloaded dataset and open the output `.docx`. Expected: the chart shows the entered
+     title, not blank.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts.py -q` ·
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q` ·
+  `cd frontend && npx playwright test composition-chart-title-required.spec.ts`
+
+---
+---
 ## Backlog — parked (out of scope for now)
 
 > Captured so they aren't lost; not scheduled. Promote into a domain section above when picked up.
@@ -4039,3 +5036,9 @@ A card is startable only when all of the following hold:
 - **True multi-user read isolation** — concurrent users with different active projects share
   the one `BASE_DIR` read-mirror (best-effort, last-writer-wins). Durable Minio/DB data is
   always correct; per-user read isolation is out of scope (see `CLAUDE.md` → run concurrency).
+- **Indicator/View/Summary preview consistency with the chart editor** — PUX-11 merged the
+  chart preview inline into `ChartModal`; the Indicator/View/Summary "Preview" actions in
+  `Composition.jsx` still open a separate titled modal, the exact pattern PUX-11 removed for
+  charts. Not urgent (no reported user confusion), but worth a deliberate look — either migrate
+  them to the same inline pattern, or record why charts specifically warranted it and the
+  others don't.

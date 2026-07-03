@@ -6,6 +6,7 @@ import { useConfirm } from '../components/ConfirmDialog.jsx';
 import FrameworkPicker from '../components/FrameworkPicker.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useCommand } from '../hooks/useCommand.js';
+import { useChartPreview } from '../hooks/useChartPreview.js';
 import { saveConfigPatch } from '../lib/config.js';
 import { useConfig } from '../lib/ConfigContext.jsx';
 import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
@@ -19,7 +20,7 @@ import AiThinking from '../components/AiThinking.jsx';
 const CHART_TYPES = [
   'bar', 'horizontal_bar', 'stacked_bar', 'grouped_bar', 'pie', 'donut',
   'line', 'area', 'histogram', 'scatter', 'box_plot', 'heatmap', 'treemap',
-  'waterfall', 'funnel', 'table', 'bullet_chart', 'likert', 'scorecard',
+  'waterfall', 'funnel', 'table', 'bullet_list', 'bullet_chart', 'likert', 'scorecard',
   'pyramid', 'dot_map', 'period_bar', 'period_line',
 ];
 
@@ -36,12 +37,47 @@ const CHART_REQS = {
   histogram: '1 numeric column', scatter: '2 numeric columns',
   box_plot: '1 categorical + 1 numeric column', heatmap: '2 categorical columns',
   treemap: '1 categorical column', waterfall: '1 categorical column', funnel: '1 categorical column',
-  table: '1+ columns to tabulate', bullet_chart: '1 numeric column (set options.target)',
+  table: '1+ columns to tabulate', bullet_list: '1 column to list as bullet points (text, not an image)',
+  bullet_chart: '1 numeric column (set options.target)',
   likert: '1 categorical column (a rating scale)', scorecard: '1+ columns (any type)',
   pyramid: '2 columns: age_group + gender', dot_map: '2 columns: lat + lon',
   period_bar: '1 numeric/categorical column (compared across periods)',
   period_line: '1 numeric/categorical column (trended across periods)',
 };
+
+// Structured column requirement per chart type — the machine-checkable half of
+// CHART_REQS (whose values are the human-readable strings shown as hints). Only
+// the rules we can verify purely client-side from the column CATEGORY are
+// encoded, so a preview failure is only ever attributed to the Columns field
+// when we are confident it is the cause (never a false flag). `numeric` counts
+// columns whose category is quantitative; `categorical` counts categorical ones.
+const NUMERIC_CATEGORIES = new Set(['quantitative']);
+const CHART_COLUMN_RULES = {
+  histogram:    { numeric: 1 },
+  scatter:      { numeric: 2 },
+  bullet_chart: { numeric: 1 },
+};
+
+// Given the chart type, the selected column names, and a name→category lookup,
+// return a message key describing a client-side-knowable type/column mismatch,
+// or null when nothing is provably wrong. Used to link a preview failure back to
+// the Columns field (PUX-13). Deliberately conservative: unknown columns (no
+// category) or types without a rule never produce a flag.
+function chartColumnMismatch(type, selectedCols, columnCategories = {}) {
+  const rule = CHART_COLUMN_RULES[type];
+  if (!rule) return null;
+  const cols = (selectedCols || []).filter(Boolean);
+  if (rule.numeric != null) {
+    // Only judge columns we actually know the category of; an unknown-category
+    // column could be numeric, so we don't flag when any selected column is
+    // uncategorized (avoids false positives on custom / unmapped names).
+    const known = cols.filter((c) => c in columnCategories);
+    if (known.length !== cols.length) return null;
+    const numericCount = cols.filter((c) => NUMERIC_CATEGORIES.has(columnCategories[c])).length;
+    if (numericCount < rule.numeric) return 'composition.columnNeedsNumeric';
+  }
+  return null;
+}
 
 // ── tiny atoms ──────────────────────────────────────────────────────────────
 const csv = (a) => Array.isArray(a) ? a.join(', ') : '';
@@ -177,7 +213,7 @@ export default function Composition({ sections } = {}) {
   const [suggestKind, setSuggestKind] = useState(null); // null | 'chart' | 'view' | 'summary'
   const [suggestText, setSuggestText] = useState('');
   const [suggesting,  setSuggesting]  = useState(null); // null | 'chart' | 'view' | 'summary' (which kind is running)
-  const [preview,     setPreview]     = useState(null); // null | { chart, loading?, image?, error? }
+  const [preview,     setPreview]     = useState(null); // null | { chart, loading?, image?, error? } — used by the Tables card's standalone preview only (PUX-11 moved the Charts card's preview inline into ChartModal)
   const [viewPreview, setViewPreview] = useState(null); // null | { view, loading?, columns?, rows?, n_rows?, error? }
   const [summaryPreview, setSummaryPreview] = useState(null); // null | { summary, loading?, text?, n_rows?, error? }
 
@@ -241,27 +277,6 @@ export default function Composition({ sections } = {}) {
     suggestLogRef.current = [];
     setSuggesting(kind);
     runCmd(suggestSpec[kind].command, { user_request: suggestText.trim() });
-  };
-
-  const openChartPreview = async (i) => {
-    const chart = charts[i];
-    if (!chart) return;
-    setPreview({ chart, loading: true });
-    try {
-      const resp = await fetch('/api/charts/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chart }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        setPreview({ chart, error: data.detail || `Request failed (${resp.status})` });
-        return;
-      }
-      setPreview({ chart, image: data.image });
-    } catch (e) {
-      setPreview({ chart, error: e.message || 'Network error' });
-    }
   };
 
   const openViewPreview = async (i) => {
@@ -515,6 +530,34 @@ export default function Composition({ sections } = {}) {
     }
     return out;
   }, [cfg.questions]);
+  // Column → category lookup (categorical/quantitative/date/…), used by the chart
+  // editor to flag a client-side-knowable type/column mismatch (PUX-13). Sourced
+  // from the questions catalog: prefer config-embedded questions (fetch-questions
+  // writes them into config.yml), and fall back to /api/questions when the config
+  // has none yet, so the chart editor can reason about column kinds either way.
+  const [questionsCatalog, setQuestionsCatalog] = useState(null);
+  useEffect(() => {
+    if (Array.isArray(cfg.questions) && cfg.questions.length) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetch('/api/questions').then(r => r.json());
+        if (!cancelled) setQuestionsCatalog(Array.isArray(data?.questions) ? data.questions : []);
+      } catch { /* offline / no questions — categories stay unknown, no field flag */ }
+    })();
+    return () => { cancelled = true; };
+  }, [cfg.questions]);
+  const columnCategories = useMemo(() => {
+    const src = (Array.isArray(cfg.questions) && cfg.questions.length)
+      ? cfg.questions
+      : (questionsCatalog || []);
+    const out = {};
+    for (const q of src) {
+      const c = q.export_label || q.label || q.kobo_key;
+      if (c && q.category && !(c in out)) out[c] = q.category;
+    }
+    return out;
+  }, [cfg.questions, questionsCatalog]);
 
   return (
     <div className="page">
@@ -573,7 +616,6 @@ export default function Composition({ sections } = {}) {
               onAdd={() => openEdit('chart', null)}
               onEdit={(i) => openEdit('chart', i)}
               onRemove={remove('chart', setCharts)}
-              onPreview={openChartPreview}
               toast={toast}
             />
           )}
@@ -632,7 +674,7 @@ export default function Composition({ sections } = {}) {
       </RailLayout>
 
       {editing?.kind === 'chart' && (
-        <ChartModal initial={editing.index !== null ? charts[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setCharts)(item, editing.index)} />
+        <ChartModal initial={editing.index !== null ? charts[editing.index] : null} columns={columnOptions} columnCategories={columnCategories} onClose={closeEdit} onSave={(item) => upsert(setCharts)(item, editing.index)} />
       )}
       {editing?.kind === 'indicator' && (
         <IndicatorModal initial={editing.index !== null ? indicators[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setIndicators)(item, editing.index)} />
@@ -978,7 +1020,7 @@ function Header({ questionCount, sections = ALL_SECTIONS, onSave, dirty }) {
 }
 
 // ── Charts card ──────────────────────────────────────────────────────────────
-function ChartsCard({ charts, onAdd, onEdit, onRemove, onPreview, toast }) {
+function ChartsCard({ charts, onAdd, onEdit, onRemove, toast }) {
   const { t } = useTranslation();
   return (
     <div className="comp-card">
@@ -1015,10 +1057,6 @@ function ChartsCard({ charts, onAdd, onEdit, onRemove, onPreview, toast }) {
                 label={t('composition.copyPlaceholder')}
                 ariaLabel={t('composition.copyPlaceholderFor', { name: ch.name || t('composition.unnamed') })}
               />
-              <button className="btn btn-ghost" onClick={() => onPreview(i)}>
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-                {t('composition.preview')}
-              </button>
               <button className="icon-btn" title={t('composition.edit')} onClick={() => onEdit(i)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
               </button>
@@ -1651,7 +1689,34 @@ function TipsCard() {
 // Modals (chart / indicator / summary / view) — same shape as the previous
 // Composition page; condensed here.
 // ─────────────────────────────────────────────────────────────────────────────
-function ChartModal({ initial, columns = [], onClose, onSave }) {
+// Tracks whether the viewport is at/under the mobile breakpoint, so the chart
+// editor's live-preview layout can switch from two-column (tablet/desktop) to
+// stacked (mobile) — both visually (CSS) and via the `data-orientation`
+// attribute the E2E spec asserts on.
+//
+// 768px (not a lower value like 480px): the modal caps at `max-width: 92vw`,
+// so below ~720px viewport width the two columns don't have room to breathe
+// (e.g. at 500px viewport the modal is ~460px wide, ~210px per column after
+// the gap). Stacking instead of squeezing avoids a cramped in-between zone
+// that the mobile (390)/tablet (820)/desktop (1440) test viewports never
+// exercised on their own.
+const MOBILE_BREAKPOINT = '(max-width: 768px)';
+function useIsMobileLayout() {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.(MOBILE_BREAKPOINT).matches
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia(MOBILE_BREAKPOINT);
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener?.('change', onChange);
+    setIsMobile(mq.matches);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+  return isMobile;
+}
+
+function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onSave }) {
   const { t } = useTranslation();
   const [name, setName]       = useState(initial?.name || '');
   const [title, setTitle]     = useState(initial?.title || '');
@@ -1660,9 +1725,31 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
   const [optsY, setOptsY]     = useState(initial?.options ? yaml.dump(initial.options, { indent: 2, lineWidth: -1 }) : '');
   const [err, setErr]         = useState('');
   const fe = useFieldErrors();
+  const isMobile = useIsMobileLayout();
+
+  // Live preview draft — mirrors the form state so useChartPreview can debounce
+  // and re-fetch /api/charts/preview on every field change (PUX-11).
+  const draftChart = { name: name.trim() || initial?.name || 'preview', title: title.trim(), type, questions: fromCsv(cols) };
+  if (optsY.trim()) {
+    try { const o = yaml.load(optsY); if (o && Object.keys(o).length) draftChart.options = o; } catch { /* invalid YAML — preview keeps last valid options */ }
+  }
+  const { loading: previewLoading, error: previewError, image: previewImage } = useChartPreview(draftChart);
+
+  // PUX-13: when the preview fails, check whether the failure is a client-side-
+  // knowable type/column mismatch (e.g. a histogram with no numeric column). If
+  // so, flag the Columns field itself — in addition to the generic pane error —
+  // so the user isn't left to mentally diff their config against the message. A
+  // genuine backend/data error (config client-side-valid) flags no field.
+  const columnMismatchKey = previewError
+    ? chartColumnMismatch(type, fromCsv(cols), columnCategories)
+    : null;
+  const columnFieldError = columnMismatchKey
+    ? t(columnMismatchKey, { reqs: CHART_REQS[type] })
+    : '';
 
   const submit = () => {
     if (!name.trim()) return fe.setError('name', t('composition.nameRequired'));
+    if (!title.trim()) return fe.setError('title', t('composition.titleRequired'));
     const item = { name: name.trim(), title: title.trim(), type, questions: fromCsv(cols) };
     if (optsY.trim()) {
       try { const o = yaml.load(optsY); if (o && Object.keys(o).length) item.options = o; }
@@ -1671,19 +1758,87 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
     onSave(item);
   };
   return (
-    <Modal title={initial ? t('composition.editChart', { name: initial.name }) : t('composition.addChartModal')} onClose={onClose} onSave={submit} width={560}>
+    <Modal title={initial ? t('composition.editChart', { name: initial.name }) : t('composition.addChartModal')} onClose={onClose} onSave={submit} width={isMobile ? 560 : 920}>
       <ModalError>{err}</ModalError>
-      <ModalField label={t('composition.fName')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.chartName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
-      <ModalField label={t('composition.fTitle')}><input aria-label={t('composition.chartTitle')} className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder={t('composition.chartTitlePlaceholder')} /></ModalField>
-      <ModalField label={t('composition.fType')} hint={CHART_REQS[type] ? t('composition.needs', { reqs: CHART_REQS[type] }) : undefined}>
-        <select aria-label={t('composition.chartType')} className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-      </ModalField>
-      <ModalField label={t('composition.fColumns')} hint={t('composition.columnsHint')}>
-        <ColumnPicker ariaLabel={t('composition.chartColumns')} value={cols} onChange={setCols} options={columns} placeholder={t('composition.searchColumns')} />
-      </ModalField>
-      <ModalField label={t('composition.fOptions')} hint={t('composition.optionsHint')}>
-        <textarea aria-label={t('composition.chartOptionsYaml')} value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
-      </ModalField>
+      <div
+        data-testid="chart-editor-layout"
+        data-orientation={isMobile ? 'column' : 'row'}
+        style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 20 }}
+      >
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+          <ModalField label={t('composition.fName')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.chartName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
+          <ModalField label={t('composition.fTitle')} error={fe.errorFor('title')} errorId={fe.errorId('title')}><input aria-label={t('composition.chartTitle')} name="title" id="title" className="src-input" value={title} {...fe.fieldProps('title')} onChange={e => { setTitle(e.target.value); if (e.target.value.trim()) fe.clearError('title'); }} placeholder={t('composition.chartTitlePlaceholder')} /></ModalField>
+          <ModalField label={t('composition.fType')} hint={CHART_REQS[type] ? t('composition.needs', { reqs: CHART_REQS[type] }) : undefined}>
+            <select aria-label={t('composition.chartType')} className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+          </ModalField>
+          <ModalField label={t('composition.fColumns')} hint={t('composition.columnsHint')}>
+            <ColumnPicker ariaLabel={t('composition.chartColumns')} value={cols} onChange={setCols} options={columns} placeholder={t('composition.searchColumns')} error={columnFieldError} errorId={fe.errorId('columns')} />
+          </ModalField>
+          <ModalField label={t('composition.fOptions')} hint={t('composition.optionsHint')}>
+            <textarea aria-label={t('composition.chartOptionsYaml')} value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
+          </ModalField>
+        </div>
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+          <h4 style={{ marginTop: 0 }}>{t('composition.preview')}</h4>
+          <div
+            data-testid="chart-editor-preview"
+            role="status"
+            aria-live="polite"
+            style={{
+              minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16,
+            }}
+          >
+            {/* First load only (no prior image): full blanking skeleton. */}
+            {previewLoading && !previewImage && (
+              <div data-testid="chart-editor-preview-loading" style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center' }}>
+                <div className="skeleton" style={{ width: '100%', height: 140, borderRadius: 6, marginBottom: 10 }} />
+                {t('composition.renderingPreview')}
+              </div>
+            )}
+            {previewError && (
+              <div data-testid="chart-editor-preview-error" style={{ background: 'var(--rose-soft)', borderRadius: 6, padding: '10px 12px', color: '#7F1D1D', whiteSpace: 'pre-wrap', textAlign: 'left', width: '100%' }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('composition.cantRenderChart')}</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{previewError}</div>
+                <div style={{ marginTop: 12, color: 'var(--ink-3)', fontSize: 12 }}>
+                  <Trans i18nKey="composition.previewTip" components={{ c1: <code>data/processed/</code>, c2: <code>{t('composition.download')}</code> }} />
+                </div>
+              </div>
+            )}
+            {/* Last-good image stays visible during a re-fetch (PUX-12) —
+                dimmed with a small corner spinner rather than unmounted. */}
+            {!previewError && previewImage && (
+              <div style={{ position: 'relative', maxWidth: '100%' }}>
+                <img
+                  src={`data:image/png;base64,${previewImage}`}
+                  alt={title || name || 'chart preview'}
+                  style={{
+                    maxWidth: '100%', height: 'auto', borderRadius: 4, display: 'block',
+                    opacity: previewLoading ? 0.45 : 1, transition: 'opacity .15s ease',
+                  }}
+                />
+                {previewLoading && (
+                  <div
+                    data-testid="chart-editor-preview-loading"
+                    title={t('composition.renderingPreview')}
+                    style={{
+                      position: 'absolute', top: 8, right: 8, display: 'flex', alignItems: 'center', gap: 6,
+                      background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 999,
+                      padding: '4px 10px 4px 8px', fontSize: 12, color: 'var(--ink-3)', boxShadow: '0 1px 3px rgba(0,0,0,.08)',
+                    }}
+                  >
+                    <span className="ai-spinner" aria-hidden="true" />
+                    {t('composition.renderingPreview')}
+                  </div>
+                )}
+              </div>
+            )}
+            {!previewLoading && !previewError && !previewImage && (
+              <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>{t('composition.previewIdle')}</div>
+            )}
+          </div>
+        </div>
+      </div>
     </Modal>
   );
 }
@@ -1968,7 +2123,7 @@ function ModalError({ children }) {
 // Searchable column picker. `value` is a comma-separated string (multi) or a
 // single column name; `options` are known export labels. Free-text is allowed
 // (Enter adds the typed value) so repeat/derived columns still work.
-function ColumnPicker({ value, onChange, options = [], multi = true, placeholder, ariaLabel }) {
+function ColumnPicker({ value, onChange, options = [], multi = true, placeholder, ariaLabel, error, errorId }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -2017,6 +2172,9 @@ function ColumnPicker({ value, onChange, options = [], multi = true, placeholder
             else if (e.key === 'Backspace' && multi && !query && selected.length) removeChip(selected[selected.length - 1]);
           }}
         />
+        {/* Field-level error rendered INSIDE the picker (PUX-13) so it sits in the
+            same field row as the columns input — the rose FieldError pattern. */}
+        {error && <FieldError id={errorId}>{error}</FieldError>}
       </div>
       {open && matches.length > 0 && (
         <ul className="colpick__menu" role="listbox">

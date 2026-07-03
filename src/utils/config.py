@@ -1,7 +1,9 @@
 import os, logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 import yaml
+
+from src.reports.charts import PALETTES
 
 log = logging.getLogger(__name__)
 CONFIG_PATH = Path("config.yml")
@@ -95,6 +97,20 @@ def drop_excluded_columns(cfg: Dict, df, repeats):
     df = _drop(df)
     repeats = {name: _drop(t) for name, t in (repeats or {}).items()}
     return df, repeats
+
+
+def get_palette(cfg: Dict) -> List[str]:
+    """Resolve the named chart colour palette from cfg['brand']['palette'] (MNT-11).
+
+    Returns the matching 10-colour PALETTES entry, or PALETTES["slate"] (the
+    default) when brand.palette is absent or names an unrecognised palette —
+    in the unrecognised case a warning is logged instead of raising."""
+    name = (cfg.get("brand", {}) or {}).get("palette", "slate")
+    palette = PALETTES.get(name)
+    if palette is None:
+        log.warning(f"unknown palette '{name}' in brand.palette — falling back to 'slate'")
+        return PALETTES["slate"]
+    return palette
 
 
 def _resolve_env(cfg: Dict) -> Dict:
