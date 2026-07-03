@@ -540,6 +540,7 @@
       "chartColumns": "Colonnes du graphique",
       "chartOptionsYaml": "Options du graphique (YAML)",
       "needs": "Nécessite : {{reqs}}",
+      "columnNeedsNumeric": "C’est probablement le problème : ce graphique nécessite {{reqs}}, mais aucune des colonnes sélectionnées n’est numérique.",
       "columnsHint": "Choisissez parmi vos questions — tapez pour rechercher ; appuyez sur Entrée pour ajouter un nom personnalisé",
       "columnsHintDot": "Choisissez parmi vos questions — tapez pour rechercher ; appuyez sur Entrée pour ajouter un nom personnalisé.",
       "optionsHint": "YAML, facultatif (ex. top_n: 10)",

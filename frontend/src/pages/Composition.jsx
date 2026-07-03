@@ -45,6 +45,40 @@ const CHART_REQS = {
   period_line: '1 numeric/categorical column (trended across periods)',
 };
 
+// Structured column requirement per chart type — the machine-checkable half of
+// CHART_REQS (whose values are the human-readable strings shown as hints). Only
+// the rules we can verify purely client-side from the column CATEGORY are
+// encoded, so a preview failure is only ever attributed to the Columns field
+// when we are confident it is the cause (never a false flag). `numeric` counts
+// columns whose category is quantitative; `categorical` counts categorical ones.
+const NUMERIC_CATEGORIES = new Set(['quantitative']);
+const CHART_COLUMN_RULES = {
+  histogram:    { numeric: 1 },
+  scatter:      { numeric: 2 },
+  bullet_chart: { numeric: 1 },
+};
+
+// Given the chart type, the selected column names, and a name→category lookup,
+// return a message key describing a client-side-knowable type/column mismatch,
+// or null when nothing is provably wrong. Used to link a preview failure back to
+// the Columns field (PUX-13). Deliberately conservative: unknown columns (no
+// category) or types without a rule never produce a flag.
+function chartColumnMismatch(type, selectedCols, columnCategories = {}) {
+  const rule = CHART_COLUMN_RULES[type];
+  if (!rule) return null;
+  const cols = (selectedCols || []).filter(Boolean);
+  if (rule.numeric != null) {
+    // Only judge columns we actually know the category of; an unknown-category
+    // column could be numeric, so we don't flag when any selected column is
+    // uncategorized (avoids false positives on custom / unmapped names).
+    const known = cols.filter((c) => c in columnCategories);
+    if (known.length !== cols.length) return null;
+    const numericCount = cols.filter((c) => NUMERIC_CATEGORIES.has(columnCategories[c])).length;
+    if (numericCount < rule.numeric) return 'composition.columnNeedsNumeric';
+  }
+  return null;
+}
+
 // ── tiny atoms ──────────────────────────────────────────────────────────────
 const csv = (a) => Array.isArray(a) ? a.join(', ') : '';
 const fromCsv = (s) => s.split(',').map(x => x.trim()).filter(Boolean);
@@ -496,6 +530,34 @@ export default function Composition({ sections } = {}) {
     }
     return out;
   }, [cfg.questions]);
+  // Column → category lookup (categorical/quantitative/date/…), used by the chart
+  // editor to flag a client-side-knowable type/column mismatch (PUX-13). Sourced
+  // from the questions catalog: prefer config-embedded questions (fetch-questions
+  // writes them into config.yml), and fall back to /api/questions when the config
+  // has none yet, so the chart editor can reason about column kinds either way.
+  const [questionsCatalog, setQuestionsCatalog] = useState(null);
+  useEffect(() => {
+    if (Array.isArray(cfg.questions) && cfg.questions.length) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetch('/api/questions').then(r => r.json());
+        if (!cancelled) setQuestionsCatalog(Array.isArray(data?.questions) ? data.questions : []);
+      } catch { /* offline / no questions — categories stay unknown, no field flag */ }
+    })();
+    return () => { cancelled = true; };
+  }, [cfg.questions]);
+  const columnCategories = useMemo(() => {
+    const src = (Array.isArray(cfg.questions) && cfg.questions.length)
+      ? cfg.questions
+      : (questionsCatalog || []);
+    const out = {};
+    for (const q of src) {
+      const c = q.export_label || q.label || q.kobo_key;
+      if (c && q.category && !(c in out)) out[c] = q.category;
+    }
+    return out;
+  }, [cfg.questions, questionsCatalog]);
 
   return (
     <div className="page">
@@ -612,7 +674,7 @@ export default function Composition({ sections } = {}) {
       </RailLayout>
 
       {editing?.kind === 'chart' && (
-        <ChartModal initial={editing.index !== null ? charts[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setCharts)(item, editing.index)} />
+        <ChartModal initial={editing.index !== null ? charts[editing.index] : null} columns={columnOptions} columnCategories={columnCategories} onClose={closeEdit} onSave={(item) => upsert(setCharts)(item, editing.index)} />
       )}
       {editing?.kind === 'indicator' && (
         <IndicatorModal initial={editing.index !== null ? indicators[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setIndicators)(item, editing.index)} />
@@ -1654,7 +1716,7 @@ function useIsMobileLayout() {
   return isMobile;
 }
 
-function ChartModal({ initial, columns = [], onClose, onSave }) {
+function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onSave }) {
   const { t } = useTranslation();
   const [name, setName]       = useState(initial?.name || '');
   const [title, setTitle]     = useState(initial?.title || '');
@@ -1672,6 +1734,18 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
     try { const o = yaml.load(optsY); if (o && Object.keys(o).length) draftChart.options = o; } catch { /* invalid YAML — preview keeps last valid options */ }
   }
   const { loading: previewLoading, error: previewError, image: previewImage } = useChartPreview(draftChart);
+
+  // PUX-13: when the preview fails, check whether the failure is a client-side-
+  // knowable type/column mismatch (e.g. a histogram with no numeric column). If
+  // so, flag the Columns field itself — in addition to the generic pane error —
+  // so the user isn't left to mentally diff their config against the message. A
+  // genuine backend/data error (config client-side-valid) flags no field.
+  const columnMismatchKey = previewError
+    ? chartColumnMismatch(type, fromCsv(cols), columnCategories)
+    : null;
+  const columnFieldError = columnMismatchKey
+    ? t(columnMismatchKey, { reqs: CHART_REQS[type] })
+    : '';
 
   const submit = () => {
     if (!name.trim()) return fe.setError('name', t('composition.nameRequired'));
@@ -1697,7 +1771,7 @@ function ChartModal({ initial, columns = [], onClose, onSave }) {
             <select aria-label={t('composition.chartType')} className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
           </ModalField>
           <ModalField label={t('composition.fColumns')} hint={t('composition.columnsHint')}>
-            <ColumnPicker ariaLabel={t('composition.chartColumns')} value={cols} onChange={setCols} options={columns} placeholder={t('composition.searchColumns')} />
+            <ColumnPicker ariaLabel={t('composition.chartColumns')} value={cols} onChange={setCols} options={columns} placeholder={t('composition.searchColumns')} error={columnFieldError} errorId={fe.errorId('columns')} />
           </ModalField>
           <ModalField label={t('composition.fOptions')} hint={t('composition.optionsHint')}>
             <textarea aria-label={t('composition.chartOptionsYaml')} value={optsY} onChange={e => setOptsY(e.target.value)} rows={5} className="src-input" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12.5 }} placeholder="top_n: 10" />
@@ -2048,7 +2122,7 @@ function ModalError({ children }) {
 // Searchable column picker. `value` is a comma-separated string (multi) or a
 // single column name; `options` are known export labels. Free-text is allowed
 // (Enter adds the typed value) so repeat/derived columns still work.
-function ColumnPicker({ value, onChange, options = [], multi = true, placeholder, ariaLabel }) {
+function ColumnPicker({ value, onChange, options = [], multi = true, placeholder, ariaLabel, error, errorId }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -2097,6 +2171,9 @@ function ColumnPicker({ value, onChange, options = [], multi = true, placeholder
             else if (e.key === 'Backspace' && multi && !query && selected.length) removeChip(selected[selected.length - 1]);
           }}
         />
+        {/* Field-level error rendered INSIDE the picker (PUX-13) so it sits in the
+            same field row as the columns input — the rose FieldError pattern. */}
+        {error && <FieldError id={errorId}>{error}</FieldError>}
       </div>
       {open && matches.length > 0 && (
         <ul className="colpick__menu" role="listbox">
