@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Visual review — databridge-cli</title>
+  <style>
+    :root { color-scheme: light dark; --gap: 16px; }
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 24px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .task { color: #888; margin-bottom: 24px; }
+    .card { border: 1px solid #8884; border-radius: 10px; padding: 16px; margin-bottom: 24px; }
+    .card h2 { font-size: 15px; margin: 0 0 12px; font-family: ui-monospace, monospace; }
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+    .pane { min-width: 0; }
+    .pane figcaption { font-size: 12px; color: #888; margin-bottom: 6px; }
+    .pane img { width: 100%; height: auto; border: 1px solid #8884; border-radius: 6px; background: #fff; }
+    .actions { margin-top: 14px; display: flex; gap: 10px; align-items: center; }
+    button { font: inherit; padding: 7px 16px; border-radius: 6px; border: 1px solid #8886; cursor: pointer; }
+    .approve { background: #0F766E; color: #fff; border-color: #0F766E; }
+    .reject { background: transparent; }
+    .status { font-size: 13px; }
+    .done { opacity: .55; }
+    .empty { color: #888; }
+  </style>
+</head>
+<body>
+  <h1>Visual review</h1>
+  <div class="task" id="task"></div>
+  <div id="list"></div>
+
+  <script type="module">
+    const list = document.getElementById('list');
+    const taskEl = document.getElementById('task');
+
+    async function load() {
+      const res = await fetch('/api/diffs');
+      const { task, diffs } = await res.json();
+      taskEl.textContent = task ? `Task: ${task}` : 'No active task';
+      if (!diffs.length) { list.innerHTML = '<p class="empty">No changed screenshots. Nothing to review — run the visual suite first.</p>'; return; }
+      list.innerHTML = '';
+      for (const d of diffs) list.appendChild(card(d));
+    }
+
+    function card(d) {
+      const el = document.createElement('div');
+      el.className = 'card';
+      el.innerHTML = `
+        <h2>${d.name}</h2>
+        <div class="pair">
+          <figure class="pane"><figcaption>Previous baseline</figcaption><img src="${d.baseline}" alt="baseline"></figure>
+          <figure class="pane"><figcaption>New candidate</figcaption><img src="${d.actual}" alt="candidate"></figure>
+        </div>
+        <div class="actions">
+          <button class="approve">✓ Approve</button>
+          <button class="reject">✗ Reject</button>
+          <span class="status"></span>
+        </div>`;
+      const status = el.querySelector('.status');
+      const decide = async (path, label) => {
+        status.textContent = '…';
+        const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: d.id }) });
+        const j = await r.json();
+        if (j.ok) { status.textContent = label; el.classList.add('done'); el.querySelectorAll('button').forEach(b => b.disabled = true); }
+        else { status.textContent = 'error: ' + (j.error || 'failed'); }
+      };
+      el.querySelector('.approve').onclick = () => decide('/api/approve', 'approved ✓ — re-baselined');
+      el.querySelector('.reject').onclick = () => decide('/api/reject', 'rejected ✗');
+      return el;
+    }
+
+    load();
+  </script>
+</body>
+</html>

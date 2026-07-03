@@ -77,7 +77,7 @@ Sprint exit — checked by /report + /retro:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 14 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 3 | 3 / 3 |
+| [Visual / E2E harness](#visual--e2e-harness) | 4 | 4 / 4 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
@@ -3589,6 +3589,100 @@ Sprint exit — checked by /report + /retro:
   human gate).
 
   **Verify:** `cd frontend && npm run test:e2e` (full suite; assert no `Page crashed` / `Target closed` / worker-timeout failures) · `CI=true npx playwright test chart-editor.spec.ts` from `frontend/`
+
+---
+
+- [x] **VIS-4 — Adopt Storybook (Tier 2) + local review app (Tier 3) + visual-approval ledger (P2)**
+
+  **Created:** 2026-07-03 · **Completed:** 2026-07-03
+
+  Ports the ai-augmented-coding template's tiered visual-testing system (VBR-1/4/5), adapted
+  to this repo. Template's Tier 1 (containerized full-route Playwright screenshots) was
+  **not** adopted — it would duplicate the more mature, already-integrated VIS-1 harness
+  (`frontend/tests/e2e/`, no Docker, CI installs Chromium directly per
+  `.github/workflows/visual.yml`) with a competing, redundant one. What's genuinely additive:
+  Tier 2 (Storybook component-isolation baselines) and Tier 3 (a local human
+  Approve/Reject review app backed by an approval ledger), both layered on top of the
+  existing VIS-1 harness rather than replacing it. `guard-visual-update.sh` (MNT-16, already
+  shipped) already blocks agents from self-approving baselines via Bash; this card adds the
+  human-facing approval loop and the machine-readable record of it.
+
+  **Type:** Feature
+
+  **Files:** `frontend/.storybook/main.js` + `preview.js` (new) ·
+  `frontend/tests/storybook/Example.stories.jsx` + `example.visual.spec.ts` (new) ·
+  `frontend/playwright.storybook.config.ts` (new) · `frontend/package.json` (+`storybook`,
+  `@storybook/react-vite`, `http-server` devDeps; +4 npm scripts) ·
+  `frontend/scripts/visual-review-app/{lib,server,test}.mjs` + `index.html` + `README.md`
+  (new) · `visual-approvals.json` (new, repo root) · `.claude/agents/visual-review.md` (new) ·
+  `.claude/skills/visual-review/SKILL.md` (new) · `.claude/agents/roadmap-verifier.md` (edit —
+  visual DoD check now consults `/visual-review` instead of just checking a PNG exists) ·
+  `.claude/context.md` + `CLAUDE.md` (document the three tiers) · `.gitignore`
+  (`frontend/storybook-static/`, `frontend/playwright-report-storybook/`)
+
+  **Config/schema impact:** New root-level `visual-approvals.json` ledger (seeded `{}`) — pure
+  harness/process state, not `config.yml` or DB schema. Schema: `{ "<baseline-id>": {
+  "decision": "approved"|"rejected", "task": "<ID>"|null, "capturedImage": "<path>" (approved
+  only), "at": "<ISO8601>" } }`, keyed by the baseline PNG's path relative to `frontend/tests/`.
+
+  **Acceptance criteria**
+  - `cd frontend && npm run storybook:build` produces a working static build from
+    `frontend/tests/storybook/Example.stories.jsx` (verified: build succeeds, emits an
+    `Example.stories-*.js` chunk)
+  - `cd frontend && npm run test:visual:storybook` (against the built Storybook) navigates to
+    each story via `/iframe.html?id=...` and asserts `toHaveScreenshot` — verified: on a clean
+    run it correctly reports "no baseline yet, writing actual" for both example stories
+    (first-run behavior, not a bug) and writes real `-actual.png` candidates
+  - `.claude/hooks/guard-visual-update.sh` blocks `--update-snapshots` for the new Storybook
+    config exactly as it does for the main config — verified live: attempting
+    `npx playwright test --config=playwright.storybook.config.ts --update-snapshots` was
+    denied with the human-approval message
+  - `node frontend/scripts/visual-review-app/server.mjs` starts, serves `/`, and `/api/diffs`
+    correctly finds real Playwright `-actual.png` candidates when a matching baseline exists,
+    and correctly skips a brand-new candidate with no committed baseline (not a "diff to
+    review" — that's a first-baseline case, not an approval case)
+  - Approve (in the review app) copies the candidate over the baseline (file copy, not a
+    `--update-snapshots` shell call) and writes `{decision:"approved", task, capturedImage,
+    at}` to `visual-approvals.json`; Reject writes `{decision:"rejected", ...}` without
+    touching the baseline
+  - `.claude/agents/roadmap-verifier.md`'s visual DoD check now requires `/visual-review`'s
+    verdict to be `clear` for a card's own baselines specifically — a `pending` or `rejected`
+    entry is a named FAIL even if the PNG is committed on disk
+  - The main app build (`npm run build`) and the existing Tier 1 E2E harness
+    (`playwright.config.ts`, `frontend/tests/e2e/`) are unaffected — new Storybook deps and
+    config are fully additive
+
+  **Unit tests:** `frontend/scripts/visual-review-app/test.mjs` (new, Node built-ins only) — 11
+  assertions: `findDiffs` correlates a candidate to its baseline by stem (tolerating the
+  `{platform}` filename suffix) and pairs the `-diff.png`; `approve` re-baselines via file copy
+  and records `decision/task/capturedImage/at`; `reject` records without re-baselining;
+  `baselineId` returns a relative POSIX path; a brand-new candidate with no committed baseline
+  is correctly excluded from the diff set (not misreported as a pending review item).
+
+  **E2E:** `frontend/tests/storybook/example.visual.spec.ts` (new) — screenshots the two
+  example Storybook stories (`example-button--primary`, `example-button--disabled`) at all
+  three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900) via the static
+  Storybook build; first-run baselines are pending human approval (`npm run
+  test:visual:storybook:update`, then a human reviews + commits) — not blessed as part of this
+  card, per the same human-approval rule this card's own tooling exists to enforce.
+
+  **UAT:**
+  1. Run `cd frontend && npm run storybook` and confirm the Storybook workbench opens at
+     `http://localhost:6006` showing the Example/Button story with Primary/Disabled variants.
+  2. Run `cd frontend && npm run storybook:build && npm run test:visual:storybook:update`
+     (human-run — approves the first baselines), then re-run
+     `npm run test:visual:storybook` and confirm it passes against the now-committed baselines.
+  3. Make a trivial visual change to `frontend/tests/storybook/Example.stories.jsx` (e.g.
+     change the button's padding), re-run the Storybook visual suite, confirm it fails with a
+     diff, then run `node frontend/scripts/visual-review-app/server.mjs`, open
+     `http://localhost:4444`, and confirm the changed screenshot appears with Approve/Reject
+     controls; click Approve and confirm `visual-approvals.json` gets a new `"approved"` entry
+     and the baseline PNG updates to the new pixels.
+
+  **Verify:** `node frontend/scripts/visual-review-app/test.mjs` ·
+  `cd frontend && npm run build` (main app unaffected) ·
+  `cd frontend && npm run storybook:build` ·
+  `cd frontend && npm run test:e2e` (Tier 1 harness unaffected)
 
 ---
 

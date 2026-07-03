@@ -96,6 +96,10 @@ App-driven specs boot Vite via the `webServer` block in the config; fixture/smok
 `page.setContent` and need no server. CI runs the suite on PRs touching `frontend/**`
 (`.github/workflows/visual.yml`).
 
+This is Tier 1 of the opt-in-by-default-off visual testing system — see
+[*Development workflow → Visual testing (VIS-4)*](#visual-testing-vis-4) for Tier 2 (Storybook
+component isolation) and Tier 3 (the local human review app + approval ledger).
+
 ### CLI (run from root)
 
 ```bash
@@ -315,7 +319,9 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
 `security-audit` (OWASP Top 10 + project absolute rules; report-only) ·
 `dep-audit` (SCA — pip-audit + npm audit) ·
 `perf-review` (N+1 / unbounded queries / async / over-fetch; report-only) ·
-`qa-tester` (user-perspective acceptance verification; UI-facing tasks only)
+`qa-tester` (user-perspective acceptance verification; UI-facing tasks only) ·
+`visual-review` (read-only visual-approval reporter — `approved`/`rejected`/`pending` per
+baseline, backed by `visual-approvals.json`; dispatched by `roadmap-verifier`'s visual DoD check)
 
 **Fix + quality agents:**
 `debugger` (root-cause-first bug fixer; dispatched by ship-task on Type:Fix cards) ·
@@ -386,13 +392,30 @@ prompts, internals, CHANGELOG). Triggered by `remind-docs.sh` or run manually.
 `/impeccable` (audit · critique · polish · detect · live) is the frontend design + visual-quality
 layer. Its skill tree is gitignored — re-install with `npx impeccable skills install`.
 
+### Visual testing (VIS-4)
+Three tiers, all opt-in-by-default disabled features layered on the VIS-1 Playwright harness:
+**Tier 1** — full-app E2E + `toHaveScreenshot` baselines, `frontend/tests/e2e/`
+(`frontend/playwright.config.ts`) — the default, always-on harness (see *Tests → Visual / E2E*).
+**Tier 2** — Storybook component-isolation baselines, `frontend/.storybook/` +
+`frontend/tests/storybook/` (`frontend/playwright.storybook.config.ts`); run
+`cd frontend && npm run storybook:build && npm run test:visual:storybook`.
+**Tier 3** — a local human review app (`frontend/scripts/visual-review-app/`, `node
+frontend/scripts/visual-review-app/server.mjs` → `http://localhost:4444`) for clicking
+Approve/Reject on changed baselines from either tier; approvals/rejections are recorded in
+`visual-approvals.json` (repo root). `/visual-review` reads that ledger (read-only) and reports
+`approved`/`rejected`/`pending` per baseline; `roadmap-verifier`'s visual DoD check requires
+`clear` for a card's own baselines, not just "PNG exists on disk". `guard-visual-update.sh`
+blocks agents from self-approving via `--update-snapshots`/`-u` through the Bash tool — only a
+human (at the terminal or via the review app's file-copy re-baseline) can bless a baseline.
+
 ## Harness
 
-`.claude/settings.json` allowlists the pytest commands and registers the PreToolUse guard hooks
-(`guard-roadmap`, `guard-coding`, `guard-ready`, `guard-git-flow`, `guard-branch`). Skills:
-`/roadmap`, `/impeccable`, `/ship-task`, `/locate`, `/report`, `/roadmap-status`, `/docs`,
-`/setup`. Agents live in `.claude/agents/`. Run the suite with
-`PYTHONPATH=. MPLBACKEND=Agg python -m pytest`.
+`.claude/settings.json` registers the PreToolUse guard hooks (`guard-roadmap`, `guard-coding`,
+`guard-ready`, `guard-git-flow`, `guard-branch`, `guard-destructive-db`,
+`guard-commit-message`, `guard-visual-update`) and PostToolUse hooks (`guard-secret-scan`,
+`remind-docs`). Skills: `/roadmap`, `/roadmap-status`, `/impeccable`, `/ship-task`, `/locate`,
+`/report`, `/docs`, `/setup`, `/visual-review`. Agents live in `.claude/agents/`. Run the suite
+with `PYTHONPATH=. MPLBACKEND=Agg python -m pytest`.
 
 ## Design Context
 
