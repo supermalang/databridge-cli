@@ -1749,6 +1749,7 @@ function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onS
 
   const submit = () => {
     if (!name.trim()) return fe.setError('name', t('composition.nameRequired'));
+    if (!title.trim()) return fe.setError('title', t('composition.titleRequired'));
     const item = { name: name.trim(), title: title.trim(), type, questions: fromCsv(cols) };
     if (optsY.trim()) {
       try { const o = yaml.load(optsY); if (o && Object.keys(o).length) item.options = o; }
@@ -1766,7 +1767,7 @@ function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onS
       >
         <div style={{ flex: '1 1 0', minWidth: 0 }}>
           <ModalField label={t('composition.fName')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.chartName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} placeholder="satisfaction_overview" /></ModalField>
-          <ModalField label={t('composition.fTitle')}><input aria-label={t('composition.chartTitle')} name="title" id="title" className="src-input" value={title} onChange={e => setTitle(e.target.value)} placeholder={t('composition.chartTitlePlaceholder')} /></ModalField>
+          <ModalField label={t('composition.fTitle')} error={fe.errorFor('title')} errorId={fe.errorId('title')}><input aria-label={t('composition.chartTitle')} name="title" id="title" className="src-input" value={title} {...fe.fieldProps('title')} onChange={e => { setTitle(e.target.value); if (e.target.value.trim()) fe.clearError('title'); }} placeholder={t('composition.chartTitlePlaceholder')} /></ModalField>
           <ModalField label={t('composition.fType')} hint={CHART_REQS[type] ? t('composition.needs', { reqs: CHART_REQS[type] }) : undefined}>
             <select aria-label={t('composition.chartType')} className="src-input" value={type} onChange={e => setType(e.target.value)}>{CHART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
           </ModalField>

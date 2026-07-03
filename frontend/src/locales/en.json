@@ -507,6 +507,7 @@
       "restoreColumn": "Restore column",
       "fromRows": "From {{count}} rows",
       "nameRequired": "Name is required.",
+      "titleRequired": "Title is required.",
       "optionsYamlInvalid": "Options YAML invalid: ",
       "editChart": "Edit chart: {{name}}",
       "addChartModal": "Add chart",

@@ -251,3 +251,81 @@ def test_grouped_bar_color_override_wins_first_slot_palette_fills_rest(tmp_path)
         "the override and not the default slate palette."
     )
 
+
+# ===========================================================================
+# MNT-15 — Fix: manually-created charts can ship with a blank title
+#
+# Acceptance criteria (Python side) tested here:
+#   AC — generate_chart falls back to the chart's `name` when `title` is falsy
+#        (empty string OR missing), not only when the key is absent.
+#   AC — A chart config with `title: ""` renders with the `name` slug as its
+#        title, not a blank header.
+#   AC — A non-empty provided `title` is used unchanged.
+# ===========================================================================
+
+
+def _rendered_title(chart_cfg, tmp_path):
+    """Render a chart via generate_chart and return the title text drawn on the
+    resulting axes (matplotlib ax.get_title()). Uses the same close-intercept
+    trick as _CaptureFig so we can read the axes after generate_chart closes
+    the figure internally.
+    """
+    from src.reports.charts import generate_chart
+
+    df = _make_categorical_df()
+    with _CaptureFig() as cap:
+        generate_chart(chart_cfg, df, out_dir=tmp_path)
+
+    assert cap.axes, (
+        "generate_chart produced no axes — the chart failed to render, so the "
+        "title cannot be verified"
+    )
+    return cap.axes[0].get_title()
+
+
+def test_generate_chart_title_falls_back_to_name_when_missing(tmp_path):
+    """MNT-15 AC: a chart config with NO `title` key must render with its
+    `name` as the axes title (existing behaviour must be preserved)."""
+    cfg = {"name": "region_bar", "type": "bar", "questions": ["Region"]}
+
+    title = _rendered_title(cfg, tmp_path)
+
+    assert title == "region_bar", (
+        f"expected the rendered title to fall back to the chart name "
+        f"'region_bar' when the 'title' key is absent, got {title!r}"
+    )
+
+
+def test_generate_chart_title_falls_back_to_name_when_empty_string(tmp_path):
+    """MNT-15 AC (the bug): a chart config with `title: ""` must render with
+    the `name` slug as its title, NOT a blank header. This reproduces the
+    reported defect — the UI writes title:"" and the old fallback only fires
+    when the key is absent, so a blank title ships."""
+    cfg = {"name": "region_bar", "type": "bar", "title": "", "questions": ["Region"]}
+
+    title = _rendered_title(cfg, tmp_path)
+
+    assert title == "region_bar", (
+        f"expected an empty-string title to fall back to the chart name "
+        f"'region_bar', got {title!r}. generate_chart must treat a falsy "
+        "title (empty string) the same as a missing key."
+    )
+
+
+def test_generate_chart_title_uses_provided_title(tmp_path):
+    """MNT-15 AC: a non-empty provided `title` must be used unchanged (the
+    fallback must not clobber a real title)."""
+    cfg = {
+        "name": "region_bar",
+        "type": "bar",
+        "title": "Respondents by Region",
+        "questions": ["Region"],
+    }
+
+    title = _rendered_title(cfg, tmp_path)
+
+    assert title == "Respondents by Region", (
+        f"expected the provided non-empty title 'Respondents by Region' to be "
+        f"used unchanged, got {title!r}"
+    )
+

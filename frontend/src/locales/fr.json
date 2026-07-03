@@ -507,6 +507,7 @@
       "restoreColumn": "Restaurer la colonne",
       "fromRows": "À partir de {{count}} lignes",
       "nameRequired": "Le nom est requis.",
+      "titleRequired": "Le titre est requis.",
       "optionsYamlInvalid": "YAML des options non valide : ",
       "editChart": "Modifier le graphique : {{name}}",
       "addChartModal": "Ajouter un graphique",
