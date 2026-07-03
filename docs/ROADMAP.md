@@ -77,7 +77,7 @@ Sprint exit — checked by /report + /retro:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 14 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 4 | 4 / 4 |
+| [Visual / E2E harness](#visual--e2e-harness) | 6 | 4 / 6 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
@@ -742,6 +742,159 @@ Sprint exit — checked by /report + /retro:
   **Verify:** `node frontend/scripts/visual-review-app/test.mjs` ·
   `cd frontend && npm run build` (main app unaffected) ·
   `cd frontend && npm run storybook:build` ·
+  `cd frontend && npm run test:e2e` (Tier 1 harness unaffected)
+
+---
+
+- [ ] **VIS-5 — Storybook stories for EmptyState + Skeleton (P2)**
+
+  **Created:** 2026-07-03
+
+  VIS-4 stood up the Storybook harness (Tier 2) but only ships one throwaway placeholder story
+  (`tests/storybook/Example.stories.jsx`). This card gives it real component-isolation coverage
+  for the two simplest presentational components — `EmptyState` and `Skeleton` — both plain,
+  prop-driven components with no hook-based imperative API, so they story cleanly without a
+  wrapper. Also adds the i18n decorator Storybook is currently missing: `Skeleton` calls
+  `t('common.loading')` and would otherwise render the raw translation key instead of real copy
+  in captures. Split from a broader four-component proposal (VIS-6 covers `Toast` +
+  `ConfirmDialog`, which need hook-wrapper components and are scoped separately per
+  INVEST/Independent+Small).
+
+  **Type:** Feature
+
+  **Files:** `frontend/src/components/EmptyState.stories.jsx` (new) ·
+  `frontend/src/components/Skeleton.stories.jsx` (new) ·
+  `frontend/.storybook/preview.js` (modified — import `../src/lib/i18n.js` so `t()` resolves to
+  real English strings in every story, not raw keys) ·
+  `frontend/tests/storybook/components.visual.spec.ts` (new) ·
+  `frontend/tests/storybook/components.visual.spec.ts-snapshots/` (new, baselines pending human
+  approval)
+
+  **Config/schema impact:** None — pure frontend dev-tooling addition (no `config.yml` or DB
+  schema surface).
+
+  **Acceptance criteria**
+  - `EmptyState` stories cover at least the with-action and without-action variants
+  - `Skeleton` stories cover at least its loading shape(s) as used in the app (e.g. a single
+    skeleton row and a `SkeletonList` of several rows)
+  - Both are discovered by the existing `../src/**/*.stories.@(js|jsx)` glob in
+    `frontend/.storybook/main.js` (no glob change needed)
+  - `frontend/.storybook/preview.js` initializes i18n (imports `../src/lib/i18n.js`) so
+    `Skeleton`'s `t('common.loading')` renders "Loading…" (English), not the raw key
+    `common.loading`, in every story and capture
+  - `cd frontend && npm run storybook` shows both components in the sidebar with their variants
+    selectable and rendering correctly, with real (non-key) text
+  - `cd frontend && npm run storybook:build` succeeds and includes chunks for both new stories
+  - `cd frontend && npm run test:visual:storybook` runs a `toHaveScreenshot` assertion per story
+    variant at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900)
+  - No existing component behavior changes — this is additive (stories + a preview-only i18n
+    init), verified by `cd frontend && npm run build` and the existing Tier 1 E2E suite
+    (`npm run test:e2e`) staying green
+
+  **Unit tests:** N/A (no application logic changes — the two components are unmodified; only new
+  story files that render them plus a Storybook-preview-only i18n import. Vitest is not installed
+  in this repo (see XTF-7); visual correctness is covered by the Playwright E2E below.)
+
+  **E2E:** `frontend/tests/storybook/components.visual.spec.ts` (new) — for each of the two
+  components' story variants, navigate via `/iframe.html?id=...` and assert `toHaveScreenshot` at
+  all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); assert the rendered
+  Skeleton loading text is "Loading…", not the raw `common.loading` key (i18n-decorator
+  regression check). First-run baselines are pending human approval (`npm run
+  test:visual:storybook:update`, human reviews via the VIS-4 review app or direct diff, then
+  commits) — not self-approved, per `guard-visual-update.sh`.
+
+  **UAT:**
+  1. Run `cd frontend && npm run storybook` and confirm EmptyState and Skeleton each appear in the
+     sidebar with their documented variants, showing real English copy (not translation keys).
+  2. Click through each variant and visually confirm it matches the component's real in-app
+     appearance.
+  3. Run `cd frontend && npm run storybook:build && npm run test:visual:storybook:update`, review
+     the generated baselines (via `node frontend/scripts/visual-review-app/server.mjs` at
+     `http://localhost:4444` or by eye), and approve/commit them.
+  4. Re-run `npm run test:visual:storybook` and confirm it passes against the committed baselines.
+
+  **Verify:** `cd frontend && npm run storybook:build` ·
+  `cd frontend && npm run test:visual:storybook` ·
+  `cd frontend && npm run build` (main app unaffected) ·
+  `cd frontend && npm run test:e2e` (Tier 1 harness unaffected)
+
+---
+
+- [ ] **VIS-6 — Storybook stories for Toast + ConfirmDialog (hook-wrapper components) (P2)**
+
+  **Created:** 2026-07-03
+
+  Follow-up to VIS-5, split out because `Toast` and `ConfirmDialog` aren't plain presentational
+  components: `Toast.jsx` exports only `ToastProvider` + the imperative `useToast()` hook (no
+  default-exported `Toast` component), and toasts self-dismiss (`setTimeout`, 3s success / 6s
+  error) — a race against `toHaveScreenshot` capture. `ConfirmDialog.jsx` exports only
+  `useConfirm()`, a hook that renders `Modal.jsx` (with a `danger` prop) when invoked — there's no
+  `ConfirmDialog` component to point a CSF `component:` at. Both need a small story-only wrapper
+  component that calls the hook and renders its result; **no changes to the components'
+  application behavior**. Depends on **VIS-5** for the shared `frontend/.storybook/preview.js`
+  i18n decorator (`Modal.jsx` and `ToastProvider` both call `t()`).
+
+  **Type:** Feature
+
+  **Files:** `frontend/src/components/Toast.stories.jsx` (new — wraps `ToastProvider`; a
+  Storybook `play` function calls `useToast().push()` and the story asserts/captures before the
+  3s/6s auto-dismiss elapses) · `frontend/src/components/ConfirmDialog.stories.jsx` (new — wraps
+  `useConfirm()`, opening the dialog on render to cover default and `danger: true` variants) ·
+  `frontend/tests/storybook/hook-components.visual.spec.ts` (new) ·
+  `frontend/tests/storybook/hook-components.visual.spec.ts-snapshots/` (new, baselines pending
+  human approval)
+
+  **Config/schema impact:** None — pure frontend dev-tooling addition (no `config.yml` or DB
+  schema surface).
+
+  **Acceptance criteria**
+  - `Toast` stories cover at least success, error, and info variants, each rendered via a `play`
+    function invoking `useToast().push(...)` inside a `ToastProvider` wrapper
+  - `Toast` captures happen deterministically within the component's own auto-dismiss TTL (3s
+    success/info, 6s error) — the visual spec does not race the timer (e.g. captures immediately
+    after the toast becomes visible, before waiting on anything else)
+  - `ConfirmDialog` stories cover at least its default and `danger: true` variants, each rendered
+    via a wrapper that calls `useConfirm()` and opens the dialog on mount (no real user click
+    required to see it in Storybook)
+  - Both story files are discovered by the existing `../src/**/*.stories.@(js|jsx)` glob (no
+    `main.js` change needed)
+  - Rendered text (button labels, dismiss labels) shows real English copy, not raw translation
+    keys — confirms VIS-5's `preview.js` i18n decorator covers these hook-driven components too
+  - `cd frontend && npm run storybook` shows both in the sidebar with their variants; `npm run
+    storybook:build` succeeds and includes chunks for both
+  - `cd frontend && npm run test:visual:storybook` passes a `toHaveScreenshot` assertion per
+    variant at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900), with no
+    flake from the Toast auto-dismiss timer across 5 consecutive runs
+  - No changes to `Toast.jsx` or `ConfirmDialog.jsx` application behavior — verified by `cd
+    frontend && npm run build` and the existing Tier 1 E2E suite (`npm run test:e2e`) staying green
+
+  **Unit tests:** N/A (no application logic changes — `Toast.jsx`/`ConfirmDialog.jsx` are
+  unmodified; only new story wrapper files. Vitest is not installed in this repo (see XTF-7);
+  visual correctness and timing determinism are covered by the Playwright E2E below.)
+
+  **E2E:** `frontend/tests/storybook/hook-components.visual.spec.ts` (new) — for each Toast
+  variant, wait for the `play` function's `push()` call to render the toast then immediately
+  assert `toHaveScreenshot` (well inside the 3s/6s TTL); for each ConfirmDialog variant, wait for
+  the wrapper to mount and open the dialog then assert `toHaveScreenshot`; both at all three
+  viewports (mobile 390×844, tablet 820×1180, desktop 1440×900). Run the Toast spec with
+  `--repeat-each=5` and confirm 0 flakes (guards the timer race). First-run baselines are pending
+  human approval (`npm run test:visual:storybook:update`, human reviews via the VIS-4 review app
+  or direct diff, then commits) — not self-approved, per `guard-visual-update.sh`.
+
+  **UAT:**
+  1. Run `cd frontend && npm run storybook` and open the Toast story; confirm success/error/info
+     variants render with real copy and the app's actual toast styling.
+  2. Open the ConfirmDialog story; confirm the default and danger variants render open (no click
+     needed) and match the in-app confirm dialog's appearance, including the danger styling.
+  3. Run `cd frontend && npm run storybook:build && npm run test:visual:storybook:update`, review
+     the generated baselines (via `node frontend/scripts/visual-review-app/server.mjs` at
+     `http://localhost:4444` or by eye), and approve/commit them.
+  4. Re-run `npm run test:visual:storybook --repeat-each=5` and confirm it passes with 0 flakes
+     against the committed baselines.
+
+  **Verify:** `cd frontend && npm run storybook:build` ·
+  `cd frontend && npx playwright test --config=playwright.storybook.config.ts hook-components --repeat-each=5` ·
+  `cd frontend && npm run build` (main app unaffected) ·
   `cd frontend && npm run test:e2e` (Tier 1 harness unaffected)
 
 ---

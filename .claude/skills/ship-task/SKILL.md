@@ -1,6 +1,6 @@
 ---
 name: ship-task
-description: Autonomous end-to-end pipeline that ships ONE roadmap task to an open PR. Validates DoR, creates the feature branch + active-task marker, runs test-author (RED) → task-implementer (GREEN, incl. impeccable audit/critique + Playwright screenshots, with bounded self-repair) → parallel security-audit + dep-audit reviews → roadmap-verifier (DoD) → marks the card [x] and opens a PR. Human touchpoints only: DoR failure, tests still failing after auto-fix, review blockers, and final UAT + review + merge on the PR. Usage: /ship-task <TASK-ID> (e.g. /ship-task MNT-7) or /ship-task open (batch — drains all ready tasks).
+description: Autonomous end-to-end pipeline that ships ONE roadmap task to an open PR. Validates DoR, creates the feature branch + active-task marker, runs test-author (RED) → task-implementer (GREEN, incl. impeccable audit/critique + Playwright screenshots, with bounded self-repair) → parallel security-audit + dep-audit + perf-review + qa-tester/ux-review (UI cards) reviews → roadmap-verifier (DoD, incl. visual-review for UI cards) → commit + mark the card [x] + pr-reviewer's diff-audit/lint + opens a PR. Human touchpoints only: DoR failure, tests still failing after auto-fix, review blockers, and final UAT + review + merge on the PR. Usage: /ship-task <TASK-ID> (e.g. /ship-task MNT-7) or /ship-task open (batch — drains all ready tasks).
 ---
 
 # ship-task — Autonomous Task Pipeline (databridge-cli)
@@ -15,18 +15,22 @@ and conventions. Read **CLAUDE.md** (Development workflow + Agents) before relyi
 | `test-writer` (RED/GREEN) | `roadmap-test-author` (RED) — author and implementer are separate, tests are frozen |
 | `coder` | `roadmap-task-implementer` (GREEN) — also runs impeccable audit/critique + Playwright screenshots |
 | `debugger` (Fix routing) | `roadmap-task-implementer` with explicit root-cause prompt (same agent, different framing) |
-| `ux-review` + `qa-tester` (visual/UAT screenshots) | folded into `roadmap-task-implementer` |
+| `qa-tester` (screenshot capture) | folded into `roadmap-task-implementer`; `qa-tester`'s own AC-verification pass still runs separately in Review (UI cards) |
+| `ux-review` | runs separately in Review, report-only (UI cards) — same gating as `qa-tester` |
 | `debugger` self-repair loop | re-dispatch `roadmap-task-implementer` (bounded) |
-| `security-audit`, `dep-audit` | same names (local agents) |
-| `pr-reviewer` (marks [x], opens PR) | `roadmap-verifier` (DoD gate) → ship step marks [x] + `gh pr create` |
-| `schema-agent`, `docs`, `perf-*` | not present — omitted |
+| `security-audit`, `dep-audit`, `perf-review` | same names (local agents), always run in Review |
+| `visual-review` | not dispatched directly by this script — `roadmap-verifier` dispatches it during Verify to check the visual DoD line |
+| `pr-reviewer` (full gate: DoD + lint + diff-audit + push + PR) | its DoD re-check is **skipped** here (roadmap-verifier already confirmed DoD one phase earlier) — only its diff-audit + lint + push + PR steps run, in Ship |
+| `commit` | dispatched in Ship to commit implementation/test changes (lint + secret-scan pre-flight), before the roadmap-flip commit |
+| `schema-agent`, `docs`, `perf-measure` | not present — omitted |
 | `.current-task` marker | `.claude/.active-task.json` = `{"id","started_at"}` |
 | branch off integration | git-flow: `feature/<slug>` or `fix/<slug>` off **develop**; PR → develop |
 
 ## Permissions
 
-✅ delegates to: roadmap-card-reviewer, roadmap-test-author, roadmap-task-implementer,
-   security-audit, dep-audit, roadmap-verifier
+✅ delegates to: roadmap-card-reviewer, roadmap-test-author, roadmap-task-implementer, debugger,
+   security-audit, dep-audit, perf-review, qa-tester, ux-review (UI cards), roadmap-verifier
+   (which itself dispatches visual-review for UI cards), commit, pr-reviewer
 ❌ never merges PRs — returns the PR URL for human UAT + review
 ❌ never marks a card `[x]` unless `roadmap-verifier` returns DONE
 
@@ -287,7 +291,7 @@ if (!impl || !impl.testsPassed) {
 }
 log('✅ GREEN — tests pass' + (attempts ? ' (after ' + attempts + ' self-repair)' : '') + '; visual checks done')
 
-// ── Phase 4: Parallel reviews — security · deps · perf · QA ─────────────────
+// ── Phase 4: Parallel reviews — security · deps · perf · QA · UX ────────────
 phase('Review')
 const reviewAgents = [
   () => agent(
@@ -319,6 +323,13 @@ if (dor.touchesUI) {
     'Return label="qa-tester", blockers (unmet criteria or broken screenshots), warnings.',
     { schema: REVIEW_SCHEMA, phase: 'Review', agentType: 'qa-tester' }
   ))
+  reviewAgents.push(() => agent(
+    'Read .claude/agents/ux-review.md and follow it exactly for task ' + TASK_ID + ', in report-only ' +
+    'mode. Audit the changed UI across the 7 structural dimensions (language, badges, icons, layout, ' +
+    'component reuse, accessibility, consistency) against DESIGN.md\'s tokens. Do not edit anything. ' +
+    'Return label="ux-review", blockers (Critical/High deviations), warnings (Minor deviations).',
+    { schema: REVIEW_SCHEMA, phase: 'Review', agentType: 'ux-review' }
+  ))
 }
 const reviews = await parallel(reviewAgents)
 const ok = reviews.filter(Boolean)
@@ -347,23 +358,53 @@ if (!verdict || !verdict.done) {
 }
 log('✅ Verifier: automated DoD satisfied (human UAT + merge remain)')
 
-// ── Phase 6: Ship — commit, mark [x], open PR ────────────────────────────────
+// ── Phase 6: Ship — commit, mark [x], diff-audit + push + PR ─────────────────
 phase('Ship')
-const ship = await agent(
-  'Ship task ' + TASK_ID + ' for review (do NOT merge).\n' +
-  '1. Stage and commit any uncommitted implementation/test changes with a Conventional Commit ' +
-  '   ("feat(...)"/"fix(...)") ending with the repo\'s Co-Authored-By trailer.\n' +
-  '2. Follow the /roadmap Rule 0: read docs/ROADMAP.md whole, flip card ' + TASK_ID + ' from "- [ ]" to "- [x]", ' +
-  '   update the matching Global status count, and Write the WHOLE conforming file. ' +
-  '   If the roadmap guard blocks the write, leave the card unchecked and note it.\n' +
-  '3. Delete .claude/.active-task.json.\n' +
-  '4. Commit the roadmap/marker change, push the branch, and open a PR to develop with `gh pr create --base develop`. ' +
-  '   The PR body MUST include the card\'s UAT steps as an unchecked checklist for the human reviewer, ' +
-  '   list the review warnings (' + JSON.stringify(warnings) + '), and note screenshots are attached/committed.\n' +
-  'Return done=true and prUrl=<the PR URL>.',
-  { schema: VERDICT_SCHEMA, phase: 'Ship' }
+
+// 6a — commit the implementation/test changes via the dedicated commit agent (lint +
+// secret/debug-string pre-flight baked in; runs non-interactively when dispatched here).
+await agent(
+  'Read .claude/agents/commit.md and follow it exactly for task ' + TASK_ID + '. Stage and commit ' +
+  'any uncommitted implementation/test changes for this task. Autonomous mode — proceed without ' +
+  'asking for confirmation.',
+  { phase: 'Ship', agentType: 'commit' }
 )
-const prUrl = ship && ship.prUrl ? ship.prUrl : '(see Ship log)'
+
+// 6b — flip the roadmap card, update Global status, clear the active-task marker.
+await agent(
+  'Follow the /roadmap Rule 0 for task ' + TASK_ID + ': read docs/ROADMAP.md whole, flip the card ' +
+  'from "- [ ]" to "- [x]", append "· **Completed:** <today, YYYY-MM-DD>" to its Created line, ' +
+  'update the matching Global status count, and Write the WHOLE conforming file. If the roadmap ' +
+  'guard blocks the write, leave the card unchecked and note it. Then delete ' +
+  '.claude/.active-task.json. Commit this roadmap/marker change with a Conventional Commit ' +
+  '("docs(roadmap): mark ' + TASK_ID + ' done — <short title>").',
+  { phase: 'Ship' }
+)
+
+// 6c — pr-reviewer's diff-audit + push + PR ONLY — deliberately skip its own "Verify
+// Definition of Done" step, since roadmap-verifier already confirmed DoD one phase earlier;
+// re-running the full test/E2E suite a third time is wasted work, not extra safety.
+const ship = await agent(
+  'Read .claude/agents/pr-reviewer.md. Do its "Diff audit" and "Push + PR" steps ONLY for task ' +
+  TASK_ID + ' — SKIP "Verify Definition of Done" entirely (already confirmed by roadmap-verifier ' +
+  'in this run\'s Verify phase; do not re-run tests/E2E).\n' +
+  'Diff audit (git diff develop...HEAD): hardcoded secrets/tokens, console.log/print debug ' +
+  'leftovers, new endpoints missing require_role(), DB queries not membership-scoped, and (if ' +
+  'web/db/models.py changed) a present Alembic migration. Any finding blocks the push.\n' +
+  'Lint: python -m ruff check src/ web/ (if available)' + (dor.touchesUI ? ' and cd frontend && npm run lint' : '') +
+  ' — a lint error blocks the push.\n' +
+  'If clean: push the branch and open a PR to develop with `gh pr create --base develop`, using ' +
+  'pr-reviewer\'s PR body template — the card\'s UAT steps as an unchecked checklist, the review ' +
+  'warnings (' + JSON.stringify(warnings) + ') under "Review notes", and confirm screenshots are ' +
+  'committed. Never merge.\n' +
+  'Return done=true and prUrl=<the PR URL>, or done=false and reasons=<diff-audit/lint findings>.',
+  { schema: VERDICT_SCHEMA, phase: 'Ship', agentType: 'pr-reviewer' }
+)
+if (!ship || !ship.done) {
+  log('🚫 Ship-time diff audit / lint blocked the PR — ' + (ship ? ship.reasons.join('; ') : 'agent failed'))
+  return { status: 'blocked', reason: 'pr-reviewer diff audit or lint failed', taskId: TASK_ID, reasons: ship ? ship.reasons : [] }
+}
+const prUrl = ship.prUrl || '(see Ship log)'
 log('🎉 ' + TASK_ID + ' — pipeline complete. PR: ' + prUrl + ' · Human UAT + review + merge are yours.')
 return { status: 'done', taskId: TASK_ID, prUrl, warnings, awaiting: 'human UAT + review + merge on the PR' }
 ```

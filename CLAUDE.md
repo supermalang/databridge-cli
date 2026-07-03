@@ -347,8 +347,10 @@ baseline, backed by `visual-approvals.json`; dispatched by `roadmap-verifier`'s 
 DoR check → branch (`feature/` or `fix/` per card Type) + active-task marker →
 `roadmap-test-author` (RED) →
 **`debugger`** (Fix) or **`roadmap-task-implementer`** (Feature) with bounded self-repair (GREEN) →
-parallel **`security-audit`** + **`dep-audit`** + **`perf-review`** + **`qa-tester`** (UI) →
-`roadmap-verifier` (DoD) → marks `[x]` + opens PR → **develop**.
+parallel **`security-audit`** + **`dep-audit`** + **`perf-review`** + **`qa-tester`** + **`ux-review`** (UI) →
+`roadmap-verifier` (DoD, dispatches **`visual-review`** for UI cards) →
+**`commit`** (impl/test changes) → mark `[x]` → **`pr-reviewer`** (diff-audit + lint only — DoD
+already confirmed, so its own DoD re-check is skipped) → opens PR → **develop**.
 `/ship-task open` — batch mode: drains all DoR-satisfied open tasks in priority order (P0 → P1 → P2).
 Human touchpoints only: DoR failure, tests still red after auto-fix, review blockers, and final
 UAT + review + merge on the PR.
