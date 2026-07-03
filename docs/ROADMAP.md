@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 15 | 14 / 15 |
+| [Maintenance & hardening](#maintenance--hardening) | 16 | 14 / 16 |
 
 ---
 
@@ -5023,6 +5023,48 @@ Sprint exit — checked by /report + /retro:
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts.py -q` ·
   `PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q` ·
   `cd frontend && npx playwright test composition-chart-title-required.spec.ts`
+
+---
+
+- [ ] **MNT-16 — Hook-block agent self-approval of Playwright visual baselines via Bash (P1)**
+
+  **Created:** 2026-07-03
+
+  Regenerating visual baselines under `frontend/tests/e2e/*-snapshots/` is a human-approval
+  step (a human runs `npm run test:e2e:update`, reviews the diff, commits the PNGs). Nothing
+  currently stops an agent from re-baselining a *failing* screenshot test via Bash instead of
+  fixing the regression — silently defeating the visual gate. Add a `PreToolUse(Bash)` guard
+  that denies baseline-update commands. A draft implementation exists on branch
+  `feature/mnt-17` (produced by a hallucinated batch run); its tests were self-authored, so
+  the hook must be **re-derived pipeline-grade** (independent test author), not merged as-is.
+
+  **Type:** Feature
+
+  **Files:** `.claude/hooks/guard-visual-update.sh` (new) ·
+  `.claude/hooks/tests/guard-visual-update.test.sh` (new) ·
+  `.claude/settings.json` (wire the PreToolUse Bash matcher)
+
+  **Config/schema impact:** None — harness/tooling hook only.
+
+  **Acceptance criteria**
+  - A `PreToolUse(Bash)` hook denies `npm run test:e2e:update` (with any leading `cd`/path prefix)
+  - Denies `playwright test --update-snapshots` and the `-u` alias, including `npx`/`cd`/path
+    prefixes and extra flags
+  - Does NOT block unrelated `-u` usages (`git push -u`, `sort -u`) or non-playwright commands
+  - Empty/unparseable `tool_input.command` does not block (fail-safe open)
+  - A denial returns a PreToolUse `permissionDecision: "deny"` with a human-approval reason
+  - The hook is wired in `.claude/settings.json` under the Bash PreToolUse matcher
+
+  **Unit tests:** `.claude/hooks/tests/guard-visual-update.test.sh` (new) — bash cases:
+  denies `npm run test:e2e:update`; denies `cd frontend && npm run test:e2e:update`; denies
+  `npx playwright test --update-snapshots`; denies `playwright test -u`; ALLOWS `git push -u
+  origin x`, `sort -u file`, `npm run test:e2e` (run not update), and an empty command.
+
+  **E2E:** N/A (harness hook — no UI/app surface; behavior is fully covered by the bash test harness).
+
+  **UAT:** N/A (non-UI/CLI tooling; PR review + the Verify command are the human gate).
+
+  **Verify:** `bash .claude/hooks/tests/guard-visual-update.test.sh`
 
 ---
 ---
