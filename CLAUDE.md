@@ -288,7 +288,8 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
   committed. `roadmap-verifier` gates it before a card flips `- [x]`.
 - **Roadmap edits go through `/roadmap`** (whole-file rewrite; `guard-roadmap` validates the
   template — header `## Definition of Ready` + `## Definition of Done` + `## Global status`;
-  each card carries the literal labels `Acceptance criteria`, `Unit tests`, `E2E`, `UAT`).
+  each card carries the literal labels `Acceptance criteria`, `Unit tests`, `E2E`, `UAT`, `**Created:**`;
+  done cards also carry `**Completed:**`; in-progress cards carry `**Started:**`).
 - **Branching (git-flow).** `main` (prod) + `develop` (integration) are **merge-only** —
   `guard-git-flow` + `guard-branch` block commits/code-edits on them. Work on `feature/ fix/
   chore/` branches off `develop`; PR → develop, release PR → main; delete branch after merge.
@@ -303,26 +304,83 @@ way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
   GitHub branch protection requires PR review.
 
 ### Agents (`.claude/agents/`)
+
+**Pipeline agents (roadmap workflow):**
 `roadmap-planner` (decompose → cards) · `roadmap-card-reviewer` (DoR + template) ·
-`roadmap-test-author` (AC-derived tests, red-first) · `roadmap-task-implementer` (frozen-tests
-impl) · `security-audit` (OWASP + project-rules review of the task diff; report-only) ·
-`dep-audit` (SCA scan) · `roadmap-verifier` (DoD exit gate).
+`roadmap-test-author` (AC-derived tests, red-first; strict author/implementer separation) ·
+`roadmap-task-implementer` (frozen-tests impl + impeccable + Playwright) ·
+`roadmap-verifier` (DoD exit gate, adversarial)
+
+**Review agents (parallel in ship-task Review phase):**
+`security-audit` (OWASP Top 10 + project absolute rules; report-only) ·
+`dep-audit` (SCA — pip-audit + npm audit) ·
+`perf-review` (N+1 / unbounded queries / async / over-fetch; report-only) ·
+`qa-tester` (user-perspective acceptance verification; UI-facing tasks only)
+
+**Fix + quality agents:**
+`debugger` (root-cause-first bug fixer; dispatched by ship-task on Type:Fix cards) ·
+`ux-review` (7-dimension structural UX audit; report-only in pipeline, can fix manually) ·
+`refactor` (behavior-preserving cleanup; on-demand)
+
+**Infrastructure agents:**
+`schema-agent` (SQLAlchemy 2.0 + Alembic migrations + ERD updates) ·
+`perf-measure` (bundle sizes, Core Web Vitals, DB EXPLAIN plans) ·
+`commit` (Conventional Commits + lint pre-flight; no push) ·
+`pr-reviewer` (DoD gate + push + gh pr create; gate or audit mode)
+
+**Navigation + docs agents:**
+`locate` (read-only change-set scout) · `docs` (docs/reference/ sync) ·
+`report` (progress reports + PPTX decks) · `setup` (stack-kickoff / context.md) ·
+`test-writer` (general-purpose TDD test author; use roadmap-test-author for pipeline tasks)
 
 ### Orchestrator
-`/ship-task <TASK-ID>` (`.claude/skills/ship-task/`) — autonomous Workflow pipeline that takes ONE
-card to an open PR: DoR check → branch + active-task marker → `roadmap-test-author` (RED) →
-`roadmap-task-implementer` (GREEN + impeccable + Playwright screenshots, bounded self-repair) →
-parallel `security-audit` + `dep-audit` → `roadmap-verifier` (DoD) → marks `[x]` + opens PR →
-**develop**. Human touchpoints only: DoR failure, tests still red after auto-fix, review blockers,
-and final UAT + review + merge on the PR.
-impl) · `roadmap-verifier` (DoD exit gate) · `security-audit` (OWASP + absolute-rules gate,
-report-only) · `dep-audit` (SCA / vulnerable + outdated deps).
+`/ship-task <TASK-ID>` — autonomous Workflow pipeline:
+DoR check → branch (`feature/` or `fix/` per card Type) + active-task marker →
+`roadmap-test-author` (RED) →
+**`debugger`** (Fix) or **`roadmap-task-implementer`** (Feature) with bounded self-repair (GREEN) →
+parallel **`security-audit`** + **`dep-audit`** + **`perf-review`** + **`qa-tester`** (UI) →
+`roadmap-verifier` (DoD) → marks `[x]` + opens PR → **develop**.
+`/ship-task open` — batch mode: drains all DoR-satisfied open tasks in priority order (P0 → P1 → P2).
+Human touchpoints only: DoR failure, tests still red after auto-fix, review blockers, and final
+UAT + review + merge on the PR.
 
 ### Process skills (superpowers — keep)
-review → `/code-review`, `/security-review`, requesting/receiving-code-review · debug →
-systematic-debugging · verify → verification-before-completion · isolate → using-git-worktrees ·
-deliver → finishing-a-development-branch. (These govern *how* we engineer; the roadmap governs
-*what* + the quality bar — complementary layers.)
+review → `/code-review`, `/security-review` · debug → systematic-debugging · verify →
+verification-before-completion · isolate → using-git-worktrees · deliver →
+finishing-a-development-branch. (These govern *how* we engineer; the roadmap governs *what* + the
+quality bar — complementary layers.)
+
+### Methodology skills
+`/retro` — sprint retrospective: git + roadmap evidence → patterns → action items →
+`docs/retros/<date>.md`. Read-only; routes tasks to `/roadmap`.
+`/story-map` — story mapping + impact mapping from `PRODUCT.md` + roadmap →
+`docs/story-map.md`; flags journey gaps as ⚠️ GAP for `/roadmap`.
+`/usability-test heuristic|plan|synthesize` — Nielsen-10 heuristic eval (Claude runs it) /
+real-user test protocol (human runs it) / findings synthesis → `docs/usability/<slug>.md`.
+`/refactor` — behavior-preserving cleanup; updates `docs/ARCHITECTURE.md` on module moves.
+
+### Context file
+`.claude/context.md` — Tier-1 operational facts: tech stack, commands, brand tokens (for
+`/report`), SCA commands (for `dep-audit`), absolute rules. Agents read this on every run.
+Keep it in sync with real stack changes; `/setup` can regenerate it.
+
+### Navigation & planning skills
+`/locate` — read-only scout: maps entry points, call paths, and affected files before any
+implementation. Use at the start of any non-trivial change.
+
+### Reporting skills
+`/report` — progress report + optional PPTX deck from roadmap + git history. Reads
+`DESIGN.md`/`PRODUCT.md` for brand/framing. Outputs to `docs/reports/` (markdown) and `out/`
+(decks, gitignored). Illustrated style requires `KIE_API_KEY`.
+`/roadmap-status` — terse health snapshot: done/open/P0s/blocked, what's next.
+
+### Documentation skills
+`/docs` — keeps `docs/reference/` in sync after a code change (charts, config, templates,
+prompts, internals, CHANGELOG). Triggered by `remind-docs.sh` or run manually.
+
+### Setup skill
+`/setup` — one-time or re-run stack-kickoff: detects manifests, interviews for gaps, writes
+`.claude/context.md` + fills CLAUDE.md `[CONFIGURE]` blocks + updates `stack-profile.sh`.
 
 ### Design (impeccable)
 `/impeccable` (audit · critique · polish · detect · live) is the frontend design + visual-quality
@@ -332,7 +390,8 @@ layer. Its skill tree is gitignored — re-install with `npx impeccable skills i
 
 `.claude/settings.json` allowlists the pytest commands and registers the PreToolUse guard hooks
 (`guard-roadmap`, `guard-coding`, `guard-ready`, `guard-git-flow`, `guard-branch`). Skills:
-`/roadmap`, `/impeccable`, `/ship-task`. Agents live in `.claude/agents/`. Run the suite with
+`/roadmap`, `/impeccable`, `/ship-task`, `/locate`, `/report`, `/roadmap-status`, `/docs`,
+`/setup`. Agents live in `.claude/agents/`. Run the suite with
 `PYTHONPATH=. MPLBACKEND=Agg python -m pytest`.
 
 ## Design Context

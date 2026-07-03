@@ -32,7 +32,20 @@ import pandas as pd
 import numpy as np
 
 log = logging.getLogger(__name__)
-PALETTE = ["#1D9E75","#378ADD","#D85A30","#BA7517","#7F77DD","#D4537E","#5DCAA5","#85B7EB","#F0997B","#C0DD97"]
+
+# Named, sober, institutional colour palettes (10 colours each — see docs/reference/config.md
+# and docs/ROADMAP.md MNT-11). Selected via `brand.palette` in config.yml and resolved by
+# src.utils.config.get_palette(); "slate" is the default / fallback.
+PALETTES = {
+    "slate": ["#1D3557","#2E6DA4","#5A8FC0","#8AAFD4","#BDD0E5","#4A5568","#718096","#A0AEC0","#CBD5E0","#E8EDF3"],
+    "teal": ["#134E4A","#0F766E","#2A9D8F","#52B8AC","#8DD5CE","#3D6B65","#6A9E99","#A0C8C4","#CAE3E1","#EAF5F4"],
+    "earth": ["#5C3317","#8B5E3C","#B07D52","#C9A07A","#DEC4A4","#6B5B45","#957A5E","#BFA98E","#D9CBBA","#F0EAE0"],
+    "indigo": ["#1E2A5E","#2E4099","#5468C4","#8394D8","#B3BFEC","#4A5175","#7178A0","#A0A5C0","#CDD0E0","#ECEEF7"],
+    "olive": ["#2D3E1F","#4A6741","#6A9162","#8FB585","#B8D1B3","#5C5E3A","#888A5A","#B0B27A","#CCCFA0","#E8EAD2"],
+}
+# Default palette used when no `palette` opt / brand.palette is resolved — the sober
+# "slate" institutional palette is now the project default (MNT-11).
+PALETTE = PALETTES["slate"]
 _rc = {
     "figure.facecolor":"white","axes.facecolor":"white","axes.edgecolor":"#CCCCCC",
     "axes.spines.top":False,"axes.spines.right":False,"axes.grid":True,"axes.axisbelow":True,
@@ -44,11 +57,16 @@ if "axes.titleloc" in plt.rcParams:
 plt.rcParams.update(_rc)
 CHART_DIR = Path("data/processed/charts")
 
-def generate_chart(chart_cfg: Dict, df: pd.DataFrame, out_dir: Path = CHART_DIR) -> Optional[Path]:
+def generate_chart(chart_cfg: Dict, df: pd.DataFrame, out_dir: Path = CHART_DIR, language: str = "English", palette=None) -> Optional[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     name = chart_cfg.get("name","chart"); chart_type = chart_cfg.get("type","bar")
-    title = chart_cfg.get("title",name); questions = chart_cfg.get("questions",[])
-    opts = chart_cfg.get("options",{}); out_path = out_dir / f"{name}.png"
+    title = chart_cfg.get("title") or name; questions = chart_cfg.get("questions",[])
+    opts = {**(chart_cfg.get("options",{}) or {}), "language": language}
+    # brand.palette (config-wide) sets the default sequence; a per-chart options.palette
+    # (already merged above) takes precedence — same escape-hatch precedence as `color`.
+    if palette is not None:
+        opts.setdefault("palette", palette)
+    out_path = out_dir / f"{name}.png"
     missing = [q for q in questions if q not in df.columns]
     if missing: log.warning(f"Chart '{name}': columns not found: {missing}"); return None
     # distinct_by: deduplicate df by a column before charting
@@ -91,13 +109,28 @@ def _fs(o, d=(7,4)):
 def _top(s, n=15):
     return s.value_counts().head(n)
 
-def _color(opts, index=0):
-    """Return single color: opts.color if set, else PALETTE[index]."""
-    return opts.get("color", PALETTE[index])
+def _resolve_palette(opts, palette=None):
+    """Resolve the colour sequence to use: explicit `palette` arg > opts["palette"]
+    (a named palette, e.g. "slate") > opts["palette"] as a literal list > PALETTE default.
+    Unknown names fall back to PALETTES["slate"] with a warning."""
+    p = palette if palette is not None else opts.get("palette")
+    if p is None:
+        return PALETTE
+    if isinstance(p, str):
+        resolved = PALETTES.get(p)
+        if resolved is None:
+            log.warning(f"unknown palette '{p}' — falling back to 'slate'")
+            return PALETTES["slate"]
+        return resolved
+    return p
 
-def _palette(opts, n):
+def _color(opts, index=0, palette=None):
+    """Return single color: opts.color if set, else palette[index]."""
+    return opts.get("color", _resolve_palette(opts, palette)[index])
+
+def _palette(opts, n, palette=None):
     """Return palette of n colors; if opts.color is set, override the first slot."""
-    p = list(PALETTE)
+    p = list(_resolve_palette(opts, palette))
     if opts.get("color"):
         p[0] = opts["color"]
     return p[:n]
@@ -111,8 +144,29 @@ def _sort(counts, opts):
         return counts
     return counts.sort_values()  # default: by value ascending
 
+# Translations for the finite set of hardcoded chart strings.
+# Unknown languages fall back to the English key (see _t).
+_CHART_STRINGS = {
+    "French": {
+        "Count": "Nombre",
+        "Percent": "Pourcentage",
+        "Value": "Valeur",
+        "Frequency": "Fréquence",
+        "Category": "Catégorie",
+        "Score": "Score",
+        "Rank": "Rang",
+    },
+}
+
+def _t(opts, s):
+    """Translate a hardcoded chart string into opts['language']; English fallback."""
+    lang = (opts or {}).get("language")
+    if not lang:
+        return s
+    return _CHART_STRINGS.get(lang, {}).get(s, s)
+
 def _labels(opts, default_x="", default_y=""):
-    return opts.get("xlabel", default_x), opts.get("ylabel", default_y)
+    return opts.get("xlabel", _t(opts, default_x)), opts.get("ylabel", _t(opts, default_y))
 
 def _label_color(hex_color):
     """Return 'black' or 'white' for readable text on the given background hex color."""
@@ -243,7 +297,7 @@ def chart_stacked_bar(df, q, title, out, opts):
 
 def chart_pie(df, q, title, out, opts):
     c = q[0]; counts = _top(df[c].dropna(), opts.get("top_n", 8))
-    colors = PALETTE[:len(counts)]
+    colors = _resolve_palette(opts)[:len(counts)]
     fig, ax = plt.subplots(figsize=_fs(opts, (6, 5)))
     wedges, _, at = ax.pie(counts.values, labels=None, colors=colors,
                            autopct="%1.1f%%", startangle=90, pctdistance=0.82)
@@ -256,7 +310,7 @@ def chart_pie(df, q, title, out, opts):
 
 def chart_donut(df, q, title, out, opts):
     c = q[0]; counts = _top(df[c].dropna(), opts.get("top_n", 8))
-    colors = PALETTE[:len(counts)]
+    colors = _resolve_palette(opts)[:len(counts)]
     fig, ax = plt.subplots(figsize=_fs(opts, (6, 5)))
     wedges, _, at = ax.pie(counts.values, labels=None, colors=colors,
                            autopct="%1.1f%%", startangle=90, pctdistance=0.75,
@@ -332,7 +386,7 @@ def chart_box_plot(df, q, title, out, opts):
     top_cats = df[cat].value_counts().head(n).index
     groups = [pd.to_numeric(df[df[cat]==c][num], errors="coerce").dropna() for c in top_cats]
     fig, ax = plt.subplots(figsize=_fs(opts, (8, 5)))
-    pal = _palette(opts, len(PALETTE))
+    pal = _palette(opts, len(_resolve_palette(opts)))
     bp = ax.boxplot(groups, patch_artist=True, labels=top_cats)
     for i, patch in enumerate(bp["boxes"]):
         patch.set_facecolor(pal[i % len(pal)]); patch.set_alpha(0.75)
@@ -375,7 +429,7 @@ def chart_waterfall(df, q, title, out, opts):
     counts = _sort(_top(df[c].dropna(), opts.get("top_n", 12)), opts)
     running = counts.cumsum(); bottoms = [0] + list(running.values[:-1])
     xl, yl = _labels(opts, c, "Cumulative count")
-    pal = _palette(opts, len(PALETTE))
+    pal = _palette(opts, len(_resolve_palette(opts)))
     fig, ax = plt.subplots(figsize=_fs(opts, (8, 4)))
     for i, (label, val, bottom) in enumerate(zip(counts.index, counts.values, bottoms)):
         color = pal[i % len(pal)]
@@ -389,7 +443,7 @@ def chart_waterfall(df, q, title, out, opts):
 
 def chart_funnel(df, q, title, out, opts):
     c = q[0]; counts = _top(df[c].dropna(), opts.get("top_n", 10)).sort_values(ascending=False)
-    pal = _palette(opts, len(PALETTE))
+    pal = _palette(opts, len(_resolve_palette(opts)))
     total = counts.sum()
     fig, ax = plt.subplots(figsize=_fs(opts, (7, max(3, len(counts)*0.5))))
     max_val = counts.values[0]
@@ -405,8 +459,10 @@ def chart_funnel(df, q, title, out, opts):
 
 def chart_table(df, q, title, out, opts):
     c = q[0]; counts = _top(df[c].dropna(), opts.get("top_n", 15)).reset_index()
-    counts.columns = [c, "Count"]
-    counts["Percent"] = (counts["Count"] / counts["Count"].sum() * 100).round(1).astype(str) + "%"
+    counts.columns = [c, _t(opts, "Count")]
+    pct_col = _t(opts, "Percent")
+    count_col = _t(opts, "Count")
+    counts[pct_col] = (counts[count_col] / counts[count_col].sum() * 100).round(1).astype(str) + "%"
     fig, ax = plt.subplots(figsize=_fs(opts, (6, max(2, len(counts)*0.35+1))))
     ax.axis("off")
     tbl = ax.table(cellText=counts.values, colLabels=counts.columns, cellLoc="center", loc="center")
@@ -573,8 +629,9 @@ def chart_pyramid(df, q, title, out, opts):
     male = df[df[gender_col] == male_val][age_col].value_counts().reindex(age_order, fill_value=0)
     female = df[df[gender_col] == female_val][age_col].value_counts().reindex(age_order, fill_value=0)
 
-    male_color = opts.get("color", PALETTE[1])
-    female_color = PALETTE[5]
+    pal = _resolve_palette(opts)
+    male_color = opts.get("color", pal[1])
+    female_color = pal[5]
     fig, ax = plt.subplots(figsize=_fs(opts, (8, max(4, len(age_order) * 0.45))))
     ax.barh(age_order, -male.values, color=male_color, alpha=0.85, label=male_val)
     ax.barh(age_order, female.values, color=female_color, alpha=0.85, label=female_val)
@@ -614,9 +671,10 @@ def chart_dot_map(df, q, title, out, opts):
             if color_by and color_by in tmp.columns:
                 cats = tmp[color_by].astype(str)
                 unique_cats = cats.unique()
+                pal = _resolve_palette(opts)
                 for i, cat in enumerate(unique_cats):
                     mask = cats == cat
-                    ax.scatter(xs[mask], ys[mask], s=dot_size, color=PALETTE[i % len(PALETTE)],
+                    ax.scatter(xs[mask], ys[mask], s=dot_size, color=pal[i % len(pal)],
                                alpha=0.75, edgecolors="white", linewidth=0.4, label=cat, zorder=3)
                 ax.legend(title=color_by, loc="lower center", bbox_to_anchor=(0.5, -0.12), ncol=4, fontsize=8)
             else:
@@ -631,10 +689,11 @@ def chart_dot_map(df, q, title, out, opts):
     if not use_basemap:
         if color_by and color_by in tmp.columns:
             cats = tmp[color_by].astype(str)
+            pal = _resolve_palette(opts)
             for i, cat in enumerate(cats.unique()):
                 mask = cats == cat
                 ax.scatter(tmp[lon_col][mask], tmp[lat_col][mask], s=dot_size,
-                           color=PALETTE[i % len(PALETTE)], alpha=0.75,
+                           color=pal[i % len(pal)], alpha=0.75,
                            edgecolors="white", linewidth=0.4, label=cat)
             ax.legend(title=color_by, loc="lower center", bbox_to_anchor=(0.5, -0.12), ncol=4, fontsize=8)
         else:
@@ -701,6 +760,21 @@ def chart_period_line(df, questions, title, out_path, opts):
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
+
+
+def build_bullet_list_text(df: pd.DataFrame, questions: List[str]) -> str:
+    """Render the first *questions* column's values as a `•`-prefixed text block.
+
+    Used by ``bullet_list`` — a text-injection render type (docxtpl text run,
+    ``{{ list_<name> }}``) rather than an image, so it is not part of
+    ``CHART_DISPATCH`` / ``generate_chart``'s matplotlib pipeline. Empty/NaN
+    values are dropped; order follows the DataFrame's row order.
+    """
+    if not questions or questions[0] not in df.columns:
+        return ""
+    values = df[questions[0]].dropna().astype(str)
+    values = [v for v in values if v.strip() and v.strip().lower() != "nan"]
+    return "\n".join(f"• {v}" for v in values)
 
 
 CHART_DISPATCH = {

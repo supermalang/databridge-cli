@@ -531,6 +531,15 @@ report:
   period: Q1 2025
   # split_by: Village   # export_label of a column — generates one report per unique value
 
+# Optional — chart colour palette shared across every chart in the report (MNT-11).
+# Named, sober/institutional palettes (10 colours each, print-safe) — absent → "slate".
+# brand:
+#   palette: slate    # slate  — cool institutional blue/grey (default)
+#                      # teal   — humanitarian / health (WFP-adjacent)
+#                      # earth  — field / food-security / development
+#                      # indigo — governance / protection (UNHCR-adjacent)
+#                      # olive  — environment / agriculture / resilience
+
 # AI narrative generation — fills {{ summary_text }}, {{ observations }}, {{ recommendations }}
 # ai:
 #   provider: openai          # openai | anthropic

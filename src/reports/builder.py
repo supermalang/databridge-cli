@@ -7,15 +7,70 @@ from docx.shared import Inches
 from docxtpl import DocxTemplate, InlineImage
 from jinja2.sandbox import SandboxedEnvironment
 from src.data.transform import load_processed_data, apply_local_scope, aggregate_repeat, join_repeat_to_main, apply_computed_columns, build_views
-from src.reports.charts import generate_chart, CHART_DIR
+from src.reports.charts import generate_chart, build_bullet_list_text, CHART_DIR
 from src.reports.indicators import compute_indicators, build_traffic_light_table, build_equity_charts
 from src.reports.narrator import generate_narrative
 from src.reports.summaries import compute_summaries
 from src.utils.provenance import build_provenance, data_mtime
+from src.utils.config import get_palette
 from src.reports.logframe import build_logframe
 from src.reports.data_quality import build_data_quality
 
 log = logging.getLogger(__name__)
+
+import re as _re
+from docx import Document as _Document
+
+def _strip_residual_brackets(path: Path) -> None:
+    """Remove [[ and ]] delimiters left by unresolved Express Fill tokens.
+
+    docxtpl only resolves {{ }} Jinja2 tags; any [[token]] that was not matched
+    by the Express Fill pipeline survives into the saved .docx verbatim.  This
+    pass reopens the file, strips the bracket pair from every run's text while
+    preserving the inner content, and saves in-place.
+    """
+    _OPEN = "[["; _CLOSE = "]]"
+
+    def _clean_runs(para):
+        runs = para.runs
+        if not runs:
+            return
+        joined = "".join(run.text for run in runs)
+        if _OPEN not in joined and _CLOSE not in joined:
+            return
+        # Join the paragraph's run text before pattern-matching so a delimiter
+        # split across runs — even mid-character (e.g. "[" | "[NOM]" | "]") — is
+        # matched as a whole. The current per-run replace only catches a
+        # delimiter that is intact within a single run.
+        cleaned = joined.replace(_OPEN, "").replace(_CLOSE, "")
+        if cleaned == joined:
+            return
+        # Redistribute the cleaned text: keep it in the first run (preserving its
+        # formatting) and blank the remaining runs. Only the surviving delimiter
+        # tokens are removed; all other text is preserved verbatim.
+        runs[0].text = cleaned
+        for run in runs[1:]:
+            run.text = ""
+
+    def _walk_table(table):
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    _clean_runs(para)
+                for nested in cell.tables:
+                    _walk_table(nested)
+
+    doc = _Document(str(path))
+    for para in doc.paragraphs:
+        _clean_runs(para)
+    for table in doc.tables:
+        _walk_table(table)
+    for section in doc.sections:
+        for hf in (section.header, section.footer):
+            if hf:
+                for para in hf.paragraphs:
+                    _clean_runs(para)
+    doc.save(str(path))
 
 
 def sandboxed_jinja_env() -> SandboxedEnvironment:
@@ -297,11 +352,13 @@ class ReportBuilder:
         alias = self.cfg.get("form",{}).get("alias","form")
         out_path = out_dir / f"{alias}_report{suffix}_{datetime.today().strftime('%Y%m%d')}.docx"
         tpl.save(out_path)
+        _strip_residual_brackets(out_path)
         log.info(f"Report saved → {out_path}")
         return out_path
 
     def _generate_charts(self, tpl, df, repeat_tables: Dict, per_form: Optional[Dict] = None):
         CHART_DIR.mkdir(parents=True, exist_ok=True)
+        _language = (self.cfg.get("ai") or {}).get("language") or "English"
         key_to_label = {
             q["kobo_key"]: q.get("export_label") or q.get("label") or q["kobo_key"]
             for q in self.cfg.get("questions", [])
@@ -382,7 +439,14 @@ class ReportBuilder:
                 enriched_opts = {**(resolved.get("options", {}) or {}), "periods": periods_payload}
                 resolved = {**resolved, "options": enriched_opts}
 
-            png = generate_chart(resolved, chart_df)
+            # bullet_list is a text-injection render type — it bypasses the
+            # matplotlib/InlineImage pipeline entirely and fills a
+            # {{ list_<name> }} text placeholder instead of {{ chart_<name> }}.
+            if resolved.get("type") == "bullet_list":
+                images[f"list_{name}"] = build_bullet_list_text(chart_df, resolved_questions)
+                continue
+
+            png = generate_chart(resolved, chart_df, language=_language, palette=get_palette(self.cfg))
             width = Inches(c.get("options", {}).get("width_inches", 5.5))
             images[f"chart_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
         return images

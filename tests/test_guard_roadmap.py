@@ -20,6 +20,8 @@ Unit + E2E green, visual baseline approved, UAT signed, committed.
 
 - [ ] **OUT-1 — Example task**
 
+  **Created:** 2026-06-17
+
   **Acceptance criteria**
   - download writes a records-array .json
   **Unit tests:** tests/test_x.py

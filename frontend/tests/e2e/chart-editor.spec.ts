@@ -1,0 +1,502 @@
+import { test, expect, Page, Locator } from '@playwright/test';
+
+/**
+ * PUX-11 — Inline live preview in the chart editor modal.
+ *
+ * Today the chart editor (`ChartModal`) and the chart preview are two separate
+ * modals — users configure blind, then close and open a second modal to see
+ * the result. This card merges them: the chart editor modal gains a live
+ * preview pane (right column on desktop, below fields on mobile) that calls
+ * `/api/charts/preview` with the current form state, debounced ~600ms, and
+ * re-renders the chart image as the user types. The standalone preview modal
+ * (and its "Preview" trigger button) is removed — all chart interaction goes
+ * through the unified editor.
+ *
+ * NETWORK-MOCKED: Vite serves the real SPA; every /api/** is intercepted with
+ * page.route(), so no FastAPI backend is required. Same harness pattern as
+ * composition-progressive.spec.ts / a11y-3.spec.ts.
+ *
+ * RED-FIRST: derived from the PUX-11 Acceptance criteria, NOT the current
+ * implementation. Today: the editor modal has no preview pane at all, a
+ * separate "Preview" ghost button + separate preview Modal exist, and there is
+ * no responsive two-column/stacked layout for a preview pane (because there is
+ * no preview pane). Every assertion below is expected to fail until PUX-11
+ * ships.
+ *
+ * ── Selector contract for the implementer ──────────────────────────────────
+ * Match these so the spec turns green without edits to the spec:
+ *   - The chart editor dialog keeps using `.modal[role="dialog"]` (the shared
+ *     `Modal` component) — no change there.
+ *   - Live preview pane (inside the SAME dialog as the editor's form fields):
+ *       data-testid="chart-editor-preview"
+ *   - Preview image: an <img> inside the preview pane (`chart-editor-preview
+ *     img`) whose `src` changes when the underlying chart config changes.
+ *   - Loading indicator while a preview request is in flight:
+ *       data-testid="chart-editor-preview-loading"
+ *   - Inline error message on a failed preview request (legible text, not a
+ *     blank pane):
+ *       data-testid="chart-editor-preview-error"
+ *   - The standalone "Preview" button (ghost button on each chart row, i18n
+ *     key `composition.preview`) and the separate preview `Modal` (i18n key
+ *     `composition.previewTitle`) are REMOVED from the Composition tab.
+ *   - Responsive layout: the editor dialog carries
+ *       data-testid="chart-editor-layout"
+ *     with `data-orientation="row"` at tablet/desktop widths (two columns) and
+ *     `data-orientation="column"` at mobile width (stacked).
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+
+const ACTIVE_PROJECT = {
+  id: 'proj-1',
+  name: 'Test Project',
+  slug: 'test-project',
+  role: 'admin',
+  is_archived: false,
+};
+
+const CONFIG_YML = [
+  'api:',
+  '  url: https://kobo.example.test',
+  '  token: env:KOBO_TOKEN',
+  'form:',
+  '  uid: aXyZ123',
+  '  alias: test',
+  'charts:',
+  '  - name: age_hist',
+  '    title: Age distribution',
+  '    type: histogram',
+  '    questions: [age]',
+  '',
+].join('\n');
+
+const QUESTIONS = {
+  questions: [
+    { kobo_key: 'group_a/age', label: 'Respondent age', export_label: 'age', type: 'integer', category: 'quantitative' },
+    { kobo_key: 'group_a/region', label: 'Region', export_label: 'region', type: 'select_one', category: 'categorical' },
+  ],
+};
+
+let previewCallCount = 0;
+let previewShouldFail = false;
+
+async function stubBootstrap(page: Page) {
+  previewCallCount = 0;
+  previewShouldFail = false;
+
+  // Catch-all FIRST so the specific routes below win (Playwright matches
+  // routes in REVERSE registration order — last registered wins).
+  await page.route('**/api/**', (r) => r.fulfill({ json: {} }));
+  await page.route('**/api/me', (r) =>
+    r.fulfill({ json: { sub: 'dev', email: 'dev@example.test', given_name: 'Dev', family_name: 'User' } }));
+  await page.route('**/api/projects', (r) =>
+    r.fulfill({ json: { active_id: ACTIVE_PROJECT.id, is_superadmin: false, projects: [ACTIVE_PROJECT] } }));
+  await page.route('**/api/periods', (r) => r.fulfill({ json: { current: null, registry: [] } }));
+  await page.route('**/api/periods/date-range', (r) => r.fulfill({ json: {} }));
+  await page.route('**/api/config', (r) => r.fulfill({ json: { content: CONFIG_YML } }));
+  await page.route('**/api/questions', (r) => r.fulfill({ json: QUESTIONS }));
+  await page.route('**/api/ai/status', (r) => r.fulfill({ json: { configured: true, verified: true } }));
+  await page.route('**/api/state', (r) =>
+    r.fulfill({ json: { has_questions: true, has_data: true, has_templates: false, has_ai: true } }));
+  await page.route('**/api/reports', (r) => r.fulfill({ json: { files: [] } }));
+  await page.route('**/api/templates', (r) => r.fulfill({ json: { files: [] } }));
+  await page.route('**/api/templates/active', (r) => r.fulfill({ json: { active: null } }));
+  await page.route('**/api/data/sessions', (r) => r.fulfill({ json: { sessions: [] } }));
+  await page.route('**/api/indicators/preview', (r) => r.fulfill({ json: { value: 0 } }));
+
+  // The endpoint under test — the live preview pane inside the chart editor.
+  await page.route('**/api/charts/preview', async (r) => {
+    previewCallCount += 1;
+    if (previewShouldFail) {
+      await r.fulfill({ status: 500, json: { detail: 'Could not render chart preview' } });
+      return;
+    }
+    // Return a distinguishable 1x1 PNG payload per call so a changed src is observable.
+    await r.fulfill({ json: { image: Buffer.from(`fake-png-${previewCallCount}`).toString('base64') } });
+  });
+}
+
+async function bootApp(page: Page) {
+  await page.goto('http://localhost:51730/');
+  await expect(page.getByText('Test Project').first()).toBeVisible();
+}
+
+async function gotoStage(page: Page, stageId: string) {
+  await page.locator(`.tabs-bar [data-tab="${stageId}"]`).click();
+}
+async function gotoSub(page: Page, label: string) {
+  await page.locator('.subtabs-bar .subtab', { hasText: label }).click();
+}
+
+async function openComposition(page: Page) {
+  await gotoStage(page, 'analyze');
+  await gotoSub(page, 'Charts & indicators');
+  await expect(page.locator('.comp-card').first()).toBeVisible();
+}
+
+const chartsCard = (page: Page): Locator =>
+  page.locator('.comp-card', { has: page.locator('.comp-card__title', { hasText: 'Charts' }) });
+
+const editorDialog = (page: Page): Locator => page.locator('.modal[role="dialog"]');
+const previewPane = (page: Page): Locator => page.getByTestId('chart-editor-preview');
+const previewLoading = (page: Page): Locator => page.getByTestId('chart-editor-preview-loading');
+const previewError = (page: Page): Locator => page.getByTestId('chart-editor-preview-error');
+const previewImage = (page: Page): Locator => previewPane(page).locator('img');
+
+async function openEditChartModal(page: Page) {
+  const card = chartsCard(page);
+  await card.locator('.icon-btn[title="Edit"]').first().click();
+  await expect(editorDialog(page)).toBeVisible();
+}
+
+test.describe('PUX-11 — inline live preview in the chart editor modal', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await bootApp(page);
+    await openComposition(page);
+  });
+
+  // AC1 — opening the editor (edit) shows the preview pane alongside the fields.
+  test('AC1: opening the chart editor (edit) shows the preview pane inside the same dialog', async ({ page }) => {
+    await openEditChartModal(page);
+    const dialog = editorDialog(page);
+    const pane = previewPane(page);
+    await expect(pane, 'preview pane must be visible when the editor opens').toBeVisible();
+    // It must live INSIDE the editor dialog, not a second dialog.
+    await expect(dialog.locator('[data-testid="chart-editor-preview"]')).toHaveCount(1);
+    await expect(page.locator('.modal[role="dialog"]')).toHaveCount(1, 'only one dialog should be open — no separate preview modal');
+  });
+
+  // AC1b — opening the editor via "Add chart" also shows the preview pane.
+  test('AC1b: opening the chart editor (add) shows the preview pane', async ({ page }) => {
+    const card = chartsCard(page);
+    await card.getByRole('button', { name: /add chart/i }).click();
+    await expect(editorDialog(page)).toBeVisible();
+    await expect(previewPane(page), 'preview pane must also appear when adding a new chart').toBeVisible();
+  });
+
+  // AC2 — the preview re-fetches within ~600ms of a field change, no separate button click.
+  test('AC2: changing the chart title re-fetches the preview within ~600ms without an extra click', async ({ page }) => {
+    await openEditChartModal(page);
+    await expect(previewImage(page)).toBeVisible({ timeout: 5000 });
+    const srcBefore = await previewImage(page).getAttribute('src');
+    const callsBefore = previewCallCount;
+
+    const titleInput = editorDialog(page).locator('input[name="title"], input#title, input[value="Age distribution"]').first();
+    await titleInput.fill('Age distribution (updated)');
+
+    // Do NOT click any "Preview" button — the update must happen automatically.
+    await expect(async () => {
+      expect(previewCallCount).toBeGreaterThan(callsBefore);
+    }).toPass({ timeout: 2000 });
+
+    await expect(async () => {
+      const srcAfter = await previewImage(page).getAttribute('src');
+      expect(srcAfter).not.toBe(srcBefore);
+    }).toPass({ timeout: 2000 });
+  });
+
+  // AC3 — loading state shown while the preview request is in flight.
+  test('AC3: a skeleton/spinner is shown while the preview is loading', async ({ page }) => {
+    // Delay the preview response so the loading state is observable.
+    await page.route('**/api/charts/preview', async (r) => {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      await r.fulfill({ json: { image: Buffer.from('fake-png-delayed').toString('base64') } });
+    });
+    await openEditChartModal(page);
+    await expect(previewLoading(page), 'a loading indicator must be shown while the preview request is pending').toBeVisible();
+  });
+
+  // AC3b — inline, legible error message on a failed preview request (not a blank pane).
+  test('AC3b: a failed preview request shows a legible inline error, not a blank pane', async ({ page }) => {
+    previewShouldFail = true;
+    await openEditChartModal(page);
+    const err = previewError(page);
+    await expect(err, 'an inline error message must be shown when the preview request fails').toBeVisible();
+    const text = (await err.textContent())?.trim() || '';
+    expect(text.length, 'the error message must contain legible text, not be empty').toBeGreaterThan(0);
+    // The pane must not be blank/empty while erroring — no successful image lingers.
+    await expect(previewImage(page)).toHaveCount(0);
+  });
+
+  // AC4 — the standalone "Preview" button and separate preview modal are removed.
+  test('AC4: the standalone Preview button and separate preview modal no longer exist', async ({ page }) => {
+    const card = chartsCard(page);
+    await expect(
+      card.getByRole('button', { name: /^preview$/i }),
+      'a standalone "Preview" trigger button must no longer exist on chart rows',
+    ).toHaveCount(0);
+
+    // Clicking Edit must not surface a second, separate preview dialog either.
+    await openEditChartModal(page);
+    await expect(page.locator('.modal[role="dialog"]')).toHaveCount(1);
+  });
+
+  // AC5 — responsive layout: two-column at tablet/desktop, stacked at mobile.
+  test('AC5: layout is two-column at tablet/desktop and stacked at mobile', async ({ page }) => {
+    await openEditChartModal(page);
+    const layout = page.getByTestId('chart-editor-layout');
+    await expect(layout).toBeVisible();
+
+    const viewport = page.viewportSize();
+    const orientation = await layout.getAttribute('data-orientation');
+    if (viewport && viewport.width <= 480) {
+      expect(orientation, 'mobile width must render a single (stacked) column').toBe('column');
+    } else {
+      expect(orientation, 'tablet/desktop widths must render a two-column layout').toBe('row');
+    }
+  });
+
+  // AC6 — existing Composition tab behavior (Add chart flow) is unaffected.
+  test('AC6: existing "+ Add chart" flow still works (no regression)', async ({ page }) => {
+    const card = chartsCard(page);
+    const addChart = card.getByRole('button', { name: /add chart/i });
+    await expect(addChart).toBeVisible();
+    await addChart.click();
+    await expect(editorDialog(page)).toBeVisible();
+  });
+
+  // ── Visual baseline (per-viewport via the project config) ─────────────────
+  test('visual: chart editor modal with live preview', async ({ page }) => {
+    await openEditChartModal(page);
+    await expect(previewPane(page)).toBeVisible();
+    // Let the debounced preview settle so the baseline is deterministic.
+    await page.waitForTimeout(700);
+    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal.png');
+  });
+});
+
+/**
+ * PUX-12 — Chart editor preview: keep last image visible during re-fetch.
+ *
+ * Follow-up from PUX-11. Today `useChartPreview` unmounts the last successful
+ * image and swaps in the loading skeleton on every debounced re-fetch, so a
+ * previously-correct chart vanishes on every keystroke-triggered update. This
+ * card requires the last-good image to STAY in the DOM (dimmed / corner
+ * spinner) while a re-fetch is in flight, and only the very first load (no
+ * prior image) to blank to the skeleton.
+ *
+ * RED-FIRST: derived from the PUX-12 Acceptance criteria, NOT the current
+ * implementation. Expected to fail until the persist-last-image behaviour ships.
+ *
+ * Reuses the PUX-11 selector contract:
+ *   - preview pane:      data-testid="chart-editor-preview"
+ *   - preview <img>:     `chart-editor-preview img`
+ *   - loading skeleton:  data-testid="chart-editor-preview-loading"
+ */
+test.describe('PUX-12 — chart editor preview persists last image during re-fetch', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await bootApp(page);
+    await openComposition(page);
+  });
+
+  // AC1/AC2 — a debounced re-fetch keeps the last successful <img> in the DOM
+  // (not replaced by the skeleton testid) while the request is in flight.
+  test('AC1: previously-rendered preview image remains in the DOM during a re-fetch (not the skeleton)', async ({ page }) => {
+    // Delay preview responses so the in-flight window is observable, but keep
+    // the FIRST response fast enough that an initial image is rendered.
+    let previewHits = 0;
+    await page.route('**/api/charts/preview', async (r) => {
+      previewHits += 1;
+      // First call resolves quickly to establish a last-good image; later
+      // (re-fetch) calls are held open so we can inspect the in-flight state.
+      const delay = previewHits === 1 ? 0 : 1500;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      await r.fulfill({ json: { image: Buffer.from(`fake-png-${previewHits}`).toString('base64') } });
+    });
+
+    await openEditChartModal(page);
+
+    // Establish the first successful preview image.
+    await expect(previewImage(page)).toBeVisible({ timeout: 5000 });
+    const srcBefore = await previewImage(page).getAttribute('src');
+    expect(srcBefore, 'precondition: an initial preview image should be rendered').toBeTruthy();
+
+    // Edit a field twice in quick succession to trigger a debounced re-fetch.
+    const titleInput = editorDialog(page)
+      .locator('input[name="title"], input#title, input[value="Age distribution"]')
+      .first();
+    await titleInput.fill('Age distribution v2');
+    await titleInput.fill('Age distribution v3');
+
+    // While the re-fetch is in flight, the last-good <img> must still be in the
+    // DOM (dimmed / corner spinner), NOT unmounted and replaced by the skeleton.
+    await expect(async () => {
+      expect(previewHits).toBeGreaterThan(1);
+    }).toPass({ timeout: 3000 });
+
+    await expect(
+      previewImage(page),
+      'the last successful preview image must remain in the DOM during the re-fetch, not be unmounted',
+    ).toBeVisible();
+    const srcDuring = await previewImage(page).getAttribute('src');
+    expect(srcDuring, 'the persisted image should still be the last-good src while re-fetching').toBe(srcBefore);
+  });
+
+  // ── Visual baseline of the dimmed / in-progress re-fetch state ────────────
+  // Per-viewport via the project config (mobile/tablet/desktop) — no hard-coded
+  // viewport here.
+  test('visual: chart editor preview in the dimmed re-fetch state', async ({ page }) => {
+    await page.route('**/api/charts/preview', async (r, req) => {
+      // Hold re-fetches open (any request after the first) so the dimmed
+      // in-progress state is captured deterministically.
+      // Note: fixed payload so the baseline image content is stable.
+      const held = (previewCallCount += 1) > 1;
+      if (held) await new Promise((resolve) => setTimeout(resolve, 2000));
+      await r.fulfill({ json: { image: Buffer.from('fake-png-stable').toString('base64') } });
+    });
+
+    await openEditChartModal(page);
+    await expect(previewImage(page)).toBeVisible({ timeout: 5000 });
+
+    // Trigger the re-fetch and capture the dimmed / in-progress state.
+    const titleInput = editorDialog(page)
+      .locator('input[name="title"], input#title, input[value="Age distribution"]')
+      .first();
+    await titleInput.fill('Age distribution (re-fetch)');
+
+    // Wait for the debounce to fire and the loading indicator to appear over
+    // the still-visible last-good image.
+    await expect(previewLoading(page)).toBeVisible({ timeout: 3000 });
+    await expect(previewImage(page)).toBeVisible();
+
+    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-refetch.png');
+  });
+});
+
+/**
+ * PUX-13 — Chart editor: link preview errors back to the offending field.
+ *
+ * Follow-up from PUX-11's /impeccable critique (finding 3 of 4). When
+ * `/api/charts/preview` fails, the generic backend message in the preview pane
+ * forces the user to mentally diff their Name/Title/Type/Columns/Options
+ * against the failure to guess what to fix ("Memory Bridge" cognitive load).
+ *
+ * `CHART_REQS` already encodes each chart type's column requirement client-side,
+ * so a type/column-count (or type/column-kind) mismatch is knowable WITHOUT the
+ * backend round-trip. This card requires: when the preview error is such a
+ * client-side-knowable mismatch, the Columns ModalField row is visually flagged
+ * using the same rose error pattern the filter field already uses (in addition
+ * to the generic pane message). When the error is a genuine backend/data error
+ * NOT attributable to any client-side rule, ONLY the generic pane message shows
+ * and no field is falsely flagged.
+ *
+ * RED-FIRST: derived from the PUX-13 Acceptance criteria, NOT the current
+ * implementation. Today the Columns field carries no error flag on a preview
+ * failure — only the generic `chart-editor-preview-error` pane message appears.
+ * Every field-flag assertion below is expected to fail until PUX-13 ships.
+ *
+ * ── Selector contract for the implementer ──────────────────────────────────
+ * Reuse the existing filter-error rose pattern: the Columns `ModalField` is
+ * flagged by passing it an `error` (rendered as the shared `FieldError`,
+ * `role="alert"`, rose color) sitting inside the SAME field row as the Chart
+ * columns picker. So the test locates the Columns field row and asserts a
+ * `role="alert"` error node appears inside it. Concretely, the implementer must
+ * satisfy:
+ *   - The Columns ModalField row (the one containing the picker with
+ *     aria-label "Chart columns") gains a `role="alert"` error message when the
+ *     preview failure is a CHART_REQS type/column mismatch.
+ *   - No other field row gains such a flag, and no field is flagged when the
+ *     failure is not client-side attributable.
+ *   - The generic pane message (`chart-editor-preview-error`) still shows in
+ *     both cases (the field flag is IN ADDITION to it).
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+
+// The ModalField row that wraps the Chart columns picker. We anchor on the
+// stable `aria-label` of the picker input, then walk up to its field row.
+const columnsFieldRow = (page: Page): Locator =>
+  editorDialog(page)
+    .locator('div', { has: page.getByLabel('Chart columns') })
+    .filter({ has: page.getByLabel('Chart columns') })
+    .last();
+
+// Any field-level error flag inside the Columns row (the shared FieldError,
+// role="alert"). This is the "rose-border pattern used for filter errors".
+const columnsFieldError = (page: Page): Locator =>
+  columnsFieldRow(page).getByRole('alert');
+
+// Add a column to the (multi-select) Chart columns picker by typing + Enter,
+// which commits it as a chip (matches the ColumnPicker commit-on-Enter path).
+async function addColumn(page: Page, col: string) {
+  const input = editorDialog(page).getByLabel('Chart columns');
+  await input.click();
+  await input.fill(col);
+  await input.press('Enter');
+}
+
+async function setChartType(page: Page, type: string) {
+  await editorDialog(page).getByLabel('Chart type').selectOption(type);
+}
+
+async function openAddChartModal(page: Page) {
+  const card = chartsCard(page);
+  await card.getByRole('button', { name: /add chart/i }).click();
+  await expect(editorDialog(page)).toBeVisible();
+}
+
+test.describe('PUX-13 — preview errors are linked back to the offending field', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await bootApp(page);
+    await openComposition(page);
+  });
+
+  // AC1 — a CHART_REQS type/column mismatch (histogram needs 1 numeric column,
+  // a text/categorical column chosen instead) that trips a preview error must
+  // visually flag the Columns field row, in addition to the generic pane error.
+  test('AC1: a client-side-knowable type/column mismatch flags the Columns field', async ({ page }) => {
+    // The preview endpoint fails for this (mismatched) config.
+    previewShouldFail = true;
+
+    await openAddChartModal(page);
+    await setChartType(page, 'histogram');           // needs 1 numeric column
+    await addColumn(page, 'region');                 // 'region' is a text/categorical column
+
+    // The generic pane error still surfaces …
+    await expect(previewError(page), 'the generic pane error must still be shown').toBeVisible();
+
+    // … AND the Columns field row itself is flagged (rose FieldError, role=alert).
+    await expect(
+      columnsFieldError(page),
+      'the Columns field must be visually flagged when the failure is a known CHART_REQS mismatch',
+    ).toBeVisible({ timeout: 3000 });
+    const flagText = (await columnsFieldError(page).first().textContent())?.trim() || '';
+    expect(flagText.length, 'the field flag must carry a legible message, not be empty').toBeGreaterThan(0);
+  });
+
+  // AC2 — a genuine backend/data error that is NOT attributable to any
+  // client-side CHART_REQS rule (config is client-side-valid: histogram + a
+  // numeric column) must show ONLY the generic pane message; no field flagged.
+  test('AC2: a non-CHART_REQS backend error flags no field, only the generic pane message', async ({ page }) => {
+    // Stub an unrelated 500 for this otherwise client-side-valid config.
+    await page.route('**/api/charts/preview', (r) =>
+      r.fulfill({ status: 500, json: { detail: 'Upstream data source timed out while rendering' } }));
+
+    await openAddChartModal(page);
+    await setChartType(page, 'histogram');           // needs 1 numeric column …
+    await addColumn(page, 'age');                    // … 'age' IS numeric → client-side valid
+
+    // Generic pane error shows.
+    await expect(previewError(page), 'the generic pane error must be shown for a backend error').toBeVisible();
+
+    // But NO field is flagged — the error is not client-side attributable.
+    await expect(
+      editorDialog(page).getByRole('alert'),
+      'no field may be flagged when the failure is not attributable to a known client-side rule',
+    ).toHaveCount(0);
+  });
+
+  // ── Visual baseline of the flagged Columns field (per-viewport via config) ──
+  test('visual: chart editor modal with the Columns field flagged', async ({ page }) => {
+    previewShouldFail = true;
+    await openAddChartModal(page);
+    await setChartType(page, 'histogram');
+    await addColumn(page, 'region');
+    await expect(previewError(page)).toBeVisible();
+    await expect(columnsFieldError(page)).toBeVisible({ timeout: 3000 });
+    // Let the debounced preview settle so the baseline is deterministic.
+    await page.waitForTimeout(700);
+    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-field-error.png');
+  });
+});

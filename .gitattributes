@@ -1,3 +1,17 @@
-# Shell hooks must stay LF or they break when executed via bash.
+# Force LF on shell scripts and JS tooling.
+# CRLF breaks the shebang (#!/bin/bash\r → "bad interpreter") and leaks \r into
+# string comparisons and jq output, silently breaking the .claude hooks on Windows.
 *.sh text eol=lf
-.claude/hooks/* text eol=lf
+*.bash text eol=lf
+*.mjs text eol=lf
+
+# Binary assets — never normalize / diff as text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.pptx binary
+*.woff binary
+*.woff2 binary
