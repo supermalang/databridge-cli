@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 15 | 13 / 15 |
+| [Maintenance & hardening](#maintenance--hardening) | 15 | 14 / 15 |
 
 ---
 
@@ -4911,9 +4911,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-14 — Handle a `[[`/`]]` delimiter character split mid-token across docx runs (P2)**
+- [x] **MNT-14 — Handle a `[[`/`]]` delimiter character split mid-token across docx runs (P2)**
 
-  **Created:** 2026-07-01
+  **Created:** 2026-07-01 · **Started:** 2026-07-03 · **Completed:** 2026-07-03
 
   Follow-up from MNT-8. `_clean_runs` in `src/reports/builder.py` strips `[[...]]` tokens
   per-run, which correctly handles a delimiter split *between* runs (e.g. `[[` in one run,

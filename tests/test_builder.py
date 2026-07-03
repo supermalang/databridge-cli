@@ -264,6 +264,52 @@ def test_nom_token_inner_text_preserved(workspace_with_multiword_token):
     )
 
 
+def test_strip_token_with_delimiter_char_split_across_runs(tmp_path):
+    """MNT-14 AC: a `[[`/`]]` delimiter *character itself* broken mid-token
+    across two or more separate runs must still be fully stripped, with the
+    inner text preserved.
+
+    MNT-8's ``test_strip_token_split_across_runs`` covers a delimiter split
+    *between* runs where each run still holds a complete, intact delimiter
+    (e.g. "[[" | "NOM]]"). This test covers the stricter case flagged by
+    MNT-14: the delimiter character itself is broken mid-character across
+    runs, e.g. "[" | "[NOM]" | "]" as three separate python-docx Run objects
+    in the same paragraph — so no single run contains a complete "[[" or "]]"
+    pair. Per MNT-14's own probe-test finding, this case leaves "[[NOM]]"
+    unstripped under the current per-run-only replace.
+    """
+    doc_path = tmp_path / "cross_run_char_split.docx"
+
+    doc = Document()
+    p = doc.add_paragraph()
+    p.add_run("[")
+    p.add_run("[NOM]")
+    p.add_run("]")
+    assert len(p.runs) == 3, "fixture setup error: expected three distinct runs"
+    doc.save(str(doc_path))
+
+    _strip_residual_brackets(doc_path)
+
+    reloaded = Document(str(doc_path))
+    full_text = "".join(run.text for para in reloaded.paragraphs for run in para.runs)
+
+    assert "[[" not in full_text, (
+        "Output still contains raw '[[' after stripping a token whose "
+        "delimiter character itself was split across separate runs. "
+        f"Reconstructed paragraph text: {full_text!r}"
+    )
+    assert "]]" not in full_text, (
+        "Output still contains raw ']]' after stripping a token whose "
+        "delimiter character itself was split across separate runs. "
+        f"Reconstructed paragraph text: {full_text!r}"
+    )
+    assert "NOM" in full_text, (
+        "Inner text 'NOM' was lost when stripping a token whose delimiter "
+        f"character was split across separate runs. Reconstructed paragraph "
+        f"text: {full_text!r}"
+    )
+
+
 def test_strip_token_split_across_runs(tmp_path):
     """AC1/AC2: [[ and NOM]] split across two separate runs of the same
     paragraph must still be stripped by the post-render pass.
