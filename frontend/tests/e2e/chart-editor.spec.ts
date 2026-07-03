@@ -363,3 +363,140 @@ test.describe('PUX-12 — chart editor preview persists last image during re-fet
     await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-refetch.png');
   });
 });
+
+/**
+ * PUX-13 — Chart editor: link preview errors back to the offending field.
+ *
+ * Follow-up from PUX-11's /impeccable critique (finding 3 of 4). When
+ * `/api/charts/preview` fails, the generic backend message in the preview pane
+ * forces the user to mentally diff their Name/Title/Type/Columns/Options
+ * against the failure to guess what to fix ("Memory Bridge" cognitive load).
+ *
+ * `CHART_REQS` already encodes each chart type's column requirement client-side,
+ * so a type/column-count (or type/column-kind) mismatch is knowable WITHOUT the
+ * backend round-trip. This card requires: when the preview error is such a
+ * client-side-knowable mismatch, the Columns ModalField row is visually flagged
+ * using the same rose error pattern the filter field already uses (in addition
+ * to the generic pane message). When the error is a genuine backend/data error
+ * NOT attributable to any client-side rule, ONLY the generic pane message shows
+ * and no field is falsely flagged.
+ *
+ * RED-FIRST: derived from the PUX-13 Acceptance criteria, NOT the current
+ * implementation. Today the Columns field carries no error flag on a preview
+ * failure — only the generic `chart-editor-preview-error` pane message appears.
+ * Every field-flag assertion below is expected to fail until PUX-13 ships.
+ *
+ * ── Selector contract for the implementer ──────────────────────────────────
+ * Reuse the existing filter-error rose pattern: the Columns `ModalField` is
+ * flagged by passing it an `error` (rendered as the shared `FieldError`,
+ * `role="alert"`, rose color) sitting inside the SAME field row as the Chart
+ * columns picker. So the test locates the Columns field row and asserts a
+ * `role="alert"` error node appears inside it. Concretely, the implementer must
+ * satisfy:
+ *   - The Columns ModalField row (the one containing the picker with
+ *     aria-label "Chart columns") gains a `role="alert"` error message when the
+ *     preview failure is a CHART_REQS type/column mismatch.
+ *   - No other field row gains such a flag, and no field is flagged when the
+ *     failure is not client-side attributable.
+ *   - The generic pane message (`chart-editor-preview-error`) still shows in
+ *     both cases (the field flag is IN ADDITION to it).
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+
+// The ModalField row that wraps the Chart columns picker. We anchor on the
+// stable `aria-label` of the picker input, then walk up to its field row.
+const columnsFieldRow = (page: Page): Locator =>
+  editorDialog(page)
+    .locator('div', { has: page.getByLabel('Chart columns') })
+    .filter({ has: page.getByLabel('Chart columns') })
+    .last();
+
+// Any field-level error flag inside the Columns row (the shared FieldError,
+// role="alert"). This is the "rose-border pattern used for filter errors".
+const columnsFieldError = (page: Page): Locator =>
+  columnsFieldRow(page).getByRole('alert');
+
+// Add a column to the (multi-select) Chart columns picker by typing + Enter,
+// which commits it as a chip (matches the ColumnPicker commit-on-Enter path).
+async function addColumn(page: Page, col: string) {
+  const input = editorDialog(page).getByLabel('Chart columns');
+  await input.click();
+  await input.fill(col);
+  await input.press('Enter');
+}
+
+async function setChartType(page: Page, type: string) {
+  await editorDialog(page).getByLabel('Chart type').selectOption(type);
+}
+
+async function openAddChartModal(page: Page) {
+  const card = chartsCard(page);
+  await card.getByRole('button', { name: /add chart/i }).click();
+  await expect(editorDialog(page)).toBeVisible();
+}
+
+test.describe('PUX-13 — preview errors are linked back to the offending field', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await bootApp(page);
+    await openComposition(page);
+  });
+
+  // AC1 — a CHART_REQS type/column mismatch (histogram needs 1 numeric column,
+  // a text/categorical column chosen instead) that trips a preview error must
+  // visually flag the Columns field row, in addition to the generic pane error.
+  test('AC1: a client-side-knowable type/column mismatch flags the Columns field', async ({ page }) => {
+    // The preview endpoint fails for this (mismatched) config.
+    previewShouldFail = true;
+
+    await openAddChartModal(page);
+    await setChartType(page, 'histogram');           // needs 1 numeric column
+    await addColumn(page, 'region');                 // 'region' is a text/categorical column
+
+    // The generic pane error still surfaces …
+    await expect(previewError(page), 'the generic pane error must still be shown').toBeVisible();
+
+    // … AND the Columns field row itself is flagged (rose FieldError, role=alert).
+    await expect(
+      columnsFieldError(page),
+      'the Columns field must be visually flagged when the failure is a known CHART_REQS mismatch',
+    ).toBeVisible({ timeout: 3000 });
+    const flagText = (await columnsFieldError(page).first().textContent())?.trim() || '';
+    expect(flagText.length, 'the field flag must carry a legible message, not be empty').toBeGreaterThan(0);
+  });
+
+  // AC2 — a genuine backend/data error that is NOT attributable to any
+  // client-side CHART_REQS rule (config is client-side-valid: histogram + a
+  // numeric column) must show ONLY the generic pane message; no field flagged.
+  test('AC2: a non-CHART_REQS backend error flags no field, only the generic pane message', async ({ page }) => {
+    // Stub an unrelated 500 for this otherwise client-side-valid config.
+    await page.route('**/api/charts/preview', (r) =>
+      r.fulfill({ status: 500, json: { detail: 'Upstream data source timed out while rendering' } }));
+
+    await openAddChartModal(page);
+    await setChartType(page, 'histogram');           // needs 1 numeric column …
+    await addColumn(page, 'age');                    // … 'age' IS numeric → client-side valid
+
+    // Generic pane error shows.
+    await expect(previewError(page), 'the generic pane error must be shown for a backend error').toBeVisible();
+
+    // But NO field is flagged — the error is not client-side attributable.
+    await expect(
+      editorDialog(page).getByRole('alert'),
+      'no field may be flagged when the failure is not attributable to a known client-side rule',
+    ).toHaveCount(0);
+  });
+
+  // ── Visual baseline of the flagged Columns field (per-viewport via config) ──
+  test('visual: chart editor modal with the Columns field flagged', async ({ page }) => {
+    previewShouldFail = true;
+    await openAddChartModal(page);
+    await setChartType(page, 'histogram');
+    await addColumn(page, 'region');
+    await expect(previewError(page)).toBeVisible();
+    await expect(columnsFieldError(page)).toBeVisible({ timeout: 3000 });
+    // Let the debounced preview settle so the baseline is deterministic.
+    await page.waitForTimeout(700);
+    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-field-error.png');
+  });
+});
