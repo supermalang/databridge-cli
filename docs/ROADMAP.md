@@ -1685,11 +1685,16 @@ Sprint exit — checked by /report + /retro:
   **Unit tests:** N/A (layout-only change; covered by E2E).
 
   **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) + visual (impeccable
-  audit/critique + `toHaveScreenshot`) —
+  audit/critique + `toHaveScreenshot` at all three viewports — mobile 390×844, tablet 820×1180,
+  desktop 1440×900) —
   - At mobile width, assert the preview pane (or its status indicator) is within the initial
     viewport without scrolling, or that tapping the indicator scrolls it into view
   - `toHaveScreenshot('chart-editor-modal-mobile-preview-position.png')` at mobile width,
-    human-approved
+    human-approved (the reordered/above-the-fold mobile layout)
+  - Regression guard for the "must not regress desktop/tablet" AC:
+    `toHaveScreenshot('chart-editor-modal-tablet-preview-position.png')` at tablet width and
+    `toHaveScreenshot('chart-editor-modal-desktop-preview-position.png')` at desktop width,
+    each asserting the two-column layout is unchanged, human-approved
 
   **UAT:**
   1. On a phone-width browser window, open the chart editor — confirm you can see or reach the
