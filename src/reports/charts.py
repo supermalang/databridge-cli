@@ -60,7 +60,7 @@ CHART_DIR = Path("data/processed/charts")
 def generate_chart(chart_cfg: Dict, df: pd.DataFrame, out_dir: Path = CHART_DIR, language: str = "English", palette=None) -> Optional[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     name = chart_cfg.get("name","chart"); chart_type = chart_cfg.get("type","bar")
-    title = chart_cfg.get("title",name); questions = chart_cfg.get("questions",[])
+    title = chart_cfg.get("title") or name; questions = chart_cfg.get("questions",[])
     opts = {**(chart_cfg.get("options",{}) or {}), "language": language}
     # brand.palette (config-wide) sets the default sequence; a per-chart options.palette
     # (already merged above) takes precedence — same escape-hatch precedence as `color`.
