@@ -107,6 +107,7 @@ Three buckets — facts belong in only one; agents must not commit throwaway fil
 |---|---|---|---|
 | **Knowledge** | `docs/` | ✅ committed | ARCHITECTURE.md, retros, story maps, usability reports |
 | Visual approval ledger | `visual-approvals.json` (repo root) | ✅ committed | who approved/rejected which baseline PNG, when, for which task — written only by a human via `frontend/scripts/visual-review-app/`; read by `/visual-review` |
+| Roadmap archive | `docs/roadmap/archive/<area-slug>.md` | ✅ committed | full bodies of delivered cards swept out of `docs/ROADMAP.md` by `/roadmap-status archive` (lossless; git also holds them) — keeps the live roadmap proportional to active work |
 | **Non-reproducible deliverables** | `docs/reports/` · `docs/reports/assets/` | ✅ committed | Branded markdown reports, deck images |
 | **Regenerable outputs** | `out/` · `data/processed/` · `reports/` | ❌ gitignored | PPTX decks, chart PNGs, built .docx |
 | **Throwaway verification** | `.scratch/` | ❌ gitignored | UAT screenshots (`.scratch/uat/`), perf snapshots, debug dumps |
