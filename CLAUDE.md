@@ -269,7 +269,10 @@ purpose + endpoints: [`docs/reference/internals.md`](docs/reference/internals.md
 ## Development workflow (gated)
 
 All work is tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md). The `/roadmap` skill is the only
-way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below.
+way to edit it; PreToolUse hooks in `.claude/hooks/` enforce the rules below. Two-tier: the live
+file holds active/open cards + a `## ✅ Delivered (archived)` ledger; delivered cards are swept
+into `docs/roadmap/archive/<area-slug>.md` by `/roadmap-status archive` to keep the live file
+proportional to active work (lossless — git and the archive both hold full history).
 
 - **Gate before coding.** No feature/bug/fix code unless the task exists in the roadmap and is
   started via `/roadmap` (writes `.claude/.active-task.json`). Edits to `src/ web/ frontend/src/
