@@ -255,14 +255,8 @@ test.describe('PUX-11 — inline live preview in the chart editor modal', () => 
     await expect(editorDialog(page)).toBeVisible();
   });
 
-  // ── Visual baseline (per-viewport via the project config) ─────────────────
-  test('visual: chart editor modal with live preview', async ({ page }) => {
-    await openEditChartModal(page);
-    await expect(previewPane(page)).toBeVisible();
-    // Let the debounced preview settle so the baseline is deterministic.
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal.png');
-  });
+  // Visual baseline of the chart editor modal with live preview: see
+  // visual-review/specs/chart-editor.visual.spec.ts (VIS-12).
 });
 
 /**
@@ -333,35 +327,8 @@ test.describe('PUX-12 — chart editor preview persists last image during re-fet
     expect(srcDuring, 'the persisted image should still be the last-good src while re-fetching').toBe(srcBefore);
   });
 
-  // ── Visual baseline of the dimmed / in-progress re-fetch state ────────────
-  // Per-viewport via the project config (mobile/tablet/desktop) — no hard-coded
-  // viewport here.
-  test('visual: chart editor preview in the dimmed re-fetch state', async ({ page }) => {
-    await page.route('**/api/charts/preview', async (r, req) => {
-      // Hold re-fetches open (any request after the first) so the dimmed
-      // in-progress state is captured deterministically.
-      // Note: fixed payload so the baseline image content is stable.
-      const held = (previewCallCount += 1) > 1;
-      if (held) await new Promise((resolve) => setTimeout(resolve, 2000));
-      await r.fulfill({ json: { image: Buffer.from('fake-png-stable').toString('base64') } });
-    });
-
-    await openEditChartModal(page);
-    await expect(previewImage(page)).toBeVisible({ timeout: 5000 });
-
-    // Trigger the re-fetch and capture the dimmed / in-progress state.
-    const titleInput = editorDialog(page)
-      .locator('input[name="title"], input#title, input[value="Age distribution"]')
-      .first();
-    await titleInput.fill('Age distribution (re-fetch)');
-
-    // Wait for the debounce to fire and the loading indicator to appear over
-    // the still-visible last-good image.
-    await expect(previewLoading(page)).toBeVisible({ timeout: 3000 });
-    await expect(previewImage(page)).toBeVisible();
-
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-refetch.png');
-  });
+  // Visual baseline of the dimmed / in-progress re-fetch state: see
+  // visual-review/specs/chart-editor.visual.spec.ts (VIS-12).
 });
 
 /**
@@ -487,18 +454,8 @@ test.describe('PUX-13 — preview errors are linked back to the offending field'
     ).toHaveCount(0);
   });
 
-  // ── Visual baseline of the flagged Columns field (per-viewport via config) ──
-  test('visual: chart editor modal with the Columns field flagged', async ({ page }) => {
-    previewShouldFail = true;
-    await openAddChartModal(page);
-    await setChartType(page, 'histogram');
-    await addColumn(page, 'region');
-    await expect(previewError(page)).toBeVisible();
-    await expect(columnsFieldError(page)).toBeVisible({ timeout: 3000 });
-    // Let the debounced preview settle so the baseline is deterministic.
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-field-error.png');
-  });
+  // Visual baseline of the flagged Columns field: see
+  // visual-review/specs/chart-editor.visual.spec.ts (VIS-12).
 });
 
 /**
@@ -630,31 +587,6 @@ test.describe('PUX-14 — live preview reachable above the fold on mobile', () =
     expect(verticalOverlap, 'preview pane must sit beside the form fields (row layout), not below all of them').toBeGreaterThan(0);
   });
 
-  // ── Visual baselines (mobile / tablet / desktop) ───────────────────────────
-  // Mobile: the reordered/indicator-enabled above-the-fold layout.
-  test('visual: chart editor modal preview position — mobile', async ({ page }) => {
-    const viewport = page.viewportSize();
-    test.skip(!viewport || viewport.width >= 768, 'mobile-only baseline');
-    await openEditChartModal(page);
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-mobile-preview-position.png');
-  });
-
-  // Tablet: regression guard baseline — two-column layout unchanged.
-  test('visual: chart editor modal preview position — tablet', async ({ page }) => {
-    const viewport = page.viewportSize();
-    test.skip(!viewport || viewport.width < 768 || viewport.width >= 1200, 'tablet-only baseline');
-    await openEditChartModal(page);
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-tablet-preview-position.png');
-  });
-
-  // Desktop: regression guard baseline — two-column layout unchanged.
-  test('visual: chart editor modal preview position — desktop', async ({ page }) => {
-    const viewport = page.viewportSize();
-    test.skip(!viewport || viewport.width < 1200, 'desktop-only baseline');
-    await openEditChartModal(page);
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-desktop-preview-position.png');
-  });
+  // Visual baselines (mobile / tablet / desktop preview position): see
+  // visual-review/specs/chart-editor.visual.spec.ts (VIS-12).
 });

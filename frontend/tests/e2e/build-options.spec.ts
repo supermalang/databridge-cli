@@ -221,14 +221,8 @@ test.describe('XTF-13 — build options: split-by (main-table only) + sample pre
     expect(captured.value.split_sample ?? null).toBeNull();
   });
 
-  test('visual baseline of the build-options control', async ({ page }) => {
-    await gotoReports(page);
-    const control = page.getByTestId('build-options');
-    await expect(control).toBeVisible();
-    // One assertion → one baseline per viewport (mobile/tablet/desktop) via
-    // playwright.config.ts. The implementer produces the baselines for human approval.
-    await expect(control).toHaveScreenshot('build-options.png');
-  });
+  // Visual baseline of the build-options control: see
+  // visual-review/specs/build-options.visual.spec.ts (VIS-12).
 });
 
 test.describe('XTF-15 — single "Build report" control (rail Quick Action removed)', () => {
@@ -348,19 +342,8 @@ test.describe('XTF-17 — searchable split-by combobox (typeahead, main-table on
     expect(visible).not.toContain(REPEAT_LABEL);
   });
 
-  test('visual baseline of the open, filtered combobox', async ({ page }) => {
-    await gotoReports(page);
-
-    // Open + filter so the screenshot captures the searchable listbox state.
-    await typeFilter(page, 'reg');
-    await expect.poll(() => visibleOptionTexts(page)).toContain(REGION_LABEL);
-
-    // One assertion → one baseline per viewport (mobile/tablet/desktop) via
-    // playwright.config.ts. The implementer produces the baselines for human approval.
-    const control = page.getByTestId('build-options');
-    await expect(control).toBeVisible();
-    await expect(control).toHaveScreenshot('build-split-by-open.png');
-  });
+  // Visual baseline of the open, filtered combobox: see
+  // visual-review/specs/build-options.visual.spec.ts (VIS-12).
 });
 
 // --- XTF-24 — restrict split-by to single-select (select_one) columns -----------------
@@ -466,17 +449,6 @@ test.describe('XTF-24 — split-by restricted to single-select (select_one) colu
     expect(visible).not.toContain(X24_INTEGER);
   });
 
-  test('visual baseline of the open dropdown with the restricted list', async ({ page }) => {
-    await gotoReports(page);
-
-    // Open the combobox so the screenshot captures the restricted (select_one-only) listbox.
-    await openSplitBy(page);
-    await expect.poll(() => visibleOptionTexts(page)).toContain(X24_SELECT_ONE);
-
-    // One assertion → one baseline per viewport (mobile/tablet/desktop) via
-    // playwright.config.ts. The implementer produces the baselines for human approval.
-    const control = page.getByTestId('build-options');
-    await expect(control).toBeVisible();
-    await expect(control).toHaveScreenshot('build-options-split-by-select-one-open.png');
-  });
+  // Visual baseline of the open dropdown with the restricted list: see
+  // visual-review/specs/build-options.visual.spec.ts (VIS-12).
 });

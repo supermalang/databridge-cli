@@ -178,8 +178,8 @@ test.describe('Express Template Fill review/approve panel', () => {
     const applyBtn = page.getByTestId('express-apply-build');
     await expect(applyBtn).toBeDisabled();
 
-    // Visual baseline of the review panel in the flagged state (3 viewports).
-    await expect(page).toHaveScreenshot('review-panel.png');
+    // Visual baseline of the review panel in the flagged state: see
+    // visual-review/specs/express-template-fill.visual.spec.ts (VIS-12).
 
     // 5. Resolve the flagged row (drop it) → Apply & build ENABLES.
     await flagged.getByTestId('express-row-drop').click();
@@ -228,8 +228,8 @@ test.describe('Express Template Fill review/approve panel', () => {
     // Success state shows the resolved template name.
     await expect(success).toContainText('express_8f3c1a2b.resolved');
 
-    // New visual baseline of the SUCCESS state (3 viewports via playwright.config.ts).
-    await expect(page).toHaveScreenshot('express-success.png');
+    // Visual baseline of the SUCCESS state: see
+    // visual-review/specs/express-template-fill.visual.spec.ts (VIS-12).
   });
 });
 
@@ -275,9 +275,8 @@ test.describe('XTF-7 — Express Infer button is gated on AI-tested status', () 
     await expect(infer).toBeDisabled();
     await expect(infer).toHaveAttribute('title', AI_LOCK_TIP);
 
-    // Visual baseline of the locked state (3 viewports via playwright.config.ts).
-    // The implementer produces the baselines for human approval.
-    await expect(page).toHaveScreenshot('express-infer-locked.png');
+    // Visual baseline of the locked state: see
+    // visual-review/specs/express-template-fill.visual.spec.ts (VIS-12).
   });
 
   test('AI verified → Infer enables once a file is chosen', async ({ page }) => {
@@ -388,9 +387,8 @@ test.describe('XTF-9 — Express banner is gated on questions + data', () => {
     await expect(page.getByTestId('express-upload')).toHaveCount(0);
     await expect(page.getByTestId('express-infer')).toHaveCount(0);
 
-    // Visual baseline of the gated (disabled + hint) state (3 viewports via
-    // playwright.config.ts). The implementer produces the baselines for approval.
-    await expect(page).toHaveScreenshot('express-banner-gated.png');
+    // Visual baseline of the gated (disabled + hint) state: see
+    // visual-review/specs/express-template-fill.visual.spec.ts (VIS-12).
   });
 
   test('ready (questions + data) → banner enabled and opens the express flow on click', async ({ page }) => {
@@ -552,9 +550,8 @@ test.describe('XTF-21 — Express split-by dropdown is not clipped by the review
       'the open split-by listbox should extend below the review panel bottom (not clamped/clipped by it)',
     ).toBeGreaterThan(boxes!.panelBottom + EPS);
 
-    // --- (c) Visual baseline of the OPEN-dropdown state (3 viewports). ------------------
-    // PRIMARY gate per the card; a human approves the baselines during implementation.
-    await expect(page).toHaveScreenshot('express-split-by-open.png');
+    // --- (c) Visual baseline of the OPEN-dropdown state. --------------------------------
+    // See visual-review/specs/express-template-fill.visual.spec.ts (VIS-12).
   });
 });
 
@@ -696,8 +693,8 @@ test.describe('XTF-18 — express Apply & build auto-collapses the terminal like
     //   Apply & build opens the terminal but it stays data-open="true" past the delay.
     await expect(term(page)).toHaveAttribute('data-open', 'false');
 
-    // Visual baseline of the express-build collapsed-during-run state (3 viewports).
-    await expect(page).toHaveScreenshot('express-terminal-collapsed.png');
+    // Visual baseline of the express-build collapsed-during-run state: see
+    // visual-review/specs/express-template-fill.visual.spec.ts (VIS-12).
 
     // AC: the express build subsequently ends in error — the terminal auto-expands so
     // the failure log is visible. Stream stays open through the error frame.
@@ -798,7 +795,7 @@ test.describe('MNT-7 — Express infer error shows error message, not empty-plac
     // We check via the review panel: it must not be present.
     await expect(page.getByTestId('express-review-panel')).toHaveCount(0);
 
-    // Visual baseline of the error state (3 viewports via playwright.config.ts).
-    await expect(page).toHaveScreenshot('express-infer-error.png');
+    // Visual baseline of the error state: see
+    // visual-review/specs/express-template-fill.visual.spec.ts (VIS-12).
   });
 });

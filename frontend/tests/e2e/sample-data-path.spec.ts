@@ -149,13 +149,6 @@ async function tabUntilFocused(page: Page, target: Locator, maxTabs = 40): Promi
   return false;
 }
 
-// Hide the position:fixed terminal bar before full-surface screenshots so it does
-// not paint a band across the shot (the card forbids masking it — masking paints an
-// ugly box; hiding removes it cleanly).
-async function hideTerminalBar(page: Page) {
-  await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-}
-
 test.describe('PUX-5 — no-credentials "Try with sample data" path', () => {
   test('Sources offers a keyboard-operable "Try with sample data" affordance with no credentials', async ({ page }) => {
     const state = { loaded: false };
@@ -233,37 +226,7 @@ test.describe('PUX-5 — no-credentials "Try with sample data" path', () => {
     ).toBeVisible();
   });
 
-  test('visual baseline of the Sources sample-data affordance (no credentials)', async ({ page }) => {
-    const state = { loaded: false };
-    await stubBootstrap(page, state);
-    await gotoConnection(page);
-
-    // Gate on the AC so the baseline is not captured before the affordance exists.
-    await expect(sampleAffordance(page)).toBeVisible();
-
-    await hideTerminalBar(page);
-    await expect(page.locator('main')).toHaveScreenshot('pux5-sources-sample-affordance.png');
-  });
-
-  test('visual baseline of the resulting data-present Questions state', async ({ page }) => {
-    const state = { loaded: false };
-    await stubBootstrap(page, state);
-    await gotoConnection(page);
-
-    await sampleAffordance(page).click();
-    await page.waitForRequest(
-      (req) => req.url().includes('/api/sample-data') && req.method() === 'POST',
-    );
-
-    await page.locator('.tabs-bar [data-tab="transform"]').click();
-    await page.locator('.subtabs-bar .subtab', { hasText: /questions/i }).click();
-
-    // Gate on the AC so the baseline captures the data-present state, not the empty one.
-    const qTable = page.locator('.q-table');
-    await expect(qTable).toBeVisible();
-    await expect(qTable).toContainText(/Region/i);
-
-    await hideTerminalBar(page);
-    await expect(page.locator('main')).toHaveScreenshot('pux5-data-present-questions.png');
-  });
+  // Visual baselines (the Sources sample-data affordance + the resulting
+  // data-present Questions state): see
+  // visual-review/specs/sample-data-path.visual.spec.ts (VIS-12).
 });
