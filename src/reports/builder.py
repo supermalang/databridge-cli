@@ -338,6 +338,7 @@ class ReportBuilder:
             "year":          now.strftime("%Y"),
             "month":         now.strftime("%m"),
             "day":           now.strftime("%d"),
+            "split_value":   split_value or "",
             "provenance":    provenance,
             "logframe":      logframe,
             "traffic_light": traffic_light,
