@@ -744,6 +744,16 @@ export default function Composition({ sections } = {}) {
                 {preview.text}
               </div>
             )}
+            {/* Text-injection types (e.g. bullet_list — MNT-21) can legitimately
+                return "" (column has zero non-null values, or doesn't exist).
+                `preview.text === ''` is distinct from it being absent (an image
+                type / no text response) — show an explicit empty state instead
+                of a blank box. */}
+            {!preview.image && preview.text === '' && (
+              <div style={{ width: '100%', textAlign: 'left', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+                <em style={{ color: 'var(--ink-3)' }}>{t('composition.noOutput')}</em>
+              </div>
+            )}
           </div>
         </Modal>
       )}
@@ -1866,7 +1876,17 @@ function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onS
             )}
           </div>
         )}
-        {!previewLoading && !previewError && !previewImage && !previewText && (
+        {/* A completed request that legitimately returned "" (text-injection
+            type whose column has zero non-null values, or doesn't exist —
+            MNT-21) must be distinguishable from the idle placeholder below:
+            "" means "configured correctly, no data", null/undefined means "no
+            request has completed yet". */}
+        {!previewLoading && !previewError && !previewImage && previewText === '' && (
+          <div data-testid="chart-editor-preview-empty" style={{ color: 'var(--ink-3)', fontSize: 13 }}>
+            <em>{t('composition.noOutput')}</em>
+          </div>
+        )}
+        {!previewLoading && !previewError && !previewImage && (previewText === null || previewText === undefined) && (
           <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>{t('composition.previewIdle')}</div>
         )}
       </div>

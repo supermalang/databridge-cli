@@ -647,6 +647,28 @@ test.describe('MNT-21 — bullet_list preview renders text', () => {
     await expect(previewImage(page), 'non-bullet_list charts must still render an <img> preview').toBeVisible({ timeout: 5000 });
   });
 
+  // Empty-result guard (ux-review blocker) — build_bullet_list_text can
+  // legitimately return "" when the chosen column has zero non-null values or
+  // doesn't exist. A successful request with an empty body must surface an
+  // explicit "no output" empty state, NOT the idle "Preview appears here"
+  // placeholder (which is indistinguishable from "not configured yet").
+  test('bullet_list preview with empty result shows an empty state, not the idle placeholder', async ({ page }) => {
+    await page.route('**/api/charts/preview', async (r) => {
+      await r.fulfill({ json: { text: '' } });
+    });
+
+    await openAddChartModal(page);
+    await setChartType(page, 'bullet_list');
+    await addColumn(page, 'region');
+
+    const pane = previewPane(page);
+    // Let the debounced preview fire and settle.
+    await expect(pane.getByTestId('chart-editor-preview-empty')).toBeVisible({ timeout: 5000 });
+    await expect(pane, 'a completed-but-empty preview must not fall back to the idle placeholder')
+      .not.toContainText('Preview appears here');
+    await expect(pane.locator('img'), 'an empty text preview must not attempt to render an <img>').toHaveCount(0);
+  });
+
   // ── Visual baseline (per-viewport via the project config) ─────────────────
   test('visual: chart editor preview — bullet_list', async ({ page }) => {
     await page.route('**/api/charts/preview', async (r) => {
