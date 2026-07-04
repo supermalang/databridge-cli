@@ -590,3 +590,75 @@ test.describe('PUX-14 — live preview reachable above the fold on mobile', () =
   // Visual baselines (mobile / tablet / desktop preview position): see
   // visual-review/specs/chart-editor.visual.spec.ts (VIS-12).
 });
+
+/**
+ * MNT-21 — Fix: bullet_list chart preview fails with a generic error.
+ *
+ * `POST /api/charts/preview` always attempted the matplotlib/image pipeline
+ * (`generate_chart` -> `CHART_DISPATCH`) for every chart type, but `bullet_list`
+ * is a text-injection render type with no `CHART_DISPATCH` entry (it is
+ * special-cased in `builder.py` at report-build time instead). This left the
+ * live preview endpoint returning a generic "Chart generation failed" error
+ * for `bullet_list`, and even once the backend is fixed to return
+ * `{"text": ...}`, the existing `previewImage &&` / `previewPane` render
+ * guards in `Composition.jsx` only ever look for an `image` field — a
+ * text-only response would render as a silently blank preview pane.
+ *
+ * RED-FIRST: derived from the MNT-21 Acceptance criteria, NOT the current
+ * implementation. `/api/charts/preview` is mocked here to already return the
+ * FIXED backend shape (`{"text": ...}`) for a `bullet_list` chart, isolating
+ * these tests to the frontend render-branch gap: today the preview pane has
+ * no code path that renders a `text` field, so it stays blank and every
+ * `toContainText` assertion below is expected to fail until MNT-21 ships.
+ */
+test.describe('MNT-21 — bullet_list preview renders text', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await bootApp(page);
+    await openComposition(page);
+  });
+
+  // AC1 — a bullet_list preview response ({"text": ...}) renders as visible
+  // text content in the live editor preview pane, not a blank pane.
+  test('AC1: bullet_list preview renders text content', async ({ page }) => {
+    await page.route('**/api/charts/preview', async (r) => {
+      await r.fulfill({ json: { text: '• Alpha\n• Beta\n• Gamma' } });
+    });
+
+    await openAddChartModal(page);
+    await setChartType(page, 'bullet_list');
+    await addColumn(page, 'region');
+
+    const pane = previewPane(page);
+    await expect(pane, 'the preview pane must be visible for a bullet_list chart').toBeVisible();
+    await expect(pane, 'the bullet_list text must render inside the preview pane, not be blank').toContainText('Alpha');
+    await expect(pane).toContainText('Beta');
+    await expect(pane).toContainText('Gamma');
+    // A bullet_list response is text, not an image — no <img> should appear.
+    await expect(pane.locator('img'), 'a bullet_list preview must not attempt to render an <img>').toHaveCount(0);
+  });
+
+  // AC2/AC5 — regression guard: an ordinary image-producing chart type is
+  // unaffected by the new text-rendering branch.
+  test('AC2: image-based chart preview is unaffected (no regression)', async ({ page }) => {
+    // stubBootstrap's default /api/charts/preview mock returns {image: ...} —
+    // unrelated to the bullet_list branch under test.
+    await openEditChartModal(page); // default seeded chart ("Age distribution") is type histogram
+    await expect(previewImage(page), 'non-bullet_list charts must still render an <img> preview').toBeVisible({ timeout: 5000 });
+  });
+
+  // ── Visual baseline (per-viewport via the project config) ─────────────────
+  test('visual: chart editor preview — bullet_list', async ({ page }) => {
+    await page.route('**/api/charts/preview', async (r) => {
+      await r.fulfill({ json: { text: '• Alpha\n• Beta\n• Gamma' } });
+    });
+
+    await openAddChartModal(page);
+    await setChartType(page, 'bullet_list');
+    await addColumn(page, 'region');
+    await expect(previewPane(page)).toContainText('Alpha');
+    // Let the debounced preview settle so the baseline is deterministic.
+    await page.waitForTimeout(700);
+    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-bullet-list.png');
+  });
+});
