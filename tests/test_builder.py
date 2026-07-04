@@ -11,7 +11,9 @@ Acceptance criteria tested here:
          ``[[LISTE DES PARTENAIRES]]`` → ``LISTE DES PARTENAIRES``.
   AC3 — Existing ``{{ }}`` Jinja2 placeholders that were properly filled are unaffected.
 """
+import re
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -484,3 +486,153 @@ def test_generate_charts_passes_resolved_brand_palette_to_generate_chart(
             "from get_palette(cfg). The builder must wire brand.palette "
             "through to every chart it generates."
         )
+
+
+# ---------------------------------------------------------------------------
+# MNT-18 — {{ year }} / {{ month }} / {{ day }} date-component placeholders,
+# derived from the same datetime.today() call that produces {{ generated_at }}.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def workspace_with_date_placeholders(tmp_path, monkeypatch):
+    """Minimal workspace whose Word template contains a single run with the
+    raw text ``{{ year }}-{{ month }}-{{ day }}`` (mirrors the existing
+    ``workspace_with_tokens`` pattern of injecting a hand-written placeholder
+    into an otherwise standard generated template, which already contains
+    ``{{ generated_at }}`` via ``_meta``)."""
+    ws = tmp_path / "ws_mnt18"
+    (ws / "data" / "processed").mkdir(parents=True)
+    (ws / "templates").mkdir()
+    (ws / "reports").mkdir()
+
+    csv_path = ws / "data" / "processed" / "mnt18_data_20260101_120000.csv"
+    pd.DataFrame({"Region": ["A", "B", "A"], "Age": [10, 20, 30]}).to_csv(
+        csv_path, index=False
+    )
+
+    template_path = ws / "templates" / "t.docx"
+
+    cfg = {
+        "api": {
+            "url": "https://kf.kobotoolbox.org/api/v2",
+            "token": "dummy",
+            "platform": "kobo",
+        },
+        "form": {"alias": "mnt18", "uid": "x"},
+        "questions": [
+            {
+                "kobo_key": "Region",
+                "label": "Region",
+                "type": "select_one",
+                "category": "categorical",
+                "group": "",
+                "export_label": "Region",
+            },
+        ],
+        "filters": [],
+        "charts": [],
+        "report": {
+            "template": str(template_path),
+            "output_dir": str(ws / "reports"),
+            "title": "MNT-18 Smoke",
+            "period": "Q2 2026",
+        },
+        "export": {
+            "format": "csv",
+            "output_dir": str(ws / "data" / "processed"),
+        },
+    }
+
+    generate_template(cfg, template_path)
+
+    doc = Document(str(template_path))
+    p = doc.add_paragraph()
+    run = p.add_run("YMD::{{ year }}-{{ month }}-{{ day }}")
+    run.font.size = Pt(11)
+    doc.save(str(template_path))
+
+    (ws / "config.yml").write_text(yaml.dump(cfg, allow_unicode=True))
+    monkeypatch.chdir(ws)
+    return {"ws": ws, "cfg": cfg, "out_dir": ws / "reports"}
+
+
+def _first_output_docx_xml(out_dir: Path) -> str:
+    docs = list(out_dir.glob("*.docx"))
+    assert docs, "build() produced no .docx output"
+    return _docx_full_text(docs[0])
+
+
+def test_year_month_day_placeholders_present(workspace_with_date_placeholders):
+    """AC1-3: {{ year }}/{{ month }}/{{ day }} render as a 4-digit year and
+    zero-padded 2-digit month/day for a frozen datetime.today() instant."""
+    fixed_now = datetime(2026, 7, 4, 9, 30)
+    with patch("src.reports.builder.datetime") as mock_datetime:
+        mock_datetime.today.return_value = fixed_now
+        ReportBuilder(workspace_with_date_placeholders["cfg"]).build()
+
+    xml = _first_output_docx_xml(workspace_with_date_placeholders["out_dir"])
+    assert "YMD::2026-07-04" in xml, (
+        "Expected the injected placeholder run 'YMD::{{ year }}-{{ month }}-"
+        "{{ day }}' to render as 'YMD::2026-07-04' for datetime(2026, 7, 4). "
+        "The context passed to docxtpl must supply 'year'='2026', "
+        "'month'='07', 'day'='04' (zero-padded, derived from "
+        "datetime.today()).\n"
+        f"Full rendered XML: {xml}"
+    )
+
+
+def test_date_placeholders_consistent_with_generated_at(
+    workspace_with_date_placeholders,
+):
+    """AC4: year/month/day and generated_at must all reflect the *same*
+    frozen datetime.today() instant from a single call within one render —
+    not independently re-evaluated. Simulated by making each successive call
+    to datetime.today() return a *different* (later) instant: if the
+    implementation calls datetime.today() again to compute year/month/day
+    instead of reusing the instant already captured for generated_at (or
+    vice versa), the day/month/year embedded in {{ generated_at }} will
+    disagree with the standalone {{ year }}/{{ month }}/{{ day }}
+    placeholders. Deliberately does not assume how many *other*,
+    unrelated datetime.today() calls the render performs — it only checks
+    that whichever instant produced year/month/day is the same instant
+    that produced generated_at.
+    """
+    instants = [
+        datetime(2026, 7, 4, 23, 59),
+        datetime(2026, 7, 5, 23, 59),
+        datetime(2026, 8, 4, 23, 59),
+        datetime(2027, 7, 4, 23, 59),
+        datetime(2027, 8, 5, 23, 59),
+    ]
+    with patch("src.reports.builder.datetime") as mock_datetime:
+        mock_datetime.today.side_effect = instants
+        ReportBuilder(workspace_with_date_placeholders["cfg"]).build()
+
+    xml = _first_output_docx_xml(workspace_with_date_placeholders["out_dir"])
+
+    ymd_match = re.search(r"YMD::(\d{4})-(\d{2})-(\d{2})", xml)
+    assert ymd_match, (
+        "Could not find a rendered 'YMD::YYYY-MM-DD' placeholder in the "
+        "output docx — {{ year }}/{{ month }}/{{ day }} are not being "
+        "supplied to the render context.\n"
+        f"Full rendered XML: {xml}"
+    )
+    ymd_year, ymd_month, ymd_day = ymd_match.groups()
+
+    generated_at_match = re.search(r"(\d{2})/(\d{2})/(\d{4}) \d{2}:\d{2}", xml)
+    assert generated_at_match, (
+        "Could not find a rendered {{ generated_at }} value "
+        "('DD/MM/YYYY HH:MM') in the output docx.\n"
+        f"Full rendered XML: {xml}"
+    )
+    ga_day, ga_month, ga_year = generated_at_match.groups()
+
+    assert (ymd_year, ymd_month, ymd_day) == (ga_year, ga_month, ga_day), (
+        f"{{{{ year }}}}/{{{{ month }}}}/{{{{ day }}}} rendered as "
+        f"{ymd_year}-{ymd_month}-{ymd_day} but {{{{ generated_at }}}} "
+        f"rendered with date {ga_day}/{ga_month}/{ga_year} — they must "
+        "come from the same single datetime.today() call within one "
+        "render, not be independently re-evaluated against a mocked "
+        "clock that advances between calls.\n"
+        f"Full rendered XML: {xml}"
+    )
