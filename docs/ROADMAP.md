@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 20 | 19 / 20 |
+| [Maintenance & hardening](#maintenance--hardening) | 20 | 20 / 20 |
 
 ---
 
@@ -1325,9 +1325,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-20 — Prompt guidance: tell the LLM when to use `bullet_list` instead of `table` (Express Fill inference) (P1)**
+- [x] **MNT-20 — Prompt guidance: tell the LLM when to use `bullet_list` instead of `table` (Express Fill inference) (P1)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
 
   MNT-19 made `bullet_list` a technically valid, proposable AI-inference type — confirmed at the
   code level (`ask_engine._CHART_TYPES_BLOCK` genuinely includes it). But the LLM never picks it:
