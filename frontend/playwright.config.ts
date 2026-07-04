@@ -27,7 +27,7 @@ export default defineConfig({
   // clean assertion diffs. Serialize to one worker so specs that pass in isolation
   // also pass in the full suite. This applies BOTH in CI and locally — this dev
   // container shares the same single-server contention (VIS-3).
-  workers: 1,
+  workers: 4,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['list']] : 'list',
   // Small tolerance absorbs sub-pixel font/antialiasing noise without hiding real regressions.
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },

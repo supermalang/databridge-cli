@@ -28,7 +28,7 @@ and generates Word reports with embedded charts for M&E teams in development/hum
 | AI / prompts | OpenAI + Anthropic · Langfuse |
 | Frontend | React + Vite (JSX) · no TypeScript |
 | Testing (Python) | pytest · PYTHONPATH=. MPLBACKEND=Agg |
-| Testing (UI) | Playwright · toHaveScreenshot · 3 viewports |
+| Testing (UI) | Playwright · toHaveScreenshot · 3 viewports (Tier 1 app E2E `frontend/tests/e2e/` + Tier 2 Storybook component isolation `frontend/tests/storybook/`) · Tier 3 human review app `frontend/scripts/visual-review-app/` |
 | VCS | Git-flow: feature/* off develop → PR → develop → main |
 
 ---
@@ -106,6 +106,8 @@ Three buckets — facts belong in only one; agents must not commit throwaway fil
 | Bucket | Where | Git | Examples |
 |---|---|---|---|
 | **Knowledge** | `docs/` | ✅ committed | ARCHITECTURE.md, retros, story maps, usability reports |
+| Visual approval ledger | `visual-approvals.json` (repo root) | ✅ committed | who approved/rejected which baseline PNG, when, for which task — written only by a human via `frontend/scripts/visual-review-app/`; read by `/visual-review` |
+| Roadmap archive | `docs/roadmap/archive/<area-slug>.md` | ✅ committed | full bodies of delivered cards swept out of `docs/ROADMAP.md` by `/roadmap-status archive` (lossless; git also holds them) — keeps the live roadmap proportional to active work |
 | **Non-reproducible deliverables** | `docs/reports/` · `docs/reports/assets/` | ✅ committed | Branded markdown reports, deck images |
 | **Regenerable outputs** | `out/` · `data/processed/` · `reports/` | ❌ gitignored | PPTX decks, chart PNGs, built .docx |
 | **Throwaway verification** | `.scratch/` | ❌ gitignored | UAT screenshots (`.scratch/uat/`), perf snapshots, debug dumps |

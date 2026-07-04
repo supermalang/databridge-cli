@@ -11,7 +11,9 @@ Acceptance criteria tested here:
          ``[[LISTE DES PARTENAIRES]]`` → ``LISTE DES PARTENAIRES``.
   AC3 — Existing ``{{ }}`` Jinja2 placeholders that were properly filled are unaffected.
 """
+import re
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,6 +22,7 @@ import pytest
 import yaml
 from docx import Document
 from docx.shared import Pt
+from docxtpl import DocxTemplate
 
 from src.reports.builder import ReportBuilder, _strip_residual_brackets
 from src.reports.template_generator import generate_template
@@ -484,3 +487,319 @@ def test_generate_charts_passes_resolved_brand_palette_to_generate_chart(
             "from get_palette(cfg). The builder must wire brand.palette "
             "through to every chart it generates."
         )
+
+
+# ---------------------------------------------------------------------------
+# MNT-18 — {{ year }} / {{ month }} / {{ day }} date-component placeholders,
+# derived from the same datetime.today() call that produces {{ generated_at }}.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def workspace_with_date_placeholders(tmp_path, monkeypatch):
+    """Minimal workspace whose Word template contains a single run with the
+    raw text ``{{ year }}-{{ month }}-{{ day }}`` (mirrors the existing
+    ``workspace_with_tokens`` pattern of injecting a hand-written placeholder
+    into an otherwise standard generated template, which already contains
+    ``{{ generated_at }}`` via ``_meta``)."""
+    ws = tmp_path / "ws_mnt18"
+    (ws / "data" / "processed").mkdir(parents=True)
+    (ws / "templates").mkdir()
+    (ws / "reports").mkdir()
+
+    csv_path = ws / "data" / "processed" / "mnt18_data_20260101_120000.csv"
+    pd.DataFrame({"Region": ["A", "B", "A"], "Age": [10, 20, 30]}).to_csv(
+        csv_path, index=False
+    )
+
+    template_path = ws / "templates" / "t.docx"
+
+    cfg = {
+        "api": {
+            "url": "https://kf.kobotoolbox.org/api/v2",
+            "token": "dummy",
+            "platform": "kobo",
+        },
+        "form": {"alias": "mnt18", "uid": "x"},
+        "questions": [
+            {
+                "kobo_key": "Region",
+                "label": "Region",
+                "type": "select_one",
+                "category": "categorical",
+                "group": "",
+                "export_label": "Region",
+            },
+        ],
+        "filters": [],
+        "charts": [],
+        "report": {
+            "template": str(template_path),
+            "output_dir": str(ws / "reports"),
+            "title": "MNT-18 Smoke",
+            "period": "Q2 2026",
+        },
+        "export": {
+            "format": "csv",
+            "output_dir": str(ws / "data" / "processed"),
+        },
+    }
+
+    generate_template(cfg, template_path)
+
+    doc = Document(str(template_path))
+    p = doc.add_paragraph()
+    run = p.add_run("YMD::{{ year }}-{{ month }}-{{ day }}")
+    run.font.size = Pt(11)
+    doc.save(str(template_path))
+
+    (ws / "config.yml").write_text(yaml.dump(cfg, allow_unicode=True))
+    monkeypatch.chdir(ws)
+    return {"ws": ws, "cfg": cfg, "out_dir": ws / "reports"}
+
+
+def _first_output_docx_xml(out_dir: Path) -> str:
+    docs = list(out_dir.glob("*.docx"))
+    assert docs, "build() produced no .docx output"
+    return _docx_full_text(docs[0])
+
+
+def test_year_month_day_placeholders_present(workspace_with_date_placeholders):
+    """AC1-3: {{ year }}/{{ month }}/{{ day }} render as a 4-digit year and
+    zero-padded 2-digit month/day for a frozen datetime.today() instant."""
+    fixed_now = datetime(2026, 7, 4, 9, 30)
+    with patch("src.reports.builder.datetime") as mock_datetime:
+        mock_datetime.today.return_value = fixed_now
+        ReportBuilder(workspace_with_date_placeholders["cfg"]).build()
+
+    xml = _first_output_docx_xml(workspace_with_date_placeholders["out_dir"])
+    assert "YMD::2026-07-04" in xml, (
+        "Expected the injected placeholder run 'YMD::{{ year }}-{{ month }}-"
+        "{{ day }}' to render as 'YMD::2026-07-04' for datetime(2026, 7, 4). "
+        "The context passed to docxtpl must supply 'year'='2026', "
+        "'month'='07', 'day'='04' (zero-padded, derived from "
+        "datetime.today()).\n"
+        f"Full rendered XML: {xml}"
+    )
+
+
+def test_date_placeholders_consistent_with_generated_at(
+    workspace_with_date_placeholders,
+):
+    """AC4: year/month/day and generated_at must all reflect the *same*
+    frozen datetime.today() instant from a single call within one render —
+    not independently re-evaluated. Simulated by making each successive call
+    to datetime.today() return a *different* (later) instant: if the
+    implementation calls datetime.today() again to compute year/month/day
+    instead of reusing the instant already captured for generated_at (or
+    vice versa), the day/month/year embedded in {{ generated_at }} will
+    disagree with the standalone {{ year }}/{{ month }}/{{ day }}
+    placeholders. Deliberately does not assume how many *other*,
+    unrelated datetime.today() calls the render performs — it only checks
+    that whichever instant produced year/month/day is the same instant
+    that produced generated_at.
+    """
+    instants = [
+        datetime(2026, 7, 4, 23, 59),
+        datetime(2026, 7, 5, 23, 59),
+        datetime(2026, 8, 4, 23, 59),
+        datetime(2027, 7, 4, 23, 59),
+        datetime(2027, 8, 5, 23, 59),
+    ]
+    with patch("src.reports.builder.datetime") as mock_datetime:
+        mock_datetime.today.side_effect = instants
+        ReportBuilder(workspace_with_date_placeholders["cfg"]).build()
+
+    xml = _first_output_docx_xml(workspace_with_date_placeholders["out_dir"])
+
+    ymd_match = re.search(r"YMD::(\d{4})-(\d{2})-(\d{2})", xml)
+    assert ymd_match, (
+        "Could not find a rendered 'YMD::YYYY-MM-DD' placeholder in the "
+        "output docx — {{ year }}/{{ month }}/{{ day }} are not being "
+        "supplied to the render context.\n"
+        f"Full rendered XML: {xml}"
+    )
+    ymd_year, ymd_month, ymd_day = ymd_match.groups()
+
+    generated_at_match = re.search(r"(\d{2})/(\d{2})/(\d{4}) \d{2}:\d{2}", xml)
+    assert generated_at_match, (
+        "Could not find a rendered {{ generated_at }} value "
+        "('DD/MM/YYYY HH:MM') in the output docx.\n"
+        f"Full rendered XML: {xml}"
+    )
+    ga_day, ga_month, ga_year = generated_at_match.groups()
+
+    assert (ymd_year, ymd_month, ymd_day) == (ga_year, ga_month, ga_day), (
+        f"{{{{ year }}}}/{{{{ month }}}}/{{{{ day }}}} rendered as "
+        f"{ymd_year}-{ymd_month}-{ymd_day} but {{{{ generated_at }}}} "
+        f"rendered with date {ga_day}/{ga_month}/{ga_year} — they must "
+        "come from the same single datetime.today() call within one "
+        "render, not be independently re-evaluated against a mocked "
+        "clock that advances between calls.\n"
+        f"Full rendered XML: {xml}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# MNT-17 — `{{ split_value }}` documented (and relied on by Express Fill) but
+# missing from the docxtpl render context.
+#
+# AC1: when report.split_by is set, the rendered .docx for each split output
+#      contains the actual group value (e.g. "Nairobi"/"Mombasa"), matching
+#      what's already forwarded internally to generate_narrative().
+# AC2: when report.split_by is NOT set, the render context must still define
+#      "split_value" (as "") so a template containing {{ split_value }}
+#      renders cleanly — no missing key, no literal unrendered tag.
+# ---------------------------------------------------------------------------
+
+def _make_split_value_template(path: Path) -> None:
+    """Minimal .docx whose only meaningful content is a single-run
+    ``{{ split_value }}`` Jinja2 tag (docxtpl requires the tag text to live
+    in a single run to be recognised as one token)."""
+    doc = Document()
+    p = doc.add_paragraph()
+    p.add_run("{{ split_value }}")
+    doc.save(str(path))
+
+
+@pytest.fixture
+def workspace_with_split_by(tmp_path, monkeypatch):
+    """Workspace configured with report.split_by = 'Region' (2 unique
+    values: Nairobi / Mombasa) and a template containing only
+    ``{{ split_value }}``."""
+    ws = tmp_path / "ws_split"
+    (ws / "data" / "processed").mkdir(parents=True)
+    (ws / "templates").mkdir()
+    (ws / "reports").mkdir()
+
+    csv_path = ws / "data" / "processed" / "mnt17_data_20260101_120000.csv"
+    pd.DataFrame({
+        "Region": ["Nairobi", "Nairobi", "Mombasa", "Mombasa"],
+        "Age": [10, 20, 30, 40],
+    }).to_csv(csv_path, index=False)
+
+    template_path = ws / "templates" / "t.docx"
+    _make_split_value_template(template_path)
+
+    cfg = {
+        "api": {
+            "url": "https://kf.kobotoolbox.org/api/v2",
+            "token": "dummy",
+            "platform": "kobo",
+        },
+        "form": {"alias": "mnt17", "uid": "x"},
+        "questions": [
+            {
+                "kobo_key": "Region",
+                "label": "Region",
+                "type": "select_one",
+                "category": "categorical",
+                "group": "",
+                "export_label": "Region",
+            },
+            {
+                "kobo_key": "Age",
+                "label": "Age",
+                "type": "integer",
+                "category": "quantitative",
+                "group": "",
+                "export_label": "Age",
+            },
+        ],
+        "filters": [],
+        "charts": [],
+        "report": {
+            "template": str(template_path),
+            "output_dir": str(ws / "reports"),
+            "title": "MNT-17 Split",
+            "period": "Q2 2026",
+            "split_by": "Region",
+        },
+        "export": {
+            "format": "csv",
+            "output_dir": str(ws / "data" / "processed"),
+        },
+    }
+
+    (ws / "config.yml").write_text(yaml.dump(cfg, allow_unicode=True))
+    monkeypatch.chdir(ws)
+    return {"ws": ws, "cfg": cfg, "out_dir": ws / "reports"}
+
+
+def test_split_value_in_render_context_when_split_by_set(workspace_with_split_by):
+    """AC1: with report.split_by set to a 2-value column, each split's
+    rendered .docx must contain that split's actual group value in place of
+    the {{ split_value }} tag — not an empty/undefined substitution."""
+    cfg = workspace_with_split_by["cfg"]
+    paths = ReportBuilder(cfg).build()
+
+    assert len(paths) == 2, (
+        f"expected one report per split value (Nairobi, Mombasa), got "
+        f"{len(paths)}: {paths}"
+    )
+
+    texts = {
+        p.name: "\n".join(para.text for para in Document(str(p)).paragraphs)
+        for p in paths
+    }
+
+    assert any("Nairobi" in t for t in texts.values()), (
+        "No rendered split report contains the group value 'Nairobi' — "
+        "split_value is not being exposed in the docxtpl render context. "
+        f"Rendered paragraph text per file: {texts}"
+    )
+    assert any("Mombasa" in t for t in texts.values()), (
+        "No rendered split report contains the group value 'Mombasa' — "
+        "split_value is not being exposed in the docxtpl render context. "
+        f"Rendered paragraph text per file: {texts}"
+    )
+    # Each split's own report must show its own group value, not the other's
+    # (or both would trivially satisfy the two asserts above via one file).
+    nairobi_files = [name for name, t in texts.items() if "Nairobi" in t]
+    mombasa_files = [name for name, t in texts.items() if "Mombasa" in t]
+    assert nairobi_files and mombasa_files and nairobi_files != mombasa_files, (
+        "Expected the Nairobi split's report and the Mombasa split's report "
+        f"to each carry their own distinct group value. Got: {texts}"
+    )
+
+
+def test_split_value_empty_when_no_split_by(workspace_with_split_by):
+    """AC2: with no report.split_by configured, the docxtpl render context
+    must still define 'split_value' as an empty string — a template
+    containing {{ split_value }} must render without a Jinja2 undefined-
+    variable error and without leaving the literal tag in the output."""
+    cfg = yaml.safe_load(yaml.dump(workspace_with_split_by["cfg"]))
+    cfg["report"].pop("split_by", None)  # explicitly no split configured
+
+    captured = {}
+    original_render = DocxTemplate.render
+
+    def _capturing_render(self, context, *args, **kwargs):
+        captured["context"] = context
+        return original_render(self, context, *args, **kwargs)
+
+    with patch.object(DocxTemplate, "render", _capturing_render):
+        paths = ReportBuilder(cfg).build()
+
+    assert paths, "build() produced no report when split_by is unset"
+    assert "context" in captured, "DocxTemplate.render was never invoked by build()"
+    context = captured["context"]
+
+    assert "split_value" in context, (
+        "The docxtpl render context has no 'split_value' key at all when "
+        "split_by is unset — a template referencing {{ split_value }} has no "
+        "guaranteed, explicit default and is left to incidental Jinja2 "
+        f"undefined-variable handling. Context keys were: {sorted(context.keys())}"
+    )
+    assert context["split_value"] == "", (
+        "Expected split_value to default to the empty string '' when "
+        f"split_by is unset, got {context['split_value']!r} instead."
+    )
+
+    # End-to-end: the actual rendered document must not contain a raw,
+    # unrendered {{ split_value }} tag.
+    doc = Document(str(paths[0]))
+    full_text = "\n".join(p.text for p in doc.paragraphs)
+    assert "{{ split_value }}" not in full_text, (
+        "Literal, unrendered '{{ split_value }}' tag found in the output "
+        f"report. Paragraph text: {full_text!r}"
+    )

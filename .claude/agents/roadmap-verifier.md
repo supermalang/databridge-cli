@@ -21,9 +21,12 @@ Files) and the diff/commits for the task.
 3. **Tests authored independently** — confirm the tests encode the AC, not the implementation
    (no assertion that simply mirrors a constant the code returns with no AC basis).
 4. **Visual (UI tasks)** — impeccable `audit`/`critique` findings on the changed UI are
-   resolved (no open P0/P1), and an approved Playwright visual baseline exists for each of the
-   three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900). For `N/A` E2E, confirm
-   the task genuinely has no UI surface.
+   resolved (no open P0/P1), and a baseline exists for each of the three viewports (mobile
+   390×844, tablet 820×1180, desktop 1440×900). "Exists" is not enough — dispatch
+   `.claude/agents/visual-review.md` (or run `/visual-review`) and require its verdict to be
+   `clear` for this task's baselines specifically; any of its `pending` or `rejected` entries
+   naming this task's baseline ids is a FAIL (not a silent pass), even if the PNG is committed.
+   For `N/A` E2E, confirm the task genuinely has no UI surface.
 5. **No scope creep** — the diff touches only the card's stated Files and adds nothing beyond
    the AC. Flag extras.
 6. **UAT recorded** — for UI-facing cards, the manual UAT checklist has been run and signed off

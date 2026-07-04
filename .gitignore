@@ -23,11 +23,15 @@ frontend/.vite/
 .dev/
 
 # Playwright visual harness: ignore transient run output; KEEP committed baselines
-# (frontend/tests/e2e/**/*-snapshots/*.png are intentionally tracked).
+# (frontend/tests/{e2e,storybook}/**/*-snapshots/*.png are intentionally tracked).
 frontend/playwright-report/
+frontend/playwright-report-storybook/
 frontend/blob-report/
 frontend/test-results/
 frontend/.playwright/
+
+# Storybook (Tier 2 visual baselines, VIS-4): static build is regenerable, never commit it.
+frontend/storybook-static/
 
 # Claude Code: track shared config (settings, skills/roadmap, hooks, agents); ignore local + vendored
 .claude/settings.local.json

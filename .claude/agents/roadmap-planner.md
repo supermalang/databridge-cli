@@ -12,9 +12,13 @@ You are the roadmap planner for databridge-cli. You convert a request into track
 present. The rules below are the contract you must satisfy regardless.
 
 ## Before drafting
-1. Read `docs/ROADMAP.md` in full (header + Global status table + existing cards).
+1. Read `docs/ROADMAP.md` (header + Global status table + existing cards). On a large roadmap,
+   also check the `## ✅ Delivered (archived)` ledger and, if needed, `docs/roadmap/archive/` —
+   delivered cards may have been swept out of the live file by `/roadmap-status archive`, but
+   their IDs are still taken and still count for duplicate/next-ID checks.
 2. Pick the right area code from the existing ones (`OUT`, `UX`, `ME`, `INF`, …) or propose a
-   new one. Assign the next free `AREA-N` number; never reuse an ID.
+   new one. Assign the next free `AREA-N` number (checking both live cards and the archive
+   ledger); never reuse an ID.
 3. Decompose: if the request spans multiple independently-testable deliverables, make one card
    each. A card is the smallest unit worth its own test cycle and review.
 
