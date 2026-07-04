@@ -1,7 +1,7 @@
 // server.mjs — thin local review app for Tier 3 visual approval. Node built-ins only.
 //
 // Run (HUMAN, not an agent):
-//   node frontend/scripts/visual-review-app/server.mjs
+//   node visual-review/review-app/server.mjs
 // Then open http://localhost:4444 and Approve / Reject each changed screenshot.
 //
 // Config via env (defaults match this repo's actual layout):
@@ -15,13 +15,13 @@ import { fileURLToPath } from 'node:url';
 import { findDiffs, approve, reject } from './lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = process.env.CLAUDE_PROJECT_DIR || join(HERE, '..', '..', '..');
+const ROOT = process.env.CLAUDE_PROJECT_DIR || join(HERE, '..', '..');
 const PORT = Number(process.env.PORT || 4444);
-// Covers both Tier 1 (frontend/tests/e2e/*-snapshots) and Tier 2 (frontend/tests/storybook/*-snapshots)
+// Covers Tier 1 (visual-review/baselines) and, from VIS-13, Tier 2 (visual-review/storybook/baselines)
 // baselines, and the shared Playwright output dir both configs write "-actual.png"/"-diff.png" to.
-const baselinesDir = join(ROOT, process.env.VISUAL_BASELINES_DIR || 'frontend/tests');
-const outputDir = join(ROOT, process.env.VISUAL_OUTPUT_DIR || 'frontend/test-results');
-const approvalsFile = join(ROOT, process.env.VISUAL_APPROVALS || 'visual-approvals.json');
+const baselinesDir = join(ROOT, process.env.VISUAL_BASELINES_DIR || 'visual-review/baselines');
+const outputDir = join(ROOT, process.env.VISUAL_OUTPUT_DIR || 'visual-review/results/output');
+const approvalsFile = join(ROOT, process.env.VISUAL_APPROVALS || 'visual-review/visual-approvals.json');
 
 function currentTask() {
   const f = join(ROOT, '.claude/.active-task.json');
@@ -43,10 +43,12 @@ function readJsonBody(req) {
   });
 }
 
-// Only serve PNGs that live under the two known image dirs (no arbitrary file read).
+// Only serve PNGs that live under the two known image dirs (no arbitrary file read). The '/'
+// suffix on each prefix guards the directory boundary — without it, a sibling dir sharing the
+// same string prefix (e.g. "visual-review/baselines-tmp") would pass a bare startsWith() check.
 function safeImg(p) {
   const abs = join(ROOT, p);
-  return (abs.startsWith(baselinesDir) || abs.startsWith(outputDir)) && abs.endsWith('.png') && existsSync(abs)
+  return (abs.startsWith(baselinesDir + '/') || abs.startsWith(outputDir + '/')) && abs.endsWith('.png') && existsSync(abs)
     ? abs : null;
 }
 

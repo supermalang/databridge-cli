@@ -339,6 +339,27 @@ assert_allow "documented residual: case x in *) npx playwright test -u ;; esac (
 assert_allow "documented residual: eval \"playwright test --update-snapshots\" (eval-obfuscation gap)" \
   'eval "playwright test --update-snapshots"'
 
+# --- VIS-9 (security-audit finding): a leading env-var assignment before the real invocation is
+# a genuine command position — `VAR=value cmd` runs `cmd` with `VAR` in its environment, same as
+# `cmd` alone — but the command-position anchor set did not include it, so `NODE_PATH="$PWD/node_
+# modules" playwright test --config=../visual-review/playwright.visual.config.ts --update-snapshots`
+# (the literal shell form of the new `test:visual:update` npm script VIS-9 adds to
+# frontend/package.json) bypassed the guard entirely. Pinning the fix with the exact bypass string
+# plus variants (multiple assignments, after another anchor, npm-script form) and confirming the
+# widened anchor does not swallow free-text/unrelated commands. ---
+assert_deny "env-var-prefixed playwright update bypasses the guard: NODE_PATH=\"\$PWD/node_modules\" playwright test --update-snapshots" \
+  'NODE_PATH="$PWD/node_modules" playwright test --config=../visual-review/playwright.visual.config.ts --update-snapshots'
+assert_deny "env-var-prefixed npm script bypasses the guard: NODE_PATH=./node_modules npm run test:visual:update" \
+  'NODE_PATH=./node_modules npm run test:visual:update'
+assert_deny "multiple leading env-var assignments before playwright test -u" \
+  'FOO=1 BAR=2 npx playwright test -u'
+assert_deny "env-var assignment following another command-position anchor" \
+  'cd frontend && NODE_PATH=./node_modules playwright test -u'
+assert_allow "env-var assignment with an unrelated command must still be allowed" \
+  'FOO=1 echo hi'
+assert_allow "free-text mention inside a quoted commit message must still be allowed (not a real command position)" \
+  'git commit -m "NODE_PATH=./node_modules playwright test -u fixed the CI script"'
+
 # --- VIS-7 (verify-pass fix): the deny path itself must not depend on jq. On a host with no jq
 # on PATH, extract_command() already fell back to python3, but the original jq -n deny() had no
 # equivalent fallback — it silently produced no output and exit 0 (ALLOW) on a genuine denial,

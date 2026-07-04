@@ -3,12 +3,13 @@ import { test, expect } from '@playwright/test';
 /**
  * VIS-1 harness smoke.
  *
- * Proves the visual pipeline works end-to-end at all three viewports without
- * coupling to the backend: a deterministic inline fixture is rendered and
- * screenshotted. Each viewport project (mobile/tablet/desktop) produces its own
- * baseline, so a regression in any device class fails the suite.
+ * A minimal functional smoke check that the harness's deterministic inline
+ * fixture renders correctly, without coupling to the backend. The visual
+ * (screenshot) assertion this spec used to carry was moved to the dedicated
+ * Tier 1 visual pilot spec, `visual-review/specs/harness-smoke.visual.spec.ts`
+ * (VIS-9), which now proves the three-baseline screenshot pipeline end-to-end.
  *
- * App-driven specs (XTF-5, UX-*) follow the same `toHaveScreenshot` pattern but
+ * App-driven specs (XTF-5, UX-*) follow the same functional-check pattern but
  * navigate the real UI via the `webServer` block in playwright.config.ts.
  */
 const FIXTURE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -24,13 +25,12 @@ const FIXTURE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 </style></head>
 <body><main class="card">
   <h1>Visual harness smoke</h1>
-  <p>Deterministic fixture rendered at mobile, tablet and desktop viewports to
-     validate the three-baseline screenshot pipeline.</p>
+  <p>Deterministic fixture rendered to validate the harness's functional smoke
+     check independent of the screenshot pipeline.</p>
   <a class="btn" href="#">Apply &amp; build</a>
 </main></body></html>`;
 
-test('visual harness smoke — sample panel at all viewports', async ({ page }) => {
+test('harness smoke — sample panel renders', async ({ page }) => {
   await page.setContent(FIXTURE);
   await expect(page.locator('main.card')).toBeVisible();
-  await expect(page).toHaveScreenshot('sample-panel.png');
 });

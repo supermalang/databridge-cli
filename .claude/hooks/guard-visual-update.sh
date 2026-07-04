@@ -2,9 +2,11 @@
 # guard-visual-update.sh — deny agent self-approval of Playwright visual baselines (MNT-16, VIS-7).
 #
 # Wire as PreToolUse(Bash) in settings.json. Regenerating the screenshot baselines under
-# frontend/tests/e2e/*-snapshots/ is a HUMAN-approval step: a person runs the update, reviews
-# the diff, and commits the PNGs. An agent must never re-baseline a failing visual test via Bash
-# instead of fixing the regression — that silently defeats the visual gate.
+# frontend/tests/e2e/*-snapshots/ (Tier 1 app-driven), frontend/tests/storybook/*-snapshots/
+# (Tier 2), or visual-review/baselines/ (Tier 1 dedicated config, VIS-9) is a HUMAN-approval
+# step: a person runs the update, reviews the diff, and commits the PNGs. An agent must never
+# re-baseline a failing visual test via Bash instead of fixing the regression — that silently
+# defeats the visual gate.
 #
 # Blocks (with any leading cd/path/npx prefix and any extra flags):
 #   - npm run test:e2e:update
@@ -38,6 +40,13 @@
 # `time npx playwright test -u`) that were ALLOWED because the punctuation-only anchor did not
 # recognize a command position introduced by a bash keyword or a leading `!` — hence the keyword
 # and negation anchors above.
+#
+# A VIS-9 security audit found a further bypass: a leading environment-variable assignment
+# (`VAR=value cmd`) is also a real command position — it runs `cmd` with `VAR` set, identical to
+# `cmd` alone — but was not recognized, so `NODE_PATH="$PWD/node_modules" playwright test
+# --update-snapshots` (the literal shell form of the `test:visual:update` npm script VIS-9 adds)
+# bypassed the guard entirely. The anchor set now also allows zero or more repeatable
+# `VAR=value ` assignments between the position anchor/negation and the matched command.
 #
 # Known limitation — `eval` (moderate, documented, not a regression): a baseline update hidden
 # inside a quoted argument to `eval` (e.g. `eval "playwright test --update-snapshots"`) is NOT
@@ -133,8 +142,10 @@ REASON="Blocked visual-baseline update: '$cmd'. Regenerating Playwright screensh
 # 'then'/'do'/'else'/'elif'/'time'; or after a leading '!' negation), optionally with a path
 # prefix like /usr/bin/npm. A bare substring anywhere in the string (e.g. inside a
 # `git commit -m "... npm run test:e2e:update ..."` free-text message) is NOT a command
-# invocation and must not be blocked — mirroring the `playwright test` subcommand fix.
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|(`{]|\b(then|do|else|elif|time)[[:space:]])[[:space:]]*(![[:space:]]+)?([^[:space:]]*/)?npm[[:space:]]+run[[:space:]]+test:(e2e:update|visual:storybook:update|visual:update)'; then
+# invocation and must not be blocked — mirroring the `playwright test` subcommand fix. A leading
+# `VAR=value ` assignment (repeatable) is also allowed between the anchor/negation and the
+# command — a real command position, not a bypass (VIS-9 security-audit fix).
+if printf '%s' "$cmd" | grep -Eq '(^|[;&|(`{]|\b(then|do|else|elif|time)[[:space:]])[[:space:]]*(![[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:]]*/)?npm[[:space:]]+run[[:space:]]+test:(e2e:update|visual:storybook:update|visual:update)'; then
   deny "$REASON"
 fi
 
@@ -147,8 +158,10 @@ fi
 # 'time'; or after a leading '!' negation), optionally behind an `npx` launcher and/or a path
 # prefix like /usr/bin/npx or /usr/bin/playwright. A bare "playwright test" substring anywhere else in
 # the string (e.g. inside a `git commit -m "... playwright test --update-snapshots ..."` free-text
-# message) is NOT a command invocation and must not be blocked — mirroring the npm-script fix.
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|(`{]|\b(then|do|else|elif|time)[[:space:]])[[:space:]]*(![[:space:]]+)?(([^[:space:]]*/)?npx[[:space:]]+)?([^[:space:]]*/)?playwright[[:space:]]+test'; then
+# message) is NOT a command invocation and must not be blocked — mirroring the npm-script fix. A
+# leading `VAR=value ` assignment (repeatable) is also allowed between the anchor/negation and
+# the command — a real command position, not a bypass (VIS-9 security-audit fix).
+if printf '%s' "$cmd" | grep -Eq '(^|[;&|(`{]|\b(then|do|else|elif|time)[[:space:]])[[:space:]]*(![[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(([^[:space:]]*/)?npx[[:space:]]+)?([^[:space:]]*/)?playwright[[:space:]]+test'; then
   # The `-u` alias is bounded by start/space on the left and by start/space, end-of-string, or a
   # shell command terminator (; & | ) } `) on the right. The trailing terminator set closes a
   # second bypass the audit's brace-grouping payload also relied on: `{ npx playwright test -u; }`

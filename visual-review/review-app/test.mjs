@@ -1,5 +1,5 @@
 // test.mjs — self-test for lib.mjs. Node built-ins only.
-// Run: node frontend/scripts/visual-review-app/test.mjs
+// Run: node visual-review/review-app/test.mjs
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
