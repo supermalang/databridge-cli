@@ -2,9 +2,11 @@
 # guard-visual-update.sh — deny agent self-approval of Playwright visual baselines (MNT-16, VIS-7).
 #
 # Wire as PreToolUse(Bash) in settings.json. Regenerating the screenshot baselines under
-# frontend/tests/e2e/*-snapshots/ is a HUMAN-approval step: a person runs the update, reviews
-# the diff, and commits the PNGs. An agent must never re-baseline a failing visual test via Bash
-# instead of fixing the regression — that silently defeats the visual gate.
+# frontend/tests/e2e/*-snapshots/ (Tier 1 app-driven), frontend/tests/storybook/*-snapshots/
+# (Tier 2), or visual-review/baselines/ (Tier 1 dedicated config, VIS-9) is a HUMAN-approval
+# step: a person runs the update, reviews the diff, and commits the PNGs. An agent must never
+# re-baseline a failing visual test via Bash instead of fixing the regression — that silently
+# defeats the visual gate.
 #
 # Blocks (with any leading cd/path/npx prefix and any extra flags):
 #   - npm run test:e2e:update
@@ -38,6 +40,13 @@
 # `time npx playwright test -u`) that were ALLOWED because the punctuation-only anchor did not
 # recognize a command position introduced by a bash keyword or a leading `!` — hence the keyword
 # and negation anchors above.
+#
+# A VIS-9 security audit found a further bypass: a leading environment-variable assignment
+# (`VAR=value cmd`) is also a real command position — it runs `cmd` with `VAR` set, identical to
+# `cmd` alone — but was not recognized, so `NODE_PATH="$PWD/node_modules" playwright test
+# --update-snapshots` (the literal shell form of the `test:visual:update` npm script VIS-9 adds)
+# bypassed the guard entirely. The anchor set now also allows zero or more repeatable
+# `VAR=value ` assignments between the position anchor/negation and the matched command.
 #
 # Known limitation — `eval` (moderate, documented, not a regression): a baseline update hidden
 # inside a quoted argument to `eval` (e.g. `eval "playwright test --update-snapshots"`) is NOT
@@ -125,6 +134,25 @@ deny() {
 
 REASON="Blocked visual-baseline update: '$cmd'. Regenerating Playwright screenshot baselines is a human-approval step — a human runs 'npm run test:e2e:update', reviews the diff, and commits the PNGs. Do not self-approve baselines; fix the regression instead, then hand the diff to a human for approval."
 
+# A leading `VAR=value ` shell assignment (repeatable) is a real command position — `VAR=value
+# cmd` runs `cmd` with `VAR` set, same as `cmd` alone — so it is allowed between the
+# anchor/negation and the matched command in both gates below (VIS-9 security-audit fix). The
+# value may be a double-quoted or single-quoted string (which may itself contain spaces) or a
+# bare whitespace-free token. The double-quoted alternative is backslash-escape-aware
+# (`"(\\.|[^"\\])*"`, matching real bash double-quote semantics where `\"` does not end the
+# string) — an adversarial re-audit found the simpler `"[^"]*"` broke the whole
+# anchor+assignment+command match, and fell through to ALLOW, on a value combining a
+# backslash-escaped quote with an embedded space, e.g. `NODE_PATH="a \" b" playwright test -u`.
+# The single-quoted alternative needs no such escaping: bash has no escape mechanism at all
+# inside single quotes (a literal `'` can never appear there), so `'[^']*'` is already exact.
+# Held in a variable (not inlined into the grep patterns) because an earlier code-review pass on
+# the first version of this fix found the inlined bare-token-only value pattern
+# ([^[:space:]]*) broke the WHOLE anchor+assignment+command match — and fell through to
+# ALLOW — on a quoted value containing a space, e.g. `NODE_PATH="a b" playwright test -u`;
+# inlining the 3-way quoted/unquoted alternation directly into a single-quoted grep argument
+# requires fragile quote-escaping that is exactly what produced that bug.
+ENV_ASSIGN='([A-Za-z_][A-Za-z0-9_]*=("(\\.|[^"\\])*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]*)[[:space:]]+)*'
+
 # --- npm run test:e2e:update / test:visual:storybook:update / test:visual:update ---
 # Match only when `npm run test:...:update` is actually invoked in a command position — the
 # start of the string or the start of a command segment (immediately after ';', '&', '|', '(',
@@ -133,8 +161,9 @@ REASON="Blocked visual-baseline update: '$cmd'. Regenerating Playwright screensh
 # 'then'/'do'/'else'/'elif'/'time'; or after a leading '!' negation), optionally with a path
 # prefix like /usr/bin/npm. A bare substring anywhere in the string (e.g. inside a
 # `git commit -m "... npm run test:e2e:update ..."` free-text message) is NOT a command
-# invocation and must not be blocked — mirroring the `playwright test` subcommand fix.
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|(`{]|\b(then|do|else|elif|time)[[:space:]])[[:space:]]*(![[:space:]]+)?([^[:space:]]*/)?npm[[:space:]]+run[[:space:]]+test:(e2e:update|visual:storybook:update|visual:update)'; then
+# invocation and must not be blocked — mirroring the `playwright test` subcommand fix. See
+# ENV_ASSIGN above for the leading-assignment allowance.
+if printf '%s' "$cmd" | grep -Eq "(^|[;&|(\`{]|\\b(then|do|else|elif|time)[[:space:]])[[:space:]]*(![[:space:]]+)?${ENV_ASSIGN}([^[:space:]]*/)?npm[[:space:]]+run[[:space:]]+test:(e2e:update|visual:storybook:update|visual:update)"; then
   deny "$REASON"
 fi
 
@@ -148,7 +177,8 @@ fi
 # prefix like /usr/bin/npx or /usr/bin/playwright. A bare "playwright test" substring anywhere else in
 # the string (e.g. inside a `git commit -m "... playwright test --update-snapshots ..."` free-text
 # message) is NOT a command invocation and must not be blocked — mirroring the npm-script fix.
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|(`{]|\b(then|do|else|elif|time)[[:space:]])[[:space:]]*(![[:space:]]+)?(([^[:space:]]*/)?npx[[:space:]]+)?([^[:space:]]*/)?playwright[[:space:]]+test'; then
+# See ENV_ASSIGN above for the leading-assignment allowance.
+if printf '%s' "$cmd" | grep -Eq "(^|[;&|(\`{]|\\b(then|do|else|elif|time)[[:space:]])[[:space:]]*(![[:space:]]+)?${ENV_ASSIGN}(([^[:space:]]*/)?npx[[:space:]]+)?([^[:space:]]*/)?playwright[[:space:]]+test"; then
   # The `-u` alias is bounded by start/space on the left and by start/space, end-of-string, or a
   # shell command terminator (; & | ) } `) on the right. The trailing terminator set closes a
   # second bypass the audit's brace-grouping payload also relied on: `{ npx playwright test -u; }`

@@ -77,7 +77,7 @@ Sprint exit — checked by /report + /retro:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 14 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 12 | 5 / 12 |
+| [Visual / E2E harness](#visual--e2e-harness) | 12 | 6 / 12 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
@@ -900,9 +900,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **VIS-9 — Scaffold the visual-review root directory + dedicated Tier 1 visual config + relocate the Tier 3 review app + ledger (P2)**
+- [x] **VIS-9 — Scaffold the visual-review root directory + dedicated Tier 1 visual config + relocate the Tier 3 review app + ledger (P2)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
 
   Foundational card for aligning with the upstream `ai-augmented-coding` template. Stands up the
   target directory contract, relocates the Tier 3 review app + approvals ledger into it, creates

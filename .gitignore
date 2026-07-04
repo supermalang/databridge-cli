@@ -33,6 +33,11 @@ frontend/.playwright/
 # Storybook (Tier 2 visual baselines, VIS-4): static build is regenerable, never commit it.
 frontend/storybook-static/
 
+# Tier 1 dedicated visual harness (VIS-9): ignore transient run output/review scratch;
+# KEEP committed baselines under visual-review/baselines/.
+visual-review/results/
+visual-review/uat/
+
 # Claude Code: track shared config (settings, skills/roadmap, hooks, agents); ignore local + vendored
 .claude/settings.local.json
 .claude/.active-task*
