@@ -372,6 +372,25 @@ assert_deny "double-quoted env-var value containing a space still denies the npm
 assert_deny "single-quoted env-var value containing a space still denies playwright --update-snapshots" \
   "NODE_PATH='a b' playwright test --update-snapshots"
 
+# --- VIS-9 (adversarial security re-audit finding): the quoted-value fix above is still not
+# escape-aware for double-quoted values. Bash allows a backslash-escaped quote inside a
+# double-quoted string (e.g. `NODE_PATH="a \" b" cmd` assigns NODE_PATH the value `a " b`), but
+# the naive `"[^"]*"` pattern treats the FIRST `"` after the escaping backslash as the closing
+# quote, splitting the value's remainder (` b" `) out of the assignment. On its own this still
+# gets caught by the whitespace-free bare-token fallback (a quoted value with an escaped quote
+# but NO embedded space, e.g. `A="\""`, is indistinguishable from a bare token and still denies)
+# — the real gap only surfaces when the value ALSO contains a space, because then neither the
+# broken quoted-alternative match NOR the whitespace-free bare-token fallback can span it, and
+# the whole anchor+assignment+command match breaks, falling through to ALLOW. Single-quoted
+# values need no equivalent fix: bash has zero escape mechanism inside single quotes (a literal
+# `'` can never appear there at all), so `'[^']*'` is already exact. ---
+assert_deny "double-quoted env-var value with an escaped quote AND a space still denies playwright -u" \
+  'NODE_PATH="a \" b" playwright test -u'
+assert_deny "double-quoted env-var value with an escaped quote AND a space still denies the npm update script" \
+  'NODE_PATH="a \" b" npm run test:visual:update'
+assert_deny "double-quoted env-var value with an escaped quote but no space still denies (bare-token fallback, pinned so it does not silently rely on that fallback alone)" \
+  'A="\"" playwright test -u'
+
 # --- VIS-7 (verify-pass fix): the deny path itself must not depend on jq. On a host with no jq
 # on PATH, extract_command() already fell back to python3, but the original jq -n deny() had no
 # equivalent fallback — it silently produced no output and exit 0 (ALLOW) on a genuine denial,
