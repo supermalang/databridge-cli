@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 19 | 19 / 19 |
+| [Maintenance & hardening](#maintenance--hardening) | 20 | 19 / 20 |
 
 ---
 
@@ -1322,6 +1322,61 @@ Sprint exit — checked by /report + /retro:
   gate).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_engine.py tests/test_template_inference.py tests/test_ask_api.py tests/test_template_api.py tests/test_xtf27_bullet_list.py -k bullet_list`
+
+---
+
+- [ ] **MNT-20 — Prompt guidance: tell the LLM when to use `bullet_list` instead of `table` (Express Fill inference) (P1)**
+
+  **Created:** 2026-07-04
+
+  MNT-19 made `bullet_list` a technically valid, proposable AI-inference type — confirmed at the
+  code level (`ask_engine._CHART_TYPES_BLOCK` genuinely includes it). But the LLM never picks it:
+  `template_inference.py`'s `_KINDS` tuple (`"chart", "indicator", "summary", "table", "narrative",
+  "metadata", "split_value"`) is presented to the LLM as the primary, flat list of top-level
+  choices — `bullet_list` isn't one of them, it's only reachable two steps deep
+  (`kind="chart"` → `spec.type="bullet_list"` from a separate "chart types" list). The prompt's
+  per-kind guidance (`seed_prompts.py`'s `_TEMPLATE_INFERENCE`, `table` bullet at line 980) never
+  mentions this path or redirects the LLM to it when a table's "≥1 categorical column"
+  requirement can't be met — so a French list-style placeholder (e.g. `actions_prioritaires`)
+  with no categorical column keeps getting proposed as `table` (which then fails validation)
+  instead of `bullet_list`, confirmed live by re-running Infer after MNT-19 merged.
+
+  **Type:** Fix
+
+  **Files:** `src/utils/seed_prompts.py` (`_TEMPLATE_INFERENCE` system message ~lines 953-963 and
+  the user message's `table` bullet ~line 980) · `tests/test_seed_prompts.py` (new test)
+
+  **Config/schema impact:** None — prompt text only; `_TEMPLATE_INFERENCE_SPEC_SCHEMA`'s `type`
+  field already accepts any string (no enum constraint to update).
+
+  **Acceptance criteria**
+  - `_TEMPLATE_INFERENCE`'s system message explicitly states that `bullet_list` is not a real
+    chart/graph and should be preferred over `table` when there's no categorical column
+  - `_TEMPLATE_INFERENCE`'s user message's `table` bullet explicitly redirects to
+    `kind="chart"` + `type="bullet_list"` when there's no categorical column
+  - No change to the JSON output schema — this is prompt-text-only
+  - `test_no_leftover_single_brace_format_slots` (existing) stays green — no stray `{var}`
+    introduced
+
+  **Unit tests:** `tests/test_seed_prompts.py` (new) —
+  `test_template_inference_explains_bullet_list_over_table`: asserts the `_TEMPLATE_INFERENCE`
+  system message mentions `bullet_list` in the context of not being a real chart, and the user
+  message's table description redirects to `bullet_list` when there's no categorical column.
+
+  **E2E:** N/A (no UI surface — prompt text consumed only by an LLM call).
+
+  **UAT:** N/A (backend prompt-text-only change; behavior against a live LLM is exploratory/
+  non-deterministic and not gated by a fixed human checklist — validated by the unit test above
+  and PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_seed_prompts.py -k bullet_list` ·
+  Optional manual smoke-check after merge (not gated, since LLM behavior is non-deterministic):
+  (1) run `push-prompts --force` to push the updated prompt to Langfuse (required — Langfuse
+  already holds a prior copy and always wins over the seed once populated); (2) clear the
+  on-disk prompt cache (`rm -rf ~/.cache/databridge/prompts`, or wait out its 1-hour TTL — a
+  backend process restart does NOT clear this disk-based cache); (3) re-run Infer on a template
+  with a list-style placeholder with no categorical column and confirm it now proposes
+  `kind="chart"`, `type="bullet_list"` instead of `table`.
 
 ---
 
