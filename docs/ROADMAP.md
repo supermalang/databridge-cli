@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 18 | 16 / 18 |
+| [Maintenance & hardening](#maintenance--hardening) | 18 | 17 / 18 |
 
 ---
 
@@ -1104,9 +1104,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-17 — Fix: `{{ split_value }}` documented (and relied on by Express Fill) but missing from the render context (P0)**
+- [x] **MNT-17 — Fix: `{{ split_value }}` documented (and relied on by Express Fill) but missing from the render context (P0)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
 
   `docs/reference/templates.md:20` documents `{{ split_value }}` as available "when --split-by
   is set, the current group's value", and `frontend/src/pages/Composition.jsx:1648` advertises
