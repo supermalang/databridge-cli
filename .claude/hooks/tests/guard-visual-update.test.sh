@@ -132,6 +132,28 @@ else
   pass=$((pass+1))
 fi
 
+# --- VIS-7: real subcommand match only — bare "playwright" substring in unrelated commands must
+# not be denied (this is the exact incident command from this session) ---
+assert_allow "git push -u origin chore/playwright-workers-4 (branch name merely contains 'playwright'; no playwright-test invocation)" \
+  "git push -u origin chore/playwright-workers-4"
+
+# --- VIS-7: "playwright" occurring only as free text (commit message) must not be denied ---
+assert_allow "git commit -m \"fix playwright config regression\" (playwright is free text, not an invocation)" \
+  "git commit -m \"fix playwright config regression\""
+
+# --- VIS-7: commit message containing escaped quotes/backslashes must still be parsed correctly
+# and evaluated as an allow (proves pure-bash command extraction survives escaped quoting) ---
+assert_allow "commit message with escaped nested quotes and the word 'playwright' as free text" \
+  'git commit -m "fix playwright config for \"nested quotes\" case"'
+
+# --- VIS-7: Tier 2 baseline-update script (currently live, unguarded gap) must now be denied ---
+assert_deny "npm run test:visual:storybook:update (Tier 2 baseline update — currently unguarded)" \
+  "npm run test:visual:storybook:update"
+
+# --- VIS-7: proactive coverage for the VIS-9 baseline-update script name (doesn't exist yet) ---
+assert_deny "npm run test:visual:update (VIS-9 baseline update script — proactive coverage)" \
+  "npm run test:visual:update"
+
 echo ""
 echo "Results: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
