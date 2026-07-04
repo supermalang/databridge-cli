@@ -18,7 +18,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: 1,
+  workers: 4,
   reporter: process.env.CI ? [['html', { open: 'never', outputFolder: 'playwright-report-storybook' }], ['list']] : 'list',
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
   use: { browserName: 'chromium', baseURL: 'http://localhost:6006' },
