@@ -465,6 +465,47 @@ def test_annotate_free_form_narrative_maps_to_ai_summary():
 
 
 # --------------------------------------------------------------------------- #
+# MNT-19 -- annotate_proposals can accept a bullet_list proposal when there is
+# no categorical column but there IS a usable (e.g. qualitative free-text)
+# column, instead of being stuck with the always-failing 'table' fallback.
+# --------------------------------------------------------------------------- #
+def _profile_no_categorical():
+    """A profile with NO categorical column at all -- only quantitative +
+    qualitative -- mirroring the motivating bug: a free-text list placeholder
+    (e.g. French 'actions_prioritaires') whose only underlying column is
+    qualitative. 'table' can never validate against this profile."""
+    return {
+        "main": {
+            "name": "main", "rows": 3,
+            "columns": [
+                {"name": "_id", "role": "linkage", "distinct": 3, "missing_pct": 0.0},
+                {"name": "Age", "role": "quantitative", "distinct": 3, "missing_pct": 0.0,
+                 "min": 10.0, "max": 30.0, "mean": 20.0, "median": 20.0},
+                {"name": "actions_prioritaires", "role": "qualitative", "distinct": 3,
+                 "missing_pct": 0.0},
+            ],
+            "correlations": [], "duplicates": None,
+        }
+    }
+
+
+def test_annotate_bullet_list_proposal_validates_ok():
+    """MNT-19 AC: given a placeholder whose underlying data has no categorical
+    column but does have >=1 usable column, a bullet_list proposal for it must
+    validate 'ok' (not needs_attention) -- proving inference can propose
+    bullet_list instead of being forced toward the always-failing 'table'."""
+    proposals = [
+        _proposal("chart",
+                  {"name": "actions_prioritaires", "title": "Actions prioritaires",
+                   "type": "bullet_list", "questions": ["actions_prioritaires"]},
+                  name="actions_prioritaires", confidence=_HIGH_CONF),
+    ]
+    out = ti.annotate_proposals(proposals, _profile_no_categorical())
+    p = out[0]
+    assert _get(p, "status") == "ok", _get(p, "reason")
+
+
+# --------------------------------------------------------------------------- #
 # infer_specs — exactly one batched LLM call
 # --------------------------------------------------------------------------- #
 def test_infer_specs_makes_one_batched_chat_call(monkeypatch):
@@ -837,6 +878,36 @@ def test_apply_resolves_chart_placeholder_to_single_run(tmp_path):
         f"chart placeholder must be exactly one run, got {[r.text for r in target.runs]}"
     )
     assert nonempty[0].text == expected, nonempty[0].text
+
+
+# --------------------------------------------------------------------------- #
+# MNT-19 -- an approved bullet_list proposal (kind "chart", spec type
+# "bullet_list") must resolve to {{ list_<name> }}, not {{ chart_<name> }},
+# matching builder.py's list_<name> context key (the same convention
+# template_generator.py already uses for a manually-added bullet_list
+# placeholder).
+# --------------------------------------------------------------------------- #
+def test_apply_inference_bullet_list_uses_list_prefix(tmp_path):
+    template = _docx_with_nl_placeholders(tmp_path, ["[Actions prioritaires]"])
+    tokens = ti.extract_placeholders(template)
+    assert len(tokens) == 1
+
+    approved = [
+        _approved("chart",
+                  {"name": "actions_prioritaires", "title": "Actions prioritaires",
+                   "type": "bullet_list", "questions": ["actions_prioritaires"]},
+                  name="actions_prioritaires", token_index=0),
+    ]
+    cfg = {"api": {}, "form": {}}
+
+    _cfg_out, resolved = ti.apply_inference(approved, cfg, template)
+
+    expected = "{{ list_actions_prioritaires }}"
+    unexpected = "{{ chart_actions_prioritaires }}"
+    reopened = Document(str(resolved))
+    blob = "\n".join("".join(r.text for r in p.runs) for p in reopened.paragraphs)
+    assert expected in blob, blob
+    assert unexpected not in blob, blob
 
 
 # --------------------------------------------------------------------------- #
