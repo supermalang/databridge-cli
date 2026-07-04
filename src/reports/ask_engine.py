@@ -73,6 +73,7 @@ CHART_REQS = {
     "stacked_bar":    (lambda c, q, d: c >= 2, "≥2 categorical columns"),
     "heatmap":        (lambda c, q, d: c >= 2, "≥2 categorical columns"),
     "table":          (lambda c, q, d: c >= 1, "≥1 categorical column"),
+    "bullet_list":    (lambda c, q, d: c + q + d >= 1, "≥1 column"),
 }
 
 
@@ -101,16 +102,22 @@ def _validate_chart(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
     cols = list(recipe.get("questions") or [])
     if recipe.get("group_by"):
         cols.append(recipe["group_by"])
+    check, requirement = CHART_REQS[ctype]
     if not cols:
-        return False, "no columns specified"
+        return False, f"'{ctype}' needs {requirement}"
     for c in cols:
         if c not in roles:
             return False, f"column '{c}' not found in '{source}'"
+    if ctype == "bullet_list":
+        # Unlike the other chart types, bullet_list reads exactly questions[0] as
+        # plain text (src/reports/charts.py build_bullet_list_text) regardless of
+        # its role -- categorical, quantitative, date, or qualitative all work.
+        # Having >=1 existing column (already validated above) is sufficient.
+        return True, ""
     col_roles = [roles[c] for c in cols]
     n_cat = col_roles.count("categorical")
     n_quant = col_roles.count("quantitative")
     n_date = col_roles.count("date")
-    check, requirement = CHART_REQS[ctype]
     if not check(n_cat, n_quant, n_date):
         return False, f"'{ctype}' needs {requirement}"
     return True, ""

@@ -910,6 +910,11 @@ def apply_inference(
             canonical = "{{ split_value }}"
         else:
             section, prefix = _KIND_SECTION.get(kind, _KIND_SECTION["chart"])
+            if kind == "chart" and spec.get("type") == "bullet_list":
+                # MNT-19: builder.py only ever populates a list_<name> context key
+                # for type == "bullet_list" (matching template_generator.py's
+                # manually-added bullet_list placeholder convention), not chart_<name>.
+                prefix = "list_"
             base_slug = _slugify(prop.get("name") or spec.get("name") or kind)
             final_name = _write_spec(cfg, section, spec, base_slug)
             canonical = f"{{{{ {prefix}{final_name} }}}}"
