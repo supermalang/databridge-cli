@@ -77,7 +77,7 @@ Sprint exit — checked by /report + /retro:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 14 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 12 | 4 / 12 |
+| [Visual / E2E harness](#visual--e2e-harness) | 12 | 5 / 12 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
@@ -743,64 +743,101 @@ Sprint exit — checked by /report + /retro:
   `cd frontend && npm run build` (main app unaffected) ·
   `cd frontend && npm run storybook:build` ·
   `cd frontend && npm run test:e2e` (Tier 1 harness unaffected)
-- [ ] **VIS-7 — Fix: guard-visual-update.sh false-positive blocks unrelated commands + silent jq-missing fail-open (P1)**
+- [x] **VIS-7 — Fix: guard-visual-update.sh false-positive blocks unrelated commands + silent jq-missing fail-open (P1)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
 
-  `.claude/hooks/guard-visual-update.sh` matches a bare `\bplaywright\b` substring anywhere in
+  `.claude/hooks/guard-visual-update.sh` matched a bare `\bplaywright\b` substring anywhere in
   the command text (not the actual `playwright test` subcommand), which incorrectly denied
   `git push -u origin chore/playwright-workers-4` this session — the branch name merely
-  *contains* "playwright"; no `playwright test` was ever invoked. The script is also
-  `jq`-dependent for extracting `tool_input.command`; if `jq` is unavailable the extraction
-  silently returns `""` and the fail-safe-open path means the hook does nothing, with no
-  indication it isn't actually protecting anything. Separately, the Tier 2 baseline-update npm
-  script (shipped with VIS-4, confirmed present in `frontend/package.json` today) is **already
-  unguarded right now** — it matches neither the Tier-1-update literal nor the bare `playwright`
-  check, so an agent could self-approve Tier 2 baselines via this exact command today, a live
-  gap, not a hypothetical one. Fix per the upstream template's approach: match the real
-  subcommand (`playwright` followed by whitespace then `test`) and drop the `jq` dependency for
-  command extraction.
+  *contained* "playwright"; no `playwright test` was ever invoked. The Tier 2 baseline-update npm
+  script (shipped with VIS-4) was also already unguarded, a live self-approval gap.
+
+  **Scope grew substantially during Review** (3 rounds of security-audit + 1 perf-review, all
+  adversarial and empirically-verified, not just regex-reading):
+  - **perf-review** found the jq-free `extract_command()` decoder was O(n²) in command length
+    (benchmarked: ~75s at 100KB) — this hook runs on every Bash tool call, and this repo's own
+    heredoc-based commit/PR conventions routinely produce multi-KB commands. Fixed by preferring
+    `jq` when present (fast path) and falling back to a single-pass `python3 -c` JSON parse (not
+    a bash byte-loop) only when `jq` is genuinely absent — confirmed O(n) after the fix (0.093s
+    at 50KB, down from 19.47s).
+  - **security-audit round 1** empirically found the new command-position anchor omitted the
+    backtick and `{` characters, so `` x=`playwright test --update-snapshots` `` and
+    `{ npx playwright test -u; }` silently bypassed the gate. Fixed by adding both to the anchor
+    class and widening the `-u` alias's trailing-boundary set.
+  - **security-audit round 2** (adversarial fuzzing beyond the reported bypasses) found the same
+    anchor didn't cover bash keyword-introduced command positions: `!` negation, and `then`/`do`/
+    `else`/`elif`/`time`. Fixed for all of these (6 of 7 found bypasses). The 7th — a `case`
+    pattern's closing `)` — was deliberately left as a **documented residual limitation**
+    alongside the pre-existing `eval`-obfuscation limitation: a bare `)` is far too common in
+    ordinary shell/text to anchor on safely, and exploiting it requires the unusual `case`/`esac`
+    construct, putting it in the same tier as `eval`'s string-literal obfuscation rather than the
+    easily-hit keyword class.
+  - **security-audit round 3** (final confirmation pass) found one more real, easy-to-hit gap:
+    the `-u` alias's terminator class omitted the closing backtick, so `` x=`npx playwright test -u` ``
+    still bypassed. Fixed by adding it to the terminator set.
+  - **roadmap-verifier** (adversarial DoD pass, going beyond re-running the suite) found the
+    `deny()` helper still shelled out to `jq -n` unconditionally with no fallback — so on a host
+    without `jq`, `extract_command()` correctly identified a denial-worthy command via its
+    python3 fallback, but `deny()` then silently produced no output and exited 0 (ALLOW),
+    reintroducing this exact card's own "silent jq-missing fail-open" bug, just relocated from
+    the extraction step to the decision step, and on the worst-case commands (only fails open on
+    genuine denials, not on benign ones). Fixed by switching `deny()` to stderr + `exit 2` — the
+    same jq-free deny convention every other guard hook in this repo already uses — which needs
+    no JSON parser at all. Added dedicated jq-free-PATH test coverage (deny + allow) that the
+    original 56-case suite never exercised, plus a dedicated pin for the `eval` residual that the
+    AC claimed was "pinned-by-test" but wasn't yet.
 
   **Type:** Fix
 
-  **Files:** `.claude/hooks/guard-visual-update.sh` (rewrite: extract `tool_input.command` via
-  pure-bash/`grep`+`sed` field extraction instead of `jq -r '.tool_input.command'`; replace the
-  bare `\bplaywright\b` check with a `playwright` + whitespace + `test` pattern; generalize the
-  Tier-1-update literal match into a pattern also covering the Tier 2 storybook-update script
-  (already shipped, currently unguarded) and the new Tier 1 dedicated-config update script
-  (introduced by VIS-9)) · `.claude/hooks/tests/guard-visual-update.test.sh` (extend with the
-  exact incident regression case + the two script-name cases)
+  **Files:** `.claude/hooks/guard-visual-update.sh` (full rewrite: `extract_command()` prefers
+  `jq`, falls back to a single-pass `python3 -c` JSON parse — not a bash byte-loop — only when
+  `jq` is absent; `deny()` signals via stderr + `exit 2` instead of a jq-built stdout JSON blob,
+  so the decision step itself has no jq dependency; command-position anchor covers `;`/`&`/`|`/
+  `(`/backtick/`{`/`!`/`then`/`do`/`else`/`elif`/`time`; `-u` alias terminator set includes the
+  closing backtick; header comments document the `eval` and `case`-pattern residual limitations
+  honestly) · `.claude/hooks/tests/guard-visual-update.test.sh` (extended; `is_deny`/
+  `has_human_reason`/`run_hook` switched from parsing stdout JSON to checking exit code + stderr
+  to match the `deny()` contract change; added `run_hook_with_path`/`assert_deny_no_jq`/
+  `assert_allow_no_jq` fixtures backed by a jq-scrubbed PATH scratch dir)
 
   **Config/schema impact:** None — hook script only.
 
   **Acceptance criteria**
-  - `git push -u origin chore/playwright-workers-4` is **allowed** (this exact command is the new
-    regression test case; confirmed red on the current script, green after the fix)
+  - `git push -u origin chore/playwright-workers-4` is **allowed**
   - Still **denied**: the existing Tier-1-update npm script; `npx playwright test` with the
     snapshot-update flag; `playwright test` with the short update flag; a `cd frontend &&`-prefixed
     invocation of the same with extra grep args
-  - Newly **denied**: the Tier 2 storybook-update npm script (closes an existing, currently-live
-    gap — this script already exists and is unguarded today) and the new Tier 1 dedicated-config
-    update npm script VIS-9 introduces
-  - `git commit -m "fix playwright config regression"` and any command where "playwright" occurs
-    only inside a free-text argument (commit message, branch name, comment) — not as the actual
-    `playwright test` invocation — is **allowed**
-  - Command extraction from the PreToolUse JSON no longer requires `jq`; if `jq` happens to be
-    missing the hook still evaluates the command correctly (pure-bash extraction), rather than
-    silently allowing everything
-  - A command string containing escaped quotes/backslashes within the JSON payload (e.g. a
-    commit message argument with an escaped quoted word inside it) is still extracted and
-    evaluated correctly by the pure-bash extraction — not mis-parsed the way naive `grep`/`sed`
-    on raw JSON text could be
+  - Newly **denied**: the Tier 2 storybook-update npm script and the new Tier 1 dedicated-config
+    update npm script VIS-9 introduces — matched at command position, not as a bare substring, so
+    free-text mentions (e.g. in a commit message) are **allowed**
+  - `git commit -m "fix playwright config regression"` and any command where "playwright" or an
+    npm-update script name occurs only inside a free-text argument — not as the actual invocation
+    — is **allowed**
+  - Command extraction prefers `jq`; when genuinely absent, falls back to a `python3`-based
+    parse (O(n), not the O(n²) bash byte-loop) that survives escaped quotes/backslashes
+  - The deny decision itself does not depend on `jq` either: with `jq` scrubbed from `PATH`, a
+    genuine denial-worthy command is still **denied** (exit 2 + human-approval reason on stderr),
+    and an unrelated/free-text command is still **allowed** — closing the relocated fail-open gap
+    the verify pass found
   - Fail-safe-open contract preserved: empty/genuinely unparseable stdin still results in ALLOW
+  - A 100KB synthetic command extracts and evaluates in well under 1 second (regression guard
+    against the O(n²) hazard recurring)
+  - Command-position anchor denies genuine invocations following `;`, `&`, `|`, `(`, backtick,
+    `{`, `!` negation, and the keywords `then`/`do`/`else`/`elif`/`time` — verified via crafted
+    payloads actually run through the live hook, not just regex inspection
+  - `eval "..."` and a `case`-pattern `)` command position are documented, pinned-by-test residual
+    limitations (not silently unhandled) — exploiting either requires an unusual construct,
+    unlike the fixed classes above
   - All pre-existing MNT-16 cases in `guard-visual-update.test.sh` continue to pass
 
-  **Unit tests:** `.claude/hooks/tests/guard-visual-update.test.sh` (extend) — add
-  `assert_allow "branch name contains 'playwright', not a playwright-test invocation" "git push -u origin chore/playwright-workers-4"`
-  (the exact incident command as its own argument, matching this test file's existing
-  `assert_allow "$desc" "$cmd"` two-argument signature; must be red before the fix) plus
-  `assert_deny` cases for the two npm update scripts named above, and a case for a command
-  containing escaped quotes to prove the extraction survives it. Run:
+  **Unit tests:** `.claude/hooks/tests/guard-visual-update.test.sh` — grew from 13 to 61 cases
+  across all rounds: the original incident regression + two npm-script cases (RED phase); 6 cases
+  covering the npm-script/playwright free-text exemption fix; 4 cases covering the backtick/brace
+  anchor fix; a 100KB bounded-time perf regression guard; 19 cases covering the keyword/negation
+  anchor fix (8 deny + 11 allow proving no new false positives, one per keyword); 2 cases covering
+  the final backtick-terminator fix; 1 case pinning the `eval` residual; 4 cases (2 deny + 2
+  allow) run against a jq-scrubbed `PATH` proving the deny path is jq-independent. Run:
   `bash .claude/hooks/tests/guard-visual-update.test.sh`.
 
   **E2E:** N/A (bash PreToolUse hook, not a UI surface — covered by the bash test suite above,
@@ -809,9 +846,9 @@ Sprint exit — checked by /report + /retro:
   **UAT:** N/A (dev-tooling/hook fix, no product UI surface — the bash test suite + PR review are
   the human gate, same posture as MNT-16).
 
-  **Verify:** `bash .claude/hooks/tests/guard-visual-update.test.sh` · manually replay the
-  incident command (`git push -u origin chore/playwright-workers-4` against a real branch) via
-  the Bash tool and confirm it is no longer denied.
+  **Verify:** `bash .claude/hooks/tests/guard-visual-update.test.sh` (61 passed) · manually replay
+  the incident command (`git push -u origin chore/playwright-workers-4` against a real branch)
+  via the Bash tool and confirm it is no longer denied.
 
 ---
 

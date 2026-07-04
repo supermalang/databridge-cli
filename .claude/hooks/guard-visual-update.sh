@@ -18,59 +18,92 @@
 # (git push -u, sort -u) are NOT blocked because the -u alias is only honored for playwright
 # test invocations.
 #
-# Command extraction (VIS-7): pure-bash/grep+sed field extraction — no jq dependency, so a
-# missing jq binary can no longer silently short-circuit this hook into a no-op fail-open.
+# Command position (VIS-7 security fix): a baseline-update invocation is matched only when it
+# sits in a real command position. A command position is:
+#   - the start of the string, or
+#   - immediately after one of ; & | ( ` {  — covering '&&', '||', pipes, subshell '(...)'
+#     grouping, backtick command substitution `...`, '$(...)' substitution (the '(' anchor),
+#     and brace '{ ...; }' grouping, or
+#   - immediately after a bash keyword that introduces a command — `then`, `do`, `else`,
+#     `elif`, `time` (word-bounded via \b<kw>\b-style boundaries so it never matches inside an
+#     unrelated identifier like `redo` or `overtime`), or
+#   - immediately after a leading `!` negation (an optional `! ` prefix at any of the above
+#     positions).
+# The backtick and '{' anchors were added after a security audit confirmed that
+# `x=`playwright test --update-snapshots`` and `{ npx playwright test -u; }` were being
+# ALLOWED even though the functionally identical `x=$(playwright test --update-snapshots)` was
+# DENIED — an inconsistent anchor set, not an intentional narrowing. A second audit round then
+# confirmed 6 more keyword/negation bypasses (`! npx playwright test -u`,
+# `if …; then npx playwright test -u; fi`, `while/until/select …; do npx playwright test -u; done`,
+# `time npx playwright test -u`) that were ALLOWED because the punctuation-only anchor did not
+# recognize a command position introduced by a bash keyword or a leading `!` — hence the keyword
+# and negation anchors above.
+#
+# Known limitation — `eval` (moderate, documented, not a regression): a baseline update hidden
+# inside a quoted argument to `eval` (e.g. `eval "playwright test --update-snapshots"`) is NOT
+# caught, because the invocation sits inside a string literal rather than in command position,
+# and this is a line-oriented regex matcher with no shell parser. Closing this in general would
+# require parsing/recursively evaluating `eval` arguments (or a broad `eval`+`playwright`
+# heuristic that would re-introduce the free-text false positives this hook deliberately avoids).
+# It is left as an accepted defense-in-depth gap rather than patched with a fragile heuristic.
+#
+# Known limitation — `case`-pattern ')' (low, documented, not a regression): a baseline update in
+# the body of a case branch (e.g. `case x in *) npx playwright test -u ;; esac`) is NOT caught,
+# because the only command-position marker before the invocation is the pattern-terminating ')'.
+# A bare ')' is extremely common in ordinary shell/text (subshell close, `$(...)` close, `foo()`
+# function defs, arithmetic) so treating it as a universal command-position delimiter would
+# re-introduce broad false positives — exactly what this hook avoids. Exploiting it also requires
+# the unusual `case`/`esac` construct, putting it closer to the `eval` obfuscation case than the
+# 6 keyword/negation bypasses above. Left as an accepted residual gap alongside `eval` rather than
+# patched with a fragile ')' heuristic.
+#
+# Command extraction (VIS-7 / VIS-14): decode the JSON `command` field with a real JSON parser —
+# jq when present (the original, C-speed approach), else python3 (a project dependency). Both do
+# correct JSON string unescaping (\" \\ \n ...) at native speed. The earlier pure-bash decoder
+# walked the string a character at a time with `result+="$ch"`, which is O(n²) in the command
+# length (bash reallocates on every append) — a PreToolUse gate that runs on EVERY Bash call, so
+# a multi-KB heredoc commit/PR body (a documented convention here) took seconds to tens of
+# seconds. A parser-based decode is O(n). jq stays preferred (not dropped) precisely because it
+# is fast and correct when installed; the python3 fallback exists so a missing jq can never
+# silently short-circuit extraction. If BOTH are absent, or parsing fails, we emit nothing —
+# which the caller treats as fail-safe OPEN (allow).
 
 set -uo pipefail
 
 input="$(cat 2>/dev/null || true)"
 
-# --- Extract tool_input.command from the PreToolUse JSON payload without jq. -----------------
-# Locate the `"command"` key, skip past ':' and any whitespace to the opening quote, then walk
-# the string a character at a time so JSON escape sequences (\" \\ \n ...) are decoded correctly
-# and the true closing (unescaped) quote is found — a plain grep/sed one-liner can't reliably
-# tell an escaped quote from a terminating one.
+# --- Extract tool_input.command from the PreToolUse JSON payload. ----------------------------
+# Prefer jq (C-speed); fall back to python3 (also C-speed, correct JSON unescaping). Either path
+# prints the decoded command with no trailing newline and nothing on parse failure / missing key,
+# so the output is byte-identical to a correct JSON decode of tool_input.command.
 extract_command() {
-  local json="$1" marker='"command"' rest ch esc result i len
+  local json="$1"
 
-  case "$json" in
-    *"$marker"*) ;;
-    *) printf ''; return 0 ;;
-  esac
-  rest="${json#*"$marker"}"
-  rest="${rest#*:}"
-  while [ "${rest:0:1}" = " " ] || [ "${rest:0:1}" = $'\t' ]; do
-    rest="${rest:1}"
-  done
-  [ "${rest:0:1}" = '"' ] || { printf ''; return 0; }
-  rest="${rest:1}"
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$json" | jq -j '.tool_input.command // empty' 2>/dev/null || true
+    return 0
+  fi
 
-  result=''
-  i=0
-  len=${#rest}
-  while [ "$i" -lt "$len" ]; do
-    ch="${rest:$i:1}"
-    if [ "$ch" = '\' ]; then
-      i=$((i + 1))
-      esc="${rest:$i:1}"
-      case "$esc" in
-        '"') result+='"' ;;
-        '\') result+='\' ;;
-        '/') result+='/' ;;
-        n) result+=$'\n' ;;
-        t) result+=$'\t' ;;
-        r) result+=$'\r' ;;
-        *) result+="$esc" ;;
-      esac
-      i=$((i + 1))
-    elif [ "$ch" = '"' ]; then
-      break
-    else
-      result+="$ch"
-      i=$((i + 1))
-    fi
-  done
-  printf '%s' "$result"
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$json" | python3 -c '
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    cmd = ""
+    if isinstance(data, dict):
+        ti = data.get("tool_input")
+        if isinstance(ti, dict):
+            cmd = ti.get("command") or ""
+    sys.stdout.write(cmd if isinstance(cmd, str) else "")
+except Exception:
+    pass
+' 2>/dev/null || true
+    return 0
+  fi
+
+  # Neither jq nor python3 available — fail-safe open (empty output => allow).
+  printf ''
+  return 0
 }
 
 cmd="$(extract_command "$input")"
@@ -79,27 +112,54 @@ cmd="$(extract_command "$input")"
 [ -n "$cmd" ] || exit 0
 
 deny() {
-  jq -n --arg r "$1" '{
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: $r
-    }
-  }'
-  exit 0
+  # stderr + exit 2 (not a jq-built permissionDecision JSON blob) so the deny path itself never
+  # depends on jq — mirroring guard-roadmap.sh / guard-coding.sh / guard-branch.sh. The original
+  # jq -n deny() call was found (VIS-7 verify pass) to silently no-op when jq is absent: extraction
+  # already falls back to python3, but deny() had no equivalent fallback, so a jq-less host matched
+  # the command correctly and then produced no output / exit 0 — ALLOW — on a genuine denial. That
+  # is the exact "silent jq-missing fail-open" bug this card exists to fix, just relocated from
+  # extraction to the decision step.
+  echo "$1" >&2
+  exit 2
 }
 
 REASON="Blocked visual-baseline update: '$cmd'. Regenerating Playwright screenshot baselines is a human-approval step — a human runs 'npm run test:e2e:update', reviews the diff, and commits the PNGs. Do not self-approve baselines; fix the regression instead, then hand the diff to a human for approval."
 
-# --- npm run test:e2e:update / test:visual:storybook:update / test:visual:update (any prefix) ---
-if printf '%s' "$cmd" | grep -Eq 'npm run test:(e2e:update|visual:storybook:update|visual:update)'; then
+# --- npm run test:e2e:update / test:visual:storybook:update / test:visual:update ---
+# Match only when `npm run test:...:update` is actually invoked in a command position — the
+# start of the string or the start of a command segment (immediately after ';', '&', '|', '(',
+# '`', or '{', which covers '&&', '||', pipes, 'cd <path> && ...' chains, '$(...)'/backtick
+# command substitution, and '{ ...; }' brace grouping; after a command-introducing bash keyword
+# 'then'/'do'/'else'/'elif'/'time'; or after a leading '!' negation), optionally with a path
+# prefix like /usr/bin/npm. A bare substring anywhere in the string (e.g. inside a
+# `git commit -m "... npm run test:e2e:update ..."` free-text message) is NOT a command
+# invocation and must not be blocked — mirroring the `playwright test` subcommand fix.
+if printf '%s' "$cmd" | grep -Eq '(^|[;&|(`{]|\b(then|do|else|elif|time)[[:space:]])[[:space:]]*(![[:space:]]+)?([^[:space:]]*/)?npm[[:space:]]+run[[:space:]]+test:(e2e:update|visual:storybook:update|visual:update)'; then
   deny "$REASON"
 fi
 
 # --- playwright test --update-snapshots / -u (only when the real `playwright test` subcommand
 # is actually invoked — not a bare "playwright" substring in a branch name or free-text arg) ---
-if printf '%s' "$cmd" | grep -Eq 'playwright[[:space:]]+test'; then
-  if printf '%s' "$cmd" | grep -Eq -- '--update-snapshots|(^| )-u( |$)'; then
+# Match only when `playwright test` sits in a command position — the start of the string or the
+# start of a command segment (immediately after ';', '&', '|', '(', '`', or '{', which covers
+# '&&', '||', pipes, 'cd <path> && ...' chains, '$(...)'/backtick command substitution, and
+# '{ ...; }' brace grouping; after a command-introducing bash keyword 'then'/'do'/'else'/'elif'/
+# 'time'; or after a leading '!' negation), optionally behind an `npx` launcher and/or a path
+# prefix like /usr/bin/npx or /usr/bin/playwright. A bare "playwright test" substring anywhere else in
+# the string (e.g. inside a `git commit -m "... playwright test --update-snapshots ..."` free-text
+# message) is NOT a command invocation and must not be blocked — mirroring the npm-script fix.
+if printf '%s' "$cmd" | grep -Eq '(^|[;&|(`{]|\b(then|do|else|elif|time)[[:space:]])[[:space:]]*(![[:space:]]+)?(([^[:space:]]*/)?npx[[:space:]]+)?([^[:space:]]*/)?playwright[[:space:]]+test'; then
+  # The `-u` alias is bounded by start/space on the left and by start/space, end-of-string, or a
+  # shell command terminator (; & | ) } `) on the right. The trailing terminator set closes a
+  # second bypass the audit's brace-grouping payload also relied on: `{ npx playwright test -u; }`
+  # (and the plain `npx playwright test -u; echo x`) put `-u` immediately before ';', which the
+  # old `( |$)` boundary missed. The backtick was added after a confirmation audit found
+  # `x=`npx playwright test -u`` still bypassed: the closing backtick that ends the command
+  # substitution terminates `-u`, yet it was absent from this class even though backtick is already
+  # a first-class command-position anchor in the two gates above. This widening only fires after
+  # the `playwright test` command-position gate above, so unrelated `-u` (git push -u, sort -u) is
+  # never reached.
+  if printf '%s' "$cmd" | grep -Eq -- '--update-snapshots|(^|[[:space:]])-u([[:space:]);&|`}]|$)'; then
     deny "$REASON"
   fi
 fi
