@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 18 | 16 / 18 |
+| [Maintenance & hardening](#maintenance--hardening) | 18 | 17 / 18 |
 
 ---
 
@@ -1158,9 +1158,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-18 — Add `{{ year }}` / `{{ month }}` / `{{ day }}` date-component placeholders (P2)**
+- [x] **MNT-18 — Add `{{ year }}` / `{{ month }}` / `{{ day }}` date-component placeholders (P2)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
 
   The report builder only exposes one composed timestamp, `{{ generated_at }}`
   (`"%d/%m/%Y %H:%M"`, `src/reports/builder.py` `_render()` line 336), with no way for a Word
