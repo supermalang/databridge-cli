@@ -3,27 +3,13 @@ import { test, expect, Page } from '@playwright/test';
 /**
  * XTF-27 — Express Fill: bullet_list render type for column-value lists.
  *
- * Acceptance criterion covered here:
- *   "bullet_list appears as a selectable type in the Composition tab's chart
- *    type dropdown."
+ * Visual half of `frontend/tests/e2e/composition-bullet-list.spec.ts`
+ * (VIS-11 split): the functional/AC assertions stay there; this file carries
+ * ONLY the extracted visual baseline — verbatim body + the minimal shared
+ * setup it needs — run under the dedicated Tier 1 visual config
+ * (`visual-review/playwright.visual.config.ts`).
  *
- * The Composition surface (Analyze → "Charts & indicators",
- * `frontend/src/pages/Composition.jsx`) lets a user add a chart via the
- * "+ Add chart" control, which opens a modal with a "Chart type" <select>
- * populated from the CHART_TYPES list. `bullet_list` must be one of the
- * selectable <option> values.
- *
- * NETWORK-MOCKED: Vite serves the real SPA; every /api/** call is
- * intercepted with page.route(), so no FastAPI backend is required. Same
- * harness pattern as composition-progressive.spec.ts.
- *
- * RED-FIRST: `bullet_list` is not in the current CHART_TYPES list in
- * Composition.jsx, so the "option is present" assertions below are expected
- * to fail until XTF-27 ships.
- *
- * The visual baseline (chart type dropdown showing bullet_list, three
- * viewports) was extracted to
- * `visual-review/specs/composition-bullet-list.visual.spec.ts` (VIS-11).
+ * Visual baseline of the chart type dropdown showing the bullet_list option.
  */
 
 const ACTIVE_PROJECT = {
@@ -89,35 +75,28 @@ async function openComposition(page: Page) {
   await expect(page.locator('.comp-card').first()).toBeVisible();
 }
 
-test.describe('XTF-27 — bullet_list chart type', () => {
+test.describe('XTF-27 — visual baseline of the bullet_list chart type', () => {
   test.beforeEach(async ({ page }) => {
     await stubBootstrap(page);
     await bootApp(page);
     await openComposition(page);
   });
 
-  test('AC3: bullet_list is a selectable option in the chart type dropdown', async ({ page }) => {
+  test('visual: chart type dropdown showing bullet_list option', async ({ page }) => {
     const chartsCard = page.locator('.comp-card', {
       has: page.locator('.comp-card__title', { hasText: 'Charts' }),
     });
     const addChart = chartsCard.getByRole('button', { name: /add chart/i });
-    await expect(addChart).toBeVisible();
     await addChart.click();
 
     const modal = page.locator('.modal[role="dialog"]');
     await expect(modal).toBeVisible();
 
     const typeSelect = modal.getByRole('combobox', { name: /chart type/i });
-    await expect(typeSelect, 'Composition modal must expose a "Chart type" dropdown').toBeVisible();
-
-    const option = typeSelect.locator('option[value="bullet_list"]');
-    await expect(
-      option,
-      'bullet_list must be a selectable <option> in the Chart type dropdown',
-    ).toHaveCount(1);
-
-    // It must actually be selectable (not disabled) and settable via the select.
+    await expect(typeSelect).toBeVisible();
     await typeSelect.selectOption('bullet_list');
     await expect(typeSelect).toHaveValue('bullet_list');
+
+    await expect(modal).toHaveScreenshot('xtf27-composition-bullet-list-modal.png');
   });
 });

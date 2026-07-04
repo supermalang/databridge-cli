@@ -33,6 +33,11 @@ import { test, expect, Page, Locator } from '@playwright/test';
  *     input `aria-invalid="true"` (i.e. wire `fe.fieldProps('title')` +
  *     `error={fe.errorFor('title')}` exactly as the `name` field already is).
  * ───────────────────────────────────────────────────────────────────────────
+ *
+ * The visual baseline (chart editor Title-required error, three viewports)
+ * was extracted to
+ * `visual-review/specs/composition-chart-title-required.visual.spec.ts`
+ * (VIS-11).
  */
 
 const ACTIVE_PROJECT = {
@@ -182,16 +187,5 @@ test.describe('MNT-15 — Title is required in the chart editor modal', () => {
       editorDialog(page),
       'the chart editor must close when both Name and Title are provided',
     ).toHaveCount(0);
-  });
-
-  // ── Visual baseline (per-viewport via the project config) ─────────────────
-  // Captures the modal in its Title-required error state at mobile/tablet/desktop.
-  test('visual: chart editor modal with the Title-required error', async ({ page }) => {
-    await openAddChartModal(page);
-    await nameInput(page).fill('region_overview');
-    await saveButton(page).click();
-    await expect(editorDialog(page)).toBeVisible();
-    await expect(editorDialog(page).locator('[role="alert"]')).toHaveCount(1);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('composition-chart-title-required.png');
   });
 });

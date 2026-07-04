@@ -22,9 +22,10 @@ import { test, expect, Page } from '@playwright/test';
  *      than styling alone (a non-empty `title`/tooltip distinct from the
  *      enabled-state help, telling the user to test the connection first).
  *   6. No new axe violations in either the gated or the confirmed state.
- *   7. Visual baselines of the disabled (pre-connection) state and the
- *      confirmed-working state, one per viewport via playwright.config.ts (a
- *      human approves them).
+ *
+ * The visual baselines (AC 7: disabled + confirmed-working state, three
+ * viewports) were extracted to
+ * `visual-review/specs/connection-gating.visual.spec.ts` (VIS-11).
  *
  * NETWORK-MOCKED end-to-end (same harness as pux-1 / sample-data-path / a11y-*):
  * the Vite dev server serves the real SPA; every /api/** is intercepted with
@@ -346,28 +347,5 @@ test.describe('PUX-7 — Fetch/Download gated on a confirmed connection', () => 
 
     const violations = await runAxe(page);
     expect(violations, `confirmed state axe violations: ${JSON.stringify(violations)}`).toEqual([]);
-  });
-
-  // AC 7 visual: baseline of the disabled (pre-connection) state. Gate on the AC
-  // so the baseline is not captured before the gating exists.
-  test('visual baseline — gated (pre-connection) state', async ({ page }) => {
-    await stubBootstrap(page, { result: { ok: true, fields: 42 } });
-    await gotoConnection(page);
-    await expect(fetchBtn(page)).toBeDisabled();
-    await expect(sampleBtn(page)).toBeEnabled();
-    await hideTerminalBar(page);
-    await expect(page.locator('main')).toHaveScreenshot('pux7-connection-gated.png');
-  });
-
-  // AC 7 visual: baseline of the confirmed-working state.
-  test('visual baseline — confirmed-working state', async ({ page }) => {
-    const probe = { result: { ok: true, fields: 42 } as TestResult };
-    await stubBootstrap(page, probe);
-    await gotoConnection(page);
-    await clickTestConnection(page);
-    await expect(fetchBtn(page)).toBeEnabled();
-    await expect(sampleBtn(page)).toBeDisabled();
-    await hideTerminalBar(page);
-    await expect(page.locator('main')).toHaveScreenshot('pux7-connection-confirmed.png');
   });
 });

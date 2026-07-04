@@ -27,8 +27,11 @@ import AxeBuilder from '@axe-core/playwright';
  *      switch — only the FIRST mount shows it.
  *   6. An axe audit on a skeleton state reports no new violations (the busy region is announced
  *      once; shimmer blocks are hidden).
- *   7. `toHaveScreenshot` baselines of a Questions skeleton and a Profile skeleton at all three
- *      viewports (mobile/tablet/desktop via playwright.config.ts); a human approves them.
+ *
+ * The visual baselines (AC 7: Questions + Profile skeleton, three viewports) were extracted to
+ * `visual-review/specs/perf-3-skeleton.visual.spec.ts` (VIS-11) — regenerated + human-re-approved
+ * there rather than moved verbatim, because the shimmer animation interacts with the new config's
+ * animation-freezing option.
  *
  * NETWORK-MOCKED end to end (same harness as the a11y / pux / i18n specs): Vite serves the real
  * SPA; every /api/** call is intercepted with page.route(), so no FastAPI backend is required.
@@ -297,38 +300,5 @@ test.describe('PERF-3 — keep-alive: returning to an already-loaded tab shows n
     // Keep-alive: content is shown instantly, with NO skeleton on the return.
     await expect(page.locator('input.q-export-input').first()).toBeVisible();
     await expect(skeleton(page), 'no skeleton may appear when returning to an already-loaded tab').toHaveCount(0);
-  });
-});
-
-test.describe('PERF-3 — visual baselines of the skeleton states (3 viewports)', () => {
-  // AC#7: capture a Questions skeleton baseline. Gate on the skeleton being present (and the plain
-  // "Loading…" text gone) so the baseline is not captured vacuously from the pre-fix markup.
-  test('visual baseline — Questions skeleton', async ({ page }) => {
-    const gate = makeGate();
-    await stubBootstrap(page, { questions: gate.opened });
-    await gotoApp(page);
-    await openTransformSub(page, /questions/i);
-
-    await expect(skeleton(page).first()).toBeVisible();
-    await expect(plainLoading(page)).toHaveCount(0);
-    await hideTerminal(page);
-    await expect(page.locator('.page:visible')).toHaveScreenshot('perf3-questions-skeleton.png');
-
-    gate.release();
-  });
-
-  // AC#7: capture a Profile skeleton baseline.
-  test('visual baseline — Profile skeleton', async ({ page }) => {
-    const gate = makeGate();
-    await stubBootstrap(page, { profile: gate.opened });
-    await gotoApp(page);
-    await openTransformSub(page, /^profile$/i);
-
-    await expect(skeleton(page).first()).toBeVisible();
-    await expect(plainLoading(page)).toHaveCount(0);
-    await hideTerminal(page);
-    await expect(page.locator('.page:visible')).toHaveScreenshot('perf3-profile-skeleton.png');
-
-    gate.release();
   });
 });

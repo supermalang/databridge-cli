@@ -17,8 +17,9 @@ import { test, expect, Page } from '@playwright/test';
  *   3. Switching the language flips the SAME strip between FR and EN.
  *   4. No behaviour change: the sub-tab ids / ordering / selection are unchanged
  *      — only the displayed label is translated.
- *   5. Visual baselines of a French sub-tab bar at all three viewports
- *      (mobile/tablet/desktop via playwright.config.ts projects); a human approves.
+ *
+ * The visual baseline (AC 5: French sub-tab bar, three viewports) was extracted
+ * to `visual-review/specs/i18n-subtabs.visual.spec.ts` (VIS-11).
  *
  * NETWORK-MOCKED end to end (same harness as i18n-switch / i18n-coverage): Vite
  * serves the real SPA; every /api/ call is intercepted with page.route(), so no
@@ -208,31 +209,5 @@ test.describe('I18N-5 — behaviour unchanged (ids / ordering / selection)', () 
     await expect(subtabs.nth(0)).toHaveText(/^Questions$/i);
     await expect(subtabs.nth(1)).toHaveText(/^Profil$/i);
     await expect(subtabs.nth(2)).toHaveText(/^Valider$/i);
-  });
-});
-
-test.describe('I18N-5 — visual baseline of a French sub-tab bar', () => {
-  // AC visual: capture the FRENCH sub-tab strip at all three viewports (one
-  // baseline per viewport via playwright.config.ts). Gate on a wired FR string
-  // first so the baseline can never be vacuous (an untranslated EN strip).
-  test('visual baseline — Transform sub-tab bar in French', async ({ page }) => {
-    await stubBootstrap(page, 'fr');
-    await gotoApp(page);
-    const bar = await openStage(page, 'transform');
-    await expect(bar.locator('.subtab', { hasText: /^Profil$/i })).toBeVisible();
-    await expect(bar.locator('.subtab', { hasText: /^Valider$/i })).toBeVisible();
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await expect(bar).toHaveScreenshot('i18n5-subtabs-transform-fr.png');
-  });
-
-  test('visual baseline — Deliver sub-tab bar in French', async ({ page }) => {
-    await stubBootstrap(page, 'fr');
-    await gotoApp(page);
-    const bar = await openStage(page, 'present');
-    await expect(bar.locator('.subtab', { hasText: /^Sortie$/i })).toBeVisible();
-    await expect(bar.locator('.subtab', { hasText: /^Modèles$/i })).toBeVisible();
-    await expect(bar.locator('.subtab', { hasText: /^Rapports$/i })).toBeVisible();
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await expect(bar).toHaveScreenshot('i18n5-subtabs-deliver-fr.png');
   });
 });

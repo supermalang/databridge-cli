@@ -17,8 +17,10 @@ import { test, expect, Page } from '@playwright/test';
  *   4. On Questions, the export-label field reads as a plain-language report-friendly
  *      name with an inline one-line hint, and any raw `kobo_key` token shown to the
  *      user is accompanied by a plain-language explanation (never shown bare).
- *   5. Visual baselines of the relabeled Home cards and the relabeled Questions row,
- *      one per viewport (mobile/tablet/desktop via playwright.config.ts).
+ *
+ * The visual baselines (AC 5: relabeled Home cards + Questions row, three
+ * viewports) were extracted to `visual-review/specs/pux-1.visual.spec.ts`
+ * (VIS-11).
  *
  * NETWORK-MOCKED end-to-end (same harness as a11y-*.spec.ts): the Vite dev server
  * serves the real SPA; every /api/** is intercepted with page.route(), so no
@@ -163,18 +165,6 @@ test.describe('PUX-1 — Home stage cards use plain language', () => {
     // Destination unchanged: the model stage (same data-tab id) is now active.
     await expect(page.locator('.tabs-bar .tab.active[data-tab="model"]')).toBeVisible();
   });
-
-  // Visual baseline of the relabeled Home cards (one assertion → one baseline per
-  // viewport via playwright.config.ts; a human approves them). Gate on the AC so the
-  // baseline is not captured vacuously from pre-fix jargon copy.
-  test('visual baseline of the relabeled Home stage cards', async ({ page }) => {
-    const third = page.locator('.home-card').nth(2);
-    const text = ((await third.innerText()) || '').trim();
-    for (const pattern of FORBIDDEN_THIRD_CARD) {
-      expect(text, 'Home cards must be relabeled before the baseline is captured').not.toMatch(pattern);
-    }
-    await expect(page.locator('.home-cards')).toHaveScreenshot('pux1-home-stage-cards.png');
-  });
 });
 
 test.describe('PUX-1 — Questions field labels use plain language', () => {
@@ -241,17 +231,6 @@ test.describe('PUX-1 — Questions field labels use plain language', () => {
       tableText,
       `the raw token "kobo_key" must not be shown bare to the user; got: ${JSON.stringify(tableText)}`,
     ).not.toMatch(/kobo_key/i);
-  });
-
-  // Visual baseline of the relabeled Questions row (one assertion → one baseline per
-  // viewport). Gate on the AC so the baseline is not captured from pre-fix copy.
-  test('visual baseline of the relabeled Questions row', async ({ page }) => {
-    const table = page.locator('.q-table').first();
-    await expect(table).toBeVisible();
-    const tableText = ((await table.innerText()) || '').trim();
-    expect(tableText, 'Questions field labels must be relabeled before the baseline is captured')
-      .not.toMatch(/export[\s_]?label|kobo_key/i);
-    await expect(table).toHaveScreenshot('pux1-questions-row.png');
   });
 });
 

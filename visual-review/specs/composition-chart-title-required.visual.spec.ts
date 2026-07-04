@@ -1,29 +1,15 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, Locator } from '@playwright/test';
 
 /**
- * XTF-27 — Express Fill: bullet_list render type for column-value lists.
+ * MNT-15 — Fix: manually-created charts can ship with a blank title.
  *
- * Acceptance criterion covered here:
- *   "bullet_list appears as a selectable type in the Composition tab's chart
- *    type dropdown."
+ * Visual half of `frontend/tests/e2e/composition-chart-title-required.spec.ts`
+ * (VIS-11 split): the functional/AC assertions stay there; this file carries
+ * ONLY the extracted visual baseline — verbatim body + the minimal shared
+ * setup it needs — run under the dedicated Tier 1 visual config
+ * (`visual-review/playwright.visual.config.ts`).
  *
- * The Composition surface (Analyze → "Charts & indicators",
- * `frontend/src/pages/Composition.jsx`) lets a user add a chart via the
- * "+ Add chart" control, which opens a modal with a "Chart type" <select>
- * populated from the CHART_TYPES list. `bullet_list` must be one of the
- * selectable <option> values.
- *
- * NETWORK-MOCKED: Vite serves the real SPA; every /api/** call is
- * intercepted with page.route(), so no FastAPI backend is required. Same
- * harness pattern as composition-progressive.spec.ts.
- *
- * RED-FIRST: `bullet_list` is not in the current CHART_TYPES list in
- * Composition.jsx, so the "option is present" assertions below are expected
- * to fail until XTF-27 ships.
- *
- * The visual baseline (chart type dropdown showing bullet_list, three
- * viewports) was extracted to
- * `visual-review/specs/composition-bullet-list.visual.spec.ts` (VIS-11).
+ * Visual baseline of the chart editor modal in its Title-required error state.
  */
 
 const ACTIVE_PROJECT = {
@@ -47,7 +33,7 @@ const CONFIG_YML = [
 
 const QUESTIONS = {
   questions: [
-    { kobo_key: 'group_a/village', label: 'Village', export_label: 'Village', type: 'text', category: 'qualitative' },
+    { kobo_key: 'group_a/region', label: 'Region', export_label: 'region', type: 'select_one', category: 'categorical' },
   ],
 };
 
@@ -69,6 +55,14 @@ async function stubBootstrap(page: Page) {
   await page.route('**/api/templates/active', (r) => r.fulfill({ json: { active: null } }));
   await page.route('**/api/data/sessions', (r) => r.fulfill({ json: { sessions: [] } }));
   await page.route('**/api/indicators/preview', (r) => r.fulfill({ json: { value: 0 } }));
+  await page.route('**/api/charts/preview', (r) =>
+    r.fulfill({ json: { image: Buffer.from('fake-png').toString('base64') } }));
+  await page.route('**/api/config', (r) => {
+    if (r.request().method() === 'PUT' || r.request().method() === 'POST') {
+      return r.fulfill({ json: { ok: true } });
+    }
+    return r.fulfill({ json: { content: CONFIG_YML } });
+  });
 }
 
 async function bootApp(page: Page) {
@@ -89,35 +83,33 @@ async function openComposition(page: Page) {
   await expect(page.locator('.comp-card').first()).toBeVisible();
 }
 
-test.describe('XTF-27 — bullet_list chart type', () => {
+const chartsCard = (page: Page): Locator =>
+  page.locator('.comp-card', { has: page.locator('.comp-card__title', { hasText: 'Charts' }) });
+
+const editorDialog = (page: Page): Locator => page.locator('.modal[role="dialog"]');
+const nameInput = (page: Page): Locator => editorDialog(page).getByLabel('Chart name', { exact: true });
+const saveButton = (page: Page): Locator =>
+  editorDialog(page).locator('.btn-primary');
+
+async function openAddChartModal(page: Page) {
+  const card = chartsCard(page);
+  await card.getByRole('button', { name: /add chart/i }).click();
+  await expect(editorDialog(page)).toBeVisible();
+}
+
+test.describe('MNT-15 — visual baseline of the chart editor Title-required error', () => {
   test.beforeEach(async ({ page }) => {
     await stubBootstrap(page);
     await bootApp(page);
     await openComposition(page);
   });
 
-  test('AC3: bullet_list is a selectable option in the chart type dropdown', async ({ page }) => {
-    const chartsCard = page.locator('.comp-card', {
-      has: page.locator('.comp-card__title', { hasText: 'Charts' }),
-    });
-    const addChart = chartsCard.getByRole('button', { name: /add chart/i });
-    await expect(addChart).toBeVisible();
-    await addChart.click();
-
-    const modal = page.locator('.modal[role="dialog"]');
-    await expect(modal).toBeVisible();
-
-    const typeSelect = modal.getByRole('combobox', { name: /chart type/i });
-    await expect(typeSelect, 'Composition modal must expose a "Chart type" dropdown').toBeVisible();
-
-    const option = typeSelect.locator('option[value="bullet_list"]');
-    await expect(
-      option,
-      'bullet_list must be a selectable <option> in the Chart type dropdown',
-    ).toHaveCount(1);
-
-    // It must actually be selectable (not disabled) and settable via the select.
-    await typeSelect.selectOption('bullet_list');
-    await expect(typeSelect).toHaveValue('bullet_list');
+  test('visual: chart editor modal with the Title-required error', async ({ page }) => {
+    await openAddChartModal(page);
+    await nameInput(page).fill('region_overview');
+    await saveButton(page).click();
+    await expect(editorDialog(page)).toBeVisible();
+    await expect(editorDialog(page).locator('[role="alert"]')).toHaveCount(1);
+    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('composition-chart-title-required.png');
   });
 });

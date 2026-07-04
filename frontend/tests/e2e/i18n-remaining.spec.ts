@@ -11,9 +11,9 @@ import { test, expect, Page } from '@playwright/test';
  *      edit form, and the members panel — and NO raw translation key (a bare
  *      `foo.bar` token) leaks into the rendered UI.
  *   2. With English selected the SAME surfaces render their English strings.
- *   3. Visual baseline of the FRENCH Profile header at all three viewports
- *      (mobile/tablet/desktop via playwright.config.ts projects); a human
- *      approves (checking no FR overflow).
+ *
+ * The visual baseline (AC 3: French Profile header, three viewports) was
+ * extracted to `visual-review/specs/i18n-remaining.visual.spec.ts` (VIS-11).
  *
  * NETWORK-MOCKED end to end (same harness as i18n-subtabs / i18n-coverage):
  * Vite serves the real SPA; every /api/ call is intercepted with page.route(),
@@ -209,20 +209,5 @@ test.describe('I18N-3 — the same surfaces revert to English', () => {
     const panel = page.locator('.pf-panel').filter({ has: page.locator('.members-table') });
     await expect(panel).toContainText('Member');
     await expect(panel).toContainText('Invite someone');
-  });
-});
-
-test.describe('I18N-3 — visual baseline of the French Profile header', () => {
-  // AC visual: capture the FRENCH Profile header at all three viewports (one
-  // baseline per viewport via playwright.config.ts). Gate on a wired FR string
-  // first so the baseline can never be vacuous (an untranslated EN header).
-  test('visual baseline — French Profile header', async ({ page }) => {
-    await stubBootstrap(page, 'fr');
-    await gotoApp(page);
-    const pane = await openSub(page, 'transform', 1);
-    const header = pane.locator('.page-header');
-    await expect(header).toContainText('Profil des données');
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await expect(header).toHaveScreenshot('i18n3-profile-header-fr.png');
   });
 });

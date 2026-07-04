@@ -19,6 +19,10 @@ import { test, expect, Page, Locator } from '@playwright/test';
  *       keyboard-operable, progressive-disclosure "Advanced" affordance
  *       (collapsed by default), with no construct removed.
  *
+ * The visual baselines (collapsed + expanded states, three viewports) were
+ * extracted to `visual-review/specs/composition-progressive.visual.spec.ts`
+ * (VIS-11).
+ *
  * NOTE on scope (corrected card): views + framework are NOT on this surface —
  * views lives under Model → Views. This spec must not reference them.
  *
@@ -284,38 +288,5 @@ test.describe('PUX-3 — Composition progressive disclosure', () => {
     await expect(addChart, 'primary Charts construct must keep its "+ Add chart" control').toBeVisible();
     await addChart.click();
     await expect(page.locator('.modal[role="dialog"]'), 'chart editor must still open').toBeVisible();
-  });
-
-  // ── Visual baselines (per-viewport via the project config) ────────────────
-  test('visual: collapsed (starter) state', async ({ page }) => {
-    // Guard against a vacuous baseline — the starter path must actually render.
-    await expect(starterPath(page)).toBeVisible();
-    await expect(advancedToggle(page)).toHaveAttribute('aria-expanded', 'false');
-    // Deterministic scroll anchor so the full-page stitch is stable across runs.
-    await page.evaluate(() => window.scrollTo(0, 0));
-    // App.jsx keeps inactive panes mounted-but-hidden (display:none), so multiple
-    // `.page` nodes exist; target the VISIBLE Composition pane only. The Composition
-    // surface is taller than the mobile viewport, so the shot is stitched; the
-    // position:fixed terminal bar (.bottom-term) would otherwise ghost across the
-    // stitched frames, so hide it (out of scope for this surface) for a clean, stable
-    // baseline — cleaner than a mask, which paints an opaque band.
-    await page.addStyleTag({ content: '.bottom-term { display: none !important; }' });
-    await expect(page.locator('.page:visible')).toHaveScreenshot('pux3-composition-collapsed.png');
-  });
-
-  test('visual: expanded (Advanced) state', async ({ page }) => {
-    await advancedToggle(page).click();
-    await expect(advancedRegion(page)).toBeVisible();
-    await expect(advancedToggle(page)).toHaveAttribute('aria-expanded', 'true');
-    // Deterministic scroll anchor so the full-page stitch is stable across runs.
-    await page.evaluate(() => window.scrollTo(0, 0));
-    // App.jsx keeps inactive panes mounted-but-hidden (display:none), so multiple
-    // `.page` nodes exist; target the VISIBLE Composition pane only. The Composition
-    // surface is taller than the mobile viewport, so the shot is stitched; the
-    // position:fixed terminal bar (.bottom-term) would otherwise ghost across the
-    // stitched frames, so hide it (out of scope for this surface) for a clean, stable
-    // baseline — cleaner than a mask, which paints an opaque band.
-    await page.addStyleTag({ content: '.bottom-term { display: none !important; }' });
-    await expect(page.locator('.page:visible')).toHaveScreenshot('pux3-composition-expanded.png');
   });
 });
