@@ -55,6 +55,50 @@ def test_ask_save_indicator_appends_to_indicators(monkeypatch):
     assert saved["indicators"][0]["name"] == "n_rows"
 
 
+def test_ask_save_rejects_pii_bullet_list_with_data(monkeypatch):
+    """Security (MNT-19 follow-up): the persistence path must validate too.
+
+    A bullet_list dumps raw row values verbatim, so /api/ask/save must reject one
+    naming a pii:true column (rather than trusting the client and persisting it).
+    With data present the recipe is validated against the profile (which drops the
+    PII column), so the save is rejected 4xx and nothing is written to config."""
+    saved = {}
+    cfg = {"charts": [],
+           "questions": [{"export_label": "Story", "type": "text", "pii": True}],
+           "pii": {"redact": []}}
+    df = pd.DataFrame({"_id": [1, 2, 3], "Story": ["a", "b", "c"]})
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "load_processed_data", lambda *a, **k: (df, {}))
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+    with TestClient(wm.app) as client:
+        resp = client.post("/api/ask/save",
+                           json={"recipe": {"name": "stories", "type": "bullet_list",
+                                            "questions": ["Story"]}})
+    assert resp.status_code == 400, resp.text
+    assert saved == {}, "a rejected recipe must not be persisted"
+    assert cfg["charts"] == []
+
+
+def test_ask_save_rejects_pii_bullet_list_without_data(monkeypatch):
+    """Same gate before any download: with no data to profile, the cfg-only
+    PII/hidden bullet_list gate still rejects the save so it can't be smuggled in
+    and dumped verbatim at build time."""
+    saved = {}
+    cfg = {"charts": [],
+           "questions": [{"export_label": "Story", "type": "text", "pii": True}],
+           "pii": {"redact": []}}
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+    # load_processed_data left un-mocked → real FileNotFoundError (no data).
+    with TestClient(wm.app) as client:
+        resp = client.post("/api/ask/save",
+                           json={"recipe": {"name": "stories", "type": "bullet_list",
+                                            "questions": ["Story"]}})
+    assert resp.status_code == 400, resp.text
+    assert saved == {}, "a rejected recipe must not be persisted"
+    assert cfg["charts"] == []
+
+
 def test_ask_refine_endpoint(monkeypatch):
     cfg = {"ai": {"provider": "openai", "api_key": "sk-x"}, "questions": []}
     df = pd.DataFrame({"_id": [1, 2, 3]})

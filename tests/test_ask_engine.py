@@ -225,6 +225,60 @@ def test_validate_recipe_table_needs_categorical():
     assert not ok2 and "categorical" in reason2
 
 
+def test_validate_recipe_bullet_list_needs_one_column():
+    """MNT-19 AC: CHART_REQS includes a "bullet_list" entry requiring >=1 column
+    (unlike 'table', it must NOT require a categorical column -- the whole point
+    is to give free-text/list placeholders with no categorical column a valid
+    home). A recipe with >=1 usable column (here a qualitative "Story" column,
+    which 'table' would reject) validates ok; a recipe with 0 columns is
+    rejected using the same requirement-string format as other types."""
+    ok, reason = validate_recipe({"type": "bullet_list", "questions": ["Story"]}, _profile_fixture())
+    assert ok and reason == "", reason
+
+    ok2, reason2 = validate_recipe({"type": "bullet_list", "questions": []}, _profile_fixture())
+    assert not ok2
+    assert "bullet_list" in reason2 and "≥1 column" in reason2, reason2
+
+    # AC: the AI type-list prompt block (shared by /api/ask and Template
+    # Inference) must also expose bullet_list as a proposable type.
+    assert "bullet_list" in ask_engine._CHART_TYPES_BLOCK, ask_engine._CHART_TYPES_BLOCK
+
+
+def test_validate_recipe_bullet_list_rejects_pii_column():
+    """Security (MNT-19 follow-up): bullet_list dumps raw, unaggregated row values
+    verbatim, so a PII-flagged column must NOT be listable. When cfg is supplied,
+    validate_recipe rejects a bullet_list naming a `pii: true` column even though it
+    is NOT (separately) in cfg['pii']['redact'] — mirroring build_catalog's gate."""
+    cfg = {
+        "questions": [
+            {"export_label": "Story", "type": "text", "pii": True},
+        ],
+        # deliberately NOT redacted here — is_pii is a separate flag from redact,
+        # so the raw values are still in the DataFrame at render time.
+        "pii": {"redact": []},
+    }
+    ok, reason = validate_recipe(
+        {"type": "bullet_list", "questions": ["Story"]}, _profile_fixture(), cfg)
+    assert not ok, "a PII column must not be listable verbatim in a bullet_list"
+    assert "Story" in reason and ("PII" in reason or "hidden" in reason), reason
+
+
+def test_validate_recipe_bullet_list_rejects_hidden_column():
+    """Effective-hidden columns are gated the same way as PII for bullet_list."""
+    cfg = {"questions": [{"export_label": "Story", "type": "text", "hidden": True}]}
+    ok, reason = validate_recipe(
+        {"type": "bullet_list", "questions": ["Story"]}, _profile_fixture(), cfg)
+    assert not ok and "Story" in reason, reason
+
+
+def test_validate_recipe_bullet_list_allows_safe_column_with_cfg():
+    """A non-PII, non-hidden column still validates ok even when cfg is provided."""
+    cfg = {"questions": [{"export_label": "Story", "type": "text"}]}
+    ok, reason = validate_recipe(
+        {"type": "bullet_list", "questions": ["Story"]}, _profile_fixture(), cfg)
+    assert ok and reason == "", reason
+
+
 def test_validate_indicator_count_ok():
     ok, reason = validate_recipe({"kind": "indicator", "stat": "count"}, _profile_fixture())
     assert ok and reason == ""

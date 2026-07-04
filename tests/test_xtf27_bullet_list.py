@@ -259,3 +259,25 @@ def test_bullet_list_repeat_table_source(workspace):
             f"Expected repeat-table member '{name}' in the bullet_list output when "
             f"source: hh_members is configured. Got: {value!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# MNT-19 follow-up (security) — the row cap must clamp negatives.
+# ---------------------------------------------------------------------------
+
+def test_bullet_list_negative_top_n_still_caps():
+    """A negative top_n must NOT bypass the row cap.
+
+    The earlier `if top_n >= 0` skip treated a negative top_n as "no limit",
+    unlike every other renderer where top_n feeds .head()/.nlargest(). A persisted
+    spec with a negative top_n could then dump an unbounded column. The cap now
+    clamps with max(0, top_n), so a negative value emits zero rows."""
+    from src.reports.charts import build_bullet_list_text
+
+    df = pd.DataFrame({"Story": [f"row{i}" for i in range(10)]})
+    out = build_bullet_list_text(df, ["Story"], {"top_n": -5})
+    assert out == "", f"negative top_n must clamp to 0 rows, got: {out!r}"
+
+    # Sanity: a positive cap still limits (and does not regress).
+    out2 = build_bullet_list_text(df, ["Story"], {"top_n": 3})
+    assert out2.count("•") == 3, f"top_n=3 must emit exactly 3 rows, got: {out2!r}"

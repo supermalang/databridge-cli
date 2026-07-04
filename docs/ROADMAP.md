@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 18 | 18 / 18 |
+| [Maintenance & hardening](#maintenance--hardening) | 19 | 19 / 19 |
 
 ---
 
@@ -1208,6 +1208,120 @@ Sprint exit — checked by /report + /retro:
   above are the human gate).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -k "year_month_day or date_placeholders"`
+
+---
+
+- [x] **MNT-19 — Add `bullet_list` as a proposable AI-inference type (stop over-defaulting free-text/list placeholders to `table`) (P2)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  Express Template Fill's AI inference has no way to propose `bullet_list` (a first-class render
+  type since XTF-27 — "1 column to list as bullet points", `Composition.jsx:40`) because
+  `ask_engine.py`'s `CHART_REQS` (the dict shared by both `/api/ask` and Template Inference's
+  `validate_recipe()`) has no `bullet_list` entry at all. When a placeholder's name/content is
+  really a free-text list (e.g. French names like `actions_prioritaires`,
+  `interventions_manquantes`, `risques_doublons` — "priority actions", "missing interventions",
+  "duplicate risks") and the underlying data has no categorical column, the LLM has nowhere
+  correct to route it: narrative-slot routing in `annotate_proposals`
+  (`_NARRATIVE_SLOT_KEYWORDS`, `template_inference.py:239-243`) only covers a fixed keyword set
+  (findings, overview, next steps, recommendations, observations, etc.), and the LLM-facing prompt
+  description of "narrative" (`seed_prompts.py:981-983`) similarly only mentions "recommendations,
+  observations, an executive summary" — neither matches these names, so the model falls back to
+  `table`, the generic catch-all, which then permanently fails `table`'s "≥1 categorical column"
+  requirement (`ask_engine.py` `CHART_REQS["table"]`) and gets stuck on a `needs_attention`
+  warning the user has to manually reassign every time.
+
+  Adding `bullet_list` to `CHART_REQS` alone is not sufficient: `apply_inference`
+  (`template_inference.py`, `_KIND_SECTION` + the canonical-placeholder construction around lines
+  777-778 and 912-915) always writes back `{{ chart_<name> }}` for `kind == "chart"` regardless
+  of `spec["type"]`, but `builder.py` (~line 450-451) only ever populates a `list_<name>` context
+  key for `type == "bullet_list"` — so an approved `bullet_list` proposal would silently never
+  render unless the placeholder-naming logic is also taught the `bullet_list` → `list_<name>`
+  mapping already used for manually-added bullet_list placeholders
+  (`template_generator.py:31-32,137,226`).
+
+  **Scope grew during Review** (security-audit, 3 passes): `bullet_list` renders raw, unaggregated
+  per-row values of a column (unlike every other proposable type, which renders aggregates), so
+  making it AI-proposable turned a pre-existing gap — `/api/ask/save` and `/api/template/apply`
+  persisted a client/LLM-supplied chart spec with no server-side re-validation against
+  `is_pii`/`is_effective_hidden` — into a full raw-data exfiltration path for a PII-flagged column
+  not separately listed in `cfg.pii.redact`. Closed with a PII/hidden-column gate at both
+  persistence endpoints (not just the propose paths), the CLI's `cmd_infer_template`, and a
+  negative-`top_n` cap bypass. The resulting synchronous profile recompute on every Save/Apply
+  click then tripped `perf-review` (`PERF: BLOCKED`) — fixed by routing both endpoints through the
+  existing `perf_cache` mechanism `/api/profile` already uses, empirically verified to cache-hit
+  correctly and to bust on a `cfg` (PII-flag) change.
+
+  **Type:** Fix
+
+  **Files:** `src/reports/ask_engine.py` (`CHART_REQS["bullet_list"]`; `_validate_chart`'s
+  bullet_list branch gates on `excluded_column_names(cfg)`; `validate_recipe`/`_execute_item`/
+  `ask()`/`refine_item()` thread an optional `cfg` param) · `src/reports/template_inference.py`
+  (`_KIND_SECTION` / canonical-placeholder construction ~lines 777-778, 912-915 route
+  `bullet_list` to the `list_<name>` prefix; `annotate_proposals`/`_validate_data_proposal` thread
+  `cfg`) · `src/reports/charts.py` (`build_bullet_list_text` gains `opts.get("top_n", 50)` capped
+  via `max(0, top_n)`) · `src/reports/builder.py` (passes `resolved.get("options")` through) ·
+  `src/data/make.py` (`cmd_infer_template` passes `cfg` into `annotate_proposals`) ·
+  `web/main.py` (`_bullet_list_names_excluded` helper; `api_ask_save` validates via
+  `ask_engine.validate_recipe(..., cfg)` before persisting, routed through the existing
+  `perf_cache` under the same `"profile"` key `/api/profile` uses; `api_template_apply`
+  re-validates via `ti.annotate_proposals(candidates, prof, cfg)` server-side instead of trusting
+  client-echoed `status`, same cache treatment) · `tests/test_ask_engine.py`,
+  `tests/test_template_inference.py`, `tests/test_ask_api.py`, `tests/test_template_api.py`,
+  `tests/test_xtf27_bullet_list.py` (new tests) · `docs/reference/prompts.md` (checked — no
+  proposable-type enumeration exists there to update)
+
+  **Config/schema impact:** None — `bullet_list` the render type already exists and is unchanged
+  (XTF-27); this only changes what the AI recipe validator/prompt can propose, how that
+  proposal's placeholder is named when applied, and adds a server-side PII/hidden-column
+  re-validation gate at persistence time.
+
+  **Acceptance criteria**
+  - `CHART_REQS` in `ask_engine.py` includes a `"bullet_list"` entry with requirement "≥1 column"
+  - `validate_recipe()` accepts a `bullet_list` recipe with ≥1 column and rejects one with 0
+    columns, using the same requirement-string format as other types (e.g. "'bullet_list' needs
+    ≥1 column")
+  - The AI type-list prompt block includes `bullet_list` alongside the other proposable types, so
+    both `/api/ask` and Express Template Fill's inference can propose it
+  - Given a placeholder whose underlying data has no categorical column but does have at least
+    one usable column, Template Inference's batched call can propose `bullet_list` instead of
+    being forced toward the always-failing `table`
+  - A `bullet_list` proposal approved via Express Template Fill's `apply_inference` writes
+    `{{ list_<name> }}` into the resolved template (not `{{ chart_<name> }}`), matching
+    `builder.py`'s `list_<name>` context key — the same convention `template_generator.py` already
+    uses for a manually-added bullet_list placeholder
+  - A `bullet_list` recipe naming a column flagged `is_pii`/effectively hidden is rejected — at
+    `/api/ask` and `/api/template/infer` (propose time) AND at `/api/ask/save` and
+    `/api/template/apply` (persistence time, independent of any client-supplied `status`), and at
+    the CLI's `infer-template`/`apply-template` path
+  - A negative `top_n` on a `bullet_list` no longer bypasses its row cap (`max(0, top_n)`)
+  - `api_ask_save`/`api_template_apply`'s new profile-loading work is served from the existing
+    `perf_cache` (same key `/api/profile` uses) rather than recomputing on every request, and the
+    cache correctly busts when `cfg` changes (e.g. a column's `pii:` flag flips)
+  - No regression to existing chart/indicator/summary/table/narrative/metadata routing,
+    validation, or placeholder-naming — all existing `ask_engine`/`template_inference` tests
+    remain green
+
+  **Unit tests:** `tests/test_ask_engine.py` — `test_validate_recipe_bullet_list_needs_one_column`,
+  `test_validate_recipe_bullet_list_rejects_pii_column`,
+  `test_validate_recipe_bullet_list_rejects_hidden_column`,
+  `test_validate_recipe_bullet_list_allows_safe_column_with_cfg`.
+  `tests/test_template_inference.py` — `test_annotate_bullet_list_proposal_validates_ok`,
+  `test_apply_inference_bullet_list_uses_list_prefix`.
+  `tests/test_ask_api.py` — `test_ask_save_rejects_pii_bullet_list_with_data`,
+  `test_ask_save_rejects_pii_bullet_list_without_data`.
+  `tests/test_template_api.py` — `test_apply_revalidates_and_drops_flipped_pii_bullet_list`,
+  `test_apply_drops_pii_bullet_list_without_data`.
+  `tests/test_xtf27_bullet_list.py` — `test_bullet_list_negative_top_n_still_caps`.
+
+  **E2E:** N/A (no app UI surface changed — Composition.jsx's manual `bullet_list` option already
+  exists per XTF-27; this card only changes what the AI can *propose* during inference, how that
+  proposal is named when applied, and server-side validation/caching, none of it UI).
+
+  **UAT:** N/A (backend/AI-inference + API logic; PR review + the unit tests above are the human
+  gate).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_engine.py tests/test_template_inference.py tests/test_ask_api.py tests/test_template_api.py tests/test_xtf27_bullet_list.py -k bullet_list`
 
 ---
 
