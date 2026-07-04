@@ -77,7 +77,7 @@ Sprint exit — checked by /report + /retro:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 14 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 12 | 6 / 12 |
+| [Visual / E2E harness](#visual--e2e-harness) | 12 | 7 / 12 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
@@ -1095,12 +1095,24 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **VIS-11 — Split Tier 1 specs into functional + visual, Shard B: i18n / product-UX / composition (15 files) (P2)**
+- [x] **VIS-11 — Split Tier 1 specs into functional + visual, Shard B: i18n / product-UX / composition (15 files) (P2)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
 
   Second shard of the same mechanical split described in VIS-10 (see VIS-10 for the exclusion
   note on the 3 non-visual files, and the full transformation recipe — not repeated here).
+
+  **Accepted exception, not fixed by this card:** 25 of the migrated visual assertions (across
+  `composition-progressive`, `connection-gating`, `copy-placeholder`, `i18n-coverage`,
+  `i18n-remaining`, `project-language`, `pux-1`, `pux-2`) fail against their moved, pixel-identical
+  baselines — confirmed **pre-existing on `develop`** (identical failures reproduce running the
+  same specs' still-colocated, un-migrated baselines directly on a clean `develop` checkout,
+  before this card's migration ever touches them). Root cause: the baselines were last refreshed
+  at PUX-4 and have drifted from several unrelated rendering changes since (e.g. I18N-2's string
+  externalization) — a pre-existing gap this card's mechanical split neither introduces nor is
+  scoped to fix. Functional suite: 387/387 passing. Tracked as a separate follow-up (baseline
+  refresh requires human re-approval per `guard-visual-update.sh` and is out of scope for a
+  test-file-reorganization card).
 
   **Type:** Feature
 
