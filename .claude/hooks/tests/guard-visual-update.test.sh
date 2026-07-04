@@ -360,6 +360,18 @@ assert_allow "env-var assignment with an unrelated command must still be allowed
 assert_allow "free-text mention inside a quoted commit message must still be allowed (not a real command position)" \
   'git commit -m "NODE_PATH=./node_modules playwright test -u fixed the CI script"'
 
+# --- VIS-9 (workflow code-review finding): the env-var-assignment value pattern
+# ([^[:space:]]*) is not quote-aware, so a *quoted* value containing a space breaks the whole
+# anchor+assignment+command match and the guard falls through to ALLOW — silently re-opening the
+# exact bypass the assignment fix above was meant to close. A double-quoted or single-quoted
+# value (which may contain spaces) must be recognized as part of the same command position. ---
+assert_deny "double-quoted env-var value containing a space still denies playwright -u" \
+  'NODE_PATH="a b" playwright test -u'
+assert_deny "double-quoted env-var value containing a space still denies the npm update script" \
+  'NODE_PATH="a b" npm run test:visual:update'
+assert_deny "single-quoted env-var value containing a space still denies playwright --update-snapshots" \
+  "NODE_PATH='a b' playwright test --update-snapshots"
+
 # --- VIS-7 (verify-pass fix): the deny path itself must not depend on jq. On a host with no jq
 # on PATH, extract_command() already fell back to python3, but the original jq -n deny() had no
 # equivalent fallback — it silently produced no output and exit 0 (ALLOW) on a genuine denial,
