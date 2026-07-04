@@ -138,13 +138,20 @@ REASON="Blocked visual-baseline update: '$cmd'. Regenerating Playwright screensh
 # cmd` runs `cmd` with `VAR` set, same as `cmd` alone — so it is allowed between the
 # anchor/negation and the matched command in both gates below (VIS-9 security-audit fix). The
 # value may be a double-quoted or single-quoted string (which may itself contain spaces) or a
-# bare whitespace-free token. Held in a variable (not inlined into the grep patterns) because a
-# code-review pass on the first version of this fix found the inlined bare-token-only value
-# pattern ([^[:space:]]*) broke the WHOLE anchor+assignment+command match — and fell through to
+# bare whitespace-free token. The double-quoted alternative is backslash-escape-aware
+# (`"(\\.|[^"\\])*"`, matching real bash double-quote semantics where `\"` does not end the
+# string) — an adversarial re-audit found the simpler `"[^"]*"` broke the whole
+# anchor+assignment+command match, and fell through to ALLOW, on a value combining a
+# backslash-escaped quote with an embedded space, e.g. `NODE_PATH="a \" b" playwright test -u`.
+# The single-quoted alternative needs no such escaping: bash has no escape mechanism at all
+# inside single quotes (a literal `'` can never appear there), so `'[^']*'` is already exact.
+# Held in a variable (not inlined into the grep patterns) because an earlier code-review pass on
+# the first version of this fix found the inlined bare-token-only value pattern
+# ([^[:space:]]*) broke the WHOLE anchor+assignment+command match — and fell through to
 # ALLOW — on a quoted value containing a space, e.g. `NODE_PATH="a b" playwright test -u`;
 # inlining the 3-way quoted/unquoted alternation directly into a single-quoted grep argument
 # requires fragile quote-escaping that is exactly what produced that bug.
-ENV_ASSIGN='([A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]*)[[:space:]]+)*'
+ENV_ASSIGN='([A-Za-z_][A-Za-z0-9_]*=("(\\.|[^"\\])*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]*)[[:space:]]+)*'
 
 # --- npm run test:e2e:update / test:visual:storybook:update / test:visual:update ---
 # Match only when `npm run test:...:update` is actually invoked in a command position — the
