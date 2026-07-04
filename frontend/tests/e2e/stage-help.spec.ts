@@ -317,31 +317,6 @@ test.describe('PUX-4 — in-app contextual help per stage', () => {
     });
   }
 
-  // ── Visual baselines (per-viewport via the project config) ────────────────
-  // Capture an OPENED help panel on two representative stages: Home and Composition.
-  // We screenshot the bounded help panel element directly (not a stitched full page),
-  // so the position:fixed terminal bar (.bottom-term) can't ghost across the shot.
-  // Gate each baseline on the AC (panel actually open) so it is not captured
-  // vacuously from a state with no help.
-
-  test('visual: opened help panel on Home', async ({ page }) => {
-    await gotoStage(page, 'home');
-    await expect(page.locator('.home-head__title')).toBeVisible();
-    await helpToggle(page).click();
-    const panel = helpPanel(page);
-    await expect(panel).toBeVisible();
-    await expect(helpToggle(page)).toHaveAttribute('aria-expanded', 'true');
-    await expect(panel).toHaveScreenshot('pux4-home-help-panel.png');
-  });
-
-  test('visual: opened help panel on Composition', async ({ page }) => {
-    await gotoStage(page, 'analyze');
-    await gotoSub(page, /charts & indicators/i);
-    await expect(page.locator('.tab-content:visible .page-header').first()).toBeVisible();
-    await helpToggle(page).click();
-    const panel = helpPanel(page);
-    await expect(panel).toBeVisible();
-    await expect(helpToggle(page)).toHaveAttribute('aria-expanded', 'true');
-    await expect(panel).toHaveScreenshot('pux4-composition-help-panel.png');
-  });
+  // Visual baselines (opened help panel on Home and Composition): see
+  // visual-review/specs/stage-help.visual.spec.ts (VIS-12).
 });

@@ -3,14 +3,11 @@ import { test, expect, Page } from '@playwright/test';
 /**
  * ME-6 — Surface below-threshold indicators in the Validate panel.
  *
- * Acceptance criteria tested:
- *   - A below-threshold indicator finding renders in the Validate panel
- *     with its RAG severity (warning/critical).
- *   - The finding shows the indicator name and a descriptive message.
- *   - The "indicator" badge renders instead of "0 rows".
- *   - Visual baseline at three viewports (mobile/tablet/desktop).
- *
- * Network-mocked: every /api/** is intercepted with page.route().
+ * VIS-12: visual baseline extracted from frontend/tests/e2e/validate-thresholds.spec.ts.
+ * Minimal duplicated setup (bootstrap stub + navigation) needed to reach the Validate
+ * panel with threshold findings. Preserves the original spec's own explicit
+ * per-test setViewportSize loop and literal filename template (independent of the
+ * config's {projectName} token, which is layered on top by playwright.visual.config.ts).
  */
 
 const ACTIVE_PROJECT = {
@@ -73,59 +70,29 @@ async function stubBootstrap(page: Page) {
 async function gotoValidate(page: Page) {
   await page.goto('http://localhost:51730/');
   await page.waitForLoadState('networkidle');
-  // Use data-tab / ARIA id — stable, i18n-independent selectors.
   await page.locator('.tabs-bar [data-tab="transform"]').click();
   await page.locator('#tab-sub-validate').click();
 }
 
 async function waitForFindings(page: Page) {
-  // Validate auto-runs on mount — just wait for the first finding to appear.
   await expect(page.locator('.validate-finding').first()).toBeVisible({ timeout: 10000 });
 }
 
-// ---------------------------------------------------------------------------
-// AC: threshold finding renders with correct severity
-// ---------------------------------------------------------------------------
+const VIEWPORTS = [
+  { name: 'mobile',   width: 390,  height: 844  },
+  { name: 'tablet',   width: 820,  height: 1180 },
+  { name: 'desktop',  width: 1440, height: 900  },
+];
 
-test('warning threshold finding renders with warning severity', async ({ page }) => {
-  await stubBootstrap(page);
-  await gotoValidate(page);
-  await waitForFindings(page);
-
-  const warningFinding = page.locator('.validate-finding[data-severity="warning"]').filter({ hasText: 'coverage' });
-  await expect(warningFinding).toBeVisible();
-  await expect(warningFinding.locator('.validate-finding__sev')).toHaveText('warning');
-});
-
-test('critical threshold finding renders with critical severity', async ({ page }) => {
-  await stubBootstrap(page);
-  await gotoValidate(page);
-  await waitForFindings(page);
-
-  const criticalFinding = page.locator('.validate-finding[data-severity="critical"]').filter({ hasText: 'reach' });
-  await expect(criticalFinding).toBeVisible();
-  await expect(criticalFinding.locator('.validate-finding__sev')).toHaveText('critical');
-});
-
-test('threshold finding shows "indicator" badge not row count', async ({ page }) => {
-  await stubBootstrap(page);
-  await gotoValidate(page);
-  await waitForFindings(page);
-
-  const finding = page.locator('.validate-finding').filter({ hasText: 'coverage' });
-  await expect(finding.locator('.validate-finding__indicator-badge')).toBeVisible();
-  await expect(finding.locator('.validate-finding__indicator-badge')).toHaveText('indicator');
-});
-
-test('threshold finding message describes target, actual, and status', async ({ page }) => {
-  await stubBootstrap(page);
-  await gotoValidate(page);
-  await waitForFindings(page);
-
-  const finding = page.locator('.validate-finding').filter({ hasText: 'coverage' });
-  await expect(finding.locator('.validate-finding__msg')).toContainText('target');
-  await expect(finding.locator('.validate-finding__msg')).toContainText('actual');
-});
-
-// Visual baseline (3 viewports): see
-// visual-review/specs/validate-thresholds.visual.spec.ts (VIS-12).
+for (const vp of VIEWPORTS) {
+  test(`visual: validate panel with threshold findings — ${vp.name}`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await stubBootstrap(page);
+    await gotoValidate(page);
+    await waitForFindings(page);
+    await expect(page.locator('.validate-finding').nth(1)).toBeVisible();
+    await expect(page.locator('.page:visible')).toHaveScreenshot(
+      `validate-thresholds-${vp.name}-linux.png`,
+    );
+  });
+}

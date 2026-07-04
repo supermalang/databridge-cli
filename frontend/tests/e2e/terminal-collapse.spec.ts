@@ -164,8 +164,8 @@ test.describe('XTF-11 — terminal auto-collapses during a build and auto-expand
     //   this assertion times out / fails. That is the correct red.
     await expect(term(page)).toHaveAttribute('data-open', 'false');
 
-    // Visual baseline of the collapsed-during-run state (3 viewports via config).
-    await expect(page).toHaveScreenshot('terminal-collapsed.png');
+    // Visual baseline of the collapsed-during-run state: see
+    // visual-review/specs/terminal-collapse.visual.spec.ts (VIS-12).
 
     // AC: the run subsequently ends in error — the terminal auto-expands so the
     // failure log is visible. Stream stays open through the error frame, mirroring SSE.
@@ -176,8 +176,8 @@ test.describe('XTF-11 — terminal auto-collapses during a build and auto-expand
     });
     await expect(term(page)).toHaveAttribute('data-open', 'true');
 
-    // Visual baseline of the auto-expanded error state (3 viewports via config).
-    await expect(page).toHaveScreenshot('terminal-error-expanded.png');
+    // Visual baseline of the auto-expanded error state: see
+    // visual-review/specs/terminal-collapse.visual.spec.ts (VIS-12).
   });
 
   test('clean success stays collapsed — no second flicker / re-expand', async ({ page }) => {

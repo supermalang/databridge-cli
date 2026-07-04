@@ -229,10 +229,8 @@ test.describe('XTF-14 — in-page run alert (below the title, content width) + i
     });
     expect(isDirectLayoutChild, 'run-alert must NOT be a direct child of .layout (it moved into the content flow)').toBe(false);
 
-    // Visual baseline of the in-page run alert (3 viewports via playwright.config.ts).
-    // The implementer regenerates the baselines for human re-approval — the layout
-    // changed from a fixed top bar to an in-page content-width block.
-    await expect(page).toHaveScreenshot('run-alert.png');
+    // Visual baseline of the in-page run alert: see
+    // visual-review/specs/run-alert.visual.spec.ts (VIS-12).
 
     // ── NEW (XTF-14): Stop is an ICON button — a real <button> with NO visible "Stop"
     // text but WITH a non-empty accessible name. ─────────────────────────────────────
