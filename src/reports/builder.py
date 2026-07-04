@@ -329,11 +329,15 @@ class ReportBuilder:
             compared_periods=compare,
         )
 
+        now = datetime.today()
         context = {
             "report_title":  self.report_cfg.get("title", "Report"),
             "period":        self.report_cfg.get("period", datetime.today().strftime("%B %Y")),
             "n_submissions": len(df),
-            "generated_at":  datetime.today().strftime("%d/%m/%Y %H:%M"),
+            "generated_at":  now.strftime("%d/%m/%Y %H:%M"),
+            "year":          now.strftime("%Y"),
+            "month":         now.strftime("%m"),
+            "day":           now.strftime("%d"),
             "split_value":   split_value or "",
             "provenance":    provenance,
             "logframe":      logframe,

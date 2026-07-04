@@ -8,6 +8,9 @@ authoring walkthrough. Available placeholders:
 {{ period }}
 {{ n_submissions }}
 {{ generated_at }}
+{{ year }}                 ← 4-digit year (e.g. "2026"), same datetime.today() instant as generated_at
+{{ month }}                ← zero-padded 2-digit month (e.g. "07"), same instant as generated_at
+{{ day }}                  ← zero-padded 2-digit day (e.g. "04"), same instant as generated_at
 {{ summary_text }}         ← AI-filled if ai: is configured, else left blank
 {{ observations }}
 {{ recommendations }}
