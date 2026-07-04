@@ -334,6 +334,7 @@ class ReportBuilder:
             "period":        self.report_cfg.get("period", datetime.today().strftime("%B %Y")),
             "n_submissions": len(df),
             "generated_at":  datetime.today().strftime("%d/%m/%Y %H:%M"),
+            "split_value":   split_value or "",
             "provenance":    provenance,
             "logframe":      logframe,
             "traffic_light": traffic_light,
