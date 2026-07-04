@@ -33,6 +33,9 @@ import { test, expect, Page } from '@playwright/test';
  *   - Primary nav tabs: `.tabs-bar .tab[data-tab="<stageId>"]`; active: `.tab.active`.
  *   - Sub-tab strip:    `.subtabs-bar` with `.subtab` buttons (multi-sub stages).
  * These structural hooks are unchanged by a copy-only relabel.
+ *
+ * The visual baseline (primary nav, per language × viewport) was extracted to
+ * `visual-review/specs/nav-labels.visual.spec.ts` (VIS-11).
  */
 
 const ACTIVE_PROJECT = {
@@ -174,16 +177,6 @@ for (const lang of ['en', 'fr'] as const) {
       const t = navTab(page, 'model');
       await t.click();
       await expect(t, 'the model tab becomes the active primary tab').toHaveClass(/active/);
-    });
-
-    // AC visual: baseline of the primary nav (one assertion → one baseline per
-    // viewport). Gate on the relabel first via auto-retrying assertions so the
-    // baseline is never captured vacuously from the pre-fix jargon copy.
-    test('visual baseline of the primary nav', async ({ page }) => {
-      await expect(navTab(page, 'transform')).toHaveText(L.transform.plain);
-      await expect(navTab(page, 'model')).toHaveText(L.model.plain);
-      await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-      await expect(page.locator('.tabs-bar')).toHaveScreenshot(`pux8-primary-nav-${lang}.png`);
     });
   });
 }

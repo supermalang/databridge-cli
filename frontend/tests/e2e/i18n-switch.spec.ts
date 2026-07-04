@@ -17,9 +17,10 @@ import { test, expect, Page } from '@playwright/test';
  *      brings the interface up in French (the saved preference is re-applied on
  *      load).
  *   4. The switcher control is keyboard-operable and has an accessible name.
- *   5. Visual baselines of the Profile page with the switcher in the EN and FR
- *      states, one per viewport (mobile/tablet/desktop via playwright.config.ts);
- *      a human approves them.
+ *
+ * The visual baselines (AC 5: Profile page with the switcher in EN/FR, three
+ * viewports) were extracted to `visual-review/specs/i18n-switch.visual.spec.ts`
+ * (VIS-11).
  *
  * NETWORK-MOCKED end to end (same harness as the pux/a11y specs): Vite serves
  * the real SPA; every /api/ call is intercepted with page.route(), so no FastAPI
@@ -228,24 +229,6 @@ test.describe('I18N-1 — language switcher + persisted preference', () => {
     await expect(control, 'the language switcher must be keyboard-focusable').toBeFocused();
   });
 
-  // AC visual: Profile page with the switcher in the ENGLISH state (one baseline
-  // per viewport). Gate on the wired EN string so the baseline isn't vacuous.
-  test('visual baseline — Profile page with the switcher in English', async ({ page }) => {
-    await openProfile(page);
-    await expect(switcher(page)).toBeVisible();
-    await expect(page.locator('.project-form')).toContainText(PROFILE_TITLE_EN);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await expect(page.locator('.project-form')).toHaveScreenshot('i18n1-profile-switcher-en.png');
-  });
-
-  // AC visual: Profile page with the switcher in the FRENCH state.
-  test('visual baseline — Profile page with the switcher in French', async ({ page }) => {
-    await openProfile(page);
-    await selectFrench(page);
-    await expect(page.locator('.project-form')).toContainText(PROFILE_TITLE_FR);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await expect(page.locator('.project-form')).toHaveScreenshot('i18n1-profile-switcher-fr.png');
-  });
 });
 
 test.describe('I18N-1 — saved preference re-applied on load', () => {

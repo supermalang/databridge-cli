@@ -19,8 +19,10 @@ import AxeBuilder from '@axe-core/playwright';
  *   4. The read-only AI-config language MATCHES the project's language.
  *   5. The controls are keyboard-accessible with accessible names and a visible
  *      focus ring; an axe audit of both surfaces reports no violations.
- *   6. Visual baselines (one per viewport) of the edit-mode read-only language
- *      field and the AI-config read-only language; a human approves them.
+ *
+ * The visual baselines (AC 6: edit-mode + AI-config read-only language, three
+ * viewports) were extracted to
+ * `visual-review/specs/project-language.visual.spec.ts` (VIS-11).
  *
  * NETWORK-MOCKED end to end (same harness as i18n-switch / i18n-coverage / a11y
  * specs): Vite serves the real SPA; every /api/ call is intercepted with
@@ -279,28 +281,6 @@ test.describe('PLANG-2 — read-only language in edit form', () => {
       `axe violations: ${JSON.stringify(results.violations.map((v) => v.id))}`,
     ).toEqual([]);
   });
-
-  // AC6 visual: edit-mode read-only language field (one baseline per viewport).
-  // Gate on the READ-ONLY state + fixed-at-creation note so the baseline isn't
-  // captured against the current editable <select> (which would be vacuous).
-  test('visual baseline — edit-form read-only language field', async ({ page }) => {
-    await openEditForm(page);
-    const control = formLanguageControl(page).first();
-    await expect(control).toBeVisible();
-    await expect(page.locator('.project-form')).toContainText(PROJECT_LANGUAGE);
-    // The fixed-at-creation note must be present (only true once PLANG-2 lands).
-    await expect(page.locator('.project-form')).toContainText(/at creation|cannot be changed|set when|fixed|once created/i);
-    // And the control must be read-only (not an editable, enabled <select>).
-    const editable = await control.evaluate((el) => {
-      const disabled = (el as HTMLSelectElement).disabled === true || el.getAttribute('aria-disabled') === 'true';
-      const readonly = el.getAttribute('readonly') !== null || el.getAttribute('aria-readonly') === 'true';
-      const isSelect = el.tagName.toLowerCase() === 'select';
-      return isSelect && !disabled && !readonly;
-    });
-    expect(editable, 'baseline must capture the read-only language field').toBe(false);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await expect(page.locator('.project-form')).toHaveScreenshot('plang2-edit-language-readonly.png');
-  });
 });
 
 test.describe('PLANG-2 — read-only language in AI config', () => {
@@ -359,14 +339,5 @@ test.describe('PLANG-2 — read-only language in AI config', () => {
       results.violations,
       `axe violations: ${JSON.stringify(results.violations.map((v) => v.id))}`,
     ).toEqual([]);
-  });
-
-  // AC6 visual: AI-config read-only language (one baseline per viewport).
-  test('visual baseline — AI-config read-only language', async ({ page }) => {
-    await openAiConfig(page);
-    const pane = page.locator('.tab-content:visible').first();
-    await expect(pane).toContainText(PROJECT_LANGUAGE);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await expect(pane).toHaveScreenshot('plang2-aiconfig-language-readonly.png');
   });
 });

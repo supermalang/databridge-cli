@@ -19,9 +19,9 @@ import { test, expect, Page } from '@playwright/test';
  *   3. No raw translation KEY (a `foo.bar`-style token) leaks into the rendered
  *      UI on any tab — every referenced key resolves to real text. Guards against
  *      half-wired t() calls.
- *   4. Visual baselines of two representative tabs (Home + Reports) in French at
- *      all three viewports (mobile/tablet/desktop via playwright.config.ts). A
- *      human approves them and confirms no French-length overflow.
+ *
+ * The visual baseline (AC 4: Home + Reports in French, three viewports) was
+ * extracted to `visual-review/specs/i18n-coverage.visual.spec.ts` (VIS-11).
  *
  * NETWORK-MOCKED end to end (same harness as i18n-switch / a11y / ux specs):
  * Vite serves the real SPA; every /api/ call is intercepted with page.route(),
@@ -252,23 +252,5 @@ test.describe('I18N-2 — no raw translation key leaks into the rendered UI', ()
         ).toEqual([]);
       });
     }
-  }
-});
-
-test.describe('I18N-2 — visual baselines in French (Home + Reports)', () => {
-  // AC 4: capture Home + Reports in French at all three viewports (one baseline
-  // per viewport via playwright.config.ts projects). Hide the bottom terminal so
-  // its clock/log noise never destabilizes the diff. Gate on the wired FR string
-  // first so the baseline is never vacuous (e.g. an untranslated EN page).
-  const visualTabs = TABS.filter((t) => t.name === 'Home' || t.name === 'Reports');
-  for (const tab of visualTabs) {
-    test(`visual baseline — ${tab.name} in French`, async ({ page }) => {
-      await stubBootstrap(page, 'fr');
-      await gotoApp(page);
-      const pane = await openTab(page, tab);
-      await expect(pane).toContainText(tab.fr);
-      await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-      await expect(pane).toHaveScreenshot(`i18n2-${tab.name.toLowerCase()}-fr.png`);
-    });
   }
 });

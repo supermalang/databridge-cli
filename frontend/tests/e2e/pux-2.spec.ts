@@ -16,8 +16,10 @@ import AxeBuilder from '@axe-core/playwright';
  *      normal full five-card view with NO first-run overlay (returning-user path).
  *   4. The de-emphasized cards remain reachable (not removed, not disabled); the
  *      primary CTA is a real <button>/link with an accessible name + visible focus ring.
- *   5. Visual baselines of BOTH the first-run state and the returning-user state, one
- *      per viewport via playwright.config.ts (a human approves them).
+ *
+ * The visual baselines (AC 5: first-run + returning-user state, plus the
+ * A11Y-6 focused-dimmed-card baseline, three viewports) were extracted to
+ * `visual-review/specs/pux-2.visual.spec.ts` (VIS-11).
  *
  * NETWORK-MOCKED end-to-end (same harness as a11y-1 / pux-1): the Vite dev server
  * serves the real SPA; every /api/** is intercepted with page.route(), so no FastAPI
@@ -303,25 +305,6 @@ test.describe('PUX-2 — first-run / empty state (no form, no data)', () => {
     ).toEqual([]);
   });
 
-  // Visual baseline of a focused dimmed card at all three viewports — gate on the AC
-  // (the wrap is un-dimmed under focus) so the baseline captures the fixed state.
-  test('visual baseline of a focused dimmed stage card', async ({ page }) => {
-    const dimmedWrap = page.locator('.home-card-wrap.is-dimmed').first();
-    await expect(dimmedWrap).toBeVisible();
-    const innerCard = dimmedWrap.locator('.home-card').first();
-    const reached = await tabUntilFocused(page, innerCard);
-    expect(reached, 'the dimmed stage card must be reachable in keyboard tab order').toBe(true);
-    await expect(Number(await dimmedWrap.evaluate((el) => getComputedStyle(el).opacity)))
-      .toBeCloseTo(1, 2);
-    await expect(dimmedWrap).toHaveScreenshot('a11y6-focused-dimmed-card.png');
-  });
-
-  // Visual baseline of the first-run state. Gate on the AC (the single CTA is present)
-  // so the baseline is not captured vacuously from the pre-fix five-equal-cards view.
-  test('visual baseline of the first-run state', async ({ page }) => {
-    await expect(connectCta(page), 'first-run CTA must exist before the baseline is captured').toBeVisible();
-    await expect(page.locator('.home-cards')).toHaveScreenshot('pux2-firstrun-home.png');
-  });
 });
 
 test.describe('PUX-2 — returning user (form connected + data present)', () => {
@@ -350,13 +333,6 @@ test.describe('PUX-2 — returning user (form connected + data present)', () => 
       '.home-card.is-deemphasized, .home-card[data-dimmed="true"], .home-card[aria-disabled="true"]',
     );
     await expect(dimmed, 'returning-user Home must present all five stages normally (no dimming)').toHaveCount(0);
-  });
-
-  // Visual baseline of the returning-user state (one assertion → one baseline per viewport).
-  test('visual baseline of the returning-user state', async ({ page }) => {
-    await expect(page.locator('.home-card')).toHaveCount(5);
-    await expect(connectCta(page), 'returning-user view must have no first-run CTA before baseline').toHaveCount(0);
-    await expect(page.locator('.home-cards')).toHaveScreenshot('pux2-returning-home.png');
   });
 });
 
