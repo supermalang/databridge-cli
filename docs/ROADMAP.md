@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 16 | 15 / 16 |
+| [Maintenance & hardening](#maintenance--hardening) | 18 | 16 / 18 |
 
 ---
 
@@ -1101,6 +1101,113 @@ Sprint exit — checked by /report + /retro:
 
 > Tracked tech-debt / hardening surfaced during the 2026-06 build-out. Not feature work — small,
 > well-scoped fixes that keep the suite + toolchain healthy.
+
+---
+
+- [ ] **MNT-17 — Fix: `{{ split_value }}` documented (and relied on by Express Fill) but missing from the render context (P0)**
+
+  **Created:** 2026-07-04
+
+  `docs/reference/templates.md:20` documents `{{ split_value }}` as available "when --split-by
+  is set, the current group's value", and `frontend/src/pages/Composition.jsx:1648` advertises
+  it to users as an available token. The archived `XTF-28` card goes further: Express Template
+  Fill actively **writes** the literal `{{ split_value }}` placeholder into resolved templates,
+  assuming `build-report` fills it in. But `src/reports/builder.py`'s `_render()` never adds
+  `split_value` to the docxtpl `context` dict (lines 332-348) — it's only forwarded into
+  `generate_narrative()` (line 318) for the AI narrative text, never exposed as its own template
+  placeholder. Any template built on this documented/advertised promise silently breaks: a
+  Jinja2 undefined value (or error) instead of the actual split value. P0 because this already
+  affects a shipped feature (Express Fill's split_value token), not a hypothetical gap.
+
+  **Type:** Fix
+
+  **Files:** `src/reports/builder.py` (`_render()`, add `"split_value": split_value or ""`
+  right after `generated_at` at line 336, inside the context dict spanning lines 332-348) ·
+  `tests/test_builder.py` (new tests)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - When `report.split_by` is set and a Word template contains `{{ split_value }}`, the rendered
+    .docx contains the actual group value (e.g. "Nairobi"), matching what's already used
+    internally for the AI narrative
+  - When `report.split_by` is NOT set (no split), a template containing `{{ split_value }}`
+    renders without error (empty string, not a Jinja2 `UndefinedError` or a literal
+    `{{ split_value }}` left in the output)
+  - `docs/reference/templates.md`'s existing claim about `{{ split_value }}` (line 20) becomes
+    accurate — no doc change needed, the code now matches it
+  - Express Fill templates that already embed `{{ split_value }}` (per `XTF-28`) now render
+    correctly with no template changes required
+  - No regression to the AI narrative's existing use of `split_value`
+
+  **Unit tests:** `tests/test_builder.py` (new) — (1)
+  `test_split_value_in_render_context_when_split_by_set`: build a report with `split_by` set to
+  a column with 2+ unique values, and assert the rendered docx for each split output contains
+  the correct `split_value` for that group. (2) `test_split_value_empty_when_no_split_by`: build
+  a report with no `split_by`, assert a template containing `{{ split_value }}` renders without
+  raising and produces an empty string, not an undefined-variable error.
+
+  **E2E:** N/A (no app UI surface — `split_value` is a docxtpl/Jinja2 template placeholder
+  consumed inside an externally-authored Word template, exercised via `build-report`; verified
+  by the pytest cases above and the Verify command).
+
+  **UAT:** N/A (backend/template-rendering fix, no UI surface; PR review + the pytest cases
+  above are the human gate).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -k split_value`
+
+---
+
+- [ ] **MNT-18 — Add `{{ year }}` / `{{ month }}` / `{{ day }}` date-component placeholders (P2)**
+
+  **Created:** 2026-07-04
+
+  The report builder only exposes one composed timestamp, `{{ generated_at }}`
+  (`"%d/%m/%Y %H:%M"`, `src/reports/builder.py` `_render()` line 336), with no way for a Word
+  template author to pull just the year, month, or day separately — useful for custom report
+  footers, filenames typed into the template body, or period-style headers that don't match
+  `generated_at`'s fixed format. Add three new placeholders derived from the same
+  `datetime.today()` call already used for `generated_at`, so all date-derived values in one
+  render stay consistent with each other.
+
+  **Type:** Feature
+
+  **Files:** `src/reports/builder.py` (`_render()`, add `year`/`month`/`day` to `context` near
+  line 336, reusing the same `datetime.today()` instance already computing `generated_at` rather
+  than calling it again) · `docs/reference/templates.md` (add three new rows immediately after
+  `{{ generated_at }}` at line 10, in the same bare-placeholder block — not the annotated
+  `{{ split_value }}`/`{{ data_quality }}` block further down) · `tests/test_builder.py` (new
+  tests)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - `{{ year }}` renders as a 4-digit year (e.g. "2026")
+  - `{{ month }}` renders as a zero-padded 2-digit month (e.g. "07")
+  - `{{ day }}` renders as a zero-padded 2-digit day (e.g. "04")
+  - All three, plus the existing `{{ generated_at }}`, are derived from the same single
+    `datetime.today()` call within one render — no risk of the date rolling over between them
+  - `docs/reference/templates.md` documents all three new placeholders in the existing bare
+    (undecorated) placeholder block, alongside `{{ generated_at }}`
+  - No change to `{{ generated_at }}`'s existing format or any other existing placeholder
+
+  **Unit tests:** `tests/test_builder.py` (new) — (1)
+  `test_year_month_day_placeholders_present`: patch the module-level `datetime` import in
+  `src.reports.builder` (via `unittest.mock.patch`, the mocking idiom already used elsewhere in
+  this file — no new dependency such as freezegun) so `datetime.today()` returns a fixed date,
+  build a report, and assert the rendered docx contains the correctly formatted year/month/day
+  for that date. (2) `test_date_placeholders_consistent_with_generated_at`: with the same patched
+  `datetime.today()`, assert `year`/`month`/`day` and `generated_at` are all consistent with the
+  single frozen instant (not independently re-evaluated).
+
+  **E2E:** N/A (no app UI surface — new docxtpl placeholders consumed in an externally-authored
+  Word template, exercised via `build-report`; verified by the pytest cases above and the Verify
+  command).
+
+  **UAT:** N/A (backend/template-rendering feature, no UI surface; PR review + the pytest cases
+  above are the human gate).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -k "year_month_day or date_placeholders"`
 
 ---
 
