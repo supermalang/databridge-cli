@@ -77,7 +77,7 @@ Sprint exit — checked by /report + /retro:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 14 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 12 | 7 / 12 |
+| [Visual / E2E harness](#visual--e2e-harness) | 12 | 8 / 12 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
@@ -1152,12 +1152,22 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **VIS-12 — Split Tier 1 specs into functional + visual, Shard C: build/report/misc (10 files) (P2)**
+- [x] **VIS-12 — Split Tier 1 specs into functional + visual, Shard C: build/report/misc (10 files) (P2)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
 
   Third and final shard of the mechanical split described in VIS-10 (`harness-smoke.spec.ts` was
   already migrated as VIS-9's pilot and is not part of this shard).
+
+  **Accepted exception, not fixed by this card:** 26 of the migrated visual assertions
+  (`express-template-fill`, `reports-delete-all`, `run-alert`, `terminal-collapse`) fail against
+  their moved, pixel-identical baselines — confirmed **pre-existing on `develop`**: the same 26
+  failures reproduce running the still-colocated, un-migrated versions of these specs directly on
+  a clean `develop` checkout, before this card's migration ever touches them. Same accepted-drift
+  pattern as VIS-11. Additionally, `vis-3-worker-cap.spec.ts`'s two functional assertions fail on
+  both this branch and `develop` — that spec's `isSmallCap()` helper requires `workers <= 2`, but
+  `frontend/playwright.config.ts` still hardcodes `workers: 4` (VIS-8, still open, is exactly the
+  card that fixes this). Functional suite otherwise: 231/231 passing.
 
   **Type:** Feature
 
