@@ -448,7 +448,8 @@ class ReportBuilder:
             # matplotlib/InlineImage pipeline entirely and fills a
             # {{ list_<name> }} text placeholder instead of {{ chart_<name> }}.
             if resolved.get("type") == "bullet_list":
-                images[f"list_{name}"] = build_bullet_list_text(chart_df, resolved_questions)
+                images[f"list_{name}"] = build_bullet_list_text(
+                    chart_df, resolved_questions, resolved.get("options") or {})
                 continue
 
             png = generate_chart(resolved, chart_df, language=_language, palette=get_palette(self.cfg))

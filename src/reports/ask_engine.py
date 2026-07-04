@@ -77,20 +77,28 @@ CHART_REQS = {
 }
 
 
-def validate_recipe(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
+def validate_recipe(recipe: Dict, profile: Dict[str, Dict],
+                    cfg: Optional[Dict] = None) -> Tuple[bool, str]:
     """Validate a proposed recipe (chart, table, or indicator) against the profile. (ok, reason).
 
     A `table` is a chart-like recipe rendered with the `table` chart type, so it is
-    validated exactly like a chart with type forced to "table"."""
+    validated exactly like a chart with type forced to "table".
+
+    When `cfg` is provided, a `bullet_list` recipe (which dumps raw, unaggregated
+    row values verbatim) is additionally rejected if it names a hidden or
+    PII-flagged column — mirroring `build_catalog`'s unsafe-column gate so the
+    columns hidden from the LLM's prompt can't be re-introduced via a saved/applied
+    spec."""
     kind = recipe.get("kind", "chart")
     if kind == "indicator":
         return _validate_indicator(recipe, profile)
     if kind == "table":
-        return _validate_chart({**recipe, "type": "table"}, profile)
-    return _validate_chart(recipe, profile)
+        return _validate_chart({**recipe, "type": "table"}, profile, cfg)
+    return _validate_chart(recipe, profile, cfg)
 
 
-def _validate_chart(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
+def _validate_chart(recipe: Dict, profile: Dict[str, Dict],
+                    cfg: Optional[Dict] = None) -> Tuple[bool, str]:
     ctype = recipe.get("type")
     if ctype not in CHART_REQS:
         return False, f"unsupported chart type '{ctype}'"
@@ -113,6 +121,18 @@ def _validate_chart(recipe: Dict, profile: Dict[str, Dict]) -> Tuple[bool, str]:
         # plain text (src/reports/charts.py build_bullet_list_text) regardless of
         # its role -- categorical, quantitative, date, or qualitative all work.
         # Having >=1 existing column (already validated above) is sufficient.
+        #
+        # BUT bullet_list dumps raw, unaggregated row values verbatim -- so a
+        # hidden or PII-flagged column must never be listed. Reject the SAME
+        # columns that build_catalog hides from the LLM prompt (is_pii OR
+        # is_effective_hidden, resolved via excluded_column_names).
+        if cfg is not None:
+            from src.utils.config import excluded_column_names
+            unsafe = excluded_column_names(cfg)
+            for c in cols:
+                if c in unsafe:
+                    return False, (f"column '{c}' is hidden or PII-flagged and "
+                                   f"cannot be listed verbatim in a bullet_list")
         return True, ""
     col_roles = [roles[c] for c in cols]
     n_cat = col_roles.count("categorical")
@@ -321,13 +341,14 @@ def _b64_png(path: Path) -> str:
 
 
 def _execute_item(recipe: Dict, profile: Dict[str, Dict], df: pd.DataFrame,
-                  repeat_tables: Dict[str, pd.DataFrame]) -> Dict:
+                  repeat_tables: Dict[str, pd.DataFrame],
+                  cfg: Optional[Dict] = None) -> Dict:
     """Validate + execute one recipe (chart or indicator). Returns a valid entry
     {"kind","recipe","png"|"value","summary","title"} or {"skip": reason, "title": title}."""
     kind = recipe.get("kind", "chart")
     title = (recipe.get("title") or recipe.get("name")
              or (recipe.get("stat") if kind == "indicator" else recipe.get("type")) or kind)
-    ok, reason = validate_recipe(recipe, profile)
+    ok, reason = validate_recipe(recipe, profile, cfg)
     if not ok:
         return {"skip": reason, "title": title}
     if kind == "indicator":
@@ -367,7 +388,7 @@ def ask(question: str, cfg: Dict, df: pd.DataFrame,
 
     valid, skipped = [], []
     for r in items:
-        out = _execute_item(r, profile, df, repeat_tables or {})
+        out = _execute_item(r, profile, df, repeat_tables or {}, cfg)
         if "skip" in out:
             skipped.append({"title": out["title"], "reason": out["skip"]})
         else:
@@ -480,7 +501,7 @@ def refine_item(recipe: Dict, kind: str, instruction: str, cfg: Dict,
         return {"proposal": None, "skipped": None,
                 "message": "Couldn't apply that refinement — try rephrasing."}
     revised.setdefault("kind", kind)
-    out = _execute_item(revised, profile, df, repeat_tables or {})
+    out = _execute_item(revised, profile, df, repeat_tables or {}, cfg)
     if "skip" in out:
         return {"proposal": None, "skipped": {"title": out["title"], "reason": out["skip"]}, "message": None}
     name = out["recipe"].get("name") or out["title"]

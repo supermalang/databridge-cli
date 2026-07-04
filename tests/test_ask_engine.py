@@ -244,6 +244,41 @@ def test_validate_recipe_bullet_list_needs_one_column():
     assert "bullet_list" in ask_engine._CHART_TYPES_BLOCK, ask_engine._CHART_TYPES_BLOCK
 
 
+def test_validate_recipe_bullet_list_rejects_pii_column():
+    """Security (MNT-19 follow-up): bullet_list dumps raw, unaggregated row values
+    verbatim, so a PII-flagged column must NOT be listable. When cfg is supplied,
+    validate_recipe rejects a bullet_list naming a `pii: true` column even though it
+    is NOT (separately) in cfg['pii']['redact'] — mirroring build_catalog's gate."""
+    cfg = {
+        "questions": [
+            {"export_label": "Story", "type": "text", "pii": True},
+        ],
+        # deliberately NOT redacted here — is_pii is a separate flag from redact,
+        # so the raw values are still in the DataFrame at render time.
+        "pii": {"redact": []},
+    }
+    ok, reason = validate_recipe(
+        {"type": "bullet_list", "questions": ["Story"]}, _profile_fixture(), cfg)
+    assert not ok, "a PII column must not be listable verbatim in a bullet_list"
+    assert "Story" in reason and ("PII" in reason or "hidden" in reason), reason
+
+
+def test_validate_recipe_bullet_list_rejects_hidden_column():
+    """Effective-hidden columns are gated the same way as PII for bullet_list."""
+    cfg = {"questions": [{"export_label": "Story", "type": "text", "hidden": True}]}
+    ok, reason = validate_recipe(
+        {"type": "bullet_list", "questions": ["Story"]}, _profile_fixture(), cfg)
+    assert not ok and "Story" in reason, reason
+
+
+def test_validate_recipe_bullet_list_allows_safe_column_with_cfg():
+    """A non-PII, non-hidden column still validates ok even when cfg is provided."""
+    cfg = {"questions": [{"export_label": "Story", "type": "text"}]}
+    ok, reason = validate_recipe(
+        {"type": "bullet_list", "questions": ["Story"]}, _profile_fixture(), cfg)
+    assert ok and reason == "", reason
+
+
 def test_validate_indicator_count_ok():
     ok, reason = validate_recipe({"kind": "indicator", "stat": "count"}, _profile_fixture())
     assert ok and reason == ""

@@ -330,12 +330,16 @@ def infer_specs(nl_tokens: List["Token"], catalog: Dict, ai_cfg: Dict) -> List[P
     return proposals
 
 
-def _validate_data_proposal(kind: str, spec: Dict, profile: Dict) -> "tuple[bool, str]":
+def _validate_data_proposal(kind: str, spec: Dict, profile: Dict,
+                            cfg: Dict = None) -> "tuple[bool, str]":
     """Local validation for a data proposal (chart/indicator/summary/table).
 
     Reuses ``ask_engine.validate_recipe`` / ``CHART_REQS`` / ``INDICATOR_STATS``.
     A summary references columns via ``questions`` like a chart/table but is not a
     chart type, so its columns are checked against the profile directly.
+
+    ``cfg`` (when provided) lets ``validate_recipe`` reject a ``bullet_list`` that
+    names a hidden/PII-flagged column — the same gate build_catalog applies.
     """
     if kind == "summary":
         source = spec.get("source") or "main"
@@ -351,7 +355,7 @@ def _validate_data_proposal(kind: str, spec: Dict, profile: Dict) -> "tuple[bool
                 return False, f"column '{c}' not found in '{source}'"
         return True, ""
     recipe = {**spec, "kind": kind}
-    return ask_engine.validate_recipe(recipe, profile)
+    return ask_engine.validate_recipe(recipe, profile, cfg)
 
 
 def _route_narrative(proposal: Proposal) -> Proposal:
@@ -454,7 +458,8 @@ def _autoresolve_repeat_source(kind: str, spec: Dict, profile: Dict) -> "Tuple[b
     return True, note
 
 
-def annotate_proposals(proposals: List[Proposal], profile: Dict) -> List[Proposal]:
+def annotate_proposals(proposals: List[Proposal], profile: Dict,
+                       cfg: Dict = None) -> List[Proposal]:
     """Local, deterministic validation of inferred proposals (no AI).
 
     Stamps each proposal with ``status`` (``"ok"`` / ``"needs_attention"``) and a
@@ -516,7 +521,7 @@ def annotate_proposals(proposals: List[Proposal], profile: Dict) -> List[Proposa
                     )
                 out.append(ann)
                 continue
-            ok, reason = _validate_data_proposal(kind, ann.get("spec") or {}, profile)
+            ok, reason = _validate_data_proposal(kind, ann.get("spec") or {}, profile, cfg)
             if not ok:
                 ann["status"] = "needs_attention"
                 ann["reason"] = reason

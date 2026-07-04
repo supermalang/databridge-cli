@@ -239,6 +239,96 @@ def test_apply_writes_config_and_returns_resolved_template(monkeypatch, client, 
 
 
 # --------------------------------------------------------------------------- #
+# MNT-19 follow-up (security) — /api/template/apply must NOT trust the client's
+# echoed proposal `status`. It re-validates each approved proposal server-side
+# against the CURRENT cfg/profile, so a client that flips a rejected bullet_list
+# proposal's status to "approved" (or fabricates one) naming a PII/hidden column
+# is dropped, not written into the resolved template.
+# --------------------------------------------------------------------------- #
+def _pii_cfg():
+    return {"charts": [],
+            "questions": [{"export_label": "Story", "type": "text", "pii": True}],
+            "pii": {"redact": []}}
+
+
+def test_apply_revalidates_and_drops_flipped_pii_bullet_list(monkeypatch, client, tmp_path):
+    """Client claims status 'approved' on a bullet_list naming a PII column; with
+    data present the server re-runs annotate_proposals against the profile (which
+    drops the PII column), so the proposal comes back needs_attention and is dropped
+    — never handed to apply_inference nor written to config."""
+    cfg = _pii_cfg()
+    saved = {}
+    received = {}
+    monkeypatch.setattr(wm, "_require", lambda *a, **k: None)
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+    monkeypatch.setattr(wm, "load_processed_data",
+                        lambda *a, **k: (pd.DataFrame({"_id": [1, 2, 3],
+                                                       "Story": ["s1", "s2", "s3"]}), {}))
+
+    resolved = str(tmp_path / "report.resolved.docx")
+    import src.reports.template_inference as ti
+
+    def _apply(approved_props, cfg_in, template_path):
+        received["names"] = [p.get("name") for p in approved_props]
+        for p in approved_props:
+            cfg_in.setdefault("charts", []).append(p["spec"])
+        return cfg_in, resolved
+
+    monkeypatch.setattr(ti, "apply_inference", _apply)
+
+    approved = [
+        {"token_index": 0, "kind": "chart", "name": "stories",
+         "spec": {"name": "stories", "type": "bullet_list", "questions": ["Story"]},
+         "status": "approved"},  # client-echoed status — must not be trusted
+    ]
+    resp = client.post("/api/template/apply",
+                       json={"proposals": approved, "template": "report.docx"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["n_written"] == 0
+    assert "stories" not in (received.get("names") or []), \
+        "a PII bullet_list must not reach apply_inference"
+    written = saved.get("cfg") or cfg
+    assert written.get("charts") == [], "no PII bullet_list may be persisted"
+
+
+def test_apply_drops_pii_bullet_list_without_data(monkeypatch, client, tmp_path):
+    """Before any download (no profile buildable), the cfg-only bullet_list gate
+    still drops a PII/hidden bullet_list proposal the client claims is approved."""
+    cfg = _pii_cfg()
+    saved = {}
+    received = {}
+    monkeypatch.setattr(wm, "_require", lambda *a, **k: None)
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+    # load_processed_data un-mocked → real FileNotFoundError (no data).
+
+    resolved = str(tmp_path / "report.resolved.docx")
+    import src.reports.template_inference as ti
+
+    def _apply(approved_props, cfg_in, template_path):
+        received["names"] = [p.get("name") for p in approved_props]
+        for p in approved_props:
+            cfg_in.setdefault("charts", []).append(p["spec"])
+        return cfg_in, resolved
+
+    monkeypatch.setattr(ti, "apply_inference", _apply)
+
+    approved = [
+        {"token_index": 0, "kind": "chart", "name": "stories",
+         "spec": {"name": "stories", "type": "bullet_list", "questions": ["Story"]},
+         "status": "approved"},
+    ]
+    resp = client.post("/api/template/apply",
+                       json={"proposals": approved, "template": "report.docx"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["n_written"] == 0
+    assert "stories" not in (received.get("names") or [])
+    written = saved.get("cfg") or cfg
+    assert written.get("charts") == []
+
+
+# --------------------------------------------------------------------------- #
 # XTF-6 — Persist the uploaded template across infer → apply (the bug).
 #
 # These are deliberately UN-mocked at the inference layer: only the LLM seam

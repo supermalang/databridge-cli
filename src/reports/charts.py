@@ -762,18 +762,28 @@ def chart_period_line(df, questions, title, out_path, opts):
     plt.close(fig)
 
 
-def build_bullet_list_text(df: pd.DataFrame, questions: List[str]) -> str:
+def build_bullet_list_text(df: pd.DataFrame, questions: List[str], opts: dict = None) -> str:
     """Render the first *questions* column's values as a `•`-prefixed text block.
 
     Used by ``bullet_list`` — a text-injection render type (docxtpl text run,
     ``{{ list_<name> }}``) rather than an image, so it is not part of
     ``CHART_DISPATCH`` / ``generate_chart``'s matplotlib pipeline. Empty/NaN
     values are dropped; order follows the DataFrame's row order.
+
+    Unlike the aggregating renderers, this dumps raw row values verbatim, so it
+    is capped at ``opts['top_n']`` rows (default 50, mirroring ``chart_table``)
+    to keep a large column from inflating a report unbounded.
     """
     if not questions or questions[0] not in df.columns:
         return ""
     values = df[questions[0]].dropna().astype(str)
     values = [v for v in values if v.strip() and v.strip().lower() != "nan"]
+    top_n = (opts or {}).get("top_n", 50)
+    try:
+        top_n = int(top_n)
+    except (TypeError, ValueError):
+        top_n = 50
+    values = values[:max(0, top_n)]
     return "\n".join(f"• {v}" for v in values)
 
 
