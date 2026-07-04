@@ -8,7 +8,7 @@ import { test, expect, Page } from '@playwright/test';
  *   1. With the profile preference = English (the default), a representative
  *      WIRED interface string renders in English — both a Profile-page label
  *      ("Your profile" / "First name" / "Save") AND a primary nav tab label
- *      (one of Home / Extract / Transform / Model / Analyze / Deliver).
+ *      (one of Home / Extract / Clean & check / Combine data / Analyze / Deliver).
  *   2. The Profile page exposes a language switcher offering exactly English +
  *      French (no third option). Choosing French switches those same strings to
  *      their French equivalents LIVE — no page navigation/reload — AND posts
@@ -38,16 +38,18 @@ import { test, expect, Page } from '@playwright/test';
  *     visible focus ring; it offers exactly the two options English + French.
  *   - WIRED STRINGS (the initial translated set this card ships):
  *       · a Profile label — "Your profile" (EN) / "Votre profil" (FR)
- *       · primary nav tabs — e.g. Transform (EN) / Transformer (FR),
+ *       · primary nav tabs — e.g. Clean & check (EN) / Nettoyer et vérifier (FR),
  *         Deliver (EN) / Diffuser (FR)  [rendered in `.tabs-bar .tab`]
  *     The implementer wires these through the en/fr resource bundles; the spec
  *     asserts the EN forms render by default and the FR forms after switching.
  */
 
 // Two distinct primary nav tabs whose EN labels must become FR after the switch.
-// (Both are present in STAGES today: Transform + Deliver.)
-const NAV_EN = ['Transform', 'Deliver'];
-const NAV_FR = ['Transformer', 'Diffuser'];
+// (Both are present in STAGES today: Clean & check + Deliver. The "Clean & check"
+// stage was previously labeled "Transform" — renamed to plain language by PUX-1;
+// this spec's expected labels were not updated at the time, silently breaking it.)
+const NAV_EN = ['Clean & check', 'Deliver'];
+const NAV_FR = ['Nettoyer et vérifier', 'Diffuser'];
 
 // A Profile-page heading string wired through the bundles.
 const PROFILE_TITLE_EN = /your profile/i;
