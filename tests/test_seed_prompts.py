@@ -144,3 +144,56 @@ def test_openai_strict_mode_contract():
             assert not missing, (
                 f"{name}:{path} Strict-mode violation — properties not in required: {missing}"
             )
+
+
+def test_template_inference_explains_bullet_list_over_table():
+    """MNT-20: the LLM must be steered toward `bullet_list` instead of `table`
+    when a table's "≥1 categorical column" requirement can't be met.
+
+    AC1: the system message explicitly states bullet_list is not a real
+         chart/graph, and should be preferred over table when there's no
+         categorical column.
+    AC2: the user message's `table` bullet explicitly redirects to
+         kind="chart" + type="bullet_list" when there's no categorical column.
+    """
+    system = SEED_PROMPTS["template_inference"]["messages"][0]["content"]
+    user = SEED_PROMPTS["template_inference"]["messages"][1]["content"]
+
+    assert "bullet_list" in system, "system message never mentions bullet_list"
+
+    not_real_chart = re.search(
+        r"bullet_list[^.]{0,200}\bnot\b[^.]{0,80}\b(a real|an actual)\b[^.]{0,40}\b(chart|graph)\b",
+        system, re.IGNORECASE | re.DOTALL,
+    ) or re.search(
+        r"\bnot\b[^.]{0,80}\b(a real|an actual)\b[^.]{0,40}\b(chart|graph)\b[^.]{0,200}bullet_list",
+        system, re.IGNORECASE | re.DOTALL,
+    )
+    assert not_real_chart, (
+        "system message must explain that bullet_list is not a real chart/graph type"
+    )
+
+    prefer_over_table = re.search(
+        r"bullet_list[^.]{0,300}\bno\b[^.]{0,40}categorical[^.]{0,200}\btable\b",
+        system, re.IGNORECASE | re.DOTALL,
+    ) or re.search(
+        r"\btable\b[^.]{0,300}\bno\b[^.]{0,40}categorical[^.]{0,200}bullet_list",
+        system, re.IGNORECASE | re.DOTALL,
+    )
+    assert prefer_over_table, (
+        "system message must say bullet_list is preferred over table "
+        "when there's no categorical column"
+    )
+
+    table_bullet_match = re.search(r"-\s*table:.*?(?=\n-\s|\Z)", user, re.IGNORECASE | re.DOTALL)
+    assert table_bullet_match, "user message must contain a `table:` bullet"
+    table_bullet = table_bullet_match.group(0)
+
+    assert "no categorical" in table_bullet.lower() or "without a categorical" in table_bullet.lower(), (
+        "table bullet must mention the no-categorical-column case"
+    )
+    assert 'kind="chart"' in table_bullet, (
+        'table bullet must redirect to kind="chart" when there is no categorical column'
+    )
+    assert "bullet_list" in table_bullet, (
+        "table bullet must mention bullet_list as the redirect target"
+    )
