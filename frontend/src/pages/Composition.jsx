@@ -437,7 +437,7 @@ export default function Composition({ sections } = {}) {
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) { setPreview({ chart, error: data.detail || `Request failed (${resp.status})` }); return; }
-      setPreview({ chart, image: data.image });
+      setPreview({ chart, image: data.image, text: data.text });
     } catch (e) {
       setPreview({ chart, error: e.message || 'Network error' });
     }
@@ -738,6 +738,11 @@ export default function Composition({ sections } = {}) {
                 alt={preview.chart?.name || 'chart preview'}
                 style={{ maxWidth: '100%', height: 'auto', borderRadius: 4 }}
               />
+            )}
+            {!preview.image && preview.text && (
+              <div style={{ width: '100%', textAlign: 'left', whiteSpace: 'pre-wrap', lineHeight: 1.5, color: 'var(--ink-1)' }}>
+                {preview.text}
+              </div>
             )}
           </div>
         </Modal>
@@ -1733,7 +1738,7 @@ function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onS
   if (optsY.trim()) {
     try { const o = yaml.load(optsY); if (o && Object.keys(o).length) draftChart.options = o; } catch { /* invalid YAML — preview keeps last valid options */ }
   }
-  const { loading: previewLoading, error: previewError, image: previewImage } = useChartPreview(draftChart);
+  const { loading: previewLoading, error: previewError, image: previewImage, text: previewText } = useChartPreview(draftChart);
 
   // PUX-13: when the preview fails, check whether the failure is a client-side-
   // knowable type/column mismatch (e.g. a histogram with no numeric column). If
@@ -1789,8 +1794,8 @@ function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onS
           background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16,
         }}
       >
-        {/* First load only (no prior image): full blanking skeleton. */}
-        {previewLoading && !previewImage && (
+        {/* First load only (no prior image/text): full blanking skeleton. */}
+        {previewLoading && !previewImage && !previewText && (
           <div data-testid="chart-editor-preview-loading" style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center' }}>
             <div className="skeleton" style={{ width: '100%', height: 140, borderRadius: 6, marginBottom: 10 }} />
             {t('composition.renderingPreview')}
@@ -1833,7 +1838,35 @@ function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onS
             )}
           </div>
         )}
-        {!previewLoading && !previewError && !previewImage && (
+        {/* bullet_list (and other text-injection chart types) return text, not
+            an image — MNT-21 — render it in place of the <img> branch. */}
+        {!previewError && !previewImage && previewText && (
+          <div style={{ position: 'relative', width: '100%' }}>
+            <div
+              style={{
+                width: '100%', textAlign: 'left', whiteSpace: 'pre-wrap', lineHeight: 1.5,
+                color: 'var(--ink-1)', opacity: previewLoading ? 0.45 : 1, transition: 'opacity .15s ease',
+              }}
+            >
+              {previewText}
+            </div>
+            {previewLoading && (
+              <div
+                data-testid="chart-editor-preview-loading"
+                title={t('composition.renderingPreview')}
+                style={{
+                  position: 'absolute', top: 8, right: 8, display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 999,
+                  padding: '4px 10px 4px 8px', fontSize: 12, color: 'var(--ink-3)', boxShadow: '0 1px 3px rgba(0,0,0,.08)',
+                }}
+              >
+                <span className="ai-spinner" aria-hidden="true" />
+                {t('composition.renderingPreview')}
+              </div>
+            )}
+          </div>
+        )}
+        {!previewLoading && !previewError && !previewImage && !previewText && (
           <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>{t('composition.previewIdle')}</div>
         )}
       </div>
