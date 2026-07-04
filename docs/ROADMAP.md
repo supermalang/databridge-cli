@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 20 | 20 / 20 |
+| [Maintenance & hardening](#maintenance--hardening) | 21 | 21 / 21 |
 
 ---
 
@@ -1978,6 +1978,67 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
+- [x] **MNT-22 — Fix: stale "Transform" nav-label assertions in i18n-switch.spec.ts + a11y-4.spec.ts break deterministically on current develop (P1)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  PUX-1/PUX-8 relabeled the pipeline stage previously called "Transform" to the plain-language
+  "Clean & check" (`frontend/src/locales/en.json` / `fr.json`), but two Playwright specs
+  predating that rename were never updated: `frontend/tests/e2e/i18n-switch.spec.ts`'s `NAV_EN`/
+  `NAV_FR` constants still assert the literal tab labels `'Transform'`/`'Transformer'`, and
+  `frontend/tests/e2e/a11y-4.spec.ts`'s `gotoValidate()` helper clicks
+  `.tabs-bar .tab { hasText: 'Transform' }`. Since no tab named "Transform" renders anywhere in
+  the current app, both fail deterministically — reproduced on a clean `develop` checkout,
+  confirmed unrelated to any other in-flight work. This is a real, pre-existing bug (not a
+  flake), discovered while investigating unrelated `/ship-task` failures on VIS-11/VIS-12: the
+  batch pipeline's review agents correctly reported these tests failing, but the root cause is
+  this stale-label mismatch, not a defect in VIS-11/VIS-12's own spec-split diffs. Every other
+  file that mentions "Transform" (`client-cache.spec.ts`, `perf-3-skeleton.spec.ts`,
+  `sample-data-path.spec.ts` — all navigate via the stable `[data-tab="transform"]` attribute;
+  `i18n-subtabs.spec.ts` — navigates via the stage id, not the label; `pux-1.spec.ts` —
+  intentionally asserts the bare jargon word is *absent*; `i18n-guard-navlabels.spec.ts` — a
+  fully self-contained fixture test with its own synthetic locale bundles, unrelated to the real
+  app's actual labels) was individually checked and confirmed **not** affected by this bug.
+
+  **Type:** Fix
+
+  **Files:** `frontend/tests/e2e/i18n-switch.spec.ts` (`NAV_EN`/`NAV_FR` constants ~line 49-50,
+  plus the stale "Transform" mentions in the doc comment ~lines 11, 41, 48) ·
+  `frontend/tests/e2e/a11y-4.spec.ts` (`gotoValidate()` helper ~line 169-173, switch the click
+  target from `hasText: 'Transform'` to the stable `[data-tab="transform"]` attribute, matching
+  the convention already used by `client-cache.spec.ts`/`perf-3-skeleton.spec.ts`)
+
+  **Config/schema impact:** None — test-file content fix only, no application code changes.
+
+  **Acceptance criteria**
+  - `i18n-switch.spec.ts`'s `NAV_EN`/`NAV_FR` assert the current labels (`'Clean & check'`/
+    `'Nettoyer et vérifier'`, alongside the unchanged `'Deliver'`/`'Diffuser'`), not the stale
+    `'Transform'`/`'Transformer'`
+  - `a11y-4.spec.ts`'s `gotoValidate()` navigates via `[data-tab="transform"]` (the stable
+    attribute), not the visible label text
+  - `cd frontend && npx playwright test i18n-switch a11y-4` passes at all three viewports with
+    zero failures (confirmed: 27/27 passing after the fix)
+  - `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch a11y-4`
+    passes with zero failures (confirmed: 135/135 passing after the fix)
+  - No other file's behavior changes — the audit of every other "Transform"-mentioning file
+    confirmed none of them needed a fix
+
+  **Unit tests:** N/A (frontend-only test-file content fix; Vitest is not installed — correctness
+  is exactly what the Playwright specs below assert, per the XTF-7 precedent).
+
+  **E2E:** `frontend/tests/e2e/i18n-switch.spec.ts` + `frontend/tests/e2e/a11y-4.spec.ts` — both
+  green at all three viewports after the fix; no new spec or baseline (these are pre-existing
+  specs whose *assertions* were fixed, not their captured pixels — no visual regression).
+
+  **UAT:** N/A (test-content fix restoring pre-existing, already-approved specs to a passing
+  state; no product UI or behavior changed — PR review + the green Playwright run above are the
+  human gate).
+
+  **Verify:** `cd frontend && npx playwright test i18n-switch a11y-4` ·
+  `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch a11y-4`
+
+---
+
 ## Backlog — parked (out of scope for now)
 
 > Captured so they aren't lost; not scheduled. Promote into a domain section above when picked up.
@@ -2159,5 +2220,3 @@ Sprint exit — checked by /report + /retro:
   `cd frontend && npx playwright test --config=../visual-review/playwright.storybook.config.ts hook-components --repeat-each=5` ·
   `cd frontend && npm run build` (main app unaffected) ·
   `cd frontend && npm run test:e2e` (Tier 1 harness unaffected)
-
-
