@@ -279,6 +279,54 @@ def test_validate_recipe_bullet_list_allows_safe_column_with_cfg():
     assert ok and reason == "", reason
 
 
+def test_validate_recipe_list_needs_one_column_no_categorical_required():
+    """MNT-23 AC: kind="list" validates exactly like kind="table" does today
+    (same code path), except it needs only >=1 column and — unlike "table" —
+    does NOT require a categorical column. A qualitative-only column ("Story")
+    that "table" would reject must validate ok for kind="list"; a quantitative
+    -only column ("Age") that "table" would also reject must ALSO validate ok
+    for kind="list"; zero columns must still be rejected."""
+    ok, reason = validate_recipe({"kind": "list", "questions": ["Story"]}, _profile_fixture())
+    assert ok and reason == "", reason
+
+    ok2, reason2 = validate_recipe({"kind": "list", "questions": ["Age"]}, _profile_fixture())
+    assert ok2 and reason2 == "", reason2
+
+    ok3, reason3 = validate_recipe({"kind": "list", "questions": []}, _profile_fixture())
+    assert not ok3
+    assert "≥1 column" in reason3, reason3
+
+
+def test_execute_item_list_returns_entry():
+    """MNT-23 AC: a kind="list" recipe executes through _execute_item exactly as
+    kind="table" does — it renders via the chart engine (here reusing the
+    existing bullet_list render path) and returns a normal {"kind": "list", ...,
+    "png": ...} entry, not a skip, for a valid single-column recipe."""
+    profile = _profile_fixture()
+    df = pd.DataFrame({"Story": ["one", "two", "three"]})
+    out = _execute_item(
+        {"kind": "list", "name": "stories", "title": "Stories", "questions": ["Story"]},
+        profile, df, {},
+    )
+    assert "skip" not in out, out
+    assert out["kind"] == "list"
+    assert "png" in out and out["png"] is not None
+
+
+def test_save_recipe_list_to_lists():
+    """MNT-23 AC: kind="list" saves into cfg['lists'] (its own section), exactly
+    mirroring kind="table" -> cfg['tables'] -- never into cfg['charts']/['tables']."""
+    cfg = {}
+    name = ask_engine.save_recipe(
+        {"name": "stories", "title": "Stories", "questions": ["Story"], "kind": "list"}, cfg, "list"
+    )
+    assert name == "stories"
+    assert [l["name"] for l in cfg["lists"]] == ["stories"]
+    saved = cfg["lists"][0]
+    assert "kind" not in saved
+    assert "charts" not in cfg and "indicators" not in cfg and "tables" not in cfg
+
+
 def test_validate_indicator_count_ok():
     ok, reason = validate_recipe({"kind": "indicator", "stat": "count"}, _profile_fixture())
     assert ok and reason == ""

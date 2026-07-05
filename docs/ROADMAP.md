@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 22 | 22 / 22 |
+| [Maintenance & hardening](#maintenance--hardening) | 27 | 23 / 27 |
 
 ---
 
@@ -91,6 +91,17 @@ Sprint exit — checked by /report + /retro:
 
 | ID | Title | Area | Done |
 |----|-------|------|------|
+| MNT-21 | Fix: bullet_list chart preview fails instead of rendering text | Maintenance & hardening | ✅ 2026-07-05 |
+| MNT-22 | Fix: stale "Transform" nav-label assertions in i18n-switch.spec.ts + a11y-4.spec.ts break deterministically on current develop | Maintenance & hardening | ✅ 2026-07-04 |
+| MNT-20 | Prompt guidance: tell the LLM when to use `bullet_list` instead of `table` (Express Fill inference) | Maintenance & hardening | ✅ 2026-07-04 |
+| MNT-19 | Add `bullet_list` as a proposable AI-inference type (stop over-defaulting free-text/list placeholders to `table`) | Maintenance & hardening | ✅ 2026-07-04 |
+| MNT-18 | Add `{{ year }}` / `{{ month }}` / `{{ day }}` date-component placeholders | Maintenance & hardening | ✅ 2026-07-04 |
+| MNT-17 | Fix: `{{ split_value }}` documented (and relied on by Express Fill) but missing from the render context | Maintenance & hardening | ✅ 2026-07-04 |
+| VIS-12 | Split Tier 1 specs into functional + visual, Shard C: build/report/misc (10 files) | Visual / E2E harness | ✅ 2026-07-04 |
+| VIS-11 | Split Tier 1 specs into functional + visual, Shard B: i18n / product-UX / composition (15 files) | Visual / E2E harness | ✅ 2026-07-04 |
+| VIS-9 | Scaffold the visual-review root directory + dedicated Tier 1 visual config + relocate the Tier 3 review app + ledger | Visual / E2E harness | ✅ 2026-07-04 |
+| VIS-7 | Fix: guard-visual-update.sh false-positive blocks unrelated commands + silent jq-missing fail-open | Visual / E2E harness | ✅ 2026-07-04 |
+| VIS-4 | Adopt Storybook (Tier 2) + local review app (Tier 3) + visual-approval ledger | Visual / E2E harness | ✅ 2026-07-03 |
 | MNT-16 | Hook-block agent self-approval of Playwright visual baselines via Bash | Maintenance & hardening | ✅ 2026-07-03 |
 | MNT-15 | Fix: manually-created charts can ship with a blank title | Maintenance & hardening | ✅ 2026-07-03 |
 | MNT-14 | Handle a `[[`/`]]` delimiter character split mid-token across docx runs | Maintenance & hardening | ✅ 2026-07-03 |
@@ -652,206 +663,6 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [x] **VIS-4 — Adopt Storybook (Tier 2) + local review app (Tier 3) + visual-approval ledger (P2)**
-
-  **Created:** 2026-07-03 · **Completed:** 2026-07-03
-
-  Ports the ai-augmented-coding template's tiered visual-testing system (VBR-1/4/5), adapted
-  to this repo. Template's Tier 1 (containerized full-route Playwright screenshots) was
-  **not** adopted — it would duplicate the more mature, already-integrated VIS-1 harness
-  (`frontend/tests/e2e/`, no Docker, CI installs Chromium directly per
-  `.github/workflows/visual.yml`) with a competing, redundant one. What's genuinely additive:
-  Tier 2 (Storybook component-isolation baselines) and Tier 3 (a local human
-  Approve/Reject review app backed by an approval ledger), both layered on top of the
-  existing VIS-1 harness rather than replacing it. `guard-visual-update.sh` (MNT-16, already
-  shipped) already blocks agents from self-approving baselines via Bash; this card adds the
-  human-facing approval loop and the machine-readable record of it.
-
-  **Type:** Feature
-
-  **Files:** `frontend/.storybook/main.js` + `preview.js` (new) ·
-  `frontend/tests/storybook/Example.stories.jsx` + `example.visual.spec.ts` (new) ·
-  `frontend/playwright.storybook.config.ts` (new) · `frontend/package.json` (+`storybook`,
-  `@storybook/react-vite`, `http-server` devDeps; +4 npm scripts) ·
-  `frontend/scripts/visual-review-app/{lib,server,test}.mjs` + `index.html` + `README.md`
-  (new) · `visual-approvals.json` (new, repo root) · `.claude/agents/visual-review.md` (new) ·
-  `.claude/skills/visual-review/SKILL.md` (new) · `.claude/agents/roadmap-verifier.md` (edit —
-  visual DoD check now consults `/visual-review` instead of just checking a PNG exists) ·
-  `.claude/context.md` + `CLAUDE.md` (document the three tiers) · `.gitignore`
-  (`frontend/storybook-static/`, `frontend/playwright-report-storybook/`)
-
-  **Config/schema impact:** New root-level `visual-approvals.json` ledger (seeded `{}`) — pure
-  harness/process state, not `config.yml` or DB schema. Schema: `{ "<baseline-id>": {
-  "decision": "approved"|"rejected", "task": "<ID>"|null, "capturedImage": "<path>" (approved
-  only), "at": "<ISO8601>" } }`, keyed by the baseline PNG's path relative to `frontend/tests/`.
-
-  **Acceptance criteria**
-  - `cd frontend && npm run storybook:build` produces a working static build from
-    `frontend/tests/storybook/Example.stories.jsx` (verified: build succeeds, emits an
-    `Example.stories-*.js` chunk)
-  - `cd frontend && npm run test:visual:storybook` (against the built Storybook) navigates to
-    each story via `/iframe.html?id=...` and asserts `toHaveScreenshot` — verified: on a clean
-    run it correctly reports "no baseline yet, writing actual" for both example stories
-    (first-run behavior, not a bug) and writes real `-actual.png` candidates
-  - `.claude/hooks/guard-visual-update.sh` blocks `--update-snapshots` for the new Storybook
-    config exactly as it does for the main config — verified live: attempting
-    `npx playwright test --config=playwright.storybook.config.ts --update-snapshots` was
-    denied with the human-approval message
-  - `node frontend/scripts/visual-review-app/server.mjs` starts, serves `/`, and `/api/diffs`
-    correctly finds real Playwright `-actual.png` candidates when a matching baseline exists,
-    and correctly skips a brand-new candidate with no committed baseline (not a "diff to
-    review" — that's a first-baseline case, not an approval case)
-  - Approve (in the review app) copies the candidate over the baseline (file copy, not a
-    `--update-snapshots` shell call) and writes `{decision:"approved", task, capturedImage,
-    at}` to `visual-approvals.json`; Reject writes `{decision:"rejected", ...}` without
-    touching the baseline
-  - `.claude/agents/roadmap-verifier.md`'s visual DoD check now requires `/visual-review`'s
-    verdict to be `clear` for a card's own baselines specifically — a `pending` or `rejected`
-    entry is a named FAIL even if the PNG is committed on disk
-  - The main app build (`npm run build`) and the existing Tier 1 E2E harness
-    (`playwright.config.ts`, `frontend/tests/e2e/`) are unaffected — new Storybook deps and
-    config are fully additive
-
-  **Unit tests:** `frontend/scripts/visual-review-app/test.mjs` (new, Node built-ins only) — 11
-  assertions: `findDiffs` correlates a candidate to its baseline by stem (tolerating the
-  `{platform}` filename suffix) and pairs the `-diff.png`; `approve` re-baselines via file copy
-  and records `decision/task/capturedImage/at`; `reject` records without re-baselining;
-  `baselineId` returns a relative POSIX path; a brand-new candidate with no committed baseline
-  is correctly excluded from the diff set (not misreported as a pending review item).
-
-  **E2E:** `frontend/tests/storybook/example.visual.spec.ts` (new) — screenshots the two
-  example Storybook stories (`example-button--primary`, `example-button--disabled`) at all
-  three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900) via the static
-  Storybook build; first-run baselines are pending human approval (`npm run
-  test:visual:storybook:update`, then a human reviews + commits) — not blessed as part of this
-  card, per the same human-approval rule this card's own tooling exists to enforce.
-
-  **UAT:**
-  1. Run `cd frontend && npm run storybook` and confirm the Storybook workbench opens at
-     `http://localhost:6006` showing the Example/Button story with Primary/Disabled variants.
-  2. Run `cd frontend && npm run storybook:build && npm run test:visual:storybook:update`
-     (human-run — approves the first baselines), then re-run
-     `npm run test:visual:storybook` and confirm it passes against the now-committed baselines.
-  3. Make a trivial visual change to `frontend/tests/storybook/Example.stories.jsx` (e.g.
-     change the button's padding), re-run the Storybook visual suite, confirm it fails with a
-     diff, then run `node frontend/scripts/visual-review-app/server.mjs`, open
-     `http://localhost:4444`, and confirm the changed screenshot appears with Approve/Reject
-     controls; click Approve and confirm `visual-approvals.json` gets a new `"approved"` entry
-     and the baseline PNG updates to the new pixels.
-
-  **Verify:** `node frontend/scripts/visual-review-app/test.mjs` ·
-  `cd frontend && npm run build` (main app unaffected) ·
-  `cd frontend && npm run storybook:build` ·
-  `cd frontend && npm run test:e2e` (Tier 1 harness unaffected)
-- [x] **VIS-7 — Fix: guard-visual-update.sh false-positive blocks unrelated commands + silent jq-missing fail-open (P1)**
-
-  **Created:** 2026-07-04 · **Completed:** 2026-07-04
-
-  `.claude/hooks/guard-visual-update.sh` matched a bare `\bplaywright\b` substring anywhere in
-  the command text (not the actual `playwright test` subcommand), which incorrectly denied
-  `git push -u origin chore/playwright-workers-4` this session — the branch name merely
-  *contained* "playwright"; no `playwright test` was ever invoked. The Tier 2 baseline-update npm
-  script (shipped with VIS-4) was also already unguarded, a live self-approval gap.
-
-  **Scope grew substantially during Review** (3 rounds of security-audit + 1 perf-review, all
-  adversarial and empirically-verified, not just regex-reading):
-  - **perf-review** found the jq-free `extract_command()` decoder was O(n²) in command length
-    (benchmarked: ~75s at 100KB) — this hook runs on every Bash tool call, and this repo's own
-    heredoc-based commit/PR conventions routinely produce multi-KB commands. Fixed by preferring
-    `jq` when present (fast path) and falling back to a single-pass `python3 -c` JSON parse (not
-    a bash byte-loop) only when `jq` is genuinely absent — confirmed O(n) after the fix (0.093s
-    at 50KB, down from 19.47s).
-  - **security-audit round 1** empirically found the new command-position anchor omitted the
-    backtick and `{` characters, so `` x=`playwright test --update-snapshots` `` and
-    `{ npx playwright test -u; }` silently bypassed the gate. Fixed by adding both to the anchor
-    class and widening the `-u` alias's trailing-boundary set.
-  - **security-audit round 2** (adversarial fuzzing beyond the reported bypasses) found the same
-    anchor didn't cover bash keyword-introduced command positions: `!` negation, and `then`/`do`/
-    `else`/`elif`/`time`. Fixed for all of these (6 of 7 found bypasses). The 7th — a `case`
-    pattern's closing `)` — was deliberately left as a **documented residual limitation**
-    alongside the pre-existing `eval`-obfuscation limitation: a bare `)` is far too common in
-    ordinary shell/text to anchor on safely, and exploiting it requires the unusual `case`/`esac`
-    construct, putting it in the same tier as `eval`'s string-literal obfuscation rather than the
-    easily-hit keyword class.
-  - **security-audit round 3** (final confirmation pass) found one more real, easy-to-hit gap:
-    the `-u` alias's terminator class omitted the closing backtick, so `` x=`npx playwright test -u` ``
-    still bypassed. Fixed by adding it to the terminator set.
-  - **roadmap-verifier** (adversarial DoD pass, going beyond re-running the suite) found the
-    `deny()` helper still shelled out to `jq -n` unconditionally with no fallback — so on a host
-    without `jq`, `extract_command()` correctly identified a denial-worthy command via its
-    python3 fallback, but `deny()` then silently produced no output and exited 0 (ALLOW),
-    reintroducing this exact card's own "silent jq-missing fail-open" bug, just relocated from
-    the extraction step to the decision step, and on the worst-case commands (only fails open on
-    genuine denials, not on benign ones). Fixed by switching `deny()` to stderr + `exit 2` — the
-    same jq-free deny convention every other guard hook in this repo already uses — which needs
-    no JSON parser at all. Added dedicated jq-free-PATH test coverage (deny + allow) that the
-    original 56-case suite never exercised, plus a dedicated pin for the `eval` residual that the
-    AC claimed was "pinned-by-test" but wasn't yet.
-
-  **Type:** Fix
-
-  **Files:** `.claude/hooks/guard-visual-update.sh` (full rewrite: `extract_command()` prefers
-  `jq`, falls back to a single-pass `python3 -c` JSON parse — not a bash byte-loop — only when
-  `jq` is absent; `deny()` signals via stderr + `exit 2` instead of a jq-built stdout JSON blob,
-  so the decision step itself has no jq dependency; command-position anchor covers `;`/`&`/`|`/
-  `(`/backtick/`{`/`!`/`then`/`do`/`else`/`elif`/`time`; `-u` alias terminator set includes the
-  closing backtick; header comments document the `eval` and `case`-pattern residual limitations
-  honestly) · `.claude/hooks/tests/guard-visual-update.test.sh` (extended; `is_deny`/
-  `has_human_reason`/`run_hook` switched from parsing stdout JSON to checking exit code + stderr
-  to match the `deny()` contract change; added `run_hook_with_path`/`assert_deny_no_jq`/
-  `assert_allow_no_jq` fixtures backed by a jq-scrubbed PATH scratch dir)
-
-  **Config/schema impact:** None — hook script only.
-
-  **Acceptance criteria**
-  - `git push -u origin chore/playwright-workers-4` is **allowed**
-  - Still **denied**: the existing Tier-1-update npm script; `npx playwright test` with the
-    snapshot-update flag; `playwright test` with the short update flag; a `cd frontend &&`-prefixed
-    invocation of the same with extra grep args
-  - Newly **denied**: the Tier 2 storybook-update npm script and the new Tier 1 dedicated-config
-    update npm script VIS-9 introduces — matched at command position, not as a bare substring, so
-    free-text mentions (e.g. in a commit message) are **allowed**
-  - `git commit -m "fix playwright config regression"` and any command where "playwright" or an
-    npm-update script name occurs only inside a free-text argument — not as the actual invocation
-    — is **allowed**
-  - Command extraction prefers `jq`; when genuinely absent, falls back to a `python3`-based
-    parse (O(n), not the O(n²) bash byte-loop) that survives escaped quotes/backslashes
-  - The deny decision itself does not depend on `jq` either: with `jq` scrubbed from `PATH`, a
-    genuine denial-worthy command is still **denied** (exit 2 + human-approval reason on stderr),
-    and an unrelated/free-text command is still **allowed** — closing the relocated fail-open gap
-    the verify pass found
-  - Fail-safe-open contract preserved: empty/genuinely unparseable stdin still results in ALLOW
-  - A 100KB synthetic command extracts and evaluates in well under 1 second (regression guard
-    against the O(n²) hazard recurring)
-  - Command-position anchor denies genuine invocations following `;`, `&`, `|`, `(`, backtick,
-    `{`, `!` negation, and the keywords `then`/`do`/`else`/`elif`/`time` — verified via crafted
-    payloads actually run through the live hook, not just regex inspection
-  - `eval "..."` and a `case`-pattern `)` command position are documented, pinned-by-test residual
-    limitations (not silently unhandled) — exploiting either requires an unusual construct,
-    unlike the fixed classes above
-  - All pre-existing MNT-16 cases in `guard-visual-update.test.sh` continue to pass
-
-  **Unit tests:** `.claude/hooks/tests/guard-visual-update.test.sh` — grew from 13 to 61 cases
-  across all rounds: the original incident regression + two npm-script cases (RED phase); 6 cases
-  covering the npm-script/playwright free-text exemption fix; 4 cases covering the backtick/brace
-  anchor fix; a 100KB bounded-time perf regression guard; 19 cases covering the keyword/negation
-  anchor fix (8 deny + 11 allow proving no new false positives, one per keyword); 2 cases covering
-  the final backtick-terminator fix; 1 case pinning the `eval` residual; 4 cases (2 deny + 2
-  allow) run against a jq-scrubbed `PATH` proving the deny path is jq-independent. Run:
-  `bash .claude/hooks/tests/guard-visual-update.test.sh`.
-
-  **E2E:** N/A (bash PreToolUse hook, not a UI surface — covered by the bash test suite above,
-  same posture as this hook's originating card MNT-16).
-
-  **UAT:** N/A (dev-tooling/hook fix, no product UI surface — the bash test suite + PR review are
-  the human gate, same posture as MNT-16).
-
-  **Verify:** `bash .claude/hooks/tests/guard-visual-update.test.sh` (61 passed) · manually replay
-  the incident command (`git push -u origin chore/playwright-workers-4` against a real branch)
-  via the Bash tool and confirm it is no longer denied.
-
----
-
 - [ ] **VIS-8 — Fix: uncap hardcoded worker count to stop full-suite instability (P2)**
 
   **Created:** 2026-07-04
@@ -897,135 +708,6 @@ Sprint exit — checked by /report + /retro:
   are the human gate, same posture as VIS-3).
 
   **Verify:** `cd frontend && npm run test:e2e` (repeat 3x) · `cd frontend && npm run test:visual:storybook`
-
----
-
-- [x] **VIS-9 — Scaffold the visual-review root directory + dedicated Tier 1 visual config + relocate the Tier 3 review app + ledger (P2)**
-
-  **Created:** 2026-07-04 · **Completed:** 2026-07-04
-
-  Foundational card for aligning with the upstream `ai-augmented-coding` template. Stands up the
-  target directory contract, relocates the Tier 3 review app + approvals ledger into it, creates
-  the new dedicated Tier 1 visual-only Playwright config, and proves the whole pipeline
-  end-to-end by migrating exactly one already-trivial spec (`harness-smoke.spec.ts`) as a pilot —
-  before the 41-file bulk split (VIS-10/11/12) and the Tier 2 relocation (VIS-13) build on top of
-  it. **Depends on VIS-7**: this card introduces new npm scripts capable of self-baselining, and
-  VIS-7's hook fix is what actually guards the new Tier 1 update script from agent
-  self-approval — landing VIS-9 first would open a real self-approval window.
-
-  ```
-  visual-review/
-    playwright.visual.config.ts       # Tier 1 dedicated visual-only config (THIS CARD)
-    playwright.storybook.config.ts    # Tier 2 config — relocated by VIS-13
-    specs/                            # Tier 1 visual-only specs, mirrors frontend/tests/e2e/ subpaths
-    baselines/                        # Tier 1 baselines; snapshotPathTemplate mirrors specs/
-    results/                          # gitignored — actual/diff/report (Tier 1: results/output)
-    uat/                              # gitignored — qa-tester review shots
-    storybook/                        # Tier 2 config/stories/specs/baselines — populated by VIS-13
-    review-app/                       # Tier 3 review app (THIS CARD)
-    visual-approvals.json             # ledger (THIS CARD)
-  ```
-
-  **Accepted tradeoff, not fixed by this card:** the approvals ledger's existing entries are
-  keyed by baseline-relative path (e.g. `e2e/chart-editor.spec.ts-snapshots/...`). Once VIS-10-13
-  move baselines to new paths, those pre-migration ledger entries become orphaned/unmatchable —
-  this card does not rewrite existing ledger keys. Pre-migration approval history is accepted as
-  lost; going forward, entries are created fresh under the new paths as baselines are
-  approved/re-approved post-migration.
-
-  **Type:** Feature
-
-  **Files:**
-  - NEW `visual-review/playwright.visual.config.ts` — modeled on `frontend/playwright.config.ts`
-    (3 viewport projects; `fullyParallel: true`; `retries: CI?1:0`; worker count
-    `process.env.CI ? 1 : '50%'` per VIS-8; `webServer: { command: 'npm run dev', url:
-    'http://localhost:51730', ... }`, invoked via `cd frontend && npx playwright test
-    --config=../visual-review/playwright.visual.config.ts`; imports the existing polyfill via
-    `import '../frontend/tests/e2e/css-escape-polyfill'`, not duplicated) but with
-    `testDir: './specs'`, `snapshotDir: 'baselines'`, and a custom `snapshotPathTemplate`
-    following the pattern `{snapshotDir}/{testFilePath}/{arg}-{projectName}-{platform}{ext}`
-    (must include the project-name token — omitting it collapses all three viewport projects'
-    baselines onto the same filename, since the platform token alone is constant across projects
-    on one machine; confirmed via the actual committed baselines, which currently disambiguate
-    viewports via Playwright's own default project-name token), `outputDir: 'results/output'`,
-    `reporter: [['html', {outputFolder: 'results/report'}], ['list']]`,
-    `expect: { toHaveScreenshot: { animations: 'disabled', maxDiffPixelRatio: 0.01 } }` (adds the
-    currently-missing animation-freezing option)
-  - `frontend/package.json` — add a Tier 1 dedicated-config visual-run script (pointing at
-    `../visual-review/playwright.visual.config.ts`), its update variant (same + the snapshot
-    update flag), and a report-viewer script (`playwright show-report ../visual-review/results/report`)
-  - MOVE `frontend/scripts/visual-review-app/server.mjs` → `visual-review/review-app/server.mjs`,
-    **and edit it**: the `ROOT` constant's relative-path climb (`join(HERE, '..', '..', '..')`)
-    → `join(HERE, '..', '..')` (the relocated file is now 2 directories below repo root, not 3 —
-    using the old depth would climb one level above the repo root); update the three env-var
-    defaults: baselines-dir default `'frontend/tests'` → `'visual-review/baselines'`;
-    output-dir default `'frontend/test-results'` → `'visual-review/results/output'`;
-    approvals-file default `'visual-approvals.json'` → `'visual-review/visual-approvals.json'`
-  - MOVE `frontend/scripts/visual-review-app/lib.mjs` → `visual-review/review-app/lib.mjs` (no
-    logic change — paths are passed in as parameters)
-  - MOVE `frontend/scripts/visual-review-app/test.mjs` → `visual-review/review-app/test.mjs`
-    (update its relative import of `lib.mjs`; assertions unchanged)
-  - MOVE `frontend/scripts/visual-review-app/index.html` → `visual-review/review-app/index.html`
-  - MOVE `frontend/scripts/visual-review-app/README.md` → `visual-review/review-app/README.md`
-    (update documented run command + default paths; note Tier 2 coverage under
-    `visual-review/storybook/baselines/` is added by VIS-13)
-  - MOVE the root approvals-ledger JSON file → `visual-review/visual-approvals.json` (content
-    unchanged — see the accepted-tradeoff note above)
-  - `.claude/hooks/guard-visual-update.sh` — update header-comment example paths only (cosmetic;
-    VIS-7's denylist is already path-agnostic)
-  - `.gitignore` — add `visual-review/results/` and `visual-review/uat/` (do **not** remove the
-    old `frontend/playwright-report/` / `frontend/blob-report/` / `frontend/test-results/` /
-    `frontend/.playwright/` lines yet — VIS-14's cutover retires those once nothing writes there)
-  - **Pilot migration** (proves the new contract end-to-end):
-    - `frontend/tests/e2e/harness-smoke.spec.ts` — remove its one screenshot assertion + its
-      doc-comment claim of being the visual-harness proof; keep
-      `await expect(page.locator('main.card')).toBeVisible();` as a minimal functional check
-    - NEW `visual-review/specs/harness-smoke.visual.spec.ts` — same inline fixture HTML + the
-      screenshot assertion, now run under `playwright.visual.config.ts`
-    - `git mv` the 3 baseline PNGs from `frontend/tests/e2e/harness-smoke.spec.ts-snapshots/` to
-      `visual-review/baselines/harness-smoke.visual.spec.ts/`, renamed to match the new template
-      (pixel-identical, filename only)
-    - delete the now-empty `frontend/tests/e2e/harness-smoke.spec.ts-snapshots/`
-
-  **Config/schema impact:** New root-level directory tree + one new root-level Playwright config;
-  no `config.yml` or DB schema surface. The approvals ledger's JSON schema is unchanged, only its
-  filesystem location moves (see accepted-tradeoff note re: existing keys).
-
-  **Acceptance criteria**
-  - `visual-review/{specs,baselines,results,uat,storybook,review-app}/` all exist; `results/`,
-    `uat/`, and `storybook/` (until VIS-13) have no tracked content yet
-  - `visual-review/playwright.visual.config.ts` exists with the settings above, including the
-    project-name token in `snapshotPathTemplate`
-  - `cd frontend && npm run test:visual` runs `harness-smoke.visual.spec.ts` against the moved
-    baselines and passes clean (no diff) at all three viewports **independently** (mobile/tablet/
-    desktop each produce their own distinct baseline file, verified by checking three separate
-    PNGs exist, not one shared file), with **no recapture**
-  - `frontend/tests/e2e/harness-smoke.spec.ts` still exists, asserts no screenshot, and still
-    passes as part of `npm run test:e2e`
-  - `node visual-review/review-app/server.mjs` starts, serves `/`, and `/api/diffs` reads from
-    the new default paths with no env vars set
-  - `node visual-review/review-app/test.mjs` passes unmodified in assertions (only import/path
-    changes)
-  - `frontend/scripts/visual-review-app/` and the root approvals-ledger file no longer exist
-  - `cd frontend && npm run build`, `npm run test:e2e` (minus the one dropped screenshot line),
-    and `npm run test:visual:storybook` (untouched by this card) remain green
-
-  **Unit tests:** `visual-review/review-app/test.mjs` (relocated, no assertion changes). Run:
-  `node visual-review/review-app/test.mjs`.
-
-  **E2E:** `visual-review/specs/harness-smoke.visual.spec.ts` (new) — the pilot migration
-  validating the snapshot-directory/template/output-directory settings end-to-end on a
-  deterministic `page.setContent` fixture, and specifically validating the project-name-token fix
-  keeps the three viewports' baselines distinct. Impeccable audit/critique N/A (throwaway
-  fixture, no product UI, same as its VIS-1 precedent); the baselines are pixel-identical
-  git-renames, verified by a clean run with no diff — no human re-approval required.
-
-  **UAT:** N/A (test-infra scaffolding, no product UI surface — the pilot spec's green run + PR
-  review are the human gate, same posture as VIS-1/VIS-3).
-
-  **Verify:** `cd frontend && npm run test:visual` · `node visual-review/review-app/test.mjs` ·
-  `node visual-review/review-app/server.mjs` (starts; the diffs endpoint returns an empty list on
-  a clean tree) · `cd frontend && npm run test:e2e` · `cd frontend && npm run build`
 
 ---
 
@@ -1092,120 +774,6 @@ Sprint exit — checked by /report + /retro:
 
   **Depends on:** VIS-9 (needs `visual-review/specs/`, `visual-review/baselines/`,
   `playwright.visual.config.ts`, and the Tier 1 dedicated-config visual-run script).
-
----
-
-- [x] **VIS-11 — Split Tier 1 specs into functional + visual, Shard B: i18n / product-UX / composition (15 files) (P2)**
-
-  **Created:** 2026-07-04 · **Completed:** 2026-07-04
-
-  Second shard of the same mechanical split described in VIS-10 (see VIS-10 for the exclusion
-  note on the 3 non-visual files, and the full transformation recipe — not repeated here).
-
-  **Accepted exception, not fixed by this card:** 25 of the migrated visual assertions (across
-  `composition-progressive`, `connection-gating`, `copy-placeholder`, `i18n-coverage`,
-  `i18n-remaining`, `project-language`, `pux-1`, `pux-2`) fail against their moved, pixel-identical
-  baselines — confirmed **pre-existing on `develop`** (identical failures reproduce running the
-  same specs' still-colocated, un-migrated baselines directly on a clean `develop` checkout,
-  before this card's migration ever touches them). Root cause: the baselines were last refreshed
-  at PUX-4 and have drifted from several unrelated rendering changes since (e.g. I18N-2's string
-  externalization) — a pre-existing gap this card's mechanical split neither introduces nor is
-  scoped to fix. Functional suite: 387/387 passing. Tracked as a separate follow-up (baseline
-  refresh requires human re-approval per `guard-visual-update.sh` and is out of scope for a
-  test-file-reorganization card).
-
-  **Type:** Feature
-
-  **Files:** same per-file pattern as VIS-10, applied to: `i18n-coverage.spec.ts`,
-  `i18n-remaining.spec.ts`, `i18n-subtabs.spec.ts`, `i18n-switch.spec.ts`, `nav-labels.spec.ts`,
-  `project-language.spec.ts`, `perf-3-skeleton.spec.ts`, `pux-1.spec.ts`, `pux-2.spec.ts`,
-  `composition-progressive.spec.ts`, `composition-bullet-list.spec.ts`,
-  `composition-chart-title-required.spec.ts`, `connection-gating.spec.ts`,
-  `copy-placeholder.spec.ts`, `client-cache.spec.ts`.
-
-  **Config/schema impact:** None — test-file reorganization only.
-
-  **Acceptance criteria** (identical bar to VIS-10, applied to this shard's 15 files)
-  - Each file is split: functional remainder at `frontend/tests/e2e/<name>.spec.ts` has zero
-    screenshot assertions; behaviorally identical otherwise
-  - `visual-review/specs/<name>.visual.spec.ts` exists per file with the extracted visual
-    test(s) + minimal duplicated setup
-  - `visual-review/baselines/<name>.visual.spec.ts/` reproduces the old three-viewport baselines,
-    renamed to the new filename template
-  - `cd frontend && npm run test:visual` passes clean for all 15 against moved baselines, no
-    recapture (except any animation-affected spec, called out + re-approved individually)
-  - `cd frontend && npm run test:e2e` green for all 15, unchanged pass/fail behavior
-  - No file remains in the old snapshots directories for this shard
-
-  **Unit tests:** N/A (frontend-only test-file reorg; Vitest not installed — see VIS-10).
-
-  **E2E:** the 15 new `visual-review/specs/*.visual.spec.ts` files above, all three viewports,
-  against moved baselines; the 15 retained functional files unchanged.
-
-  **UAT:** N/A (test-infra reorganization — same posture as VIS-10).
-
-  **Verify:** `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch nav-labels project-language perf-3-skeleton pux-1 pux-2 composition-progressive composition-bullet-list composition-chart-title-required connection-gating copy-placeholder client-cache`
-  (functional) · `cd frontend && npm run test:visual -- i18n-coverage i18n-remaining i18n-subtabs i18n-switch nav-labels project-language perf-3-skeleton pux-1 pux-2 composition-progressive composition-bullet-list composition-chart-title-required connection-gating copy-placeholder client-cache`
-  (visual)
-
-  **Depends on:** VIS-9.
-
----
-
-- [x] **VIS-12 — Split Tier 1 specs into functional + visual, Shard C: build/report/misc (10 files) (P2)**
-
-  **Created:** 2026-07-04 · **Completed:** 2026-07-04
-
-  Third and final shard of the mechanical split described in VIS-10 (`harness-smoke.spec.ts` was
-  already migrated as VIS-9's pilot and is not part of this shard).
-
-  **Accepted exception, not fixed by this card:** 26 of the migrated visual assertions
-  (`express-template-fill`, `reports-delete-all`, `run-alert`, `terminal-collapse`) fail against
-  their moved, pixel-identical baselines — confirmed **pre-existing on `develop`**: the same 26
-  failures reproduce running the still-colocated, un-migrated versions of these specs directly on
-  a clean `develop` checkout, before this card's migration ever touches them. Same accepted-drift
-  pattern as VIS-11. Additionally, `vis-3-worker-cap.spec.ts`'s two functional assertions fail on
-  both this branch and `develop` — that spec's `isSmallCap()` helper requires `workers <= 2`, but
-  `frontend/playwright.config.ts` still hardcodes `workers: 4` (VIS-8, still open, is exactly the
-  card that fixes this). Functional suite otherwise: 231/231 passing.
-
-  **Type:** Feature
-
-  **Files:** same per-file pattern as VIS-10, applied to: `express-template-fill.spec.ts`,
-  `build-options.spec.ts`, `chart-editor.spec.ts`, `run-alert.spec.ts`,
-  `reports-delete-all.spec.ts`, `sample-data-path.spec.ts`, `stage-help.spec.ts`,
-  `terminal-collapse.spec.ts`, `validate-thresholds.spec.ts`, `vis-3-worker-cap.spec.ts`.
-
-  **Config/schema impact:** None — test-file reorganization only.
-
-  **Acceptance criteria** (identical bar to VIS-10, applied to this shard's 10 files)
-  - Each file is split: functional remainder has zero screenshot assertions; behaviorally
-    identical otherwise
-  - `visual-review/specs/<name>.visual.spec.ts` exists per file with the extracted visual
-    test(s) + minimal duplicated setup
-  - `visual-review/baselines/<name>.visual.spec.ts/` reproduces the old three-viewport baselines,
-    renamed to the new filename template
-  - `cd frontend && npm run test:visual` passes clean for all 10 against moved baselines, no
-    recapture (except any animation-affected spec, called out + re-approved individually)
-  - `cd frontend && npm run test:e2e` green for all 10, unchanged pass/fail behavior
-  - No file remains in the old snapshots directories for this shard
-  - This shard completes the 41-file split: **all** of the old `frontend/tests/e2e/*-snapshots/`
-    directories no longer exist anywhere in the repo after VIS-10+VIS-11+VIS-12 (only the 3
-    non-visual files listed in VIS-10 remain untouched, and they never had a snapshots directory)
-
-  **Unit tests:** N/A (frontend-only test-file reorg; Vitest not installed — see VIS-10).
-
-  **E2E:** the 10 new `visual-review/specs/*.visual.spec.ts` files above, all three viewports,
-  against moved baselines; the 10 retained functional files unchanged.
-
-  **UAT:** N/A (test-infra reorganization — same posture as VIS-10).
-
-  **Verify:** `cd frontend && npx playwright test express-template-fill build-options chart-editor run-alert reports-delete-all sample-data-path stage-help terminal-collapse validate-thresholds vis-3-worker-cap`
-  (functional) · `cd frontend && npm run test:visual -- express-template-fill build-options chart-editor run-alert reports-delete-all sample-data-path stage-help terminal-collapse validate-thresholds vis-3-worker-cap`
-  (visual) · a directory search under `frontend/tests/e2e` for any remaining snapshots directory
-  returns nothing
-
-  **Depends on:** VIS-9.
 
 ---
 
@@ -1724,402 +1292,329 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [x] **MNT-17 — Fix: `{{ split_value }}` documented (and relied on by Express Fill) but missing from the render context (P0)**
+- [x] **MNT-23 — Backend foundation for a first-class `list` kind (P1)**
 
-  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+  **Created:** 2026-07-05 · **Completed:** 2026-07-05
 
-  `docs/reference/templates.md:20` documents `{{ split_value }}` as available "when --split-by
-  is set, the current group's value", and `frontend/src/pages/Composition.jsx:1648` advertises
-  it to users as an available token. The archived `XTF-28` card goes further: Express Template
-  Fill actively **writes** the literal `{{ split_value }}` placeholder into resolved templates,
-  assuming `build-report` fills it in. But `src/reports/builder.py`'s `_render()` never adds
-  `split_value` to the docxtpl `context` dict (lines 332-348) — it's only forwarded into
-  `generate_narrative()` (line 318) for the AI narrative text, never exposed as its own template
-  placeholder. Any template built on this documented/advertised promise silently breaks: a
-  Jinja2 undefined value (or error) instead of the actual split value. P0 because this already
-  affects a shipped feature (Express Fill's split_value token), not a hypothetical gap.
+  **Type:** Feature (refactor/promotion of existing bullet_list machinery)
 
-  **Type:** Fix
+  `bullet_list` today only exists as a hidden sub-type of `kind="chart"` (`spec.type="bullet_list"`)
+  across `src/reports/ask_engine.py`, `src/reports/template_inference.py`,
+  `src/reports/builder.py`, and `src/reports/template_generator.py`. This card promotes it to a
+  genuine first-class `list` kind, mirroring the precedent already established for `table` (which
+  has its own `_KIND_SECTION` entry and its own `cfg['tables']` config section, distinct from
+  generic `charts:`, even though it renders via the same chart engine). This is **purely
+  additive** — the existing `charts: [{type: bullet_list}]` shape must keep working completely
+  unchanged (no config migration, no back-compat shim needed, both shapes coexist indefinitely).
+  No user-facing UI surface changes in this card (that's MNT-24/MNT-25).
 
-  **Files:** `src/reports/builder.py` (`_render()`, add `"split_value": split_value or ""`
-  right after `generated_at` at line 336, inside the context dict spanning lines 332-348) ·
-  `tests/test_builder.py` (new tests)
+  **Files:**
+  - `src/reports/ask_engine.py` — add `"list"` alongside `"table"` in 4 spots: the
+    column-requirement rule (~L75, a list needs ≥1 column, no categorical requirement — reuse the
+    existing bullet_list rule already at ~L76), `validate_recipe` (~L95, mirror `if
+    kind=="table": return _validate_chart(...)`), `_execute_item` (~L363, mirror the table
+    render-recipe-in override), `_SAVE_SECTIONS`/`save_recipe` (~L521-540, mirror table's section
+    mapping + forced type).
+  - `src/reports/template_inference.py` — add `_KIND_SECTION["list"] = ("lists", "list_")`
+    (~L782-787); remove the `if kind=="chart" and spec.get("type")=="bullet_list":
+    prefix="list_"` hack in `apply_inference` (~L918-922); add `"list"` to the `_KINDS` tuple
+    (~L231).
+  - `src/reports/builder.py` — new `self.lists_cfg` + `_generate_lists()` method mirroring
+    `_generate_tables()`/`self.tables_cfg`, reading `cfg.get("lists", [])` and calling the
+    existing `build_bullet_list_text` (`src/reports/charts.py`) to produce `{{ list_<name> }}`
+    context entries. The old bullet_list-inside-`_generate_charts` special case (~L447-453) stays
+    unchanged for back-compat.
+  - `src/reports/template_generator.py` — new `cfg.get('lists', [])` iteration branch mirroring
+    the 3 places it already iterates `cfg.get('tables',[])`. Old bullet_list-inside-charts
+    iteration stays for back-compat.
+  - `src/utils/seed_prompts.py` — update the `_TEMPLATE_INFERENCE` prompt (~L952-994) and
+    `_TEMPLATE_INFERENCE_OUTPUT_SCHEMA`'s kind enum (~L939-941) to include `"list"` as a
+    first-class proposable kind (replacing the MNT-20 "steer LLM to use kind=chart+type=bullet_list"
+    wording).
 
-  **Config/schema impact:** None.
+  **Config/schema impact:** New optional top-level `lists:` config.yml section (list-of-dicts:
+  `name`, `title`, `question`, optional `filter`), additive only — no migration of existing
+  `charts:` entries.
 
   **Acceptance criteria**
-  - When `report.split_by` is set and a Word template contains `{{ split_value }}`, the rendered
-    .docx contains the actual group value (e.g. "Nairobi"), matching what's already used
-    internally for the AI narrative
-  - When `report.split_by` is NOT set (no split), a template containing `{{ split_value }}`
-    renders without error (empty string, not a Jinja2 `UndefinedError` or a literal
-    `{{ split_value }}` left in the output)
-  - `docs/reference/templates.md`'s existing claim about `{{ split_value }}` (line 20) becomes
-    accurate — no doc change needed, the code now matches it
-  - Express Fill templates that already embed `{{ split_value }}` (per `XTF-28`) now render
-    correctly with no template changes required
-  - No regression to the AI narrative's existing use of `split_value`
+  - A recipe/proposal with `kind="list"` validates, executes, and saves correctly through
+    `ask_engine.py` exactly as `kind="table"` does today (same 4 code paths), requiring only ≥1
+    column (no categorical requirement)
+  - `template_inference.py`'s `apply_inference` persists an approved `kind="list"` proposal into
+    `cfg['lists']` (not `cfg['charts']`) and rewrites its template token to `{{ list_<name> }}`
+  - `ReportBuilder._generate_lists()` renders every `cfg['lists']` entry into a `{{ list_<name>
+    }}` context value via `build_bullet_list_text`, identically to how the old
+    bullet_list-as-chart-type path renders today
+  - `template_generator.py` emits `{{ list_<name> }}` placeholders for `cfg['lists']` entries when
+    auto-building a Word template
+  - The Express inference prompt can propose `kind="list"` directly; the AI schema's kind enum
+    includes `"list"`
+  - Existing configs with `charts: [{type: bullet_list}]` continue to render exactly as before —
+    zero regression, verified by the existing bullet_list test suite passing unchanged
 
-  **Unit tests:** `tests/test_builder.py` (new) — (1)
-  `test_split_value_in_render_context_when_split_by_set`: build a report with `split_by` set to
-  a column with 2+ unique values, and assert the rendered docx for each split output contains
-  the correct `split_value` for that group. (2) `test_split_value_empty_when_no_split_by`: build
-  a report with no `split_by`, assert a template containing `{{ split_value }}` renders without
-  raising and produces an empty string, not an undefined-variable error.
+  **Unit tests:** Extend/add cases in `tests/test_ask_engine.py` (list kind through
+  validate_recipe/_execute_item/save_recipe), `tests/test_template_inference.py` (list kind
+  section routing + placeholder prefix), `tests/test_seed_prompts.py` (schema enum includes
+  "list"), `tests/test_ask_api.py` and `tests/test_template_api.py` if those exercise kind
+  dispatch. Add a builder-level test for `_generate_lists()` reading `cfg['lists']`.
 
-  **E2E:** N/A (no app UI surface — `split_value` is a docxtpl/Jinja2 template placeholder
-  consumed inside an externally-authored Word template, exercised via `build-report`; verified
-  by the pytest cases above and the Verify command).
+  **E2E:** N/A (pure backend/config-schema addition — no new UI surface in this card; the UI
+  surface is added by MNT-24/MNT-25).
 
-  **UAT:** N/A (backend/template-rendering fix, no UI surface; PR review + the pytest cases
-  above are the human gate).
+  **UAT:** N/A (non-UI/CLI card — relies on unit tests + PR review per this repo's DoD convention
+  for backend-only cards).
 
-  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -k split_value`
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_engine.py
+  tests/test_template_inference.py tests/test_seed_prompts.py tests/test_ask_api.py
+  tests/test_template_api.py -q`
 
 ---
 
-- [x] **MNT-18 — Add `{{ year }}` / `{{ month }}` / `{{ day }}` date-component placeholders (P2)**
+- [ ] **MNT-24 — Express review UI: expose `list` as a selectable kind (P0) — fixes the reported bug**
 
-  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+  **Created:** 2026-07-05
 
-  The report builder only exposes one composed timestamp, `{{ generated_at }}`
-  (`"%d/%m/%Y %H:%M"`, `src/reports/builder.py` `_render()` line 336), with no way for a Word
-  template author to pull just the year, month, or day separately — useful for custom report
-  footers, filenames typed into the template body, or period-style headers that don't match
-  `generated_at`'s fixed format. Add three new placeholders derived from the same
-  `datetime.today()` call already used for `generated_at`, so all date-derived values in one
-  render stay consistent with each other.
+  **Depends on: MNT-23.**
+
+  **Type:** Fix
+
+  In the Express Template Fill review panel, a placeholder like a plain list of partner names
+  ("liste_partenaires", no categorical column) gets AI-proposed as `kind="table"`, which fails
+  validation ("'table' needs ≥1 categorical column"). The user has no way to manually reclassify
+  the row, because the review panel's `KINDS` dropdown (`frontend/src/pages/Templates.jsx`) only
+  offers `chart/indicator/summary/table/narrative/metadata` — `bullet_list` isn't selectable since
+  it's hidden as a chart sub-type, and the spec column is read-only. This card is the direct fix,
+  once MNT-23 makes `list` a real, round-trippable kind.
+
+  **Files:** `frontend/src/pages/Templates.jsx` — add `'list'` to the `KINDS` array (~L14); extend
+  `summariseSpec` (~L295-298) with a `kind==='list'` branch (e.g. `list · <question>`).
+
+  **Config/schema impact:** None beyond MNT-23's (this card only adds a UI option).
+
+  **Acceptance criteria**
+  - The Express review panel's kind dropdown includes `"list"` as a selectable option for any row
+  - Reclassifying a `needs_attention` row (e.g. one the AI proposed as `table` but that has no
+    categorical column) to `kind="list"` clears its flagged state, matching the existing re-kind
+    behavior for other kinds
+  - Applying a row with `kind="list"` persists a `lists:` entry into `config.yml` and resolves the
+    template token to `{{ list_<name> }}`
+  - The spec-summary column shows a sensible one-line description for a list row (not blank or
+    `undefined`)
+
+  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — covered by the
+  Playwright E2E below, consistent with the XTF-* convention).
+
+  **E2E:** Extend the existing Express Fill Playwright spec — upload a template with a
+  no-categorical-column placeholder, confirm it can be reclassified to `kind="list"` via the
+  dropdown, confirm the `needs_attention` flag clears, apply, and assert the resolved template /
+  returned config contains a `lists:` entry and a `{{ list_<name> }}` placeholder. Visual:
+  impeccable audit/critique + `toHaveScreenshot` of the review panel with a list-kind row selected,
+  at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves them.
+
+  **UAT:**
+  1. Upload a Word template containing a placeholder for a plain list of text values (no
+     categorical column available) to Express Fill.
+  2. Confirm the AI proposes something that gets flagged `needs_attention` (e.g. `table`).
+  3. Change that row's kind to "list" in the dropdown and confirm the flag clears.
+  4. Click Apply & Build and confirm the report builds successfully with the list rendered as
+     bullet points in the output `.docx`.
+
+  **Verify:** `cd frontend && npx playwright test <the extended express-fill spec>`
+
+---
+
+- [ ] **MNT-25 — Composition UI migration to a first-class Lists section (P2)**
+
+  **Created:** 2026-07-05
+
+  **Depends on: MNT-23.**
 
   **Type:** Feature
 
-  **Files:** `src/reports/builder.py` (`_render()`, add `year`/`month`/`day` to `context` near
-  line 336, reusing the same `datetime.today()` instance already computing `generated_at` rather
-  than calling it again) · `docs/reference/templates.md` (add three new rows immediately after
-  `{{ generated_at }}` at line 10, in the same bare-placeholder block — not the annotated
-  `{{ split_value }}`/`{{ data_quality }}` block further down) · `tests/test_builder.py` (new
-  tests)
+  Give `list` its own Composition UI section, mirroring `TablesCard`/`IndicatorsCard`, and retire
+  `bullet_list` as a selectable chart type in the regular (non-Express) authoring flow. Independent
+  of MNT-24 — can ship any time after MNT-23.
 
-  **Config/schema impact:** None.
+  **Files:**
+  - `frontend/src/pages/Composition.jsx` (2341 lines) — remove `'bullet_list'` from `CHART_TYPES`
+    (~L20) and its special-cased validation/preview/empty-vs-idle-state logic in the chart modal
+    (MNT-21 added the empty-vs-idle preview distinction there — search "bullet_list"); add
+    `'lists'` to `ALL_SECTIONS` (~L189) and `SECTION_LABELS` (~L895); new `lists` state array +
+    dirty-tracking (~L519-520) + save logic (`has('lists')`, `setOrDelete('lists', lists)`
+    mirroring indicators/summaries ~L492-494); new `ListsCard` + `ListModal` components mirroring
+    `TablesCard`/`IndicatorsCard` (~L1268-1432) — fields: name, title, question (single column),
+    optional filter. Decide placement relative to PUX-3's progressive-disclosure "Advanced"
+    section (tables + summaries are tucked behind a toggle) — group Lists there alongside Tables.
+  - `frontend/src/hooks/useChartPreview.js` — remove/generalize its bullet_list special case.
+
+  **Config/schema impact:** Composition now reads/writes `cfg['lists']` (defined by MNT-23)
+  instead of `charts: [{type: bullet_list}]` for newly-created lists. Existing `charts:` entries
+  with `type=bullet_list` are left as-is in already-saved configs (MNT-23's back-compat render
+  path keeps them working) but are no longer editable from Composition's chart modal — call this
+  out in the AC as a known limitation, not a bug.
 
   **Acceptance criteria**
-  - `{{ year }}` renders as a 4-digit year (e.g. "2026")
-  - `{{ month }}` renders as a zero-padded 2-digit month (e.g. "07")
-  - `{{ day }}` renders as a zero-padded 2-digit day (e.g. "04")
-  - All three, plus the existing `{{ generated_at }}`, are derived from the same single
-    `datetime.today()` call within one render — no risk of the date rolling over between them
-  - `docs/reference/templates.md` documents all three new placeholders in the existing bare
-    (undecorated) placeholder block, alongside `{{ generated_at }}`
-  - No change to `{{ generated_at }}`'s existing format or any other existing placeholder
+  - `bullet_list` no longer appears in the chart-type dropdown when adding/editing a chart in
+    Composition
+  - A new "Lists" card exists (grouped with Tables under the Advanced/progressive-disclosure
+    toggle), listing existing `cfg['lists']` entries with add/edit/remove actions
+  - Creating a list via the new modal (name, title, question, optional filter) saves it into
+    `cfg['lists']`, round-trips on reload, and renders correctly at build-report time
+  - Dirty-tracking and Save correctly include the `lists` section (unsaved list changes trigger
+    the same "unsaved changes" guard as other sections)
+  - No regression to any other Composition section (charts, indicators, tables, summaries, views,
+    framework)
 
-  **Unit tests:** `tests/test_builder.py` (new) — (1)
-  `test_year_month_day_placeholders_present`: patch the module-level `datetime` import in
-  `src.reports.builder` (via `unittest.mock.patch`, the mocking idiom already used elsewhere in
-  this file — no new dependency such as freezegun) so `datetime.today()` returns a fixed date,
-  build a report, and assert the rendered docx contains the correctly formatted year/month/day
-  for that date. (2) `test_date_placeholders_consistent_with_generated_at`: with the same patched
-  `datetime.today()`, assert `year`/`month`/`day` and `generated_at` are all consistent with the
-  single frozen instant (not independently re-evaluated).
+  **Unit tests:** N/A (frontend-only; Vitest not installed — covered by Playwright E2E below).
 
-  **E2E:** N/A (no app UI surface — new docxtpl placeholders consumed in an externally-authored
-  Word template, exercised via `build-report`; verified by the pytest cases above and the Verify
-  command).
+  **E2E:** Rewrite `frontend/tests/e2e/composition-bullet-list.spec.ts` as a Lists-section spec
+  (add/edit/remove a list via the new ListsCard/ListModal, confirm it's absent from the chart-type
+  dropdown) and remove/replace the MNT-21 bullet_list block inside
+  `frontend/tests/e2e/chart-editor.spec.ts` (and their `visual-review/specs/` counterparts). The 6
+  existing human-approved baselines under
+  `visual-review/baselines/composition-bullet-list.visual.spec.ts/` and
+  `visual-review/baselines/chart-editor.visual.spec.ts/` (`chart-editor-modal-bullet-list-*`) are
+  retired; capture fresh baselines for the new Lists UI at all three viewports (mobile 390×844,
+  tablet 820×1180, desktop 1440×900); a human approves them.
 
-  **UAT:** N/A (backend/template-rendering feature, no UI surface; PR review + the pytest cases
-  above are the human gate).
+  **UAT:**
+  1. Open Composition, confirm "bullet_list" is gone from the Add Chart type dropdown.
+  2. Find the new Lists card (under Advanced, alongside Tables); add a list bound to a text
+     question.
+  3. Save, reload the page, confirm the list persists.
+  4. Build a report and confirm the list still renders as bullet points in the output, same as
+     before.
 
-  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -k "year_month_day or date_placeholders"`
+  **Verify:** `cd frontend && npx playwright test composition-bullet-list chart-editor`
 
 ---
 
-- [x] **MNT-19 — Add `bullet_list` as a proposable AI-inference type (stop over-defaulting free-text/list placeholders to `table`) (P2)**
+- [ ] **MNT-26 — `{{ split_by }}` template placeholder (P2)**
 
-  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+  **Created:** 2026-07-05
 
-  Express Template Fill's AI inference has no way to propose `bullet_list` (a first-class render
-  type since XTF-27 — "1 column to list as bullet points", `Composition.jsx:40`) because
-  `ask_engine.py`'s `CHART_REQS` (the dict shared by both `/api/ask` and Template Inference's
-  `validate_recipe()`) has no `bullet_list` entry at all. When a placeholder's name/content is
-  really a free-text list (e.g. French names like `actions_prioritaires`,
-  `interventions_manquantes`, `risques_doublons` — "priority actions", "missing interventions",
-  "duplicate risks") and the underlying data has no categorical column, the LLM has nowhere
-  correct to route it: narrative-slot routing in `annotate_proposals`
-  (`_NARRATIVE_SLOT_KEYWORDS`, `template_inference.py:239-243`) only covers a fixed keyword set
-  (findings, overview, next steps, recommendations, observations, etc.), and the LLM-facing prompt
-  description of "narrative" (`seed_prompts.py:981-983`) similarly only mentions "recommendations,
-  observations, an executive summary" — neither matches these names, so the model falls back to
-  `table`, the generic catch-all, which then permanently fails `table`'s "≥1 categorical column"
-  requirement (`ask_engine.py` `CHART_REQS["table"]`) and gets stuck on a `needs_attention`
-  warning the user has to manually reassign every time.
+  **Independent of MNT-23/24/25.**
 
-  Adding `bullet_list` to `CHART_REQS` alone is not sufficient: `apply_inference`
-  (`template_inference.py`, `_KIND_SECTION` + the canonical-placeholder construction around lines
-  777-778 and 912-915) always writes back `{{ chart_<name> }}` for `kind == "chart"` regardless
-  of `spec["type"]`, but `builder.py` (~line 450-451) only ever populates a `list_<name>` context
-  key for `type == "bullet_list"` — so an approved `bullet_list` proposal would silently never
-  render unless the placeholder-naming logic is also taught the `bullet_list` → `list_<name>`
-  mapping already used for manually-added bullet_list placeholders
-  (`template_generator.py:31-32,137,226`).
+  **Type:** Feature
 
-  **Scope grew during Review** (security-audit, 3 passes): `bullet_list` renders raw, unaggregated
-  per-row values of a column (unlike every other proposable type, which renders aggregates), so
-  making it AI-proposable turned a pre-existing gap — `/api/ask/save` and `/api/template/apply`
-  persisted a client/LLM-supplied chart spec with no server-side re-validation against
-  `is_pii`/`is_effective_hidden` — into a full raw-data exfiltration path for a PII-flagged column
-  not separately listed in `cfg.pii.redact`. Closed with a PII/hidden-column gate at both
-  persistence endpoints (not just the propose paths), the CLI's `cmd_infer_template`, and a
-  negative-`top_n` cap bypass. The resulting synchronous profile recompute on every Save/Apply
-  click then tripped `perf-review` (`PERF: BLOCKED`) — fixed by routing both endpoints through the
-  existing `perf_cache` mechanism `/api/profile` already uses, empirically verified to cache-hit
-  correctly and to bust on a `cfg` (PII-flag) change.
+  `{{ split_value }}` (the split dimension's VALUE, e.g. "North") already exists and works
+  (shipped via the now-archived MNT-17 + XTF-28), but the split dimension's NAME/label itself
+  (e.g. "Region") is never exposed as a placeholder. `split_col` is computed in
+  `src/reports/builder.py`'s `build()` (~L198) but never threaded into `_render()` or the docxtpl
+  context dict.
 
-  **Type:** Fix
+  **Files:**
+  - `src/reports/builder.py` — add `split_by: Optional[str] = None` param to `_render()` (~L218);
+    pass `split_col` through from all 3 call sites in `build()` (~L202 no-split → `None`, ~L213
+    split case → `split_col`, ~L216 no-split → `None`); add `"split_by": split_by or ""` to the
+    context dict (~L341, alongside the existing `"split_value": split_value or ""`). No extra
+    label-resolution needed — the processed dataframe's columns are already export_label-named.
+  - `src/reports/template_inference.py` — mirror the existing `split_value` literal-kind handling
+    exactly: add `"split_by"` to `_KINDS` (~L231), mirror the annotate branch (~L488-501) and the
+    apply branch (~L911-915), including the same warn-if-no-split_by-configured behavior.
+  - `docs/reference/templates.md` — document `{{ split_by }}` next to `{{ split_value }}`.
 
-  **Files:** `src/reports/ask_engine.py` (`CHART_REQS["bullet_list"]`; `_validate_chart`'s
-  bullet_list branch gates on `excluded_column_names(cfg)`; `validate_recipe`/`_execute_item`/
-  `ask()`/`refine_item()` thread an optional `cfg` param) · `src/reports/template_inference.py`
-  (`_KIND_SECTION` / canonical-placeholder construction ~lines 777-778, 912-915 route
-  `bullet_list` to the `list_<name>` prefix; `annotate_proposals`/`_validate_data_proposal` thread
-  `cfg`) · `src/reports/charts.py` (`build_bullet_list_text` gains `opts.get("top_n", 50)` capped
-  via `max(0, top_n)`) · `src/reports/builder.py` (passes `resolved.get("options")` through) ·
-  `src/data/make.py` (`cmd_infer_template` passes `cfg` into `annotate_proposals`) ·
-  `web/main.py` (`_bullet_list_names_excluded` helper; `api_ask_save` validates via
-  `ask_engine.validate_recipe(..., cfg)` before persisting, routed through the existing
-  `perf_cache` under the same `"profile"` key `/api/profile` uses; `api_template_apply`
-  re-validates via `ti.annotate_proposals(candidates, prof, cfg)` server-side instead of trusting
-  client-echoed `status`, same cache treatment) · `tests/test_ask_engine.py`,
-  `tests/test_template_inference.py`, `tests/test_ask_api.py`, `tests/test_template_api.py`,
-  `tests/test_xtf27_bullet_list.py` (new tests) · `docs/reference/prompts.md` (checked — no
-  proposable-type enumeration exists there to update)
-
-  **Config/schema impact:** None — `bullet_list` the render type already exists and is unchanged
-  (XTF-27); this only changes what the AI recipe validator/prompt can propose, how that
-  proposal's placeholder is named when applied, and adds a server-side PII/hidden-column
-  re-validation gate at persistence time.
+  **Config/schema impact:** None — pure render-context/placeholder addition, no config.yml shape
+  change.
 
   **Acceptance criteria**
-  - `CHART_REQS` in `ask_engine.py` includes a `"bullet_list"` entry with requirement "≥1 column"
-  - `validate_recipe()` accepts a `bullet_list` recipe with ≥1 column and rejects one with 0
-    columns, using the same requirement-string format as other types (e.g. "'bullet_list' needs
-    ≥1 column")
-  - The AI type-list prompt block includes `bullet_list` alongside the other proposable types, so
-    both `/api/ask` and Express Template Fill's inference can propose it
-  - Given a placeholder whose underlying data has no categorical column but does have at least
-    one usable column, Template Inference's batched call can propose `bullet_list` instead of
-    being forced toward the always-failing `table`
-  - A `bullet_list` proposal approved via Express Template Fill's `apply_inference` writes
-    `{{ list_<name> }}` into the resolved template (not `{{ chart_<name> }}`), matching
-    `builder.py`'s `list_<name>` context key — the same convention `template_generator.py` already
-    uses for a manually-added bullet_list placeholder
-  - A `bullet_list` recipe naming a column flagged `is_pii`/effectively hidden is rejected — at
-    `/api/ask` and `/api/template/infer` (propose time) AND at `/api/ask/save` and
-    `/api/template/apply` (persistence time, independent of any client-supplied `status`), and at
-    the CLI's `infer-template`/`apply-template` path
-  - A negative `top_n` on a `bullet_list` no longer bypasses its row cap (`max(0, top_n)`)
-  - `api_ask_save`/`api_template_apply`'s new profile-loading work is served from the existing
-    `perf_cache` (same key `/api/profile` uses) rather than recomputing on every request, and the
-    cache correctly busts when `cfg` changes (e.g. a column's `pii:` flag flips)
-  - No regression to existing chart/indicator/summary/table/narrative/metadata routing,
-    validation, or placeholder-naming — all existing `ask_engine`/`template_inference` tests
-    remain green
+  - When `report.split_by` is set and a build produces per-value reports, each rendered report's
+    `{{ split_by }}` placeholder resolves to the split dimension's column name (e.g. "Region"),
+    while `{{ split_value }}` continues to resolve to that report's specific value (e.g. "North")
+  - When no `split_by` is configured, a template containing `{{ split_by }}` renders as an empty
+    string (no crash, no literal `{{ split_by }}` left in output) — same graceful-empty behavior
+    as `split_value`
+  - Express Fill's inference recognizes a placeholder naming the split dimension (e.g. "Split by",
+    "Grouping") as the `split_by` literal kind and resolves it to canonical `{{ split_by }}`,
+    warning if no split_by dimension is configured — mirroring the existing `split_value` behavior
+    exactly
+  - `docs/reference/templates.md` documents `{{ split_by }}`
 
-  **Unit tests:** `tests/test_ask_engine.py` — `test_validate_recipe_bullet_list_needs_one_column`,
-  `test_validate_recipe_bullet_list_rejects_pii_column`,
-  `test_validate_recipe_bullet_list_rejects_hidden_column`,
-  `test_validate_recipe_bullet_list_allows_safe_column_with_cfg`.
-  `tests/test_template_inference.py` — `test_annotate_bullet_list_proposal_validates_ok`,
-  `test_apply_inference_bullet_list_uses_list_prefix`.
-  `tests/test_ask_api.py` — `test_ask_save_rejects_pii_bullet_list_with_data`,
-  `test_ask_save_rejects_pii_bullet_list_without_data`.
-  `tests/test_template_api.py` — `test_apply_revalidates_and_drops_flipped_pii_bullet_list`,
-  `test_apply_drops_pii_bullet_list_without_data`.
-  `tests/test_xtf27_bullet_list.py` — `test_bullet_list_negative_top_n_still_caps`.
+  **Unit tests:** `tests/test_builder.py` — `test_split_by_in_render_context_when_split_by_set`
+  (build with `split_by` set, assert `{{ split_by }}` resolves to the column name) and
+  `test_split_by_empty_when_no_split_by` (build with no `split_by`, assert it renders empty),
+  mirroring the existing `test_split_value_*` tests. Extend `tests/test_template_inference.py`
+  with a case mirroring the existing XTF-28 `split_value` inference test for the new `split_by`
+  literal kind.
 
-  **E2E:** N/A (no app UI surface changed — Composition.jsx's manual `bullet_list` option already
-  exists per XTF-27; this card only changes what the AI can *propose* during inference, how that
-  proposal is named when applied, and server-side validation/caching, none of it UI).
+  **E2E:** N/A (no UI surface — `split_by` is a docxtpl/Jinja2 template placeholder, exactly as
+  `split_value` itself is N/A for E2E per the now-archived MNT-17).
 
-  **UAT:** N/A (backend/AI-inference + API logic; PR review + the unit tests above are the human
-  gate).
+  **UAT:** N/A (non-UI/CLI card — relies on unit tests + PR review, consistent with the
+  now-archived MNT-17's precedent for the sibling `split_value` placeholder).
 
-  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_engine.py tests/test_template_inference.py tests/test_ask_api.py tests/test_template_api.py tests/test_xtf27_bullet_list.py -k bullet_list`
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -k split_by &&
+  PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py -k split_by`
 
 ---
 
-- [x] **MNT-20 — Prompt guidance: tell the LLM when to use `bullet_list` instead of `table` (Express Fill inference) (P1)**
+- [ ] **MNT-27 — Fix: Express "Apply & Build" feels like a silent hang (redundant uncached profile recompute + no loading state) (P2)**
 
-  **Created:** 2026-07-04 · **Completed:** 2026-07-04
-
-  MNT-19 made `bullet_list` a technically valid, proposable AI-inference type — confirmed at the
-  code level (`ask_engine._CHART_TYPES_BLOCK` genuinely includes it). But the LLM never picks it:
-  `template_inference.py`'s `_KINDS` tuple (`"chart", "indicator", "summary", "table", "narrative",
-  "metadata", "split_value"`) is presented to the LLM as the primary, flat list of top-level
-  choices — `bullet_list` isn't one of them, it's only reachable two steps deep
-  (`kind="chart"` → `spec.type="bullet_list"` from a separate "chart types" list). The prompt's
-  per-kind guidance (`seed_prompts.py`'s `_TEMPLATE_INFERENCE`, `table` bullet at line 980) never
-  mentions this path or redirects the LLM to it when a table's "≥1 categorical column"
-  requirement can't be met — so a French list-style placeholder (e.g. `actions_prioritaires`)
-  with no categorical column keeps getting proposed as `table` (which then fails validation)
-  instead of `bullet_list`, confirmed live by re-running Infer after MNT-19 merged.
+  **Created:** 2026-07-05
 
   **Type:** Fix
 
-  **Files:** `src/utils/seed_prompts.py` (`_TEMPLATE_INFERENCE` system message ~lines 953-963 and
-  the user message's `table` bullet ~line 980) · `tests/test_seed_prompts.py` (new test)
+  Clicking "Apply & Build" in the Express Template Fill review panel takes ~10+ seconds with no
+  visible feedback before the build even starts. Root cause: `/api/template/infer`
+  (`web/main.py` ~L2843) computes the full data profile via `profile_dataset(cfg, df, repeats)`
+  **directly**, without going through the shared perf-cache (`perf_cache.get_or_compute`) that
+  `/api/profile` and `/api/template/apply` (`web/main.py` ~L2900-2909) use. `/api/template/apply`
+  then does its own cache-or-compute lookup under the same `_cache_key(request, cfg, "profile")`
+  — but because infer never populated that cache key, apply's lookup is effectively guaranteed to
+  miss immediately after an infer, so apply redundantly recomputes the exact full CSV/parquet read
+  + per-column EDA that infer just did moments earlier (the code's own comment at
+  `web/main.py` ~L2896-2899 already calls this recompute "event-loop-blocking"). Compounding the
+  delay, the frontend (`frontend/src/pages/Templates.jsx` ~L130-151) shows no loading/disabled
+  state while the `/api/template/apply` fetch is in flight — the button's label only switches to
+  "building…" after that fetch resolves and `run('build-report')` starts, so the whole
+  multi-second backend cost (profile recompute + docx rewrite + Minio/S3 push + config write) is
+  silently absorbed with zero visual feedback.
 
-  **Config/schema impact:** None — prompt text only; `_TEMPLATE_INFERENCE_SPEC_SCHEMA`'s `type`
-  field already accepts any string (no enum constraint to update).
+  **Files:**
+  - `web/main.py` — wrap `/api/template/infer`'s `profile_dataset(cfg, df, repeats)` call
+    (~L2843) in the same `perf_cache.get_or_compute(key, _compute)` pattern already used by
+    `/api/profile` (~L2537-2550) and `/api/template/apply` (~L2900-2909), keyed via the same
+    `_cache_key(request, cfg, "profile")` helper, so apply's subsequent lookup is a guaranteed
+    cache hit instead of a redundant recompute.
+  - `frontend/src/pages/Templates.jsx` — add a loading/disabled state to the "Apply & Build"
+    button (~L130-151, ~L269-277) covering the `/api/template/apply` fetch itself, not just the
+    subsequent `run('build-report')` call, so the user gets visible feedback for the whole
+    operation instead of an apparent hang.
 
-  **Acceptance criteria**
-  - `_TEMPLATE_INFERENCE`'s system message explicitly states that `bullet_list` is not a real
-    chart/graph and should be preferred over `table` when there's no categorical column
-  - `_TEMPLATE_INFERENCE`'s user message's `table` bullet explicitly redirects to
-    `kind="chart"` + `type="bullet_list"` when there's no categorical column
-  - No change to the JSON output schema — this is prompt-text-only
-  - `test_no_leftover_single_brace_format_slots` (existing) stays green — no stray `{var}`
-    introduced
-
-  **Unit tests:** `tests/test_seed_prompts.py` (new) —
-  `test_template_inference_explains_bullet_list_over_table`: asserts the `_TEMPLATE_INFERENCE`
-  system message mentions `bullet_list` in the context of not being a real chart, and the user
-  message's table description redirects to `bullet_list` when there's no categorical column.
-
-  **E2E:** N/A (no UI surface — prompt text consumed only by an LLM call).
-
-  **UAT:** N/A (backend prompt-text-only change; behavior against a live LLM is exploratory/
-  non-deterministic and not gated by a fixed human checklist — validated by the unit test above
-  and PR review).
-
-  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_seed_prompts.py -k bullet_list` ·
-  Optional manual smoke-check after merge (not gated, since LLM behavior is non-deterministic):
-  (1) run `push-prompts --force` to push the updated prompt to Langfuse (required — Langfuse
-  already holds a prior copy and always wins over the seed once populated); (2) clear the
-  on-disk prompt cache (`rm -rf ~/.cache/databridge/prompts`, or wait out its 1-hour TTL — a
-  backend process restart does NOT clear this disk-based cache); (3) re-run Infer on a template
-  with a list-style placeholder with no categorical column and confirm it now proposes
-  `kind="chart"`, `type="bullet_list"` instead of `table`.
-
----
-
-- [x] **MNT-22 — Fix: stale "Transform" nav-label assertions in i18n-switch.spec.ts + a11y-4.spec.ts break deterministically on current develop (P1)**
-
-  **Created:** 2026-07-04 · **Completed:** 2026-07-04
-
-  PUX-1/PUX-8 relabeled the pipeline stage previously called "Transform" to the plain-language
-  "Clean & check" (`frontend/src/locales/en.json` / `fr.json`), but two Playwright specs
-  predating that rename were never updated: `frontend/tests/e2e/i18n-switch.spec.ts`'s `NAV_EN`/
-  `NAV_FR` constants still assert the literal tab labels `'Transform'`/`'Transformer'`, and
-  `frontend/tests/e2e/a11y-4.spec.ts`'s `gotoValidate()` helper clicks
-  `.tabs-bar .tab { hasText: 'Transform' }`. Since no tab named "Transform" renders anywhere in
-  the current app, both fail deterministically — reproduced on a clean `develop` checkout,
-  confirmed unrelated to any other in-flight work. This is a real, pre-existing bug (not a
-  flake), discovered while investigating unrelated `/ship-task` failures on VIS-11/VIS-12: the
-  batch pipeline's review agents correctly reported these tests failing, but the root cause is
-  this stale-label mismatch, not a defect in VIS-11/VIS-12's own spec-split diffs. Every other
-  file that mentions "Transform" (`client-cache.spec.ts`, `perf-3-skeleton.spec.ts`,
-  `sample-data-path.spec.ts` — all navigate via the stable `[data-tab="transform"]` attribute;
-  `i18n-subtabs.spec.ts` — navigates via the stage id, not the label; `pux-1.spec.ts` —
-  intentionally asserts the bare jargon word is *absent*; `i18n-guard-navlabels.spec.ts` — a
-  fully self-contained fixture test with its own synthetic locale bundles, unrelated to the real
-  app's actual labels) was individually checked and confirmed **not** affected by this bug.
-
-  **Type:** Fix
-
-  **Files:** `frontend/tests/e2e/i18n-switch.spec.ts` (`NAV_EN`/`NAV_FR` constants ~line 49-50,
-  plus the stale "Transform" mentions in the doc comment ~lines 11, 41, 48) ·
-  `frontend/tests/e2e/a11y-4.spec.ts` (`gotoValidate()` helper ~line 169-173, switch the click
-  target from `hasText: 'Transform'` to the stable `[data-tab="transform"]` attribute, matching
-  the convention already used by `client-cache.spec.ts`/`perf-3-skeleton.spec.ts`)
-
-  **Config/schema impact:** None — test-file content fix only, no application code changes.
+  **Config/schema impact:** None — cache-sharing + UI-state only, no `config.yml` shape change.
 
   **Acceptance criteria**
-  - `i18n-switch.spec.ts`'s `NAV_EN`/`NAV_FR` assert the current labels (`'Clean & check'`/
-    `'Nettoyer et vérifier'`, alongside the unchanged `'Deliver'`/`'Diffuser'`), not the stale
-    `'Transform'`/`'Transformer'`
-  - `a11y-4.spec.ts`'s `gotoValidate()` navigates via `[data-tab="transform"]` (the stable
-    attribute), not the visible label text
-  - `cd frontend && npx playwright test i18n-switch a11y-4` passes at all three viewports with
-    zero failures (confirmed: 27/27 passing after the fix)
-  - `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch a11y-4`
-    passes with zero failures (confirmed: 135/135 passing after the fix)
-  - No other file's behavior changes — the audit of every other "Transform"-mentioning file
-    confirmed none of them needed a fix
+  - Clicking "Apply & Build" immediately after a successful "Infer" no longer triggers a second
+    full profile recompute — `/api/template/apply`'s profile cache lookup is a hit (verified via a
+    cache-hit/call-count assertion on `profile_dataset`/the endpoint's `_compute`)
+  - The "Apply & Build" button shows a visible loading/disabled state from the moment it's clicked
+    until the build-report run starts streaming logs — no silent multi-second gap with no feedback
+  - No regression to the existing re-validation behavior (`needs_attention` rows are still
+    correctly re-flagged server-side using the now cache-shared profile)
+  - No regression to `/api/profile`'s own caching behavior (still a hit for existing callers)
 
-  **Unit tests:** N/A (frontend-only test-file content fix; Vitest is not installed — correctness
-  is exactly what the Playwright specs below assert, per the XTF-7 precedent).
+  **Unit tests:** `tests/test_template_api.py` — new case asserting a second profile computation
+  (`profile_dataset`/the endpoint's `_compute`) is NOT re-invoked when `/api/template/apply` is
+  called right after `/api/template/infer` within the same cache window (mock/spy on
+  `profile_dataset` call count). Extend existing `/api/profile` cache tests if present to confirm
+  no cross-endpoint regression.
 
-  **E2E:** `frontend/tests/e2e/i18n-switch.spec.ts` + `frontend/tests/e2e/a11y-4.spec.ts` — both
-  green at all three viewports after the fix; no new spec or baseline (these are pre-existing
-  specs whose *assertions* were fixed, not their captured pixels — no visual regression).
+  **E2E:** N/A for the caching fix itself (backend timing, not a visible DOM assertion), but
+  extend the Express Fill Playwright spec to assert the Apply button enters a visible
+  loading/disabled state immediately on click (before the build-report terminal appears) — this
+  part IS UI-facing. Visual: impeccable audit/critique + `toHaveScreenshot` of the Apply button's
+  new loading state at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a
+  human approves them.
 
-  **UAT:** N/A (test-content fix restoring pre-existing, already-approved specs to a passing
-  state; no product UI or behavior changed — PR review + the green Playwright run above are the
-  human gate).
+  **UAT:**
+  1. Upload a template and click Infer.
+  2. Immediately click Apply & Build.
+  3. Confirm the button visibly changes state (spinner/disabled/"applying…") the instant you
+     click, with no unexplained pause before that.
+  4. Confirm the report still builds successfully afterward, same as before.
 
-  **Verify:** `cd frontend && npx playwright test i18n-switch a11y-4` ·
-  `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch a11y-4`
-
----
-
-- [x] **MNT-21 — Fix: bullet_list chart preview fails instead of rendering text (P1)**
-
-  **Created:** 2026-07-04 · **Started:** 2026-07-05 · **Completed:** 2026-07-05
-
-  The `/api/charts/preview` endpoint always falls through to `generate_chart`/`CHART_DISPATCH`
-  for every chart type, but `bullet_list` is text-injection only — it's special-cased in
-  `builder.py` at report-build time and was never added to `CHART_DISPATCH`. Selecting
-  `bullet_list` in the Composition chart editor and previewing it failed with a generic error
-  instead of showing the rendered bullet text. Fixed by short-circuiting `bullet_list` in
-  `preview_chart` (`web/main.py`) to mirror `builder.py`'s text-building logic, exposing the text
-  field through the frontend preview hook, and rendering text (not an `<img>`) in both the
-  row-preview modal and the live chart-editor pane. Also fixes a related empty-state bug: a
-  successful-but-empty `bullet_list` result (the chosen column has zero non-null values) rendered
-  as the idle "Preview appears here" placeholder — indistinguishable from "not configured yet" —
-  instead of an explicit "no output" empty state.
-
-  **Note:** this card's branch predates VIS-9/VIS-11/VIS-12 (the visual-review migration) by 23
-  commits. Rebased onto post-migration `develop` on 2026-07-05; its one new chart-editor visual
-  baseline (`chart-editor-modal-bullet-list.png`) was moved from the (pre-migration, now stale)
-  colocated location straight into `visual-review/specs/chart-editor.visual.spec.ts`, matching
-  VIS-12's established split contract, rather than landing in the now-functional-only
-  `frontend/tests/e2e/chart-editor.spec.ts`.
-
-  **Type:** Fix
-
-  **Files:** `web/main.py` (`preview_chart` — add a `bullet_list` short-circuit mirroring
-  `builder.py`'s text-building logic) · `frontend/src/hooks/useChartPreview.js` (expose the text
-  field) · `frontend/src/pages/Composition.jsx` (render text instead of an `<img>` for
-  `bullet_list` in both the row-preview modal and the live editor pane; add the explicit
-  empty-result branch) · `tests/test_charts_preview_api.py` (new) ·
-  `frontend/tests/e2e/chart-editor.spec.ts` (new functional empty-state test) ·
-  `visual-review/specs/chart-editor.visual.spec.ts` (new visual baseline, post-rebase)
-
-  **Config/schema impact:** None — preview-endpoint + rendering logic only; no `config.yml` or DB
-  schema change (mirrors the existing `builder.py` text-rendering path for `bullet_list`).
-
-  **Acceptance criteria**
-  - Selecting `bullet_list` as the chart type in the Composition chart editor and configuring a
-    column renders the live preview as text (bulleted lines), not a failed/broken image request
-  - The same applies to the row-level "Preview" action in the Composition chart list
-  - A `bullet_list` preview whose result is a successful-but-empty string shows an explicit
-    "no output" empty state, distinguishable from the idle "not configured yet" placeholder
-  - Non-`bullet_list` chart types are unaffected (still render an `<img>` preview) — no regression
-  - `cd frontend && npx playwright test chart-editor` passes, including the new empty-state test
-
-  **Unit tests:** `tests/test_charts_preview_api.py` (new) —
-  `test_preview_bullet_list_returns_text`, `test_preview_bullet_list_respects_top_n`,
-  `test_preview_bar_chart_still_returns_image` (regression guard). Run:
-  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts_preview_api.py`.
-
-  **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) — the empty-result guard test (no
-  screenshot, functional only); `visual-review/specs/chart-editor.visual.spec.ts` (extend) — the
-  `bullet_list` preview visual baseline at all three viewports, per VIS-12's split contract.
-
-  **UAT:** N/A (bug fix restoring correct preview behavior for an existing chart type; no new
-  product surface — PR review + the pytest/Playwright cases above are the human gate).
-
-  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts_preview_api.py` ·
-  `cd frontend && npx playwright test chart-editor`
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py -k apply -q` ·
+  `cd frontend && npx playwright test <the extended express-fill spec>`
 
 ---
 

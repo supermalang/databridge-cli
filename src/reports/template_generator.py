@@ -64,6 +64,13 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
             name=t.get("name",""); _heading(doc,t.get("title",name),2)
             _descriptor(doc,f"Table — {', '.join(t.get('questions',[]))}")
             _chart_ph(doc,f"{{{{ table_{name} }}}}"); doc.add_paragraph()
+    lists=cfg.get("lists",[])
+    if lists:
+        _divider(doc); _heading(doc,"Lists",1)
+        for l in lists:
+            name=l.get("name",""); _heading(doc,l.get("title",name),2)
+            _descriptor(doc,f"List — {l.get('question','')}")
+            _chart_ph(doc,f"{{{{ list_{name} }}}}"); doc.add_paragraph()
     summaries=cfg.get("summaries",[])
     if summaries:
         _divider(doc); _heading(doc,"Data Summaries",1)
@@ -137,6 +144,7 @@ def generate_template(cfg: Dict, out_path: Path, context: str = None, summary_pr
         ph = f"list_{c.get('name')}" if c.get("type") == "bullet_list" else f"chart_{c.get('name')}"
         log.info(f"  {{{{ {ph} }}}}")
     for t in tables: log.info(f"  {{{{ table_{t.get('name')} }}}}")
+    for l in lists: log.info(f"  {{{{ list_{l.get('name')} }}}}")
     return out_path
 
 def _margins(doc):
@@ -227,6 +235,8 @@ def _ref_table(doc,cfg):
         rows.append((f"{{{{ {ph} }}}}",f"Chart: {c.get('title','')}"))
     for t in cfg.get("tables",[]):
         rows.append((f"{{{{ table_{t.get('name','')} }}}}",f"Table: {t.get('title','')}"))
+    for l in cfg.get("lists",[]):
+        rows.append((f"{{{{ list_{l.get('name','')} }}}}",f"List: {l.get('title','')}"))
     table=doc.add_table(rows=1,cols=2); table.style="Table Grid"
     hdr=table.rows[0].cells
     hdr[0].text="Placeholder"; hdr[1].text="Description"

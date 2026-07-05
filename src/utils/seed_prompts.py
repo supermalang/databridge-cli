@@ -937,7 +937,7 @@ _TEMPLATE_INFERENCE_OUTPUT_SCHEMA = {
                 "properties": {
                     "token_index": {"type": "integer"},
                     "kind": {"type": "string",
-                             "enum": ["chart", "indicator", "summary", "table",
+                             "enum": ["chart", "indicator", "summary", "table", "list",
                                       "narrative", "metadata"]},
                     "name": {"type": "string"},
                     "spec": _TEMPLATE_INFERENCE_SPEC_SCHEMA,
@@ -983,6 +983,12 @@ _TEMPLATE_INFERENCE: ChatMessages = [
         "- table: spec = {\"name\", \"title\", \"questions\" (≥1 categorical column)}. If "
         "there is no categorical column to cross-tabulate, do not propose table — use "
         "kind=\"chart\" with spec.type=\"bullet_list\" instead.\n"
+        "- list: a plain bulleted list of one column's raw values (verbatim row text, e.g. "
+        "open-ended comments or success stories) — no aggregation, no categorical column "
+        "needed. Propose kind=\"list\" directly (rather than kind=\"chart\" with "
+        "spec.type=\"bullet_list\") whenever the placeholder just wants raw values listed. "
+        "spec = {\"name\", \"title\", \"question\" (the column to list)}; optionally "
+        "\"filter\".\n"
         "- narrative: a prose section (e.g. recommendations, observations, an executive "
         "summary, or a free-form paragraph). spec = {\"prompt\": <the placeholder text>}; "
         "set \"name\" to recommendations/observations/summary_text when it clearly matches.\n"

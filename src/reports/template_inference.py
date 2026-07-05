@@ -228,7 +228,7 @@ def extract_placeholders(docx_path) -> List[Token]:
 Proposal = Dict
 
 # Kinds the inference path understands.
-_KINDS = ("chart", "indicator", "summary", "table", "narrative", "metadata", "split_value")
+_KINDS = ("chart", "indicator", "summary", "table", "list", "narrative", "metadata", "split_value")
 
 # Confidence below this is treated as low → needs_attention.
 _CONFIDENCE_THRESHOLD = 0.5
@@ -784,6 +784,7 @@ _KIND_SECTION = {
     "indicator": ("indicators", "ind_"),
     "summary": ("summaries", "summary_"),
     "table": ("tables", "table_"),
+    "list": ("lists", "list_"),
 }
 
 
@@ -916,9 +917,11 @@ def apply_inference(
         else:
             section, prefix = _KIND_SECTION.get(kind, _KIND_SECTION["chart"])
             if kind == "chart" and spec.get("type") == "bullet_list":
-                # MNT-19: builder.py only ever populates a list_<name> context key
-                # for type == "bullet_list" (matching template_generator.py's
+                # MNT-19 back-compat: builder.py only ever populates a list_<name>
+                # context key for type == "bullet_list" (matching template_generator.py's
                 # manually-added bullet_list placeholder convention), not chart_<name>.
+                # This hidden-sub-type path stays alongside the new first-class "list"
+                # kind (MNT-23) — both shapes coexist indefinitely.
                 prefix = "list_"
             base_slug = _slugify(prop.get("name") or spec.get("name") or kind)
             final_name = _write_spec(cfg, section, spec, base_slug)

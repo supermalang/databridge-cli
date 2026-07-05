@@ -180,6 +180,7 @@ class ReportBuilder:
         # appended to the rendered chart set without disturbing explicit charts.
         self.charts_cfg = self.charts_cfg + build_equity_charts(cfg)
         self.tables_cfg: List[Dict] = cfg.get("tables", [])
+        self.lists_cfg: List[Dict] = cfg.get("lists", [])
         self.strict = strict
 
     def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None, session: Optional[str] = None, period: Optional[str] = None, compare: Optional[List[str]] = None) -> List[Path]:
@@ -350,6 +351,7 @@ class ReportBuilder:
             **summaries,
             **self._generate_charts(tpl, df, repeat_tables, per_form=self._per_form),
             **self._generate_tables(tpl, df, repeat_tables),
+            **self._generate_lists(tpl, df, repeat_tables),
         }
         tpl.render(context, jinja_env=sandboxed_jinja_env())
         out_dir = Path(self.report_cfg.get("output_dir","reports"))
@@ -508,6 +510,38 @@ class ReportBuilder:
             png = generate_chart(resolved, table_df)
             width = Inches(t.get("options", {}).get("width_inches", 5.5))
             images[f"table_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
+        return images
+
+    def _generate_lists(self, tpl, df, repeat_tables: Dict):
+        """Render each cfg['lists'] recipe into a {{ list_<name> }} text context value.
+
+        A list is a text-injection render type — like the bullet_list chart type it
+        bypasses the matplotlib/InlineImage pipeline entirely, rendering the named
+        `question` column's raw row values (via build_bullet_list_text) as a plain
+        string rather than an image.
+        """
+        key_to_label = {
+            q["kobo_key"]: q.get("export_label") or q.get("label") or q["kobo_key"]
+            for q in self.cfg.get("questions", [])
+        }
+        images = {}
+        for l in self.lists_cfg:
+            name = l.get("name")
+            if not name:
+                continue
+
+            question = l.get("question")
+            resolved_question = key_to_label.get(question, question) if question not in df.columns else question
+
+            source = l.get("source")
+            list_df = _pick_df([resolved_question], df, repeat_tables, source=source)
+
+            filter_expr = l.get("filter")
+            if filter_expr:
+                list_df = apply_local_scope(list_df, {}, filter_expr=filter_expr)
+
+            images[f"list_{name}"] = build_bullet_list_text(
+                list_df, [resolved_question], l.get("options") or {})
         return images
 
     def _stats_table(self, df):
