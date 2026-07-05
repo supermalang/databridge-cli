@@ -35,7 +35,10 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : '50%',
-  reporter: [['html', { outputFolder: 'results/report' }], ['list']],
+  // host: '0.0.0.0' so the auto-opened report server (and `npm run
+  // test:visual:report`) is reachable through devcontainer port forwarding —
+  // the default `localhost` bind is only reachable from inside the container.
+  reporter: [['html', { outputFolder: 'results/report', host: '0.0.0.0' }], ['list']],
   // Small tolerance absorbs sub-pixel font/antialiasing noise without hiding real regressions.
   // animations: 'disabled' freezes CSS animations/transitions before each screenshot.
   expect: { toHaveScreenshot: { animations: 'disabled', maxDiffPixelRatio: 0.01 } },
