@@ -911,6 +911,40 @@ def test_apply_inference_bullet_list_uses_list_prefix(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# MNT-23 -- a first-class kind="list" proposal must persist into cfg["lists"]
+# (its OWN section, not cfg["charts"]/cfg["tables"]) and its token must resolve
+# to {{ list_<slug> }}, mirroring exactly how kind="table" -> cfg["tables"] /
+# {{ table_<slug> }} works today.
+# --------------------------------------------------------------------------- #
+def test_apply_writes_list_proposal_into_lists_section(tmp_path):
+    template = _docx_with_nl_placeholders(tmp_path, ["[Success stories]"])
+    tokens = ti.extract_placeholders(template)
+    assert len(tokens) == 1
+
+    approved = [
+        _approved("list",
+                  {"name": "stories", "title": "Success stories", "question": "Story"},
+                  name="stories", token_index=0),
+    ]
+    cfg = {"api": {}, "form": {}}
+
+    cfg_out, resolved = ti.apply_inference(approved, cfg, template)
+
+    entry = _section_entry(cfg_out, "lists", "stories")
+    assert entry is not None, f"list proposal not written into cfg['lists']: {cfg_out}"
+    assert entry.get("question") == "Story"
+
+    # Must NOT have landed in charts or tables.
+    assert _section_entry(cfg_out, "charts", "stories") is None, cfg_out.get("charts")
+    assert _section_entry(cfg_out, "tables", "stories") is None, cfg_out.get("tables")
+
+    expected = "{{ list_stories }}"
+    reopened = Document(str(resolved))
+    blob = "\n".join("".join(r.text for r in p.runs) for p in reopened.paragraphs)
+    assert expected in blob, blob
+
+
+# --------------------------------------------------------------------------- #
 # AC: the original uploaded .docx is preserved (resolved saved as new file)
 # --------------------------------------------------------------------------- #
 def test_apply_preserves_original_upload(tmp_path):
