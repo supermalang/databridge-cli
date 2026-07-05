@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 21 | 21 / 21 |
+| [Maintenance & hardening](#maintenance--hardening) | 22 | 22 / 22 |
 
 ---
 
@@ -2058,6 +2058,68 @@ Sprint exit — checked by /report + /retro:
 
   **Verify:** `cd frontend && npx playwright test i18n-switch a11y-4` ·
   `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch a11y-4`
+
+---
+
+- [x] **MNT-21 — Fix: bullet_list chart preview fails instead of rendering text (P1)**
+
+  **Created:** 2026-07-04 · **Started:** 2026-07-05 · **Completed:** 2026-07-05
+
+  The `/api/charts/preview` endpoint always falls through to `generate_chart`/`CHART_DISPATCH`
+  for every chart type, but `bullet_list` is text-injection only — it's special-cased in
+  `builder.py` at report-build time and was never added to `CHART_DISPATCH`. Selecting
+  `bullet_list` in the Composition chart editor and previewing it failed with a generic error
+  instead of showing the rendered bullet text. Fixed by short-circuiting `bullet_list` in
+  `preview_chart` (`web/main.py`) to mirror `builder.py`'s text-building logic, exposing the text
+  field through the frontend preview hook, and rendering text (not an `<img>`) in both the
+  row-preview modal and the live chart-editor pane. Also fixes a related empty-state bug: a
+  successful-but-empty `bullet_list` result (the chosen column has zero non-null values) rendered
+  as the idle "Preview appears here" placeholder — indistinguishable from "not configured yet" —
+  instead of an explicit "no output" empty state.
+
+  **Note:** this card's branch predates VIS-9/VIS-11/VIS-12 (the visual-review migration) by 23
+  commits. Rebased onto post-migration `develop` on 2026-07-05; its one new chart-editor visual
+  baseline (`chart-editor-modal-bullet-list.png`) was moved from the (pre-migration, now stale)
+  colocated location straight into `visual-review/specs/chart-editor.visual.spec.ts`, matching
+  VIS-12's established split contract, rather than landing in the now-functional-only
+  `frontend/tests/e2e/chart-editor.spec.ts`.
+
+  **Type:** Fix
+
+  **Files:** `web/main.py` (`preview_chart` — add a `bullet_list` short-circuit mirroring
+  `builder.py`'s text-building logic) · `frontend/src/hooks/useChartPreview.js` (expose the text
+  field) · `frontend/src/pages/Composition.jsx` (render text instead of an `<img>` for
+  `bullet_list` in both the row-preview modal and the live editor pane; add the explicit
+  empty-result branch) · `tests/test_charts_preview_api.py` (new) ·
+  `frontend/tests/e2e/chart-editor.spec.ts` (new functional empty-state test) ·
+  `visual-review/specs/chart-editor.visual.spec.ts` (new visual baseline, post-rebase)
+
+  **Config/schema impact:** None — preview-endpoint + rendering logic only; no `config.yml` or DB
+  schema change (mirrors the existing `builder.py` text-rendering path for `bullet_list`).
+
+  **Acceptance criteria**
+  - Selecting `bullet_list` as the chart type in the Composition chart editor and configuring a
+    column renders the live preview as text (bulleted lines), not a failed/broken image request
+  - The same applies to the row-level "Preview" action in the Composition chart list
+  - A `bullet_list` preview whose result is a successful-but-empty string shows an explicit
+    "no output" empty state, distinguishable from the idle "not configured yet" placeholder
+  - Non-`bullet_list` chart types are unaffected (still render an `<img>` preview) — no regression
+  - `cd frontend && npx playwright test chart-editor` passes, including the new empty-state test
+
+  **Unit tests:** `tests/test_charts_preview_api.py` (new) —
+  `test_preview_bullet_list_returns_text`, `test_preview_bullet_list_respects_top_n`,
+  `test_preview_bar_chart_still_returns_image` (regression guard). Run:
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts_preview_api.py`.
+
+  **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) — the empty-result guard test (no
+  screenshot, functional only); `visual-review/specs/chart-editor.visual.spec.ts` (extend) — the
+  `bullet_list` preview visual baseline at all three viewports, per VIS-12's split contract.
+
+  **UAT:** N/A (bug fix restoring correct preview behavior for an existing chart type; no new
+  product surface — PR review + the pytest/Playwright cases above are the human gate).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts_preview_api.py` ·
+  `cd frontend && npx playwright test chart-editor`
 
 ---
 

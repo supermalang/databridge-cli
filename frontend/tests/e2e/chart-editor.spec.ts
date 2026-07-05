@@ -668,19 +668,4 @@ test.describe('MNT-21 — bullet_list preview renders text', () => {
       .not.toContainText('Preview appears here');
     await expect(pane.locator('img'), 'an empty text preview must not attempt to render an <img>').toHaveCount(0);
   });
-
-  // ── Visual baseline (per-viewport via the project config) ─────────────────
-  test('visual: chart editor preview — bullet_list', async ({ page }) => {
-    await page.route('**/api/charts/preview', async (r) => {
-      await r.fulfill({ json: { text: '• Alpha\n• Beta\n• Gamma' } });
-    });
-
-    await openAddChartModal(page);
-    await setChartType(page, 'bullet_list');
-    await addColumn(page, 'region');
-    await expect(previewPane(page)).toContainText('Alpha');
-    // Let the debounced preview settle so the baseline is deterministic.
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-bullet-list.png');
-  });
 });

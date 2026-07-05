@@ -145,7 +145,9 @@ def test_visual_spec_preserves_same_number_of_screenshot_assertions(name):
     pre_migration_counts = {
         "express-template-fill": 8,
         "build-options": 3,
-        "chart-editor": 6,
+        # 7, not the original 6: MNT-21 added a new bullet_list preview visual
+        # baseline after VIS-12 shipped, moved straight into the visual spec.
+        "chart-editor": 7,
         "run-alert": 1,
         "reports-delete-all": 1,
         "sample-data-path": 2,
