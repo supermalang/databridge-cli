@@ -8,7 +8,7 @@ import { test, expect, Page } from '@playwright/test';
  *   1. With the profile preference = English (the default), a representative
  *      WIRED interface string renders in English — both a Profile-page label
  *      ("Your profile" / "First name" / "Save") AND a primary nav tab label
- *      (one of Home / Extract / Transform / Model / Analyze / Deliver).
+ *      (one of Home / Extract / Clean & check / Combine data / Analyze / Deliver).
  *   2. The Profile page exposes a language switcher offering exactly English +
  *      French (no third option). Choosing French switches those same strings to
  *      their French equivalents LIVE — no page navigation/reload — AND posts
@@ -17,9 +17,10 @@ import { test, expect, Page } from '@playwright/test';
  *      brings the interface up in French (the saved preference is re-applied on
  *      load).
  *   4. The switcher control is keyboard-operable and has an accessible name.
- *   5. Visual baselines of the Profile page with the switcher in the EN and FR
- *      states, one per viewport (mobile/tablet/desktop via playwright.config.ts);
- *      a human approves them.
+ *
+ * The visual baselines (AC 5: Profile page with the switcher in EN/FR, three
+ * viewports) were extracted to `visual-review/specs/i18n-switch.visual.spec.ts`
+ * (VIS-11).
  *
  * NETWORK-MOCKED end to end (same harness as the pux/a11y specs): Vite serves
  * the real SPA; every /api/ call is intercepted with page.route(), so no FastAPI
@@ -38,16 +39,18 @@ import { test, expect, Page } from '@playwright/test';
  *     visible focus ring; it offers exactly the two options English + French.
  *   - WIRED STRINGS (the initial translated set this card ships):
  *       · a Profile label — "Your profile" (EN) / "Votre profil" (FR)
- *       · primary nav tabs — e.g. Transform (EN) / Transformer (FR),
+ *       · primary nav tabs — e.g. Clean & check (EN) / Nettoyer et vérifier (FR),
  *         Deliver (EN) / Diffuser (FR)  [rendered in `.tabs-bar .tab`]
  *     The implementer wires these through the en/fr resource bundles; the spec
  *     asserts the EN forms render by default and the FR forms after switching.
  */
 
 // Two distinct primary nav tabs whose EN labels must become FR after the switch.
-// (Both are present in STAGES today: Transform + Deliver.)
-const NAV_EN = ['Transform', 'Deliver'];
-const NAV_FR = ['Transformer', 'Diffuser'];
+// (Both are present in STAGES today: Clean & check + Deliver. The "Clean & check"
+// stage was previously labeled "Transform" — renamed to plain language by PUX-1;
+// this spec's expected labels were not updated at the time, silently breaking it.)
+const NAV_EN = ['Clean & check', 'Deliver'];
+const NAV_FR = ['Nettoyer et vérifier', 'Diffuser'];
 
 // A Profile-page heading string wired through the bundles.
 const PROFILE_TITLE_EN = /your profile/i;
@@ -226,24 +229,6 @@ test.describe('I18N-1 — language switcher + persisted preference', () => {
     await expect(control, 'the language switcher must be keyboard-focusable').toBeFocused();
   });
 
-  // AC visual: Profile page with the switcher in the ENGLISH state (one baseline
-  // per viewport). Gate on the wired EN string so the baseline isn't vacuous.
-  test('visual baseline — Profile page with the switcher in English', async ({ page }) => {
-    await openProfile(page);
-    await expect(switcher(page)).toBeVisible();
-    await expect(page.locator('.project-form')).toContainText(PROFILE_TITLE_EN);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await expect(page.locator('.project-form')).toHaveScreenshot('i18n1-profile-switcher-en.png');
-  });
-
-  // AC visual: Profile page with the switcher in the FRENCH state.
-  test('visual baseline — Profile page with the switcher in French', async ({ page }) => {
-    await openProfile(page);
-    await selectFrench(page);
-    await expect(page.locator('.project-form')).toContainText(PROFILE_TITLE_FR);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await expect(page.locator('.project-form')).toHaveScreenshot('i18n1-profile-switcher-fr.png');
-  });
 });
 
 test.describe('I18N-1 — saved preference re-applied on load', () => {

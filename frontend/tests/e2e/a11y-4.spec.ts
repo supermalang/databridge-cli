@@ -166,9 +166,9 @@ async function gotoReports(page: Page) {
   await page.locator('.subtabs-bar .subtab', { hasText: 'Reports' }).click();
 }
 
-// Navigate Transform → Validate.
+// Navigate Clean & check (formerly "Transform") → Validate.
 async function gotoValidate(page: Page) {
-  await page.locator('.tabs-bar .tab', { hasText: 'Transform' }).click();
+  await page.locator('.tabs-bar [data-tab="transform"]').click();
   await page.locator('.subtabs-bar .subtab', { hasText: 'Validate' }).click();
 }
 

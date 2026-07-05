@@ -1383,6 +1383,13 @@ async def preview_chart(payload: ChartPreviewPayload):
             )
         raise HTTPException(status_code=400, detail="\n".join(lines))
 
+    if chart.get("type") == "bullet_list":
+        # bullet_list is a text-injection render type — it bypasses the
+        # matplotlib/CHART_DISPATCH pipeline entirely (mirrors builder.py:450-453).
+        from src.reports.charts import build_bullet_list_text
+        text = build_bullet_list_text(df, questions, opts)
+        return {"text": text}
+
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
         cfg = {**chart, "name": chart.get("name") or "preview"}
@@ -2592,6 +2599,21 @@ async def periods_date_range():
     return {"min_year": int(ts.dt.year.min()), "max_year": int(ts.dt.year.max())}
 
 
+def _bullet_list_names_excluded(spec: dict, cfg: dict) -> bool:
+    """True if a ``bullet_list`` spec names a hidden/PII-flagged column.
+
+    The cfg-only half of ``ask_engine._validate_chart``'s bullet_list gate, used on
+    the no-data persistence paths (``/api/ask/save`` / ``/api/template/apply`` before
+    any download) where no profile can be built but a persisted bullet_list would
+    still dump raw column values verbatim at build-report time. Mirrors the columns
+    ``build_catalog`` hides from the LLM prompt (``excluded_column_names``)."""
+    if not isinstance(spec, dict) or spec.get("type") != "bullet_list":
+        return False
+    from src.utils.config import excluded_column_names
+    unsafe = excluded_column_names(cfg or {})
+    return any(c in unsafe for c in (spec.get("questions") or []))
+
+
 class AskPayload(BaseModel):
     question: str = ""
 
@@ -2666,6 +2688,39 @@ async def api_ask_save(payload: AskSavePayload, request: Request):
     if not isinstance(recipe, dict):
         return {"ok": False, "error": "missing recipe"}
     cfg = load_config(CONFIG_PATH)
+    # Security: never persist a client-supplied recipe unvalidated (the propose
+    # paths gate, but this write path must too). Validate against the profile when
+    # data is available (full role/existence + PII/hidden gate); with no data yet,
+    # still block a bullet_list naming a hidden/PII column so it can't be smuggled
+    # in before download and dumped verbatim at build time.
+    to_validate = {**recipe, "kind": payload.kind}
+    # Route the profile through the shared perf-cache under the SAME (org, project,
+    # cfg, data-session) key /api/profile uses, so a Save right after a Propose (or
+    # after the tab loaded /api/profile) is a cache hit instead of a full,
+    # event-loop-blocking CSV/parquet read + per-column EDA recompute. _compute
+    # returns None when there's no downloaded data yet (FileNotFoundError), routing
+    # to the cfg-only bullet_list gate below. Cache is skipped (key is None) when
+    # there's no active project or no data session to fingerprint.
+    def _compute():
+        try:
+            df, repeats = load_processed_data(cfg)
+        except FileNotFoundError:
+            return None
+        return {"profiles": list(profile_dataset(cfg, df, repeats or {}).values())}
+
+    key = _cache_key(request, cfg, "profile")
+    result = _compute() if key is None else perf_cache.get_or_compute(key, _compute)
+    if result is not None:
+        profile = {p["name"]: p for p in result["profiles"]}
+        ok, reason = ask_engine.validate_recipe(to_validate, profile, cfg)
+        if not ok:
+            raise HTTPException(status_code=400, detail=f"invalid recipe: {reason}")
+    elif _bullet_list_names_excluded(recipe, cfg):
+        raise HTTPException(
+            status_code=400,
+            detail=("a bullet_list may not list a hidden or PII-flagged column "
+                    "verbatim"),
+        )
     name = ask_engine.save_recipe(recipe, cfg, payload.kind)
     write_config(cfg, CONFIG_PATH)
     _sync_active_project_from_file(request)
@@ -2794,7 +2849,7 @@ async def api_template_infer(request: Request):
         # main". Synthesized views ride along on each proposal under `view` and
         # are persisted into config `views:` on apply (XTF-22).
         ti.resolve_sources(proposals, prof)
-        proposals = ti.annotate_proposals(proposals, prof)
+        proposals = ti.annotate_proposals(proposals, prof, cfg)
     except Exception as e:  # noqa: BLE001 — an AI failure re-locks the AI buttons
         _invalidate_ai(request)
         from src.utils import lf_client as _lf
@@ -2829,7 +2884,35 @@ async def api_template_apply(payload: TemplateApplyPayload, request: Request):
     from docx.opc.exceptions import PackageNotFoundError
 
     cfg = load_config(CONFIG_PATH)
-    approved = [p for p in (payload.proposals or []) if p.get("status") != "needs_attention"]
+    # The client echoes a `status` per proposal, but it is never trusted here: a
+    # flipped status or a fabricated proposal naming a PII/hidden column must not be
+    # written. Re-validate server-side against the CURRENT cfg — with the profile
+    # when data is available (full re-annotation), else the cfg-only bullet_list
+    # PII/hidden gate — and drop anything that comes back needs_attention.
+    candidates = [p for p in (payload.proposals or []) if p.get("status") != "needs_attention"]
+    # Route the profile through the shared perf-cache under the SAME (org, project,
+    # cfg, data-session) key /api/profile uses, so an Apply right after an Infer (or
+    # after the tab loaded /api/profile) is a cache hit instead of a full,
+    # event-loop-blocking CSV/parquet read + per-column EDA recompute. _compute
+    # returns None when there's no downloaded data yet (FileNotFoundError), routing
+    # to the cfg-only bullet_list gate below. Cache is skipped (key is None) when
+    # there's no active project or no data session to fingerprint.
+    def _compute():
+        try:
+            df, repeats = load_processed_data(cfg)
+        except FileNotFoundError:
+            return None
+        return {"profiles": list(profile_dataset(cfg, df, repeats or {}).values())}
+
+    key = _cache_key(request, cfg, "profile")
+    result = _compute() if key is None else perf_cache.get_or_compute(key, _compute)
+    if result is not None:
+        prof = {p["name"]: p for p in result["profiles"]}
+        revalidated = ti.annotate_proposals([dict(p) for p in candidates], prof, cfg)
+        approved = [p for p in revalidated if p.get("status") != "needs_attention"]
+    else:
+        approved = [p for p in candidates
+                    if not _bullet_list_names_excluded(p.get("spec") or {}, cfg)]
 
     template = payload.template
     if template and not os.path.isabs(template):

@@ -127,26 +127,5 @@ test('threshold finding message describes target, actual, and status', async ({ 
   await expect(finding.locator('.validate-finding__msg')).toContainText('actual');
 });
 
-// ---------------------------------------------------------------------------
-// Visual baseline — 3 viewports
-// ---------------------------------------------------------------------------
-
-const VIEWPORTS = [
-  { name: 'mobile',   width: 390,  height: 844  },
-  { name: 'tablet',   width: 820,  height: 1180 },
-  { name: 'desktop',  width: 1440, height: 900  },
-];
-
-for (const vp of VIEWPORTS) {
-  test(`visual: validate panel with threshold findings — ${vp.name}`, async ({ page }) => {
-    await page.setViewportSize({ width: vp.width, height: vp.height });
-    await stubBootstrap(page);
-    await gotoValidate(page);
-    await waitForFindings(page);
-    // Ensure both findings are visible before screenshotting.
-    await expect(page.locator('.validate-finding').nth(1)).toBeVisible();
-    await expect(page.locator('.page:visible')).toHaveScreenshot(
-      `validate-thresholds-${vp.name}-linux.png`,
-    );
-  });
-}
+// Visual baseline (3 viewports): see
+// visual-review/specs/validate-thresholds.visual.spec.ts (VIS-12).

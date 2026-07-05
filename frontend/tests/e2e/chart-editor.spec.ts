@@ -255,14 +255,8 @@ test.describe('PUX-11 — inline live preview in the chart editor modal', () => 
     await expect(editorDialog(page)).toBeVisible();
   });
 
-  // ── Visual baseline (per-viewport via the project config) ─────────────────
-  test('visual: chart editor modal with live preview', async ({ page }) => {
-    await openEditChartModal(page);
-    await expect(previewPane(page)).toBeVisible();
-    // Let the debounced preview settle so the baseline is deterministic.
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal.png');
-  });
+  // Visual baseline of the chart editor modal with live preview: see
+  // visual-review/specs/chart-editor.visual.spec.ts (VIS-12).
 });
 
 /**
@@ -333,35 +327,8 @@ test.describe('PUX-12 — chart editor preview persists last image during re-fet
     expect(srcDuring, 'the persisted image should still be the last-good src while re-fetching').toBe(srcBefore);
   });
 
-  // ── Visual baseline of the dimmed / in-progress re-fetch state ────────────
-  // Per-viewport via the project config (mobile/tablet/desktop) — no hard-coded
-  // viewport here.
-  test('visual: chart editor preview in the dimmed re-fetch state', async ({ page }) => {
-    await page.route('**/api/charts/preview', async (r, req) => {
-      // Hold re-fetches open (any request after the first) so the dimmed
-      // in-progress state is captured deterministically.
-      // Note: fixed payload so the baseline image content is stable.
-      const held = (previewCallCount += 1) > 1;
-      if (held) await new Promise((resolve) => setTimeout(resolve, 2000));
-      await r.fulfill({ json: { image: Buffer.from('fake-png-stable').toString('base64') } });
-    });
-
-    await openEditChartModal(page);
-    await expect(previewImage(page)).toBeVisible({ timeout: 5000 });
-
-    // Trigger the re-fetch and capture the dimmed / in-progress state.
-    const titleInput = editorDialog(page)
-      .locator('input[name="title"], input#title, input[value="Age distribution"]')
-      .first();
-    await titleInput.fill('Age distribution (re-fetch)');
-
-    // Wait for the debounce to fire and the loading indicator to appear over
-    // the still-visible last-good image.
-    await expect(previewLoading(page)).toBeVisible({ timeout: 3000 });
-    await expect(previewImage(page)).toBeVisible();
-
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-refetch.png');
-  });
+  // Visual baseline of the dimmed / in-progress re-fetch state: see
+  // visual-review/specs/chart-editor.visual.spec.ts (VIS-12).
 });
 
 /**
@@ -487,18 +454,8 @@ test.describe('PUX-13 — preview errors are linked back to the offending field'
     ).toHaveCount(0);
   });
 
-  // ── Visual baseline of the flagged Columns field (per-viewport via config) ──
-  test('visual: chart editor modal with the Columns field flagged', async ({ page }) => {
-    previewShouldFail = true;
-    await openAddChartModal(page);
-    await setChartType(page, 'histogram');
-    await addColumn(page, 'region');
-    await expect(previewError(page)).toBeVisible();
-    await expect(columnsFieldError(page)).toBeVisible({ timeout: 3000 });
-    // Let the debounced preview settle so the baseline is deterministic.
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-field-error.png');
-  });
+  // Visual baseline of the flagged Columns field: see
+  // visual-review/specs/chart-editor.visual.spec.ts (VIS-12).
 });
 
 /**
@@ -630,31 +587,85 @@ test.describe('PUX-14 — live preview reachable above the fold on mobile', () =
     expect(verticalOverlap, 'preview pane must sit beside the form fields (row layout), not below all of them').toBeGreaterThan(0);
   });
 
-  // ── Visual baselines (mobile / tablet / desktop) ───────────────────────────
-  // Mobile: the reordered/indicator-enabled above-the-fold layout.
-  test('visual: chart editor modal preview position — mobile', async ({ page }) => {
-    const viewport = page.viewportSize();
-    test.skip(!viewport || viewport.width >= 768, 'mobile-only baseline');
-    await openEditChartModal(page);
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-mobile-preview-position.png');
+  // Visual baselines (mobile / tablet / desktop preview position): see
+  // visual-review/specs/chart-editor.visual.spec.ts (VIS-12).
+});
+
+/**
+ * MNT-21 — Fix: bullet_list chart preview fails with a generic error.
+ *
+ * `POST /api/charts/preview` always attempted the matplotlib/image pipeline
+ * (`generate_chart` -> `CHART_DISPATCH`) for every chart type, but `bullet_list`
+ * is a text-injection render type with no `CHART_DISPATCH` entry (it is
+ * special-cased in `builder.py` at report-build time instead). This left the
+ * live preview endpoint returning a generic "Chart generation failed" error
+ * for `bullet_list`, and even once the backend is fixed to return
+ * `{"text": ...}`, the existing `previewImage &&` / `previewPane` render
+ * guards in `Composition.jsx` only ever look for an `image` field — a
+ * text-only response would render as a silently blank preview pane.
+ *
+ * RED-FIRST: derived from the MNT-21 Acceptance criteria, NOT the current
+ * implementation. `/api/charts/preview` is mocked here to already return the
+ * FIXED backend shape (`{"text": ...}`) for a `bullet_list` chart, isolating
+ * these tests to the frontend render-branch gap: today the preview pane has
+ * no code path that renders a `text` field, so it stays blank and every
+ * `toContainText` assertion below is expected to fail until MNT-21 ships.
+ */
+test.describe('MNT-21 — bullet_list preview renders text', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await bootApp(page);
+    await openComposition(page);
   });
 
-  // Tablet: regression guard baseline — two-column layout unchanged.
-  test('visual: chart editor modal preview position — tablet', async ({ page }) => {
-    const viewport = page.viewportSize();
-    test.skip(!viewport || viewport.width < 768 || viewport.width >= 1200, 'tablet-only baseline');
-    await openEditChartModal(page);
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-tablet-preview-position.png');
+  // AC1 — a bullet_list preview response ({"text": ...}) renders as visible
+  // text content in the live editor preview pane, not a blank pane.
+  test('AC1: bullet_list preview renders text content', async ({ page }) => {
+    await page.route('**/api/charts/preview', async (r) => {
+      await r.fulfill({ json: { text: '• Alpha\n• Beta\n• Gamma' } });
+    });
+
+    await openAddChartModal(page);
+    await setChartType(page, 'bullet_list');
+    await addColumn(page, 'region');
+
+    const pane = previewPane(page);
+    await expect(pane, 'the preview pane must be visible for a bullet_list chart').toBeVisible();
+    await expect(pane, 'the bullet_list text must render inside the preview pane, not be blank').toContainText('Alpha');
+    await expect(pane).toContainText('Beta');
+    await expect(pane).toContainText('Gamma');
+    // A bullet_list response is text, not an image — no <img> should appear.
+    await expect(pane.locator('img'), 'a bullet_list preview must not attempt to render an <img>').toHaveCount(0);
   });
 
-  // Desktop: regression guard baseline — two-column layout unchanged.
-  test('visual: chart editor modal preview position — desktop', async ({ page }) => {
-    const viewport = page.viewportSize();
-    test.skip(!viewport || viewport.width < 1200, 'desktop-only baseline');
-    await openEditChartModal(page);
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-desktop-preview-position.png');
+  // AC2/AC5 — regression guard: an ordinary image-producing chart type is
+  // unaffected by the new text-rendering branch.
+  test('AC2: image-based chart preview is unaffected (no regression)', async ({ page }) => {
+    // stubBootstrap's default /api/charts/preview mock returns {image: ...} —
+    // unrelated to the bullet_list branch under test.
+    await openEditChartModal(page); // default seeded chart ("Age distribution") is type histogram
+    await expect(previewImage(page), 'non-bullet_list charts must still render an <img> preview').toBeVisible({ timeout: 5000 });
+  });
+
+  // Empty-result guard (ux-review blocker) — build_bullet_list_text can
+  // legitimately return "" when the chosen column has zero non-null values or
+  // doesn't exist. A successful request with an empty body must surface an
+  // explicit "no output" empty state, NOT the idle "Preview appears here"
+  // placeholder (which is indistinguishable from "not configured yet").
+  test('bullet_list preview with empty result shows an empty state, not the idle placeholder', async ({ page }) => {
+    await page.route('**/api/charts/preview', async (r) => {
+      await r.fulfill({ json: { text: '' } });
+    });
+
+    await openAddChartModal(page);
+    await setChartType(page, 'bullet_list');
+    await addColumn(page, 'region');
+
+    const pane = previewPane(page);
+    // Let the debounced preview fire and settle.
+    await expect(pane.getByTestId('chart-editor-preview-empty')).toBeVisible({ timeout: 5000 });
+    await expect(pane, 'a completed-but-empty preview must not fall back to the idle placeholder')
+      .not.toContainText('Preview appears here');
+    await expect(pane.locator('img'), 'an empty text preview must not attempt to render an <img>').toHaveCount(0);
   });
 });

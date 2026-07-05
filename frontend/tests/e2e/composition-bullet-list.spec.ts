@@ -20,6 +20,10 @@ import { test, expect, Page } from '@playwright/test';
  * RED-FIRST: `bullet_list` is not in the current CHART_TYPES list in
  * Composition.jsx, so the "option is present" assertions below are expected
  * to fail until XTF-27 ships.
+ *
+ * The visual baseline (chart type dropdown showing bullet_list, three
+ * viewports) was extracted to
+ * `visual-review/specs/composition-bullet-list.visual.spec.ts` (VIS-11).
  */
 
 const ACTIVE_PROJECT = {
@@ -115,26 +119,5 @@ test.describe('XTF-27 — bullet_list chart type', () => {
     // It must actually be selectable (not disabled) and settable via the select.
     await typeSelect.selectOption('bullet_list');
     await expect(typeSelect).toHaveValue('bullet_list');
-  });
-
-  // ── Visual baseline (per-viewport via the project config) ─────────────────
-  test('visual: chart type dropdown showing bullet_list option', async ({ page }) => {
-    const chartsCard = page.locator('.comp-card', {
-      has: page.locator('.comp-card__title', { hasText: 'Charts' }),
-    });
-    const addChart = chartsCard.getByRole('button', { name: /add chart/i });
-    await addChart.click();
-
-    const modal = page.locator('.modal[role="dialog"]');
-    await expect(modal).toBeVisible();
-
-    const typeSelect = modal.getByRole('combobox', { name: /chart type/i });
-    await expect(typeSelect).toBeVisible();
-    // Guard against a vacuous baseline — bullet_list must actually be selectable
-    // before we snapshot the modal.
-    await typeSelect.selectOption('bullet_list');
-    await expect(typeSelect).toHaveValue('bullet_list');
-
-    await expect(modal).toHaveScreenshot('xtf27-composition-bullet-list-modal.png');
   });
 });

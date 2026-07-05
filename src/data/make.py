@@ -527,7 +527,10 @@ def cmd_infer_template(ctx, template, out):
         prof = {**prof, "split_by": split_by}
 
     proposals = ti.infer_specs(nl_tokens, catalog, ai_cfg)
-    proposals = ti.annotate_proposals(proposals, prof)
+    # Pass cfg so annotate_proposals applies the PII/hidden-column gate (a
+    # bullet_list must never list a redacted/hidden column verbatim) — without
+    # cfg the Express Template Fill CLI path silently skips that gate.
+    proposals = ti.annotate_proposals(proposals, prof, cfg)
 
     out_path = Path(out)
     out_path.parent.mkdir(parents=True, exist_ok=True)

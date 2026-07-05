@@ -77,11 +77,11 @@ Sprint exit — checked by /report + /retro:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 14 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 4 | 4 / 4 |
+| [Visual / E2E harness](#visual--e2e-harness) | 12 | 8 / 12 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 18 | 18 / 18 |
+| [Maintenance & hardening](#maintenance--hardening) | 22 | 22 / 22 |
 
 ---
 
@@ -743,6 +743,626 @@ Sprint exit — checked by /report + /retro:
   `cd frontend && npm run build` (main app unaffected) ·
   `cd frontend && npm run storybook:build` ·
   `cd frontend && npm run test:e2e` (Tier 1 harness unaffected)
+- [x] **VIS-7 — Fix: guard-visual-update.sh false-positive blocks unrelated commands + silent jq-missing fail-open (P1)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  `.claude/hooks/guard-visual-update.sh` matched a bare `\bplaywright\b` substring anywhere in
+  the command text (not the actual `playwright test` subcommand), which incorrectly denied
+  `git push -u origin chore/playwright-workers-4` this session — the branch name merely
+  *contained* "playwright"; no `playwright test` was ever invoked. The Tier 2 baseline-update npm
+  script (shipped with VIS-4) was also already unguarded, a live self-approval gap.
+
+  **Scope grew substantially during Review** (3 rounds of security-audit + 1 perf-review, all
+  adversarial and empirically-verified, not just regex-reading):
+  - **perf-review** found the jq-free `extract_command()` decoder was O(n²) in command length
+    (benchmarked: ~75s at 100KB) — this hook runs on every Bash tool call, and this repo's own
+    heredoc-based commit/PR conventions routinely produce multi-KB commands. Fixed by preferring
+    `jq` when present (fast path) and falling back to a single-pass `python3 -c` JSON parse (not
+    a bash byte-loop) only when `jq` is genuinely absent — confirmed O(n) after the fix (0.093s
+    at 50KB, down from 19.47s).
+  - **security-audit round 1** empirically found the new command-position anchor omitted the
+    backtick and `{` characters, so `` x=`playwright test --update-snapshots` `` and
+    `{ npx playwright test -u; }` silently bypassed the gate. Fixed by adding both to the anchor
+    class and widening the `-u` alias's trailing-boundary set.
+  - **security-audit round 2** (adversarial fuzzing beyond the reported bypasses) found the same
+    anchor didn't cover bash keyword-introduced command positions: `!` negation, and `then`/`do`/
+    `else`/`elif`/`time`. Fixed for all of these (6 of 7 found bypasses). The 7th — a `case`
+    pattern's closing `)` — was deliberately left as a **documented residual limitation**
+    alongside the pre-existing `eval`-obfuscation limitation: a bare `)` is far too common in
+    ordinary shell/text to anchor on safely, and exploiting it requires the unusual `case`/`esac`
+    construct, putting it in the same tier as `eval`'s string-literal obfuscation rather than the
+    easily-hit keyword class.
+  - **security-audit round 3** (final confirmation pass) found one more real, easy-to-hit gap:
+    the `-u` alias's terminator class omitted the closing backtick, so `` x=`npx playwright test -u` ``
+    still bypassed. Fixed by adding it to the terminator set.
+  - **roadmap-verifier** (adversarial DoD pass, going beyond re-running the suite) found the
+    `deny()` helper still shelled out to `jq -n` unconditionally with no fallback — so on a host
+    without `jq`, `extract_command()` correctly identified a denial-worthy command via its
+    python3 fallback, but `deny()` then silently produced no output and exited 0 (ALLOW),
+    reintroducing this exact card's own "silent jq-missing fail-open" bug, just relocated from
+    the extraction step to the decision step, and on the worst-case commands (only fails open on
+    genuine denials, not on benign ones). Fixed by switching `deny()` to stderr + `exit 2` — the
+    same jq-free deny convention every other guard hook in this repo already uses — which needs
+    no JSON parser at all. Added dedicated jq-free-PATH test coverage (deny + allow) that the
+    original 56-case suite never exercised, plus a dedicated pin for the `eval` residual that the
+    AC claimed was "pinned-by-test" but wasn't yet.
+
+  **Type:** Fix
+
+  **Files:** `.claude/hooks/guard-visual-update.sh` (full rewrite: `extract_command()` prefers
+  `jq`, falls back to a single-pass `python3 -c` JSON parse — not a bash byte-loop — only when
+  `jq` is absent; `deny()` signals via stderr + `exit 2` instead of a jq-built stdout JSON blob,
+  so the decision step itself has no jq dependency; command-position anchor covers `;`/`&`/`|`/
+  `(`/backtick/`{`/`!`/`then`/`do`/`else`/`elif`/`time`; `-u` alias terminator set includes the
+  closing backtick; header comments document the `eval` and `case`-pattern residual limitations
+  honestly) · `.claude/hooks/tests/guard-visual-update.test.sh` (extended; `is_deny`/
+  `has_human_reason`/`run_hook` switched from parsing stdout JSON to checking exit code + stderr
+  to match the `deny()` contract change; added `run_hook_with_path`/`assert_deny_no_jq`/
+  `assert_allow_no_jq` fixtures backed by a jq-scrubbed PATH scratch dir)
+
+  **Config/schema impact:** None — hook script only.
+
+  **Acceptance criteria**
+  - `git push -u origin chore/playwright-workers-4` is **allowed**
+  - Still **denied**: the existing Tier-1-update npm script; `npx playwright test` with the
+    snapshot-update flag; `playwright test` with the short update flag; a `cd frontend &&`-prefixed
+    invocation of the same with extra grep args
+  - Newly **denied**: the Tier 2 storybook-update npm script and the new Tier 1 dedicated-config
+    update npm script VIS-9 introduces — matched at command position, not as a bare substring, so
+    free-text mentions (e.g. in a commit message) are **allowed**
+  - `git commit -m "fix playwright config regression"` and any command where "playwright" or an
+    npm-update script name occurs only inside a free-text argument — not as the actual invocation
+    — is **allowed**
+  - Command extraction prefers `jq`; when genuinely absent, falls back to a `python3`-based
+    parse (O(n), not the O(n²) bash byte-loop) that survives escaped quotes/backslashes
+  - The deny decision itself does not depend on `jq` either: with `jq` scrubbed from `PATH`, a
+    genuine denial-worthy command is still **denied** (exit 2 + human-approval reason on stderr),
+    and an unrelated/free-text command is still **allowed** — closing the relocated fail-open gap
+    the verify pass found
+  - Fail-safe-open contract preserved: empty/genuinely unparseable stdin still results in ALLOW
+  - A 100KB synthetic command extracts and evaluates in well under 1 second (regression guard
+    against the O(n²) hazard recurring)
+  - Command-position anchor denies genuine invocations following `;`, `&`, `|`, `(`, backtick,
+    `{`, `!` negation, and the keywords `then`/`do`/`else`/`elif`/`time` — verified via crafted
+    payloads actually run through the live hook, not just regex inspection
+  - `eval "..."` and a `case`-pattern `)` command position are documented, pinned-by-test residual
+    limitations (not silently unhandled) — exploiting either requires an unusual construct,
+    unlike the fixed classes above
+  - All pre-existing MNT-16 cases in `guard-visual-update.test.sh` continue to pass
+
+  **Unit tests:** `.claude/hooks/tests/guard-visual-update.test.sh` — grew from 13 to 61 cases
+  across all rounds: the original incident regression + two npm-script cases (RED phase); 6 cases
+  covering the npm-script/playwright free-text exemption fix; 4 cases covering the backtick/brace
+  anchor fix; a 100KB bounded-time perf regression guard; 19 cases covering the keyword/negation
+  anchor fix (8 deny + 11 allow proving no new false positives, one per keyword); 2 cases covering
+  the final backtick-terminator fix; 1 case pinning the `eval` residual; 4 cases (2 deny + 2
+  allow) run against a jq-scrubbed `PATH` proving the deny path is jq-independent. Run:
+  `bash .claude/hooks/tests/guard-visual-update.test.sh`.
+
+  **E2E:** N/A (bash PreToolUse hook, not a UI surface — covered by the bash test suite above,
+  same posture as this hook's originating card MNT-16).
+
+  **UAT:** N/A (dev-tooling/hook fix, no product UI surface — the bash test suite + PR review are
+  the human gate, same posture as MNT-16).
+
+  **Verify:** `bash .claude/hooks/tests/guard-visual-update.test.sh` (61 passed) · manually replay
+  the incident command (`git push -u origin chore/playwright-workers-4` against a real branch)
+  via the Bash tool and confirm it is no longer denied.
+
+---
+
+- [ ] **VIS-8 — Fix: uncap hardcoded worker count to stop full-suite instability (P2)**
+
+  **Created:** 2026-07-04
+
+  Both `frontend/playwright.config.ts` (line 30) and `frontend/playwright.storybook.config.ts`
+  (line 21) hardcode a fixed worker count of 4, contradicting VIS-3's own in-file rationale
+  ("Serialize to one worker so specs that pass in isolation also pass in the full suite...
+  applies BOTH in CI and locally") and confirmed unstable this session: 25/69 failures at 4
+  workers vs 0/69 at 1 worker on an identical spec file under full-suite load. Not urgent enough
+  to block other work — captured here to fix later, at low priority, independent of the
+  visual-review migration.
+
+  **Type:** Fix
+
+  **Files:** `frontend/playwright.config.ts` (line ~30, worker count → `process.env.CI ? 1 : '50%'`;
+  revise the stale comment above it, lines ~23-29, which currently argues for a flat single-worker
+  cap in both CI and local) · `frontend/playwright.storybook.config.ts` (line ~21, same change;
+  note in a comment that this config screenshots a static `http-server`-served Storybook build,
+  not the shared Vite dev server, so the original contention argument doesn't apply to it the
+  same way)
+
+  **Config/schema impact:** None — test harness config only.
+
+  **Acceptance criteria**
+  - Worker count is `process.env.CI ? 1 : '50%'` in both configs, replacing the flat value of 4
+  - CI (`process.env.CI` truthy) still runs single-worker, deterministic (VIS-3's guarantee
+    unchanged)
+  - Locally, `cd frontend && npm run test:e2e` (full suite, all 3 viewports) completes with
+    **zero crash-class failures** (page-crash / target-closed / worker-timeout) across 3
+    consecutive full runs
+  - `chart-editor.spec.ts` (the VIS-3 regression spec) still passes 33/33 across all three
+    viewports as part of the full suite
+  - No change to `fullyParallel`, `retries`, `expect.toHaveScreenshot`, or `webServer`
+
+  **Unit tests:** N/A — Playwright harness config change, no isolable application logic (same
+  posture as VIS-3).
+
+  **E2E:** Validated by the harness itself — `cd frontend && npm run test:e2e` and
+  `npm run test:visual:storybook`, each run 3 consecutive times, zero crash-class failures. No
+  new spec or baseline.
+
+  **UAT:** N/A (test-infra/CI change, no user-facing surface — PR review + 3 green local/CI runs
+  are the human gate, same posture as VIS-3).
+
+  **Verify:** `cd frontend && npm run test:e2e` (repeat 3x) · `cd frontend && npm run test:visual:storybook`
+
+---
+
+- [x] **VIS-9 — Scaffold the visual-review root directory + dedicated Tier 1 visual config + relocate the Tier 3 review app + ledger (P2)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  Foundational card for aligning with the upstream `ai-augmented-coding` template. Stands up the
+  target directory contract, relocates the Tier 3 review app + approvals ledger into it, creates
+  the new dedicated Tier 1 visual-only Playwright config, and proves the whole pipeline
+  end-to-end by migrating exactly one already-trivial spec (`harness-smoke.spec.ts`) as a pilot —
+  before the 41-file bulk split (VIS-10/11/12) and the Tier 2 relocation (VIS-13) build on top of
+  it. **Depends on VIS-7**: this card introduces new npm scripts capable of self-baselining, and
+  VIS-7's hook fix is what actually guards the new Tier 1 update script from agent
+  self-approval — landing VIS-9 first would open a real self-approval window.
+
+  ```
+  visual-review/
+    playwright.visual.config.ts       # Tier 1 dedicated visual-only config (THIS CARD)
+    playwright.storybook.config.ts    # Tier 2 config — relocated by VIS-13
+    specs/                            # Tier 1 visual-only specs, mirrors frontend/tests/e2e/ subpaths
+    baselines/                        # Tier 1 baselines; snapshotPathTemplate mirrors specs/
+    results/                          # gitignored — actual/diff/report (Tier 1: results/output)
+    uat/                              # gitignored — qa-tester review shots
+    storybook/                        # Tier 2 config/stories/specs/baselines — populated by VIS-13
+    review-app/                       # Tier 3 review app (THIS CARD)
+    visual-approvals.json             # ledger (THIS CARD)
+  ```
+
+  **Accepted tradeoff, not fixed by this card:** the approvals ledger's existing entries are
+  keyed by baseline-relative path (e.g. `e2e/chart-editor.spec.ts-snapshots/...`). Once VIS-10-13
+  move baselines to new paths, those pre-migration ledger entries become orphaned/unmatchable —
+  this card does not rewrite existing ledger keys. Pre-migration approval history is accepted as
+  lost; going forward, entries are created fresh under the new paths as baselines are
+  approved/re-approved post-migration.
+
+  **Type:** Feature
+
+  **Files:**
+  - NEW `visual-review/playwright.visual.config.ts` — modeled on `frontend/playwright.config.ts`
+    (3 viewport projects; `fullyParallel: true`; `retries: CI?1:0`; worker count
+    `process.env.CI ? 1 : '50%'` per VIS-8; `webServer: { command: 'npm run dev', url:
+    'http://localhost:51730', ... }`, invoked via `cd frontend && npx playwright test
+    --config=../visual-review/playwright.visual.config.ts`; imports the existing polyfill via
+    `import '../frontend/tests/e2e/css-escape-polyfill'`, not duplicated) but with
+    `testDir: './specs'`, `snapshotDir: 'baselines'`, and a custom `snapshotPathTemplate`
+    following the pattern `{snapshotDir}/{testFilePath}/{arg}-{projectName}-{platform}{ext}`
+    (must include the project-name token — omitting it collapses all three viewport projects'
+    baselines onto the same filename, since the platform token alone is constant across projects
+    on one machine; confirmed via the actual committed baselines, which currently disambiguate
+    viewports via Playwright's own default project-name token), `outputDir: 'results/output'`,
+    `reporter: [['html', {outputFolder: 'results/report'}], ['list']]`,
+    `expect: { toHaveScreenshot: { animations: 'disabled', maxDiffPixelRatio: 0.01 } }` (adds the
+    currently-missing animation-freezing option)
+  - `frontend/package.json` — add a Tier 1 dedicated-config visual-run script (pointing at
+    `../visual-review/playwright.visual.config.ts`), its update variant (same + the snapshot
+    update flag), and a report-viewer script (`playwright show-report ../visual-review/results/report`)
+  - MOVE `frontend/scripts/visual-review-app/server.mjs` → `visual-review/review-app/server.mjs`,
+    **and edit it**: the `ROOT` constant's relative-path climb (`join(HERE, '..', '..', '..')`)
+    → `join(HERE, '..', '..')` (the relocated file is now 2 directories below repo root, not 3 —
+    using the old depth would climb one level above the repo root); update the three env-var
+    defaults: baselines-dir default `'frontend/tests'` → `'visual-review/baselines'`;
+    output-dir default `'frontend/test-results'` → `'visual-review/results/output'`;
+    approvals-file default `'visual-approvals.json'` → `'visual-review/visual-approvals.json'`
+  - MOVE `frontend/scripts/visual-review-app/lib.mjs` → `visual-review/review-app/lib.mjs` (no
+    logic change — paths are passed in as parameters)
+  - MOVE `frontend/scripts/visual-review-app/test.mjs` → `visual-review/review-app/test.mjs`
+    (update its relative import of `lib.mjs`; assertions unchanged)
+  - MOVE `frontend/scripts/visual-review-app/index.html` → `visual-review/review-app/index.html`
+  - MOVE `frontend/scripts/visual-review-app/README.md` → `visual-review/review-app/README.md`
+    (update documented run command + default paths; note Tier 2 coverage under
+    `visual-review/storybook/baselines/` is added by VIS-13)
+  - MOVE the root approvals-ledger JSON file → `visual-review/visual-approvals.json` (content
+    unchanged — see the accepted-tradeoff note above)
+  - `.claude/hooks/guard-visual-update.sh` — update header-comment example paths only (cosmetic;
+    VIS-7's denylist is already path-agnostic)
+  - `.gitignore` — add `visual-review/results/` and `visual-review/uat/` (do **not** remove the
+    old `frontend/playwright-report/` / `frontend/blob-report/` / `frontend/test-results/` /
+    `frontend/.playwright/` lines yet — VIS-14's cutover retires those once nothing writes there)
+  - **Pilot migration** (proves the new contract end-to-end):
+    - `frontend/tests/e2e/harness-smoke.spec.ts` — remove its one screenshot assertion + its
+      doc-comment claim of being the visual-harness proof; keep
+      `await expect(page.locator('main.card')).toBeVisible();` as a minimal functional check
+    - NEW `visual-review/specs/harness-smoke.visual.spec.ts` — same inline fixture HTML + the
+      screenshot assertion, now run under `playwright.visual.config.ts`
+    - `git mv` the 3 baseline PNGs from `frontend/tests/e2e/harness-smoke.spec.ts-snapshots/` to
+      `visual-review/baselines/harness-smoke.visual.spec.ts/`, renamed to match the new template
+      (pixel-identical, filename only)
+    - delete the now-empty `frontend/tests/e2e/harness-smoke.spec.ts-snapshots/`
+
+  **Config/schema impact:** New root-level directory tree + one new root-level Playwright config;
+  no `config.yml` or DB schema surface. The approvals ledger's JSON schema is unchanged, only its
+  filesystem location moves (see accepted-tradeoff note re: existing keys).
+
+  **Acceptance criteria**
+  - `visual-review/{specs,baselines,results,uat,storybook,review-app}/` all exist; `results/`,
+    `uat/`, and `storybook/` (until VIS-13) have no tracked content yet
+  - `visual-review/playwright.visual.config.ts` exists with the settings above, including the
+    project-name token in `snapshotPathTemplate`
+  - `cd frontend && npm run test:visual` runs `harness-smoke.visual.spec.ts` against the moved
+    baselines and passes clean (no diff) at all three viewports **independently** (mobile/tablet/
+    desktop each produce their own distinct baseline file, verified by checking three separate
+    PNGs exist, not one shared file), with **no recapture**
+  - `frontend/tests/e2e/harness-smoke.spec.ts` still exists, asserts no screenshot, and still
+    passes as part of `npm run test:e2e`
+  - `node visual-review/review-app/server.mjs` starts, serves `/`, and `/api/diffs` reads from
+    the new default paths with no env vars set
+  - `node visual-review/review-app/test.mjs` passes unmodified in assertions (only import/path
+    changes)
+  - `frontend/scripts/visual-review-app/` and the root approvals-ledger file no longer exist
+  - `cd frontend && npm run build`, `npm run test:e2e` (minus the one dropped screenshot line),
+    and `npm run test:visual:storybook` (untouched by this card) remain green
+
+  **Unit tests:** `visual-review/review-app/test.mjs` (relocated, no assertion changes). Run:
+  `node visual-review/review-app/test.mjs`.
+
+  **E2E:** `visual-review/specs/harness-smoke.visual.spec.ts` (new) — the pilot migration
+  validating the snapshot-directory/template/output-directory settings end-to-end on a
+  deterministic `page.setContent` fixture, and specifically validating the project-name-token fix
+  keeps the three viewports' baselines distinct. Impeccable audit/critique N/A (throwaway
+  fixture, no product UI, same as its VIS-1 precedent); the baselines are pixel-identical
+  git-renames, verified by a clean run with no diff — no human re-approval required.
+
+  **UAT:** N/A (test-infra scaffolding, no product UI surface — the pilot spec's green run + PR
+  review are the human gate, same posture as VIS-1/VIS-3).
+
+  **Verify:** `cd frontend && npm run test:visual` · `node visual-review/review-app/test.mjs` ·
+  `node visual-review/review-app/server.mjs` (starts; the diffs endpoint returns an empty list on
+  a clean tree) · `cd frontend && npm run test:e2e` · `cd frontend && npm run build`
+
+---
+
+- [ ] **VIS-10 — Split Tier 1 specs into functional + visual, Shard A: Accessibility + project-ribbon UX (15 files) (P2)**
+
+  **Created:** 2026-07-04
+
+  First of three mechanical-transformation shards splitting the 41 Tier 1 spec files that mix
+  functional AC tests and screenshot assertions in one file (per VIS-9's now-proven contract).
+  For each file: the visual test block(s) — plus whatever setup (route stubs, navigation
+  helpers) they need, duplicated inline per this codebase's existing per-spec self-containment
+  convention — move verbatim into a new `visual-review/specs/<name>.visual.spec.ts`; the
+  functional file stays at `frontend/tests/e2e/<name>.spec.ts` with the screenshot assertion(s)
+  removed and its functional test bodies otherwise untouched; the baseline directory moves via
+  `git mv` with filenames updated to the new template established by VIS-9 (pixel-identical,
+  filename only). **Note (applies to the whole initiative, stated once here):**
+  `connection-autosave.spec.ts`, `i18n-guard-navlabels.spec.ts`, and `toast-i18n.spec.ts` contain
+  zero screenshot assertions and are out of scope for VIS-10/11/12 entirely — not touched by any
+  shard.
+
+  **Type:** Feature
+
+  **Files:** for each of the 15 files below: keep `frontend/tests/e2e/<name>.spec.ts` (visual
+  assertions + now visual-only helpers removed) · add `visual-review/specs/<name>.visual.spec.ts`
+  (new) · `git mv` the baseline PNGs from `frontend/tests/e2e/<name>.spec.ts-snapshots/` to
+  `visual-review/baselines/<name>.visual.spec.ts/` (renamed to the new template) · delete
+  the emptied `frontend/tests/e2e/<name>.spec.ts-snapshots/`.
+  Files: `a11y-1.spec.ts`, `a11y-2.spec.ts`, `a11y-3.spec.ts`, `a11y-4.spec.ts`, `a11y-5.spec.ts`,
+  `a11y-8.spec.ts`, `ux-1.spec.ts`, `ux-2.spec.ts`, `ux-3.spec.ts`, `ux-4.spec.ts`, `ux-5.spec.ts`,
+  `ux-6.spec.ts`, `ux-7.spec.ts`, `ux-8.spec.ts`, `ux-9.spec.ts`.
+
+  **Config/schema impact:** None — test-file reorganization only.
+
+  **Acceptance criteria**
+  - Each of the 15 files is split as described: the file remaining at `frontend/tests/e2e/<name>.spec.ts`
+    contains zero screenshot assertions; its functional/AC/axe tests are behaviorally identical
+    to before the split
+  - Each `visual-review/specs/<name>.visual.spec.ts` contains exactly the extracted visual test(s)
+    (verbatim bodies) plus the minimal duplicated setup they need
+  - Each `visual-review/baselines/<name>.visual.spec.ts/` reproduces the same three viewport
+    baselines as the old colocated snapshots directory, renamed to the new filename template
+  - `cd frontend && npm run test:visual` passes clean (no diff) for all 15 migrated specs against
+    their moved baselines, with **no recapture** — except any spec proven to have a live CSS
+    transition/animation mid-capture (called out individually if found, with its baseline
+    regenerated + human-approved instead of moved verbatim, since the new config's
+    animation-freezing option can change captured pixels for such a spec)
+  - `cd frontend && npm run test:e2e` is green for all 15 files, same pass/fail behavior as
+    before the split
+  - No file remains in any of the 15 old snapshots directories (fully moved, not duplicated)
+
+  **Unit tests:** N/A (frontend-only test-file reorg; Vitest is not installed — correctness is
+  exactly what the migrated Playwright specs below assert, per the XTF-7 precedent).
+
+  **E2E:** the 15 new `visual-review/specs/*.visual.spec.ts` files listed above, at all three
+  viewports, against the moved (pixel-identical) baselines — no new product-UI captures. The 15
+  retained `frontend/tests/e2e/*.spec.ts` files continue to pass unchanged.
+
+  **UAT:** N/A (test-infra file reorganization, not a product change; no new UI behavior — PR
+  review + the green functional+visual runs are the human gate).
+
+  **Verify:** `cd frontend && npx playwright test a11y-1 a11y-2 a11y-3 a11y-4 a11y-5 a11y-8 ux-1 ux-2 ux-3 ux-4 ux-5 ux-6 ux-7 ux-8 ux-9`
+  (functional, green) · `cd frontend && npm run test:visual -- a11y-1 a11y-2 a11y-3 a11y-4 a11y-5 a11y-8 ux-1 ux-2 ux-3 ux-4 ux-5 ux-6 ux-7 ux-8 ux-9`
+  (visual, green against moved baselines)
+
+  **Depends on:** VIS-9 (needs `visual-review/specs/`, `visual-review/baselines/`,
+  `playwright.visual.config.ts`, and the Tier 1 dedicated-config visual-run script).
+
+---
+
+- [x] **VIS-11 — Split Tier 1 specs into functional + visual, Shard B: i18n / product-UX / composition (15 files) (P2)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  Second shard of the same mechanical split described in VIS-10 (see VIS-10 for the exclusion
+  note on the 3 non-visual files, and the full transformation recipe — not repeated here).
+
+  **Accepted exception, not fixed by this card:** 25 of the migrated visual assertions (across
+  `composition-progressive`, `connection-gating`, `copy-placeholder`, `i18n-coverage`,
+  `i18n-remaining`, `project-language`, `pux-1`, `pux-2`) fail against their moved, pixel-identical
+  baselines — confirmed **pre-existing on `develop`** (identical failures reproduce running the
+  same specs' still-colocated, un-migrated baselines directly on a clean `develop` checkout,
+  before this card's migration ever touches them). Root cause: the baselines were last refreshed
+  at PUX-4 and have drifted from several unrelated rendering changes since (e.g. I18N-2's string
+  externalization) — a pre-existing gap this card's mechanical split neither introduces nor is
+  scoped to fix. Functional suite: 387/387 passing. Tracked as a separate follow-up (baseline
+  refresh requires human re-approval per `guard-visual-update.sh` and is out of scope for a
+  test-file-reorganization card).
+
+  **Type:** Feature
+
+  **Files:** same per-file pattern as VIS-10, applied to: `i18n-coverage.spec.ts`,
+  `i18n-remaining.spec.ts`, `i18n-subtabs.spec.ts`, `i18n-switch.spec.ts`, `nav-labels.spec.ts`,
+  `project-language.spec.ts`, `perf-3-skeleton.spec.ts`, `pux-1.spec.ts`, `pux-2.spec.ts`,
+  `composition-progressive.spec.ts`, `composition-bullet-list.spec.ts`,
+  `composition-chart-title-required.spec.ts`, `connection-gating.spec.ts`,
+  `copy-placeholder.spec.ts`, `client-cache.spec.ts`.
+
+  **Config/schema impact:** None — test-file reorganization only.
+
+  **Acceptance criteria** (identical bar to VIS-10, applied to this shard's 15 files)
+  - Each file is split: functional remainder at `frontend/tests/e2e/<name>.spec.ts` has zero
+    screenshot assertions; behaviorally identical otherwise
+  - `visual-review/specs/<name>.visual.spec.ts` exists per file with the extracted visual
+    test(s) + minimal duplicated setup
+  - `visual-review/baselines/<name>.visual.spec.ts/` reproduces the old three-viewport baselines,
+    renamed to the new filename template
+  - `cd frontend && npm run test:visual` passes clean for all 15 against moved baselines, no
+    recapture (except any animation-affected spec, called out + re-approved individually)
+  - `cd frontend && npm run test:e2e` green for all 15, unchanged pass/fail behavior
+  - No file remains in the old snapshots directories for this shard
+
+  **Unit tests:** N/A (frontend-only test-file reorg; Vitest not installed — see VIS-10).
+
+  **E2E:** the 15 new `visual-review/specs/*.visual.spec.ts` files above, all three viewports,
+  against moved baselines; the 15 retained functional files unchanged.
+
+  **UAT:** N/A (test-infra reorganization — same posture as VIS-10).
+
+  **Verify:** `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch nav-labels project-language perf-3-skeleton pux-1 pux-2 composition-progressive composition-bullet-list composition-chart-title-required connection-gating copy-placeholder client-cache`
+  (functional) · `cd frontend && npm run test:visual -- i18n-coverage i18n-remaining i18n-subtabs i18n-switch nav-labels project-language perf-3-skeleton pux-1 pux-2 composition-progressive composition-bullet-list composition-chart-title-required connection-gating copy-placeholder client-cache`
+  (visual)
+
+  **Depends on:** VIS-9.
+
+---
+
+- [x] **VIS-12 — Split Tier 1 specs into functional + visual, Shard C: build/report/misc (10 files) (P2)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  Third and final shard of the mechanical split described in VIS-10 (`harness-smoke.spec.ts` was
+  already migrated as VIS-9's pilot and is not part of this shard).
+
+  **Accepted exception, not fixed by this card:** 26 of the migrated visual assertions
+  (`express-template-fill`, `reports-delete-all`, `run-alert`, `terminal-collapse`) fail against
+  their moved, pixel-identical baselines — confirmed **pre-existing on `develop`**: the same 26
+  failures reproduce running the still-colocated, un-migrated versions of these specs directly on
+  a clean `develop` checkout, before this card's migration ever touches them. Same accepted-drift
+  pattern as VIS-11. Additionally, `vis-3-worker-cap.spec.ts`'s two functional assertions fail on
+  both this branch and `develop` — that spec's `isSmallCap()` helper requires `workers <= 2`, but
+  `frontend/playwright.config.ts` still hardcodes `workers: 4` (VIS-8, still open, is exactly the
+  card that fixes this). Functional suite otherwise: 231/231 passing.
+
+  **Type:** Feature
+
+  **Files:** same per-file pattern as VIS-10, applied to: `express-template-fill.spec.ts`,
+  `build-options.spec.ts`, `chart-editor.spec.ts`, `run-alert.spec.ts`,
+  `reports-delete-all.spec.ts`, `sample-data-path.spec.ts`, `stage-help.spec.ts`,
+  `terminal-collapse.spec.ts`, `validate-thresholds.spec.ts`, `vis-3-worker-cap.spec.ts`.
+
+  **Config/schema impact:** None — test-file reorganization only.
+
+  **Acceptance criteria** (identical bar to VIS-10, applied to this shard's 10 files)
+  - Each file is split: functional remainder has zero screenshot assertions; behaviorally
+    identical otherwise
+  - `visual-review/specs/<name>.visual.spec.ts` exists per file with the extracted visual
+    test(s) + minimal duplicated setup
+  - `visual-review/baselines/<name>.visual.spec.ts/` reproduces the old three-viewport baselines,
+    renamed to the new filename template
+  - `cd frontend && npm run test:visual` passes clean for all 10 against moved baselines, no
+    recapture (except any animation-affected spec, called out + re-approved individually)
+  - `cd frontend && npm run test:e2e` green for all 10, unchanged pass/fail behavior
+  - No file remains in the old snapshots directories for this shard
+  - This shard completes the 41-file split: **all** of the old `frontend/tests/e2e/*-snapshots/`
+    directories no longer exist anywhere in the repo after VIS-10+VIS-11+VIS-12 (only the 3
+    non-visual files listed in VIS-10 remain untouched, and they never had a snapshots directory)
+
+  **Unit tests:** N/A (frontend-only test-file reorg; Vitest not installed — see VIS-10).
+
+  **E2E:** the 10 new `visual-review/specs/*.visual.spec.ts` files above, all three viewports,
+  against moved baselines; the 10 retained functional files unchanged.
+
+  **UAT:** N/A (test-infra reorganization — same posture as VIS-10).
+
+  **Verify:** `cd frontend && npx playwright test express-template-fill build-options chart-editor run-alert reports-delete-all sample-data-path stage-help terminal-collapse validate-thresholds vis-3-worker-cap`
+  (functional) · `cd frontend && npm run test:visual -- express-template-fill build-options chart-editor run-alert reports-delete-all sample-data-path stage-help terminal-collapse validate-thresholds vis-3-worker-cap`
+  (visual) · a directory search under `frontend/tests/e2e` for any remaining snapshots directory
+  returns nothing
+
+  **Depends on:** VIS-9.
+
+---
+
+- [ ] **VIS-13 — Relocate Tier 2 Storybook config + stories + specs into visual-review/storybook/ (P2)**
+
+  **Created:** 2026-07-04
+
+  Tier 2's one existing spec (`example.visual.spec.ts`) is already visual-only (no functional AC
+  mixed in), so this card is a relocation, not a functional/visual split. Moves the Storybook
+  config, the placeholder story, its visual spec, and its baselines into `visual-review/storybook/`,
+  and the Playwright config that drives them to `visual-review/playwright.storybook.config.ts`
+  (sibling of VIS-9's `playwright.visual.config.ts`), completing the directory contract from VIS-9.
+  **Depends on VIS-9** (needs `visual-review/review-app/` already relocated) **and VIS-8** (VIS-8
+  edits `frontend/playwright.storybook.config.ts` at its pre-migration path — if VIS-13 lands
+  first, that file no longer exists there and VIS-8 becomes unimplementable as scoped; land VIS-8
+  before VIS-13, or fold VIS-8's worker-count change directly into this card's relocated config
+  if VIS-13 lands first). VIS-5 and VIS-6 (parked in the Backlog) already target the post-VIS-13
+  `visual-review/storybook/` paths as of 2026-07-04 — no further conflict-resolution needed here.
+
+  **Type:** Feature
+
+  **Files:**
+  - MOVE `frontend/.storybook/main.js` → `visual-review/storybook/main.ts` (rename to `.ts` per
+    the target tree; update the `stories` glob — currently relative to `.storybook/` — so it
+    still finds real app-component stories under `frontend/src/**` (the VIS-5/VIS-6 colocation
+    convention) *and* harness/example stories now under `visual-review/storybook/stories/`)
+  - MOVE `frontend/.storybook/preview.js` → `visual-review/storybook/preview.ts`
+  - MOVE `frontend/playwright.storybook.config.ts` → `visual-review/playwright.storybook.config.ts`
+    (update `testDir` to `./storybook/specs`; add `snapshotDir: 'storybook/baselines'` and the
+    same custom `snapshotPathTemplate` pattern as VIS-9's Tier 1 config (project-name token
+    required — omitting it collapses viewports); `outputDir: 'results/storybook/output'`;
+    `use.baseURL` unchanged (`http://localhost:6006`); `webServer.command` unchanged (a static
+    http-server serving the Storybook build) but now points at the relocated build output — see
+    the build-script change below; carry forward VIS-8's worker-count change if VIS-8 hasn't
+    already landed at this path)
+  - MOVE `frontend/tests/storybook/Example.stories.jsx` → `visual-review/storybook/stories/Example.stories.jsx`
+  - MOVE `frontend/tests/storybook/example.visual.spec.ts` → `visual-review/storybook/specs/example.visual.spec.ts`
+  - `git mv` the 6 baseline PNGs from `frontend/tests/storybook/example.visual.spec.ts-snapshots/`
+    to `visual-review/storybook/baselines/example.visual.spec.ts/` (renamed to the new template,
+    pixel-identical)
+  - delete emptied `frontend/.storybook/`, `frontend/tests/storybook/`
+  - `frontend/package.json` — update the `storybook` dev-server script, the `storybook:build`
+    script, and both Tier 2 visual test scripts to reference the new config-dir and output-dir
+    under `visual-review/storybook/`
+  - `visual-review/review-app/server.mjs` — scan **two** tier pairs instead of one: the Tier 1
+    baseline/output pair and the Tier 2 baseline/output pair, merge the results for the diffs
+    endpoint, and dispatch approve/reject to whichever tier's entry matched by id
+  - `visual-review/review-app/test.mjs` — extend with a case covering the two-tier merge
+  - `.gitignore` — remove the dead pre-migration Storybook build/report output lines; add
+    `visual-review/storybook/static/`
+
+  **Config/schema impact:** None — pure frontend dev-tooling relocation, no `config.yml`/DB
+  surface.
+
+  **Acceptance criteria**
+  - `cd frontend && npm run storybook:build` produces `visual-review/storybook/static/` with the
+    Example story chunk, using the relocated config files
+  - `cd frontend && npm run test:visual:storybook` runs `example.visual.spec.ts` from
+    `visual-review/storybook/specs/` against the moved baselines and passes clean at all three
+    viewports (each viewport independently distinct, per the project-name-token template), with
+    **no recapture**
+  - the review app's diffs endpoint correctly reports diffs sourced from *both* Tier 1 and Tier 2
+    baseline trees (verified with one manufactured Tier 1 diff and one manufactured Tier 2 diff
+    present simultaneously)
+  - `node visual-review/review-app/test.mjs` passes, including the new two-tier merge case
+  - `frontend/.storybook/`, `frontend/tests/storybook/`, and `frontend/playwright.storybook.config.ts`
+    no longer exist
+  - `cd frontend && npm run build` and the (still-current-location) Tier 1 functional/visual
+    suites are unaffected
+
+  **Unit tests:** `visual-review/review-app/test.mjs` (extend) — new assertion that the diffs
+    handler merges Tier 1 + Tier 2 results into one list with no id collisions. Run:
+    `node visual-review/review-app/test.mjs`.
+
+  **E2E:** `visual-review/storybook/specs/example.visual.spec.ts` (relocated) — the two example
+  story variants at all three viewports against the moved baselines; no new product-UI capture.
+
+  **UAT:**
+  1. Run `cd frontend && npm run storybook` (now internally targeting the relocated config-dir)
+     and confirm the Storybook workbench opens at `http://localhost:6006` showing the
+     Example/Button story with Primary/Disabled variants.
+  2. Run `cd frontend && npm run storybook:build && npm run test:visual:storybook` and confirm it
+     passes clean against the relocated baselines — no diff, no recapture needed.
+  3. Run `node visual-review/review-app/server.mjs`, open `http://localhost:4444`, and confirm it
+     reports zero pending diffs on a clean tree (proving both Tier 1 and Tier 2 baseline trees are
+     scanned together without false positives).
+
+  **Verify:** `cd frontend && npm run storybook:build` · `cd frontend && npm run test:visual:storybook` ·
+  `node visual-review/review-app/test.mjs` · `cd frontend && npm run build`
+
+---
+
+- [ ] **VIS-14 — Cut over CI + guard-hook comments + docs to the visual-review layout; retire dead old locations (P2)**
+
+  **Created:** 2026-07-04
+
+  Final card: makes `visual-review/` the CI-enforced and documented source of truth, and sweeps
+  up everything the previous cards left as follow-on debt (stale doc paths, stale gitignore
+  lines, and the visual-review agent's git-diff logic mistaking this migration's own
+  pixel-identical renames for brand-new unapproved baselines).
+
+  **Type:** Feature
+
+  **Files:**
+  - `.github/workflows/visual.yml` — keep the existing Tier 1 functional job (now
+    functional-only post VIS-10-12); add steps/jobs running the Tier 1 visual suite and the
+    Tier 2 visual suite from `frontend/`; extend the PR path trigger to include `visual-review/**`
+    alongside `frontend/**`
+  - `.claude/hooks/guard-visual-update.sh` — update header-comment example paths to the new
+    baseline locations (comment only; VIS-7's denylist is path-agnostic)
+  - `.gitignore` — remove the now-fully-dead pre-migration output lines (nothing writes there
+    once CI/local runs point at `visual-review/`); confirm the new gitignored paths are present
+  - `CLAUDE.md` — rewrite the Tests-Visual/E2E section and the Development-workflow
+    Visual-testing section to describe the new layout: Tier 1 split into functional
+    `frontend/playwright.config.ts` + visual `visual-review/playwright.visual.config.ts`; Tier 2
+    `visual-review/playwright.storybook.config.ts` + `visual-review/storybook/`; Tier 3
+    `visual-review/review-app/`; update example commands
+  - `.claude/context.md` — same path references, if present
+  - `.claude/skills/visual-review/SKILL.md` — update the baseline glob patterns, ledger location,
+    and review-app path
+  - `.claude/agents/visual-review.md` — same path updates; **also** add rename-detection to its
+    git-diff/git-status baseline-change detection, so VIS-9-13's pixel-identical `git mv` renames
+    are recognized as renames, not new-and-therefore-pending baselines
+
+  **Config/schema impact:** None — CI/docs/hook-comment cutover only.
+
+  **Acceptance criteria**
+  - CI runs Tier 1 functional, Tier 1 visual, and Tier 2 visual, all green on a clean PR; the
+    workflow triggers on PRs touching only `visual-review/**`
+  - `.gitignore` no longer references any now-dead pre-migration output path, and lists the
+    `visual-review/` equivalents
+  - `CLAUDE.md`, `.claude/context.md`, `.claude/skills/visual-review/SKILL.md`, and
+    `.claude/agents/visual-review.md` reference only `visual-review/` paths — no stale
+    pre-migration path remains in any of them
+  - Running the visual-review check on a branch that contains only this migration's renames (no
+    other pixel change) reports clear, not a wall of spurious pending entries
+  - `frontend/playwright.storybook.config.ts`, `frontend/.storybook/`,
+    `frontend/scripts/visual-review-app/`, and the root approvals-ledger file do not exist
+    anywhere in the repo
+  - Full regression: the functional suite, the Tier 1 visual suite, the Storybook build, and the
+    Tier 2 visual suite all green in one pass; the main app build unaffected
+
+  **Unit tests:** N/A (CI/docs/config cutover; no isolable application logic).
+
+  **E2E:** N/A beyond re-running the existing suites as the Verify command — this card re-points
+  CI/docs at what VIS-9-13 already built and proved; no new product-UI coverage is added.
+
+  **UAT:** N/A (infra/CI/docs cutover, no product UI change — PR review + a green CI run on this
+  PR are the human gate, consistent with VIS-1/VIS-3's posture for this same harness).
+
+  **Verify:** open a PR touching only `visual-review/**` and confirm the Visual workflow triggers
+  with all jobs green · run the full regression command above · run the visual-review check on
+  the migration branch and confirm it reports clear · grep the docs/hooks tree for any remaining
+  reference to a pre-migration path and confirm nothing is found
+
+  **Depends on:** VIS-9, VIS-10, VIS-11, VIS-12, VIS-13 (all must be merged first — final cutover).
+
 ---
 
 ## Internationalization (i18n)
@@ -1211,6 +1831,298 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
+- [x] **MNT-19 — Add `bullet_list` as a proposable AI-inference type (stop over-defaulting free-text/list placeholders to `table`) (P2)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  Express Template Fill's AI inference has no way to propose `bullet_list` (a first-class render
+  type since XTF-27 — "1 column to list as bullet points", `Composition.jsx:40`) because
+  `ask_engine.py`'s `CHART_REQS` (the dict shared by both `/api/ask` and Template Inference's
+  `validate_recipe()`) has no `bullet_list` entry at all. When a placeholder's name/content is
+  really a free-text list (e.g. French names like `actions_prioritaires`,
+  `interventions_manquantes`, `risques_doublons` — "priority actions", "missing interventions",
+  "duplicate risks") and the underlying data has no categorical column, the LLM has nowhere
+  correct to route it: narrative-slot routing in `annotate_proposals`
+  (`_NARRATIVE_SLOT_KEYWORDS`, `template_inference.py:239-243`) only covers a fixed keyword set
+  (findings, overview, next steps, recommendations, observations, etc.), and the LLM-facing prompt
+  description of "narrative" (`seed_prompts.py:981-983`) similarly only mentions "recommendations,
+  observations, an executive summary" — neither matches these names, so the model falls back to
+  `table`, the generic catch-all, which then permanently fails `table`'s "≥1 categorical column"
+  requirement (`ask_engine.py` `CHART_REQS["table"]`) and gets stuck on a `needs_attention`
+  warning the user has to manually reassign every time.
+
+  Adding `bullet_list` to `CHART_REQS` alone is not sufficient: `apply_inference`
+  (`template_inference.py`, `_KIND_SECTION` + the canonical-placeholder construction around lines
+  777-778 and 912-915) always writes back `{{ chart_<name> }}` for `kind == "chart"` regardless
+  of `spec["type"]`, but `builder.py` (~line 450-451) only ever populates a `list_<name>` context
+  key for `type == "bullet_list"` — so an approved `bullet_list` proposal would silently never
+  render unless the placeholder-naming logic is also taught the `bullet_list` → `list_<name>`
+  mapping already used for manually-added bullet_list placeholders
+  (`template_generator.py:31-32,137,226`).
+
+  **Scope grew during Review** (security-audit, 3 passes): `bullet_list` renders raw, unaggregated
+  per-row values of a column (unlike every other proposable type, which renders aggregates), so
+  making it AI-proposable turned a pre-existing gap — `/api/ask/save` and `/api/template/apply`
+  persisted a client/LLM-supplied chart spec with no server-side re-validation against
+  `is_pii`/`is_effective_hidden` — into a full raw-data exfiltration path for a PII-flagged column
+  not separately listed in `cfg.pii.redact`. Closed with a PII/hidden-column gate at both
+  persistence endpoints (not just the propose paths), the CLI's `cmd_infer_template`, and a
+  negative-`top_n` cap bypass. The resulting synchronous profile recompute on every Save/Apply
+  click then tripped `perf-review` (`PERF: BLOCKED`) — fixed by routing both endpoints through the
+  existing `perf_cache` mechanism `/api/profile` already uses, empirically verified to cache-hit
+  correctly and to bust on a `cfg` (PII-flag) change.
+
+  **Type:** Fix
+
+  **Files:** `src/reports/ask_engine.py` (`CHART_REQS["bullet_list"]`; `_validate_chart`'s
+  bullet_list branch gates on `excluded_column_names(cfg)`; `validate_recipe`/`_execute_item`/
+  `ask()`/`refine_item()` thread an optional `cfg` param) · `src/reports/template_inference.py`
+  (`_KIND_SECTION` / canonical-placeholder construction ~lines 777-778, 912-915 route
+  `bullet_list` to the `list_<name>` prefix; `annotate_proposals`/`_validate_data_proposal` thread
+  `cfg`) · `src/reports/charts.py` (`build_bullet_list_text` gains `opts.get("top_n", 50)` capped
+  via `max(0, top_n)`) · `src/reports/builder.py` (passes `resolved.get("options")` through) ·
+  `src/data/make.py` (`cmd_infer_template` passes `cfg` into `annotate_proposals`) ·
+  `web/main.py` (`_bullet_list_names_excluded` helper; `api_ask_save` validates via
+  `ask_engine.validate_recipe(..., cfg)` before persisting, routed through the existing
+  `perf_cache` under the same `"profile"` key `/api/profile` uses; `api_template_apply`
+  re-validates via `ti.annotate_proposals(candidates, prof, cfg)` server-side instead of trusting
+  client-echoed `status`, same cache treatment) · `tests/test_ask_engine.py`,
+  `tests/test_template_inference.py`, `tests/test_ask_api.py`, `tests/test_template_api.py`,
+  `tests/test_xtf27_bullet_list.py` (new tests) · `docs/reference/prompts.md` (checked — no
+  proposable-type enumeration exists there to update)
+
+  **Config/schema impact:** None — `bullet_list` the render type already exists and is unchanged
+  (XTF-27); this only changes what the AI recipe validator/prompt can propose, how that
+  proposal's placeholder is named when applied, and adds a server-side PII/hidden-column
+  re-validation gate at persistence time.
+
+  **Acceptance criteria**
+  - `CHART_REQS` in `ask_engine.py` includes a `"bullet_list"` entry with requirement "≥1 column"
+  - `validate_recipe()` accepts a `bullet_list` recipe with ≥1 column and rejects one with 0
+    columns, using the same requirement-string format as other types (e.g. "'bullet_list' needs
+    ≥1 column")
+  - The AI type-list prompt block includes `bullet_list` alongside the other proposable types, so
+    both `/api/ask` and Express Template Fill's inference can propose it
+  - Given a placeholder whose underlying data has no categorical column but does have at least
+    one usable column, Template Inference's batched call can propose `bullet_list` instead of
+    being forced toward the always-failing `table`
+  - A `bullet_list` proposal approved via Express Template Fill's `apply_inference` writes
+    `{{ list_<name> }}` into the resolved template (not `{{ chart_<name> }}`), matching
+    `builder.py`'s `list_<name>` context key — the same convention `template_generator.py` already
+    uses for a manually-added bullet_list placeholder
+  - A `bullet_list` recipe naming a column flagged `is_pii`/effectively hidden is rejected — at
+    `/api/ask` and `/api/template/infer` (propose time) AND at `/api/ask/save` and
+    `/api/template/apply` (persistence time, independent of any client-supplied `status`), and at
+    the CLI's `infer-template`/`apply-template` path
+  - A negative `top_n` on a `bullet_list` no longer bypasses its row cap (`max(0, top_n)`)
+  - `api_ask_save`/`api_template_apply`'s new profile-loading work is served from the existing
+    `perf_cache` (same key `/api/profile` uses) rather than recomputing on every request, and the
+    cache correctly busts when `cfg` changes (e.g. a column's `pii:` flag flips)
+  - No regression to existing chart/indicator/summary/table/narrative/metadata routing,
+    validation, or placeholder-naming — all existing `ask_engine`/`template_inference` tests
+    remain green
+
+  **Unit tests:** `tests/test_ask_engine.py` — `test_validate_recipe_bullet_list_needs_one_column`,
+  `test_validate_recipe_bullet_list_rejects_pii_column`,
+  `test_validate_recipe_bullet_list_rejects_hidden_column`,
+  `test_validate_recipe_bullet_list_allows_safe_column_with_cfg`.
+  `tests/test_template_inference.py` — `test_annotate_bullet_list_proposal_validates_ok`,
+  `test_apply_inference_bullet_list_uses_list_prefix`.
+  `tests/test_ask_api.py` — `test_ask_save_rejects_pii_bullet_list_with_data`,
+  `test_ask_save_rejects_pii_bullet_list_without_data`.
+  `tests/test_template_api.py` — `test_apply_revalidates_and_drops_flipped_pii_bullet_list`,
+  `test_apply_drops_pii_bullet_list_without_data`.
+  `tests/test_xtf27_bullet_list.py` — `test_bullet_list_negative_top_n_still_caps`.
+
+  **E2E:** N/A (no app UI surface changed — Composition.jsx's manual `bullet_list` option already
+  exists per XTF-27; this card only changes what the AI can *propose* during inference, how that
+  proposal is named when applied, and server-side validation/caching, none of it UI).
+
+  **UAT:** N/A (backend/AI-inference + API logic; PR review + the unit tests above are the human
+  gate).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_engine.py tests/test_template_inference.py tests/test_ask_api.py tests/test_template_api.py tests/test_xtf27_bullet_list.py -k bullet_list`
+
+---
+
+- [x] **MNT-20 — Prompt guidance: tell the LLM when to use `bullet_list` instead of `table` (Express Fill inference) (P1)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  MNT-19 made `bullet_list` a technically valid, proposable AI-inference type — confirmed at the
+  code level (`ask_engine._CHART_TYPES_BLOCK` genuinely includes it). But the LLM never picks it:
+  `template_inference.py`'s `_KINDS` tuple (`"chart", "indicator", "summary", "table", "narrative",
+  "metadata", "split_value"`) is presented to the LLM as the primary, flat list of top-level
+  choices — `bullet_list` isn't one of them, it's only reachable two steps deep
+  (`kind="chart"` → `spec.type="bullet_list"` from a separate "chart types" list). The prompt's
+  per-kind guidance (`seed_prompts.py`'s `_TEMPLATE_INFERENCE`, `table` bullet at line 980) never
+  mentions this path or redirects the LLM to it when a table's "≥1 categorical column"
+  requirement can't be met — so a French list-style placeholder (e.g. `actions_prioritaires`)
+  with no categorical column keeps getting proposed as `table` (which then fails validation)
+  instead of `bullet_list`, confirmed live by re-running Infer after MNT-19 merged.
+
+  **Type:** Fix
+
+  **Files:** `src/utils/seed_prompts.py` (`_TEMPLATE_INFERENCE` system message ~lines 953-963 and
+  the user message's `table` bullet ~line 980) · `tests/test_seed_prompts.py` (new test)
+
+  **Config/schema impact:** None — prompt text only; `_TEMPLATE_INFERENCE_SPEC_SCHEMA`'s `type`
+  field already accepts any string (no enum constraint to update).
+
+  **Acceptance criteria**
+  - `_TEMPLATE_INFERENCE`'s system message explicitly states that `bullet_list` is not a real
+    chart/graph and should be preferred over `table` when there's no categorical column
+  - `_TEMPLATE_INFERENCE`'s user message's `table` bullet explicitly redirects to
+    `kind="chart"` + `type="bullet_list"` when there's no categorical column
+  - No change to the JSON output schema — this is prompt-text-only
+  - `test_no_leftover_single_brace_format_slots` (existing) stays green — no stray `{var}`
+    introduced
+
+  **Unit tests:** `tests/test_seed_prompts.py` (new) —
+  `test_template_inference_explains_bullet_list_over_table`: asserts the `_TEMPLATE_INFERENCE`
+  system message mentions `bullet_list` in the context of not being a real chart, and the user
+  message's table description redirects to `bullet_list` when there's no categorical column.
+
+  **E2E:** N/A (no UI surface — prompt text consumed only by an LLM call).
+
+  **UAT:** N/A (backend prompt-text-only change; behavior against a live LLM is exploratory/
+  non-deterministic and not gated by a fixed human checklist — validated by the unit test above
+  and PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_seed_prompts.py -k bullet_list` ·
+  Optional manual smoke-check after merge (not gated, since LLM behavior is non-deterministic):
+  (1) run `push-prompts --force` to push the updated prompt to Langfuse (required — Langfuse
+  already holds a prior copy and always wins over the seed once populated); (2) clear the
+  on-disk prompt cache (`rm -rf ~/.cache/databridge/prompts`, or wait out its 1-hour TTL — a
+  backend process restart does NOT clear this disk-based cache); (3) re-run Infer on a template
+  with a list-style placeholder with no categorical column and confirm it now proposes
+  `kind="chart"`, `type="bullet_list"` instead of `table`.
+
+---
+
+- [x] **MNT-22 — Fix: stale "Transform" nav-label assertions in i18n-switch.spec.ts + a11y-4.spec.ts break deterministically on current develop (P1)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  PUX-1/PUX-8 relabeled the pipeline stage previously called "Transform" to the plain-language
+  "Clean & check" (`frontend/src/locales/en.json` / `fr.json`), but two Playwright specs
+  predating that rename were never updated: `frontend/tests/e2e/i18n-switch.spec.ts`'s `NAV_EN`/
+  `NAV_FR` constants still assert the literal tab labels `'Transform'`/`'Transformer'`, and
+  `frontend/tests/e2e/a11y-4.spec.ts`'s `gotoValidate()` helper clicks
+  `.tabs-bar .tab { hasText: 'Transform' }`. Since no tab named "Transform" renders anywhere in
+  the current app, both fail deterministically — reproduced on a clean `develop` checkout,
+  confirmed unrelated to any other in-flight work. This is a real, pre-existing bug (not a
+  flake), discovered while investigating unrelated `/ship-task` failures on VIS-11/VIS-12: the
+  batch pipeline's review agents correctly reported these tests failing, but the root cause is
+  this stale-label mismatch, not a defect in VIS-11/VIS-12's own spec-split diffs. Every other
+  file that mentions "Transform" (`client-cache.spec.ts`, `perf-3-skeleton.spec.ts`,
+  `sample-data-path.spec.ts` — all navigate via the stable `[data-tab="transform"]` attribute;
+  `i18n-subtabs.spec.ts` — navigates via the stage id, not the label; `pux-1.spec.ts` —
+  intentionally asserts the bare jargon word is *absent*; `i18n-guard-navlabels.spec.ts` — a
+  fully self-contained fixture test with its own synthetic locale bundles, unrelated to the real
+  app's actual labels) was individually checked and confirmed **not** affected by this bug.
+
+  **Type:** Fix
+
+  **Files:** `frontend/tests/e2e/i18n-switch.spec.ts` (`NAV_EN`/`NAV_FR` constants ~line 49-50,
+  plus the stale "Transform" mentions in the doc comment ~lines 11, 41, 48) ·
+  `frontend/tests/e2e/a11y-4.spec.ts` (`gotoValidate()` helper ~line 169-173, switch the click
+  target from `hasText: 'Transform'` to the stable `[data-tab="transform"]` attribute, matching
+  the convention already used by `client-cache.spec.ts`/`perf-3-skeleton.spec.ts`)
+
+  **Config/schema impact:** None — test-file content fix only, no application code changes.
+
+  **Acceptance criteria**
+  - `i18n-switch.spec.ts`'s `NAV_EN`/`NAV_FR` assert the current labels (`'Clean & check'`/
+    `'Nettoyer et vérifier'`, alongside the unchanged `'Deliver'`/`'Diffuser'`), not the stale
+    `'Transform'`/`'Transformer'`
+  - `a11y-4.spec.ts`'s `gotoValidate()` navigates via `[data-tab="transform"]` (the stable
+    attribute), not the visible label text
+  - `cd frontend && npx playwright test i18n-switch a11y-4` passes at all three viewports with
+    zero failures (confirmed: 27/27 passing after the fix)
+  - `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch a11y-4`
+    passes with zero failures (confirmed: 135/135 passing after the fix)
+  - No other file's behavior changes — the audit of every other "Transform"-mentioning file
+    confirmed none of them needed a fix
+
+  **Unit tests:** N/A (frontend-only test-file content fix; Vitest is not installed — correctness
+  is exactly what the Playwright specs below assert, per the XTF-7 precedent).
+
+  **E2E:** `frontend/tests/e2e/i18n-switch.spec.ts` + `frontend/tests/e2e/a11y-4.spec.ts` — both
+  green at all three viewports after the fix; no new spec or baseline (these are pre-existing
+  specs whose *assertions* were fixed, not their captured pixels — no visual regression).
+
+  **UAT:** N/A (test-content fix restoring pre-existing, already-approved specs to a passing
+  state; no product UI or behavior changed — PR review + the green Playwright run above are the
+  human gate).
+
+  **Verify:** `cd frontend && npx playwright test i18n-switch a11y-4` ·
+  `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch a11y-4`
+
+---
+
+- [x] **MNT-21 — Fix: bullet_list chart preview fails instead of rendering text (P1)**
+
+  **Created:** 2026-07-04 · **Started:** 2026-07-05 · **Completed:** 2026-07-05
+
+  The `/api/charts/preview` endpoint always falls through to `generate_chart`/`CHART_DISPATCH`
+  for every chart type, but `bullet_list` is text-injection only — it's special-cased in
+  `builder.py` at report-build time and was never added to `CHART_DISPATCH`. Selecting
+  `bullet_list` in the Composition chart editor and previewing it failed with a generic error
+  instead of showing the rendered bullet text. Fixed by short-circuiting `bullet_list` in
+  `preview_chart` (`web/main.py`) to mirror `builder.py`'s text-building logic, exposing the text
+  field through the frontend preview hook, and rendering text (not an `<img>`) in both the
+  row-preview modal and the live chart-editor pane. Also fixes a related empty-state bug: a
+  successful-but-empty `bullet_list` result (the chosen column has zero non-null values) rendered
+  as the idle "Preview appears here" placeholder — indistinguishable from "not configured yet" —
+  instead of an explicit "no output" empty state.
+
+  **Note:** this card's branch predates VIS-9/VIS-11/VIS-12 (the visual-review migration) by 23
+  commits. Rebased onto post-migration `develop` on 2026-07-05; its one new chart-editor visual
+  baseline (`chart-editor-modal-bullet-list.png`) was moved from the (pre-migration, now stale)
+  colocated location straight into `visual-review/specs/chart-editor.visual.spec.ts`, matching
+  VIS-12's established split contract, rather than landing in the now-functional-only
+  `frontend/tests/e2e/chart-editor.spec.ts`.
+
+  **Type:** Fix
+
+  **Files:** `web/main.py` (`preview_chart` — add a `bullet_list` short-circuit mirroring
+  `builder.py`'s text-building logic) · `frontend/src/hooks/useChartPreview.js` (expose the text
+  field) · `frontend/src/pages/Composition.jsx` (render text instead of an `<img>` for
+  `bullet_list` in both the row-preview modal and the live editor pane; add the explicit
+  empty-result branch) · `tests/test_charts_preview_api.py` (new) ·
+  `frontend/tests/e2e/chart-editor.spec.ts` (new functional empty-state test) ·
+  `visual-review/specs/chart-editor.visual.spec.ts` (new visual baseline, post-rebase)
+
+  **Config/schema impact:** None — preview-endpoint + rendering logic only; no `config.yml` or DB
+  schema change (mirrors the existing `builder.py` text-rendering path for `bullet_list`).
+
+  **Acceptance criteria**
+  - Selecting `bullet_list` as the chart type in the Composition chart editor and configuring a
+    column renders the live preview as text (bulleted lines), not a failed/broken image request
+  - The same applies to the row-level "Preview" action in the Composition chart list
+  - A `bullet_list` preview whose result is a successful-but-empty string shows an explicit
+    "no output" empty state, distinguishable from the idle "not configured yet" placeholder
+  - Non-`bullet_list` chart types are unaffected (still render an `<img>` preview) — no regression
+  - `cd frontend && npx playwright test chart-editor` passes, including the new empty-state test
+
+  **Unit tests:** `tests/test_charts_preview_api.py` (new) —
+  `test_preview_bullet_list_returns_text`, `test_preview_bullet_list_respects_top_n`,
+  `test_preview_bar_chart_still_returns_image` (regression guard). Run:
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts_preview_api.py`.
+
+  **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) — the empty-result guard test (no
+  screenshot, functional only); `visual-review/specs/chart-editor.visual.spec.ts` (extend) — the
+  `bullet_list` preview visual baseline at all three viewports, per VIS-12's split contract.
+
+  **UAT:** N/A (bug fix restoring correct preview behavior for an existing chart type; no new
+  product surface — PR review + the pytest/Playwright cases above are the human gate).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts_preview_api.py` ·
+  `cd frontend && npx playwright test chart-editor`
+
+---
+
 ## Backlog — parked (out of scope for now)
 
 > Captured so they aren't lost; not scheduled. Promote into a domain section above when picked up.
@@ -1238,24 +2150,28 @@ Sprint exit — checked by /report + /retro:
 
   **Created:** 2026-07-03
 
-  VIS-4 stood up the Storybook harness (Tier 2) but only ships one throwaway placeholder story
-  (`tests/storybook/Example.stories.jsx`). This card gives it real component-isolation coverage
-  for the two simplest presentational components — `EmptyState` and `Skeleton` — both plain,
-  prop-driven components with no hook-based imperative API, so they story cleanly without a
-  wrapper. Also adds the i18n decorator Storybook is currently missing: `Skeleton` calls
-  `t('common.loading')` and would otherwise render the raw translation key instead of real copy
-  in captures. Split from a broader four-component proposal (VIS-6 covers `Toast` +
-  `ConfirmDialog`, which need hook-wrapper components and are scoped separately per
-  INVEST/Independent+Small).
+  VIS-4 stood up the Storybook harness (Tier 2) but only ships one throwaway placeholder story.
+  This card gives it real component-isolation coverage for the two simplest presentational
+  components — `EmptyState` and `Skeleton` — both plain, prop-driven components with no
+  hook-based imperative API, so they story cleanly without a wrapper. Also adds the i18n
+  decorator Storybook is currently missing: `Skeleton` calls `t('common.loading')` and would
+  otherwise render the raw translation key instead of real copy in captures. Split from a
+  broader four-component proposal (VIS-6 covers `Toast` + `ConfirmDialog`, which need
+  hook-wrapper components and are scoped separately per INVEST/Independent+Small).
+
+  **Note (2026-07-04):** paths below target the post-VIS-13 `visual-review/storybook/` layout
+  (VIS-7–VIS-14 relocate Tier 2 out of `frontend/.storybook/`/`frontend/tests/storybook/`). If
+  this card is picked up before VIS-13 ships, retarget these paths back to the pre-migration
+  `frontend/.storybook/`/`frontend/tests/storybook/` locations instead.
 
   **Type:** Feature
 
   **Files:** `frontend/src/components/EmptyState.stories.jsx` (new) ·
   `frontend/src/components/Skeleton.stories.jsx` (new) ·
-  `frontend/.storybook/preview.js` (modified — import `../src/lib/i18n.js` so `t()` resolves to
-  real English strings in every story, not raw keys) ·
-  `frontend/tests/storybook/components.visual.spec.ts` (new) ·
-  `frontend/tests/storybook/components.visual.spec.ts-snapshots/` (new, baselines pending human
+  `visual-review/storybook/preview.ts` (modified — import `../../frontend/src/lib/i18n.js` so
+  `t()` resolves to real English strings in every story, not raw keys) ·
+  `visual-review/storybook/specs/components.visual.spec.ts` (new) ·
+  `visual-review/storybook/baselines/components.visual.spec.ts/` (new, baselines pending human
   approval)
 
   **Config/schema impact:** None — pure frontend dev-tooling addition (no `config.yml` or DB
@@ -1265,11 +2181,10 @@ Sprint exit — checked by /report + /retro:
   - `EmptyState` stories cover at least the with-action and without-action variants
   - `Skeleton` stories cover at least its loading shape(s) as used in the app (e.g. a single
     skeleton row and a `SkeletonList` of several rows)
-  - Both are discovered by the existing `../src/**/*.stories.@(js|jsx)` glob in
-    `frontend/.storybook/main.js` (no glob change needed)
-  - `frontend/.storybook/preview.js` initializes i18n (imports `../src/lib/i18n.js`) so
-    `Skeleton`'s `t('common.loading')` renders "Loading…" (English), not the raw key
-    `common.loading`, in every story and capture
+  - Both are discovered by the existing `../../frontend/src/**/*.stories.@(js|jsx)` glob in
+    `visual-review/storybook/main.ts` (no glob change needed)
+  - `visual-review/storybook/preview.ts` initializes i18n so `Skeleton`'s `t('common.loading')`
+    renders "Loading…" (English), not the raw key `common.loading`, in every story and capture
   - `cd frontend && npm run storybook` shows both components in the sidebar with their variants
     selectable and rendering correctly, with real (non-key) text
   - `cd frontend && npm run storybook:build` succeeds and includes chunks for both new stories
@@ -1283,12 +2198,12 @@ Sprint exit — checked by /report + /retro:
   story files that render them plus a Storybook-preview-only i18n import. Vitest is not installed
   in this repo (see XTF-7); visual correctness is covered by the Playwright E2E below.)
 
-  **E2E:** `frontend/tests/storybook/components.visual.spec.ts` (new) — for each of the two
+  **E2E:** `visual-review/storybook/specs/components.visual.spec.ts` (new) — for each of the two
   components' story variants, navigate via `/iframe.html?id=...` and assert `toHaveScreenshot` at
   all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); assert the rendered
   Skeleton loading text is "Loading…", not the raw `common.loading` key (i18n-decorator
   regression check). First-run baselines are pending human approval (`npm run
-  test:visual:storybook:update`, human reviews via the VIS-4 review app or direct diff, then
+  test:visual:storybook:update`, human reviews via the review app or direct diff, then
   commits) — not self-approved, per `guard-visual-update.sh`.
 
   **UAT:**
@@ -1297,7 +2212,7 @@ Sprint exit — checked by /report + /retro:
   2. Click through each variant and visually confirm it matches the component's real in-app
      appearance.
   3. Run `cd frontend && npm run storybook:build && npm run test:visual:storybook:update`, review
-     the generated baselines (via `node frontend/scripts/visual-review-app/server.mjs` at
+     the generated baselines (via `node visual-review/review-app/server.mjs` at
      `http://localhost:4444` or by eye), and approve/commit them.
   4. Re-run `npm run test:visual:storybook` and confirm it passes against the committed baselines.
 
@@ -1319,8 +2234,13 @@ Sprint exit — checked by /report + /retro:
   `useConfirm()`, a hook that renders `Modal.jsx` (with a `danger` prop) when invoked — there's no
   `ConfirmDialog` component to point a CSF `component:` at. Both need a small story-only wrapper
   component that calls the hook and renders its result; **no changes to the components'
-  application behavior**. Depends on **VIS-5** for the shared `frontend/.storybook/preview.js`
-  i18n decorator (`Modal.jsx` and `ToastProvider` both call `t()`).
+  application behavior**. Depends on **VIS-5** for the shared Storybook preview's i18n decorator
+  (`Modal.jsx` and `ToastProvider` both call `t()`).
+
+  **Note (2026-07-04):** paths below target the post-VIS-13 `visual-review/storybook/` layout
+  (VIS-7–VIS-14 relocate Tier 2 out of `frontend/.storybook/`/`frontend/tests/storybook/`). If
+  this card is picked up before VIS-13 ships, retarget these paths back to the pre-migration
+  `frontend/.storybook/`/`frontend/tests/storybook/` locations instead.
 
   **Type:** Feature
 
@@ -1328,8 +2248,8 @@ Sprint exit — checked by /report + /retro:
   Storybook `play` function calls `useToast().push()` and the story asserts/captures before the
   3s/6s auto-dismiss elapses) · `frontend/src/components/ConfirmDialog.stories.jsx` (new — wraps
   `useConfirm()`, opening the dialog on render to cover default and `danger: true` variants) ·
-  `frontend/tests/storybook/hook-components.visual.spec.ts` (new) ·
-  `frontend/tests/storybook/hook-components.visual.spec.ts-snapshots/` (new, baselines pending
+  `visual-review/storybook/specs/hook-components.visual.spec.ts` (new) ·
+  `visual-review/storybook/baselines/hook-components.visual.spec.ts/` (new, baselines pending
   human approval)
 
   **Config/schema impact:** None — pure frontend dev-tooling addition (no `config.yml` or DB
@@ -1344,10 +2264,10 @@ Sprint exit — checked by /report + /retro:
   - `ConfirmDialog` stories cover at least its default and `danger: true` variants, each rendered
     via a wrapper that calls `useConfirm()` and opens the dialog on mount (no real user click
     required to see it in Storybook)
-  - Both story files are discovered by the existing `../src/**/*.stories.@(js|jsx)` glob (no
-    `main.js` change needed)
+  - Both story files are discovered by the existing `../../frontend/src/**/*.stories.@(js|jsx)`
+    glob in `visual-review/storybook/main.ts` (no glob change needed)
   - Rendered text (button labels, dismiss labels) shows real English copy, not raw translation
-    keys — confirms VIS-5's `preview.js` i18n decorator covers these hook-driven components too
+    keys — confirms VIS-5's preview i18n decorator covers these hook-driven components too
   - `cd frontend && npm run storybook` shows both in the sidebar with their variants; `npm run
     storybook:build` succeeds and includes chunks for both
   - `cd frontend && npm run test:visual:storybook` passes a `toHaveScreenshot` assertion per
@@ -1360,13 +2280,13 @@ Sprint exit — checked by /report + /retro:
   unmodified; only new story wrapper files. Vitest is not installed in this repo (see XTF-7);
   visual correctness and timing determinism are covered by the Playwright E2E below.)
 
-  **E2E:** `frontend/tests/storybook/hook-components.visual.spec.ts` (new) — for each Toast
+  **E2E:** `visual-review/storybook/specs/hook-components.visual.spec.ts` (new) — for each Toast
   variant, wait for the `play` function's `push()` call to render the toast then immediately
   assert `toHaveScreenshot` (well inside the 3s/6s TTL); for each ConfirmDialog variant, wait for
   the wrapper to mount and open the dialog then assert `toHaveScreenshot`; both at all three
   viewports (mobile 390×844, tablet 820×1180, desktop 1440×900). Run the Toast spec with
   `--repeat-each=5` and confirm 0 flakes (guards the timer race). First-run baselines are pending
-  human approval (`npm run test:visual:storybook:update`, human reviews via the VIS-4 review app
+  human approval (`npm run test:visual:storybook:update`, human reviews via the review app
   or direct diff, then commits) — not self-approved, per `guard-visual-update.sh`.
 
   **UAT:**
@@ -1375,14 +2295,12 @@ Sprint exit — checked by /report + /retro:
   2. Open the ConfirmDialog story; confirm the default and danger variants render open (no click
      needed) and match the in-app confirm dialog's appearance, including the danger styling.
   3. Run `cd frontend && npm run storybook:build && npm run test:visual:storybook:update`, review
-     the generated baselines (via `node frontend/scripts/visual-review-app/server.mjs` at
+     the generated baselines (via `node visual-review/review-app/server.mjs` at
      `http://localhost:4444` or by eye), and approve/commit them.
   4. Re-run `npm run test:visual:storybook --repeat-each=5` and confirm it passes with 0 flakes
      against the committed baselines.
 
   **Verify:** `cd frontend && npm run storybook:build` ·
-  `cd frontend && npx playwright test --config=playwright.storybook.config.ts hook-components --repeat-each=5` ·
+  `cd frontend && npx playwright test --config=../visual-review/playwright.storybook.config.ts hook-components --repeat-each=5` ·
   `cd frontend && npm run build` (main app unaffected) ·
   `cd frontend && npm run test:e2e` (Tier 1 harness unaffected)
-
-

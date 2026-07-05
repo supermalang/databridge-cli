@@ -44,6 +44,10 @@ import AxeBuilder from '@axe-core/playwright';
  *     addressable by data-testid="placeholder-caveat" and mentions
  *     generate-template.
  * ───────────────────────────────────────────────────────────────────────────────
+ *
+ * The visual baselines (chart row default + "copied" confirmation state,
+ * three viewports) were extracted to
+ * `visual-review/specs/copy-placeholder.visual.spec.ts` (VIS-11).
  */
 
 const ACTIVE_PROJECT = {
@@ -304,25 +308,5 @@ test.describe('PUX-9 — copy-placeholder controls', () => {
       .withRules(['button-name', 'nested-interactive'])
       .analyze();
     expect(results.violations).toEqual([]);
-  });
-
-  // ── Visual baselines (per-viewport via the project config). Human approves. ──
-  test('visual: chart row with the copy button (default state)', async ({ page }) => {
-    const row = page.locator('.comp-row', { hasText: CHART_NAME }).first();
-    await expect(copyBtn(page, CHART_NAME)).toBeVisible();
-    await page.addStyleTag({ content: '.bottom-term { display: none !important; }' });
-    await expect(row).toHaveScreenshot('pux9-chart-row.png');
-  });
-
-  test('visual: chart row in its "copied" confirmation state', async ({ page }) => {
-    const row = page.locator('.comp-row', { hasText: CHART_NAME }).first();
-    await copyBtn(page, CHART_NAME).click();
-    const confirmed = page
-      .getByRole('status').filter({ hasText: /copied|copié/i })
-      .or(page.locator('.toast', { hasText: /copied|copié/i }))
-      .or(page.getByRole('button', { name: /copied/i }));
-    await expect(confirmed).toBeVisible();
-    await page.addStyleTag({ content: '.bottom-term { display: none !important; }' });
-    await expect(row).toHaveScreenshot('pux9-chart-row-copied.png');
   });
 });

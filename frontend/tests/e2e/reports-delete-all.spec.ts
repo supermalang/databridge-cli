@@ -102,9 +102,8 @@ test.describe('XTF-12 — Delete all reports', () => {
     const deleteAll = page.getByTestId('reports-delete-all');
     await expect(deleteAll).toBeVisible();
 
-    // Visual baseline of the populated list with the "Delete all" button
-    // (3 viewports via playwright.config.ts). Implementer produces the baselines.
-    await expect(page).toHaveScreenshot('reports-delete-all.png');
+    // Visual baseline of the populated list with the "Delete all" button: see
+    // visual-review/specs/reports-delete-all.visual.spec.ts (VIS-12).
 
     // Click it → a confirm dialog appears (the shared useConfirm Modal).
     await deleteAll.click();
