@@ -2599,19 +2599,30 @@ async def periods_date_range():
     return {"min_year": int(ts.dt.year.min()), "max_year": int(ts.dt.year.max())}
 
 
-def _bullet_list_names_excluded(spec: dict, cfg: dict) -> bool:
-    """True if a ``bullet_list`` spec names a hidden/PII-flagged column.
+def _bullet_list_names_excluded(spec: dict, cfg: dict, kind: str = "chart") -> bool:
+    """True if a text-injection list spec names a hidden/PII-flagged column.
 
     The cfg-only half of ``ask_engine._validate_chart``'s bullet_list gate, used on
     the no-data persistence paths (``/api/ask/save`` / ``/api/template/apply`` before
-    any download) where no profile can be built but a persisted bullet_list would
-    still dump raw column values verbatim at build-report time. Mirrors the columns
-    ``build_catalog`` hides from the LLM prompt (``excluded_column_names``)."""
-    if not isinstance(spec, dict) or spec.get("type") != "bullet_list":
+    any download) where no profile can be built but a persisted list would still
+    dump raw column values verbatim at build-report time. Mirrors the columns
+    ``build_catalog`` hides from the LLM prompt (``excluded_column_names``).
+
+    Covers both list shapes: the legacy ``kind="chart"`` + ``type="bullet_list"``
+    spec (plural ``questions``), and the first-class ``kind="list"`` spec (MNT-23),
+    which uses the singular ``question`` field — accepts either field on that shape
+    since a client payload may not yet be normalized by ``ask_engine.save_recipe``."""
+    if not isinstance(spec, dict):
+        return False
+    is_legacy_bullet_list = kind == "chart" and spec.get("type") == "bullet_list"
+    if not (is_legacy_bullet_list or kind == "list"):
         return False
     from src.utils.config import excluded_column_names
     unsafe = excluded_column_names(cfg or {})
-    return any(c in unsafe for c in (spec.get("questions") or []))
+    cols = list(spec.get("questions") or [])
+    if spec.get("question"):
+        cols.append(spec["question"])
+    return any(c in unsafe for c in cols)
 
 
 class AskPayload(BaseModel):
@@ -2715,10 +2726,10 @@ async def api_ask_save(payload: AskSavePayload, request: Request):
         ok, reason = ask_engine.validate_recipe(to_validate, profile, cfg)
         if not ok:
             raise HTTPException(status_code=400, detail=f"invalid recipe: {reason}")
-    elif _bullet_list_names_excluded(recipe, cfg):
+    elif _bullet_list_names_excluded(recipe, cfg, payload.kind):
         raise HTTPException(
             status_code=400,
-            detail=("a bullet_list may not list a hidden or PII-flagged column "
+            detail=("a bullet_list/list may not list a hidden or PII-flagged column "
                     "verbatim"),
         )
     name = ask_engine.save_recipe(recipe, cfg, payload.kind)
@@ -2912,7 +2923,7 @@ async def api_template_apply(payload: TemplateApplyPayload, request: Request):
         approved = [p for p in revalidated if p.get("status") != "needs_attention"]
     else:
         approved = [p for p in candidates
-                    if not _bullet_list_names_excluded(p.get("spec") or {}, cfg)]
+                    if not _bullet_list_names_excluded(p.get("spec") or {}, cfg, p.get("kind", "chart"))]
 
     template = payload.template
     if template and not os.path.isabs(template):

@@ -95,7 +95,15 @@ def validate_recipe(recipe: Dict, profile: Dict[str, Dict],
     if kind == "table":
         return _validate_chart({**recipe, "type": "table"}, profile, cfg)
     if kind == "list":
-        return _validate_chart({**recipe, "type": "bullet_list"}, profile, cfg)
+        # The Express-inferred / manually re-kinded list spec persists the SINGULAR
+        # `question` field (matching cfg['lists']'s shape), whereas _validate_chart
+        # reads the plural `questions`. Normalize the two field names before
+        # delegating, mirroring _referenced_columns's dual-field handling.
+        questions = list(recipe.get("questions") or [])
+        if not questions and recipe.get("question"):
+            questions = [recipe["question"]]
+        return _validate_chart(
+            {**recipe, "type": "bullet_list", "questions": questions}, profile, cfg)
     return _validate_chart(recipe, profile, cfg)
 
 
@@ -555,5 +563,11 @@ def save_recipe(recipe: Dict, cfg: Dict, kind: str = "chart") -> str:
     saved["name"] = name
     if kind == "table":
         saved["type"] = "table"
+    if kind == "list":
+        # cfg['lists'] uses the singular `question` field, which
+        # ReportBuilder._generate_lists() reads. Collapse a plural `questions`
+        # list (e.g. from an Ask-panel save or a re-kinded table spec) back to it.
+        if "questions" in saved:
+            saved["question"] = (saved.pop("questions", None) or [None])[0]
     items.append(saved)
     return name
