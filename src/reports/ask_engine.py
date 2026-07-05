@@ -94,6 +94,8 @@ def validate_recipe(recipe: Dict, profile: Dict[str, Dict],
         return _validate_indicator(recipe, profile)
     if kind == "table":
         return _validate_chart({**recipe, "type": "table"}, profile, cfg)
+    if kind == "list":
+        return _validate_chart({**recipe, "type": "bullet_list"}, profile, cfg)
     return _validate_chart(recipe, profile, cfg)
 
 
@@ -273,7 +275,7 @@ def render_recipe(recipe: Dict, df: pd.DataFrame,
     or None if the columns are missing or rendering fails."""
     from src.reports.builder import _pick_df
     from src.data.transform import apply_local_scope
-    from src.reports.charts import generate_chart
+    from src.reports.charts import generate_chart, build_bullet_list_text
 
     questions = list(recipe.get("questions") or [])
     gb = recipe.get("group_by")
@@ -289,6 +291,13 @@ def render_recipe(recipe: Dict, df: pd.DataFrame,
             chart_df = apply_local_scope(chart_df, {}, filter_expr=filter_expr)
         summary = _result_summary(recipe, chart_df)
         resolved = {**recipe, "questions": resolved_questions}
+        if resolved.get("type") == "bullet_list":
+            # bullet_list (and the first-class "list" kind, which forces this
+            # type) is a text-injection render — it bypasses the
+            # matplotlib/CHART_DISPATCH pipeline entirely, mirroring
+            # builder.py's _generate_charts/_generate_lists special case.
+            text = build_bullet_list_text(chart_df, resolved_questions, resolved.get("options") or {})
+            return text, summary
         png = generate_chart(resolved, chart_df)
     except Exception as e:  # noqa: BLE001
         log.warning(f"ask: render_recipe failed for '{recipe.get('name')}': {e}")
@@ -359,8 +368,14 @@ def _execute_item(recipe: Dict, profile: Dict[str, Dict], df: pd.DataFrame,
         qcol = recipe.get("question")
         summary = f"{value} ({stat}{' of ' + qcol if qcol else ''})"
         return {"kind": "indicator", "recipe": recipe, "value": value, "summary": summary, "title": title}
-    # chart and table both render via the chart engine; a table forces type "table".
-    render_recipe_in = {**recipe, "type": "table"} if kind == "table" else recipe
+    # chart, table, and list all render via the chart engine; a table forces type
+    # "table", a list forces type "bullet_list" (reusing its text-injection render).
+    if kind == "table":
+        render_recipe_in = {**recipe, "type": "table"}
+    elif kind == "list":
+        render_recipe_in = {**recipe, "type": "bullet_list"}
+    else:
+        render_recipe_in = recipe
     rendered = render_recipe(render_recipe_in, df, repeat_tables or {})
     if rendered is None:
         return {"skip": f"could not render this {kind}", "title": title}
@@ -518,12 +533,13 @@ def refine_item(recipe: Dict, kind: str, instruction: str, cfg: Dict,
     return {"proposal": proposal, "skipped": None, "message": None}
 
 
-_SAVE_SECTIONS = {"indicator": "indicators", "table": "tables", "chart": "charts"}
+_SAVE_SECTIONS = {"indicator": "indicators", "table": "tables", "chart": "charts", "list": "lists"}
 
 
 def save_recipe(recipe: Dict, cfg: Dict, kind: str = "chart") -> str:
     """Append a recipe to the config section matching `kind`:
-    'chart' → cfg['charts'], 'indicator' → cfg['indicators'], 'table' → cfg['tables'].
+    'chart' → cfg['charts'], 'indicator' → cfg['indicators'], 'table' → cfg['tables'],
+    'list' → cfg['lists'].
     De-duplicates the name and strips the 'kind' field; for tables, forces type 'table'.
     Mutates cfg; the caller persists via write_config. Returns the final name."""
     section = _SAVE_SECTIONS.get(kind, "charts")
