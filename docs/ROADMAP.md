@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 28 | 23 / 28 |
+| [Maintenance & hardening](#maintenance--hardening) | 28 | 24 / 28 |
 
 ---
 
@@ -1370,9 +1370,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-24 — Express review UI: expose `list` as a selectable kind (P0) — fixes the reported bug**
+- [x] **MNT-24 — Express review UI: expose `list` as a selectable kind (P0) — fixes the reported bug**
 
-  **Created:** 2026-07-05
+  **Created:** 2026-07-05 · **Completed:** 2026-07-05
 
   **Depends on: MNT-23.**
 
