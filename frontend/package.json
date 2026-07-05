@@ -10,14 +10,14 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "test:e2e": "playwright test",
     "test:e2e:update": "playwright test --update-snapshots",
-    "test:e2e:report": "playwright show-report",
+    "test:e2e:report": "playwright show-report --host 0.0.0.0",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
     "test:visual:storybook": "playwright test --config=playwright.storybook.config.ts",
     "test:visual:storybook:update": "playwright test --config=playwright.storybook.config.ts --update-snapshots",
     "test:visual": "NODE_PATH=\"$PWD/node_modules\" playwright test --config=../visual-review/playwright.visual.config.ts",
     "test:visual:update": "NODE_PATH=\"$PWD/node_modules\" playwright test --config=../visual-review/playwright.visual.config.ts --update-snapshots",
-    "test:visual:report": "playwright show-report ../visual-review/results/report"
+    "test:visual:report": "playwright show-report --host 0.0.0.0 ../visual-review/results/report"
   },
   "dependencies": {
     "i18next": "^23.16.8",

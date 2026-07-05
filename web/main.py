@@ -1383,6 +1383,13 @@ async def preview_chart(payload: ChartPreviewPayload):
             )
         raise HTTPException(status_code=400, detail="\n".join(lines))
 
+    if chart.get("type") == "bullet_list":
+        # bullet_list is a text-injection render type — it bypasses the
+        # matplotlib/CHART_DISPATCH pipeline entirely (mirrors builder.py:450-453).
+        from src.reports.charts import build_bullet_list_text
+        text = build_bullet_list_text(df, questions, opts)
+        return {"text": text}
+
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
         cfg = {**chart, "name": chart.get("name") or "preview"}
