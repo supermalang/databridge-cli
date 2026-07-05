@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 27 | 22 / 27 |
+| [Maintenance & hardening](#maintenance--hardening) | 27 | 23 / 27 |
 
 ---
 
@@ -1292,9 +1292,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-23 — Backend foundation for a first-class `list` kind (P1)**
+- [x] **MNT-23 — Backend foundation for a first-class `list` kind (P1)**
 
-  **Created:** 2026-07-05
+  **Created:** 2026-07-05 · **Completed:** 2026-07-05
 
   **Type:** Feature (refactor/promotion of existing bullet_list machinery)
 
