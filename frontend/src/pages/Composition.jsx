@@ -20,7 +20,7 @@ import AiThinking from '../components/AiThinking.jsx';
 const CHART_TYPES = [
   'bar', 'horizontal_bar', 'stacked_bar', 'grouped_bar', 'pie', 'donut',
   'line', 'area', 'histogram', 'scatter', 'box_plot', 'heatmap', 'treemap',
-  'waterfall', 'funnel', 'table', 'bullet_list', 'bullet_chart', 'likert', 'scorecard',
+  'waterfall', 'funnel', 'table', 'bullet_chart', 'likert', 'scorecard',
   'pyramid', 'dot_map', 'period_bar', 'period_line',
 ];
 
@@ -37,7 +37,7 @@ const CHART_REQS = {
   histogram: '1 numeric column', scatter: '2 numeric columns',
   box_plot: '1 categorical + 1 numeric column', heatmap: '2 categorical columns',
   treemap: '1 categorical column', waterfall: '1 categorical column', funnel: '1 categorical column',
-  table: '1+ columns to tabulate', bullet_list: '1 column to list as bullet points (text, not an image)',
+  table: '1+ columns to tabulate',
   bullet_chart: '1 numeric column (set options.target)',
   likert: '1 categorical column (a rating scale)', scorecard: '1+ columns (any type)',
   pyramid: '2 columns: age_group + gender', dot_map: '2 columns: lat + lon',
@@ -186,7 +186,7 @@ function CopyPlaceholderButton({ token, label, ariaLabel }) {
 // ── component ────────────────────────────────────────────────────────────────
 // `sections` selects which cards render + which config keys this instance saves,
 // so the same component backs both the Load (views) and Analyze (charts/etc) tabs.
-const ALL_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'views', 'templates', 'framework'];
+const ALL_SECTIONS = ['charts', 'indicators', 'tables', 'lists', 'summaries', 'views', 'templates', 'framework'];
 
 export default function Composition({ sections } = {}) {
   const { t } = useTranslation();
@@ -200,6 +200,7 @@ export default function Composition({ sections } = {}) {
   const [charts,     setCharts]    = useState([]);
   const [indicators, setIndicators]= useState([]);
   const [tables,     setTables]    = useState([]);
+  const [lists,      setLists]     = useState([]);
   const [summaries,  setSummaries] = useState([]);
   const [views,      setViews]     = useState([]);
   const [baseline,   setBaseline]  = useState('');   // JSON of editable sections at last load/save
@@ -453,6 +454,7 @@ export default function Composition({ sections } = {}) {
     setCharts(Array.isArray(c.charts) ? c.charts : []);
     setIndicators(Array.isArray(c.indicators) ? c.indicators : []);
     setTables(Array.isArray(c.tables) ? c.tables : []);
+    setLists(Array.isArray(c.lists) ? c.lists : []);
     setSummaries(Array.isArray(c.summaries) ? c.summaries : []);
     setViews(Array.isArray(c.views) ? c.views : []);
     setBaseline(JSON.stringify({
@@ -460,6 +462,7 @@ export default function Composition({ sections } = {}) {
       charts: Array.isArray(c.charts) ? c.charts : [],
       indicators: Array.isArray(c.indicators) ? c.indicators : [],
       tables: Array.isArray(c.tables) ? c.tables : [],
+      lists: Array.isArray(c.lists) ? c.lists : [],
       summaries: Array.isArray(c.summaries) ? c.summaries : [],
       views: Array.isArray(c.views) ? c.views : [],
     }));
@@ -491,6 +494,7 @@ export default function Composition({ sections } = {}) {
         }
         if (has('indicators')) setOrDelete('indicators', indicators);
         if (has('tables')) setOrDelete('tables', tables);
+        if (has('lists')) setOrDelete('lists', lists);
         if (has('summaries')) setOrDelete('summaries', summaries);
         if (has('views')) setOrDelete('views', views);
       });
@@ -516,8 +520,8 @@ export default function Composition({ sections } = {}) {
   // Dirty tracking: compare the editable sections against the last-saved snapshot
   // so the Save button reads solid only while there are unsaved edits.
   const snapshot = useMemo(
-    () => JSON.stringify({ filters, charts, indicators, tables, summaries, views }),
-    [filters, charts, indicators, tables, summaries, views]);
+    () => JSON.stringify({ filters, charts, indicators, tables, lists, summaries, views }),
+    [filters, charts, indicators, tables, lists, summaries, views]);
   const dirty = snapshot !== baseline;
 
   const questionCount = (cfg.questions || []).length;
@@ -597,7 +601,7 @@ export default function Composition({ sections } = {}) {
       <RailLayout rail={
         <CompositionRail
           secs={secs}
-          counts={{ charts: charts.length, indicators: indicators.length, tables: tables.length, summaries: summaries.length, views: views.length }}
+          counts={{ charts: charts.length, indicators: indicators.length, tables: tables.length, lists: lists.length, summaries: summaries.length, views: views.length }}
           onSuggestKind={(k) => openSuggestModal(k)}
           suggesting={suggesting}
           showChartHelp={has('charts')}
@@ -627,7 +631,7 @@ export default function Composition({ sections } = {}) {
               onRemove={remove('indicator', setIndicators)}
             />
           )}
-          {(has('tables') || has('summaries')) && (
+          {(has('tables') || has('lists') || has('summaries')) && (
             <AdvancedSection
               open={advancedOpen}
               onToggle={() => setAdvancedOpen(o => !o)}
@@ -639,6 +643,14 @@ export default function Composition({ sections } = {}) {
                   onEdit={(i) => openEdit('table', i)}
                   onRemove={remove('table', setTables)}
                   onPreview={openTablePreview}
+                />
+              )}
+              {has('lists') && (
+                <ListsCard
+                  lists={lists}
+                  onAdd={() => openEdit('list', null)}
+                  onEdit={(i) => openEdit('list', i)}
+                  onRemove={remove('list', setLists)}
                 />
               )}
               {has('summaries') && (
@@ -687,6 +699,9 @@ export default function Composition({ sections } = {}) {
       )}
       {editing?.kind === 'table' && (
         <TableModal initial={editing.index !== null ? tables[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setTables)(item, editing.index)} />
+      )}
+      {editing?.kind === 'list' && (
+        <ListModal initial={editing.index !== null ? lists[editing.index] : null} columns={columnOptions} onClose={closeEdit} onSave={(item) => upsert(setLists)(item, editing.index)} />
       )}
 
       {suggestKind && (
@@ -744,11 +759,10 @@ export default function Composition({ sections } = {}) {
                 {preview.text}
               </div>
             )}
-            {/* Text-injection types (e.g. bullet_list — MNT-21) can legitimately
-                return "" (column has zero non-null values, or doesn't exist).
-                `preview.text === ''` is distinct from it being absent (an image
-                type / no text response) — show an explicit empty state instead
-                of a blank box. */}
+            {/* Text-injection chart types can legitimately return "" (column
+                has zero non-null values, or doesn't exist). `preview.text === ''`
+                is distinct from it being absent (an image type / no text
+                response) — show an explicit empty state instead of a blank box. */}
             {!preview.image && preview.text === '' && (
               <div style={{ width: '100%', textAlign: 'left', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
                 <em style={{ color: 'var(--ink-3)' }}>{t('composition.noOutput')}</em>
@@ -892,7 +906,11 @@ export default function Composition({ sections } = {}) {
 }
 
 // ── Right rail: Status · Quick actions · (chart reference when relevant) ──────
-const SECTION_LABELS = { charts: 'charts', indicators: 'indicators', tables: 'tables', summaries: 'summaries', views: 'views' };
+const SECTION_LABELS = { charts: 'charts', indicators: 'indicators', tables: 'tables', summaries: 'summaries', views: 'views', lists: 'lists' };
+// AI "Suggest" quick actions only exist for kinds with a suggest-<kind> CLI command
+// (suggestSpec in the parent component) — `lists` has none yet, so it gets a Status
+// row (via SECTION_LABELS above) but no "Suggest lists" action (MNT-25).
+const AI_SUGGESTABLE_KINDS = ['charts', 'indicators', 'tables', 'summaries', 'views'];
 
 function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHelp }) {
   const { t } = useTranslation();
@@ -903,7 +921,8 @@ function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHel
     label: `${counts[k]} ${t(`composition.kind.${k}`)}`,
     sub: counts[k] > 0 ? t('composition.configured') : t('composition.noneYet'),
   }));
-  const aiActions = enabled.map(k => ({
+  const suggestable = enabled.filter(k => AI_SUGGESTABLE_KINDS.includes(k));
+  const aiActions = suggestable.map(k => ({
     icon: RailIcons.sparkle,
     label: t('composition.suggestKind', { kind: t(`composition.kind.${k}`) }),
     onClick: () => onSuggestKind(k),
@@ -1428,6 +1447,60 @@ function TablesCard({ tables, onAdd, onEdit, onRemove, onPreview }) {
   );
 }
 
+// ── Lists card ───────────────────────────────────────────────────────────────
+// Lists are a first-class construct (MNT-23) rendered via build_bullet_list_text
+// -> {{ list_<name> }} placeholders in the Word template. Mirrors TablesCard.
+function ListsCard({ lists, onAdd, onEdit, onRemove }) {
+  const { t } = useTranslation();
+  return (
+    <div className="comp-card">
+      <div className="comp-card__head">
+        <div className="comp-card__head-text">
+          <div className="comp-card__title">{t('composition.listsTitle', { defaultValue: 'Lists' })}</div>
+          <div className="comp-card__sub">
+            {t('composition.listsSubPre', { defaultValue: 'Renders a column as bullet points at ' })}
+            <code>{'{{ list_<name> }}'}</code>
+            {t('composition.listsSubPost', { defaultValue: '' })}
+          </div>
+        </div>
+        <div className="comp-card__head-actions">
+          <button className="btn btn-ghost btn-sm" onClick={onAdd}>{t('composition.addList', { defaultValue: '+ Add list' })}</button>
+        </div>
+      </div>
+      <div className="comp-card__body">
+        {lists.length === 0 && <p className="empty-state" style={{ padding: 20 }}>{t('composition.noLists', { defaultValue: 'No lists yet.' })}</p>}
+        {lists.map((l, i) => (
+          <div className="comp-row" key={`${l.name}-${i}`}>
+            <div className="comp-row__icon" data-tone="green">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="3" cy="4.5" r="1"/><circle cx="3" cy="8" r="1"/><circle cx="3" cy="11.5" r="1"/><line x1="6.5" y1="4.5" x2="13.5" y2="4.5"/><line x1="6.5" y1="8" x2="13.5" y2="8"/><line x1="6.5" y1="11.5" x2="13.5" y2="11.5"/></svg>
+            </div>
+            <div className="comp-row__body">
+              <div className="comp-row__name">{l.name || t('composition.unnamed')}</div>
+              <div className="comp-row__meta">
+                {l.title && <span>{l.title}</span>}
+                <span>{l.title ? ` · ${l.question || t('composition.noColumns')}` : (l.question || t('composition.noColumns'))}</span>
+              </div>
+            </div>
+            <div className="comp-row__actions">
+              <CopyPlaceholderButton
+                token={`{{ list_${l.name} }}`}
+                label={t('composition.copyPlaceholder')}
+                ariaLabel={t('composition.copyPlaceholderFor', { name: l.name || t('composition.unnamed') })}
+              />
+              <button className="icon-btn" title={t('composition.edit')} onClick={() => onEdit(i)}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 11l8-8 3 3-8 8H2v-3z"/></svg>
+              </button>
+              <button className="icon-btn" title={t('composition.delete')} onClick={onRemove(i)}>
+                <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12" cy="8" r="1.4"/></svg>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Summaries card ───────────────────────────────────────────────────────────
 function SummariesCard({ summaries, onAdd, onEdit, onRemove, onPreview }) {
   const { t } = useTranslation();
@@ -1848,8 +1921,8 @@ function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onS
             )}
           </div>
         )}
-        {/* bullet_list (and other text-injection chart types) return text, not
-            an image — MNT-21 — render it in place of the <img> branch. */}
+        {/* Text-injection chart types return text, not an image — render it
+            in place of the <img> branch. */}
         {!previewError && !previewImage && previewText && (
           <div style={{ position: 'relative', width: '100%' }}>
             <div
@@ -1877,10 +1950,10 @@ function ChartModal({ initial, columns = [], columnCategories = {}, onClose, onS
           </div>
         )}
         {/* A completed request that legitimately returned "" (text-injection
-            type whose column has zero non-null values, or doesn't exist —
-            MNT-21) must be distinguishable from the idle placeholder below:
-            "" means "configured correctly, no data", null/undefined means "no
-            request has completed yet". */}
+            type whose column has zero non-null values, or doesn't exist) must
+            be distinguishable from the idle placeholder below: "" means
+            "configured correctly, no data", null/undefined means "no request
+            has completed yet". */}
         {!previewLoading && !previewError && !previewImage && previewText === '' && (
           <div data-testid="chart-editor-preview-empty" style={{ color: 'var(--ink-3)', fontSize: 13 }}>
             <em>{t('composition.noOutput')}</em>
@@ -2034,6 +2107,41 @@ function TableModal({ initial, columns = [], onClose, onSave }) {
       <ModalField label={t('composition.fName')} hint={t('composition.tableNameHintPre') + '{{ table_<name> }}' + t('composition.tableNameHintPost')} error={fe.errorFor('name')} errorId={fe.errorId('name')}><input aria-label={t('composition.tableName')} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} /></ModalField>
       <ModalField label={t('composition.fTitle')}><input aria-label={t('composition.tableTitle')} className="src-input" value={title} onChange={e => setTitle(e.target.value)} /></ModalField>
       <ModalField label={t('composition.fColumns')} hint={t('composition.columnsHintDot')}><ColumnPicker ariaLabel={t('composition.tableColumns')} value={cols} onChange={setCols} options={columns} /></ModalField>
+    </Modal>
+  );
+}
+
+// Lists (MNT-23/MNT-25) are a first-class construct — {name, title, question,
+// filter?} — rendered via build_bullet_list_text into {{ list_<name> }}.
+// Mirrors TableModal; `question` is a single column (not a CSV multi-picker).
+function ListModal({ initial, columns = [], onClose, onSave }) {
+  const { t } = useTranslation();
+  const [name, setName]     = useState(initial?.name || '');
+  const [title, setTitle]   = useState(initial?.title || '');
+  const [question, setQuestion] = useState(initial?.question || '');
+  const [filter, setFilter] = useState(initial?.filter || '');
+  const fe = useFieldErrors();
+  const submit = () => {
+    if (!name.trim()) return fe.setError('name', t('composition.nameRequired'));
+    const item = { name: name.trim(), title: title.trim(), question: question.trim() };
+    if (filter.trim()) item.filter = filter.trim();
+    onSave(item);
+  };
+  return (
+    <Modal title={initial ? t('composition.editList', { name: initial.name, defaultValue: `Edit list: ${initial?.name}` }) : t('composition.addListModal', { defaultValue: 'Add list' })} onClose={onClose} onSave={submit} width={560}>
+      <ModalError />
+      <ModalField label={t('composition.fName')} hint={t('composition.tableNameHintPre') + '{{ list_<name> }}' + t('composition.tableNameHintPost')} error={fe.errorFor('name')} errorId={fe.errorId('name')}>
+        <input aria-label={t('composition.listName', { defaultValue: 'List name' })} className="src-input" value={name} {...fe.fieldProps('name')} onChange={e => { setName(e.target.value); if (e.target.value.trim()) fe.clearError('name'); }} />
+      </ModalField>
+      <ModalField label={t('composition.fTitle')}>
+        <input aria-label={t('composition.listTitleField', { defaultValue: 'List title' })} className="src-input" value={title} onChange={e => setTitle(e.target.value)} />
+      </ModalField>
+      <ModalField label={t('composition.fColumn')}>
+        <ColumnPicker ariaLabel={t('composition.listQuestion', { defaultValue: 'List question' })} value={question} onChange={setQuestion} options={columns} multi={false} />
+      </ModalField>
+      <ModalField label={t('composition.fFilter')} hint={t('composition.filterHint')}>
+        <input aria-label={t('composition.listFilter', { defaultValue: 'List filter' })} className="src-input" value={filter} onChange={e => setFilter(e.target.value)} />
+      </ModalField>
     </Modal>
   );
 }

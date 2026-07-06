@@ -10,9 +10,8 @@ const DEBOUNCE_MS = 600;
 // Pass the current chart draft (name/title/type/questions/options) — any
 // change to its serialized form restarts the debounce timer. Returns
 // { loading, error, image, text } so the caller can render a skeleton, an
-// inline error, the rendered chart image, or (for text-injection types like
-// bullet_list — MNT-21) the returned text without wiring up fetch/debounce
-// itself.
+// inline error, the rendered chart image, or (for text-injection chart types)
+// the returned text without wiring up fetch/debounce itself.
 export function useChartPreview(chart) {
   const [state, setState] = useState({ loading: false, error: null, image: null, text: null });
   const timerRef = useRef(null);

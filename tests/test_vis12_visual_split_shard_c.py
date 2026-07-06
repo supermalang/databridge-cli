@@ -147,9 +147,10 @@ def test_visual_spec_preserves_same_number_of_screenshot_assertions(name):
         # after VIS-12 shipped, moved straight into the visual spec.
         "express-template-fill": 8,
         "build-options": 3,
-        # 7, not the original 6: MNT-21 added a new bullet_list preview visual
-        # baseline after VIS-12 shipped, moved straight into the visual spec.
-        "chart-editor": 7,
+        # 6, back to the original: MNT-21 added a new bullet_list preview visual
+        # baseline after VIS-12 shipped, but MNT-25 removed it again — bullet_list
+        # is no longer a selectable chart type in Composition.
+        "chart-editor": 6,
         "run-alert": 1,
         "reports-delete-all": 1,
         "sample-data-path": 2,
@@ -179,9 +180,10 @@ PRE_MIGRATION_BASELINE_COUNTS = {
     # baseline (3 viewports) after VIS-12 shipped.
     "express-template-fill": 24,
     "build-options": 9,
-    # 15, not the original 12: MNT-21 added a new bullet_list preview visual
-    # baseline (3 viewports) after VIS-12 shipped.
-    "chart-editor": 15,
+    # 12, back to the original: MNT-21 added a new bullet_list preview visual
+    # baseline (3 viewports) after VIS-12 shipped, but MNT-25 removed it again —
+    # bullet_list is no longer a selectable chart type in Composition.
+    "chart-editor": 12,
     "run-alert": 3,
     "reports-delete-all": 3,
     "sample-data-path": 6,

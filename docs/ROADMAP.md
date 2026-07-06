@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 28 | 24 / 28 |
+| [Maintenance & hardening](#maintenance--hardening) | 29 | 26 / 29 |
 
 ---
 
@@ -1513,9 +1513,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-25 — Composition UI migration to a first-class Lists section (P2)**
+- [x] **MNT-25 — Composition UI migration to a first-class Lists section (P2)**
 
-  **Created:** 2026-07-05
+  **Created:** 2026-07-05 · **Completed:** 2026-07-06
 
   **Depends on: MNT-23.**
 
@@ -1524,6 +1524,21 @@ Sprint exit — checked by /report + /retro:
   Give `list` its own Composition UI section, mirroring `TablesCard`/`IndicatorsCard`, and retire
   `bullet_list` as a selectable chart type in the regular (non-Express) authoring flow. Independent
   of MNT-24 — can ship any time after MNT-23.
+
+  **Folded in from this card's own PR review (ux-review, 2026-07-05):** two High-severity findings.
+  (1) `SECTION_LABELS` (the right-rail Status card's source of truth) was never given a `lists`
+  entry, so the Status card never showed a "N lists" line even though `counts.lists` was already
+  wired through — every sibling section (charts/indicators/tables/summaries/views) gets this
+  affordance, Lists didn't. Naively adding `lists` to `SECTION_LABELS` would also add a broken
+  "Suggest lists" AI quick-action (there is no `suggest-lists` CLI command), so the fix decouples
+  the two: `SECTION_LABELS` now includes `lists` (status row), while a new `AI_SUGGESTABLE_KINDS`
+  array (excluding `lists`) drives the AI-suggest actions. (2) The new Lists card/ListModal shipped
+  with zero entries in either `frontend/src/locales/en.json` or `fr.json` — every string relied
+  solely on inline i18next `defaultValue` fallbacks, so French-locale users would see hardcoded
+  English on an otherwise fully translated screen. Fixed by adding the full `composition.list*`/
+  `composition.kind.lists` key set to both locale files, matching the existing `tables` pattern
+  (also fixed the pre-existing empty `listsSubPost` trailing clause while in there, for parity with
+  sibling cards' subtitle copy). `npm run check:i18n` passes clean (838 keys, en/fr aligned).
 
   **Files:**
   - `frontend/src/pages/Composition.jsx` (2341 lines) — remove `'bullet_list'` from `CHART_TYPES`
@@ -1535,7 +1550,28 @@ Sprint exit — checked by /report + /retro:
     `TablesCard`/`IndicatorsCard` (~L1268-1432) — fields: name, title, question (single column),
     optional filter. Decide placement relative to PUX-3's progressive-disclosure "Advanced"
     section (tables + summaries are tucked behind a toggle) — group Lists there alongside Tables.
+    New `AI_SUGGESTABLE_KINDS` constant (~L909) decouples the AI-suggest action list from
+    `SECTION_LABELS`'s status-row list, per the fold-in above.
   - `frontend/src/hooks/useChartPreview.js` — remove/generalize its bullet_list special case.
+  - `frontend/src/locales/en.json` + `fr.json` — add `composition.kind.lists`, `listsTitle`,
+    `listsSubPre`, `listsSubPost`, `addList`, `noLists`, `editList`, `addListModal`, `listName`,
+    `listTitleField`, `listQuestion`, `listFilter` to both bundles, per the fold-in above.
+  - `frontend/src/App.jsx` — add `'lists'` to `ANALYZE_SECTIONS` (necessary companion change,
+    without which `has('lists')` is always false and `ListsCard` never mounts; omitted from the
+    original Files list, called out by roadmap-verifier's scope check and documented here).
+
+  **Folded in from this card's own PR review round 2 (roadmap-verifier, 2026-07-05):** two more
+  gaps. (1) No functional (non-visual) test covered the Status-rail AC — only the visual baseline
+  incidentally exercised it, and that baseline was itself stale (see next). Added
+  `frontend/tests/e2e/composition-bullet-list.spec.ts::"status rail shows \"N lists\" and does not
+  add a Suggest-lists quick action"`, asserting the check-list label text and the absence of a
+  `.rail-action` matching "suggest lists" — verified green. (2) The `mnt25-composition-lists-
+  advanced-*` baseline PNGs (all 3 viewports) were captured from an iteration *before* the round-1
+  ux-review fold-in landed — they still showed the old, broken "Suggest lists" action and were
+  missing the "N lists" status line, so they were stale, not just unapproved. These 3 need
+  regeneration (human `npm run test:visual:update`) against current code before they can be
+  reviewed/approved; the 3 `mnt25-composition-list-modal-*` baselines were unaffected (that capture
+  doesn't include the right rail) and only needed a ledger entry.
 
   **Config/schema impact:** Composition now reads/writes `cfg['lists']` (defined by MNT-23)
   instead of `charts: [{type: bullet_list}]` for newly-created lists. Existing `charts:` entries
@@ -1554,6 +1590,12 @@ Sprint exit — checked by /report + /retro:
     the same "unsaved changes" guard as other sections)
   - No regression to any other Composition section (charts, indicators, tables, summaries, views,
     framework)
+  - The right-rail Status card shows a "N lists" line once `lists` is a configured section, without
+    also adding a "Suggest lists" AI quick-action (no backend command exists for it) — covered by a
+    real functional test, not just the visual baseline
+  - Every Lists card / ListModal string is sourced from the `en`/`fr` locale bundles — no hardcoded
+    English literal remains reachable via `defaultValue` fallback alone; `npm run check:i18n`
+    stays green (key-aligned, no empty values)
 
   **Unit tests:** N/A (frontend-only; Vitest not installed — covered by Playwright E2E below).
 
@@ -1785,6 +1827,47 @@ Sprint exit — checked by /report + /retro:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_engine.py
   tests/test_template_inference.py -q`
+
+---
+
+- [x] **MNT-29 — Fix: stale chart-editor frozen baseline-count constants after MNT-25's bullet_list removal (P2)**
+
+  **Created:** 2026-07-06 · **Completed:** 2026-07-06
+
+  **Type:** Fix
+
+  Merge-conflict-resolution artifact discovered while merging MNT-24's and MNT-25's PRs into
+  `develop`. MNT-25 removed the MNT-21 bullet_list preview baseline from `chart-editor`
+  (`frontend/tests/e2e/chart-editor.spec.ts` + `visual-review/specs/chart-editor.visual.spec.ts`),
+  dropping its baseline count from 15→12 PNGs and its visual-spec assertion count from 7→6 — but
+  `tests/test_vis12_visual_split_shard_c.py`'s frozen `pre_migration_counts["chart-editor"]` (still
+  7) and `PRE_MIGRATION_BASELINE_COUNTS["chart-editor"]` (still 15) were never updated, because
+  MNT-25's own scoped `Verify:` command (`npx playwright test composition-bullet-list chart-editor`)
+  never exercises this backend pytest guard file. Same class of fix as the one already folded into
+  MNT-24 (bumping `express-template-fill`'s counts), just in the opposite direction (a removal, not
+  an addition) and for a different shard file.
+
+  **Files:** `tests/test_vis12_visual_split_shard_c.py` — `pre_migration_counts["chart-editor"]`
+  7→6, `PRE_MIGRATION_BASELINE_COUNTS["chart-editor"]` 15→12, both with a comment explaining the
+  MNT-21-then-MNT-25 history (mirroring the file's existing comment convention for this exact
+  situation).
+
+  **Config/schema impact:** None — test-constant fix only, no application behavior change.
+
+  **Acceptance criteria**
+  - `tests/test_vis12_visual_split_shard_c.py::test_visual_spec_preserves_same_number_of_screenshot_assertions[chart-editor]` passes
+  - `tests/test_vis12_visual_split_shard_c.py::test_baselines_relocated_with_same_total_png_count[chart-editor]` passes
+  - No other shard file's constant is touched; no regression to any other `test_vis12_visual_split_shard_c.py` case
+
+  **Unit tests:** The two tests named above are the acceptance test — no new test needed, this
+  card exists to make already-correct application state pass an already-correct test whose frozen
+  constant fell behind.
+
+  **E2E:** N/A — pure backend pytest constant fix, no UI/behavior change.
+
+  **UAT:** N/A — non-UI/CLI card, relies on the Verify command + PR review as the human gate.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_vis12_visual_split_shard_c.py -k chart-editor -q`
 
 ---
 

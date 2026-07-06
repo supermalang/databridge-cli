@@ -69,7 +69,7 @@ const termCollapseMs = () => {
 
 // Composition backs two stages with different card/section sets.
 const VIEWS_SECTIONS   = ['views'];
-const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'summaries', 'pii'];
+const ANALYZE_SECTIONS = ['charts', 'indicators', 'tables', 'lists', 'summaries', 'pii'];
 
 // The workflow: Home + five ordered stages. Stages with >1 sub render a
 // secondary sub-tab strip; single-sub stages navigate straight to their page.

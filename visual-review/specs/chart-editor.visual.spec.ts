@@ -229,24 +229,10 @@ test.describe('PUX-14 — live preview reachable above the fold visual baselines
   });
 });
 
-test.describe('MNT-21 — bullet_list chart preview visual baseline', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-    await bootApp(page);
-    await openComposition(page);
-  });
-
-  test('visual: chart editor preview — bullet_list', async ({ page }) => {
-    await page.route('**/api/charts/preview', async (r) => {
-      await r.fulfill({ json: { text: '• Alpha\n• Beta\n• Gamma' } });
-    });
-
-    await openAddChartModal(page);
-    await setChartType(page, 'bullet_list');
-    await addColumn(page, 'region');
-    await expect(previewPane(page)).toContainText('Alpha');
-    // Let the debounced preview settle so the baseline is deterministic.
-    await page.waitForTimeout(700);
-    await expect(page.locator('.modal[role="dialog"]')).toHaveScreenshot('chart-editor-modal-bullet-list.png');
-  });
-});
+/**
+ * MNT-25 retires bullet_list as a selectable chart type in this editor (it moved to its
+ * own first-class Lists section — see composition-bullet-list.visual.spec.ts). The former
+ * "MNT-21 — bullet_list chart preview visual baseline" block (and its
+ * `chart-editor-modal-bullet-list-*` baselines) is intentionally removed here: bullet_list
+ * is no longer reachable through this modal's Chart type dropdown.
+ */
