@@ -906,7 +906,11 @@ export default function Composition({ sections } = {}) {
 }
 
 // ── Right rail: Status · Quick actions · (chart reference when relevant) ──────
-const SECTION_LABELS = { charts: 'charts', indicators: 'indicators', tables: 'tables', summaries: 'summaries', views: 'views' };
+const SECTION_LABELS = { charts: 'charts', indicators: 'indicators', tables: 'tables', summaries: 'summaries', views: 'views', lists: 'lists' };
+// AI "Suggest" quick actions only exist for kinds with a suggest-<kind> CLI command
+// (suggestSpec in the parent component) — `lists` has none yet, so it gets a Status
+// row (via SECTION_LABELS above) but no "Suggest lists" action (MNT-25).
+const AI_SUGGESTABLE_KINDS = ['charts', 'indicators', 'tables', 'summaries', 'views'];
 
 function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHelp }) {
   const { t } = useTranslation();
@@ -917,7 +921,8 @@ function CompositionRail({ secs, counts, onSuggestKind, suggesting, showChartHel
     label: `${counts[k]} ${t(`composition.kind.${k}`)}`,
     sub: counts[k] > 0 ? t('composition.configured') : t('composition.noneYet'),
   }));
-  const aiActions = enabled.map(k => ({
+  const suggestable = enabled.filter(k => AI_SUGGESTABLE_KINDS.includes(k));
+  const aiActions = suggestable.map(k => ({
     icon: RailIcons.sparkle,
     label: t('composition.suggestKind', { kind: t(`composition.kind.${k}`) }),
     onClick: () => onSuggestKind(k),

@@ -291,6 +291,15 @@ test.describe('MNT-25 — a first-class Lists card grouped with Tables under Adv
       advancedRegion(page).locator('.comp-card__title', { hasText: 'Charts' }),
     ).toHaveCount(0);
   });
+
+  // Folded in from this card's own ux-review round: the right-rail Status card must
+  // show a "N lists" line once lists are configured (mirroring every sibling
+  // section), but must NOT gain a broken "Suggest lists" AI quick-action — there is
+  // no suggest-lists CLI command, unlike charts/indicators/tables/summaries/views.
+  test('status rail shows "N lists" and does not add a Suggest-lists quick action', async ({ page }) => {
+    await expect(page.locator('.check-list__label', { hasText: /lists$/ })).toHaveText('1 lists');
+    await expect(page.locator('.rail-action', { hasText: /suggest lists/i })).toHaveCount(0);
+  });
 });
 
 test.describe('MNT-25 — creating a list via the ListModal', () => {
