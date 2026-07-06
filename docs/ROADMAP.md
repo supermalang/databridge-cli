@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 28 | 25 / 28 |
+| [Maintenance & hardening](#maintenance--hardening) | 29 | 26 / 29 |
 
 ---
 
@@ -1827,6 +1827,47 @@ Sprint exit — checked by /report + /retro:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_engine.py
   tests/test_template_inference.py -q`
+
+---
+
+- [x] **MNT-29 — Fix: stale chart-editor frozen baseline-count constants after MNT-25's bullet_list removal (P2)**
+
+  **Created:** 2026-07-06 · **Completed:** 2026-07-06
+
+  **Type:** Fix
+
+  Merge-conflict-resolution artifact discovered while merging MNT-24's and MNT-25's PRs into
+  `develop`. MNT-25 removed the MNT-21 bullet_list preview baseline from `chart-editor`
+  (`frontend/tests/e2e/chart-editor.spec.ts` + `visual-review/specs/chart-editor.visual.spec.ts`),
+  dropping its baseline count from 15→12 PNGs and its visual-spec assertion count from 7→6 — but
+  `tests/test_vis12_visual_split_shard_c.py`'s frozen `pre_migration_counts["chart-editor"]` (still
+  7) and `PRE_MIGRATION_BASELINE_COUNTS["chart-editor"]` (still 15) were never updated, because
+  MNT-25's own scoped `Verify:` command (`npx playwright test composition-bullet-list chart-editor`)
+  never exercises this backend pytest guard file. Same class of fix as the one already folded into
+  MNT-24 (bumping `express-template-fill`'s counts), just in the opposite direction (a removal, not
+  an addition) and for a different shard file.
+
+  **Files:** `tests/test_vis12_visual_split_shard_c.py` — `pre_migration_counts["chart-editor"]`
+  7→6, `PRE_MIGRATION_BASELINE_COUNTS["chart-editor"]` 15→12, both with a comment explaining the
+  MNT-21-then-MNT-25 history (mirroring the file's existing comment convention for this exact
+  situation).
+
+  **Config/schema impact:** None — test-constant fix only, no application behavior change.
+
+  **Acceptance criteria**
+  - `tests/test_vis12_visual_split_shard_c.py::test_visual_spec_preserves_same_number_of_screenshot_assertions[chart-editor]` passes
+  - `tests/test_vis12_visual_split_shard_c.py::test_baselines_relocated_with_same_total_png_count[chart-editor]` passes
+  - No other shard file's constant is touched; no regression to any other `test_vis12_visual_split_shard_c.py` case
+
+  **Unit tests:** The two tests named above are the acceptance test — no new test needed, this
+  card exists to make already-correct application state pass an already-correct test whose frozen
+  constant fell behind.
+
+  **E2E:** N/A — pure backend pytest constant fix, no UI/behavior change.
+
+  **UAT:** N/A — non-UI/CLI card, relies on the Verify command + PR review as the human gate.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_vis12_visual_split_shard_c.py -k chart-editor -q`
 
 ---
 
