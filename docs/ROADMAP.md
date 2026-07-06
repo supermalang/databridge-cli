@@ -77,7 +77,7 @@ Sprint exit — checked by /report + /retro:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 14 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 12 | 8 / 12 |
+| [Visual / E2E harness](#visual--e2e-harness) | 12 | 9 / 12 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
@@ -663,9 +663,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **VIS-8 — Fix: uncap hardcoded worker count to stop full-suite instability (P2)**
+- [x] **VIS-8 — Fix: uncap hardcoded worker count to stop full-suite instability (P2)**
 
-  **Created:** 2026-07-04 · **Started:** 2026-07-05
+  **Created:** 2026-07-04 · **Started:** 2026-07-05 · **Completed:** 2026-07-06
 
   Both `frontend/playwright.config.ts` (line 30) and `frontend/playwright.storybook.config.ts`
   (line 21) hardcode a fixed worker count of 4, contradicting VIS-3's own in-file rationale
