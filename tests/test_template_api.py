@@ -328,6 +328,45 @@ def test_apply_drops_pii_bullet_list_without_data(monkeypatch, client, tmp_path)
     assert written.get("charts") == []
 
 
+def test_apply_drops_pii_list_kind_without_data(monkeypatch, client, tmp_path):
+    """MNT-24 follow-up: the first-class kind="list" shape (singular `question`,
+    no `type` key) hits the same no-profile gate as bullet_list and must be
+    dropped too — regression for a bypass where _bullet_list_names_excluded only
+    recognized type=="bullet_list" + plural `questions`, silently letting a
+    kind="list" proposal naming a pii:true column through before any download."""
+    cfg = _pii_cfg()
+    saved = {}
+    received = {}
+    monkeypatch.setattr(wm, "_require", lambda *a, **k: None)
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+    # load_processed_data un-mocked → real FileNotFoundError (no data).
+
+    resolved = str(tmp_path / "report.resolved.docx")
+    import src.reports.template_inference as ti
+
+    def _apply(approved_props, cfg_in, template_path):
+        received["names"] = [p.get("name") for p in approved_props]
+        for p in approved_props:
+            cfg_in.setdefault("lists", []).append(p["spec"])
+        return cfg_in, resolved
+
+    monkeypatch.setattr(ti, "apply_inference", _apply)
+
+    approved = [
+        {"token_index": 0, "kind": "list", "name": "stories",
+         "spec": {"name": "stories", "question": "Story"},
+         "status": "approved"},
+    ]
+    resp = client.post("/api/template/apply",
+                       json={"proposals": approved, "template": "report.docx"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["n_written"] == 0
+    assert "stories" not in (received.get("names") or [])
+    written = saved.get("cfg") or cfg
+    assert written.get("lists", []) == []
+
+
 # --------------------------------------------------------------------------- #
 # XTF-6 — Persist the uploaded template across infer → apply (the bug).
 #

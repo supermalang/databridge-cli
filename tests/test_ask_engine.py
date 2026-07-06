@@ -327,6 +327,61 @@ def test_save_recipe_list_to_lists():
     assert "charts" not in cfg and "indicators" not in cfg and "tables" not in cfg
 
 
+def test_validate_recipe_list_singular_question_field_passes():
+    """MNT-24 regression (folded-in security-audit fix #1): the Express-inferred /
+    manually re-kinded list spec persists (and re-sends) the SINGULAR `question`
+    field -- matching cfg['lists']'s actual persisted shape (name/title/question/
+    filter) -- not the plural `questions` used by chart/table recipes. Before the
+    fix, validate_recipe's kind="list" branch delegated to _validate_chart which
+    only reads the plural `questions` field, so a singular-field list recipe was
+    rejected by the generic ">=1 column" error even though it names a perfectly
+    valid, existing column. This must now validate ok."""
+    ok, reason = validate_recipe({"kind": "list", "question": "Story"}, _profile_fixture())
+    assert ok and reason == "", reason
+
+
+def test_validate_recipe_list_singular_question_field_rejects_pii_with_specific_reason():
+    """MNT-24 regression (folded-in security-audit fix #1): a kind="list" recipe
+    using the singular `question` field that names a `pii: true`-flagged column
+    must be rejected with the SPECIFIC PII/hidden reason naming that column --
+    not the generic column-count error the question/questions mismatch used to
+    produce (which would incorrectly reject valid columns for the wrong reason
+    while never actually reaching the PII/hidden gate for a bad one)."""
+    cfg = {
+        "questions": [{"export_label": "Story", "type": "text", "pii": True}],
+        "pii": {"redact": []},
+    }
+    ok, reason = validate_recipe(
+        {"kind": "list", "question": "Story"}, _profile_fixture(), cfg)
+    assert not ok, "a PII column must not be listable verbatim via a list recipe"
+    assert "Story" in reason and ("PII" in reason or "hidden" in reason), reason
+    assert "≥1 column" not in reason, (
+        "must be rejected by the specific PII/hidden reason, not the generic "
+        f"column-count message caused by the question/questions field mismatch: {reason!r}"
+    )
+
+
+def test_save_recipe_list_collapses_questions_to_singular_question():
+    """MNT-24 regression (folded-in security-audit fix #2): save_recipe(kind="list")
+    on a recipe carrying a plural `questions` list (e.g. saved via the Ask panel, or
+    a table-shaped spec whose plural field survives being re-kinded to "list" in the
+    Express review panel) must collapse it to the singular `question` field --
+    mirroring how kind="table" forces `type: "table"` -- so
+    ReportBuilder._generate_lists() (which only reads the singular `question`) can
+    actually render non-empty content instead of a silent empty {{ list_<name> }}."""
+    cfg = {}
+    name = ask_engine.save_recipe(
+        {"name": "stories", "title": "Stories", "questions": ["Story"], "kind": "list"}, cfg, "list"
+    )
+    assert name == "stories"
+    saved = cfg["lists"][0]
+    assert saved.get("question") == "Story", (
+        f"expected the plural 'questions' input collapsed to a singular 'question' "
+        f"key so the builder can read it, got: {saved!r}"
+    )
+    assert "questions" not in saved, saved
+
+
 def test_validate_indicator_count_ok():
     ok, reason = validate_recipe({"kind": "indicator", "stat": "count"}, _profile_fixture())
     assert ok and reason == ""

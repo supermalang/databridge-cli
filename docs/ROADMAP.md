@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 27 | 24 / 27 |
+| [Maintenance & hardening](#maintenance--hardening) | 28 | 25 / 28 |
 
 ---
 
@@ -1370,9 +1370,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-24 — Express review UI: expose `list` as a selectable kind (P0) — fixes the reported bug**
+- [x] **MNT-24 — Express review UI: expose `list` as a selectable kind (P0) — fixes the reported bug**
 
-  **Created:** 2026-07-05
+  **Created:** 2026-07-05 · **Completed:** 2026-07-05
 
   **Depends on: MNT-23.**
 
@@ -1386,10 +1386,72 @@ Sprint exit — checked by /report + /retro:
   it's hidden as a chart sub-type, and the spec column is read-only. This card is the direct fix,
   once MNT-23 makes `list` a real, round-trippable kind.
 
-  **Files:** `frontend/src/pages/Templates.jsx` — add `'list'` to the `KINDS` array (~L14); extend
-  `summariseSpec` (~L295-298) with a `kind==='list'` branch (e.g. `list · <question>`).
+  **Folded in from MNT-23's PR review (security-audit, 2026-07-05):** two `question`/`questions`
+  field-name mismatches that would otherwise silently defeat this card's own UAT. (1)
+  `ask_engine.validate_recipe`'s `kind=="list"` branch (`src/reports/ask_engine.py:97-98`)
+  delegates to `_validate_chart({**recipe, "type": "bullet_list"}, ...)`, which only reads the
+  plural `questions` field — but the Express-inferred/manually-set list spec uses the singular
+  `question` (matching `cfg['lists']`'s actual persisted shape). Every list proposal therefore
+  fails a generic "needs ≥1 column" check *before* reaching the hidden/PII-column gate, so a user
+  who reclassifies a row to `list` and clicks Apply would see it silently bounce back to
+  `needs_attention` server-side with the wrong (and unhelpful) rejection reason — directly
+  breaking this card's own UAT step 3/4. (2) `ask_engine.save_recipe` (`src/reports/ask_engine.py`
+  ~L539-558) forces `type: "table"` for `kind=="table"` but has no equivalent normalization for
+  `kind=="list"`, so a list saved via the Ask panel keeps a plural `questions` key that
+  `ReportBuilder._generate_lists()` (MNT-23) never reads (it only reads singular `question`),
+  silently rendering an empty `{{ list_<name> }}`. Both are fail-safe/fail-closed (no data
+  exposure), but must be fixed as part of this card since MNT-24's own UAT (apply a list, confirm
+  it builds with content) cannot pass otherwise.
 
-  **Config/schema impact:** None beyond MNT-23's (this card only adds a UI option).
+  **Folded in from this card's own PR review round 2 (roadmap-verifier, 2026-07-05):** a third
+  instance of the same field-mismatch pattern, this time a real PII-leak path, not just a
+  data-correctness gap. `web/main.py::_bullet_list_names_excluded` — the cfg-only PII/hidden-column
+  gate used as the "no data downloaded yet" fallback by both `POST /api/ask/save` and
+  `POST /api/template/apply` — only recognized a spec as gate-worthy when `spec.get('type') ==
+  'bullet_list'` and only read the plural `spec.get('questions')` field. A genuine `kind='list'`
+  spec (exactly the shape `save_recipe` now normalizes to, and the exact shape the Express AI
+  schema instructs the LLM to produce: `{name, title, question}`) carries no `type` key at all and
+  uses the singular `question` field, so it was invisible to the gate — a `kind='list'` recipe
+  naming a PII/hidden column, saved via the Ask panel or applied via Express Fill's
+  `/api/template/apply` *before* any data has been downloaded for the project (profile
+  unavailable), would silently bypass the documented fail-closed gate and get persisted into
+  `cfg['lists']`, later rendered verbatim into the `.docx` — an actual PII leak. Fixed by giving
+  `_bullet_list_names_excluded` an explicit `kind` parameter (both call sites now pass it through)
+  and recognizing `kind == "list"` (reading either singular `question` or plural `questions`) in
+  addition to the legacy `type == "bullet_list"` check.
+
+  **Folded in from this card's own PR review round 3 (roadmap-verifier, 2026-07-05):** adding the
+  3 new `express-list-kind-selected-*` baseline PNGs bumped `express-template-fill`'s baseline
+  count from 21 to 24, but VIS-12's frozen guard test (`tests/test_vis12_visual_split_shard_c.py`,
+  `PRE_MIGRATION_BASELINE_COUNTS`) still expected 21 — the exact precedent for bumping this frozen
+  constant when a later card adds a baseline is already documented in the same file for MNT-21's
+  `chart-editor` entry. Fixed by bumping the constant to 24 with an equivalent comment, and adding
+  a clarifying comment to the sibling `pre_migration_counts["express-template-fill"]: 8` in
+  `test_visual_spec_preserves_same_number_of_screenshot_assertions` (the number itself was already
+  correct post-fix, but undocumented as to why).
+
+  **Files:**
+  - `frontend/src/pages/Templates.jsx` — add `'list'` to the `KINDS` array (~L14); extend
+    `summariseSpec` (~L295-298) with a `kind==='list'` branch (e.g. `list · <question>`).
+  - `src/reports/ask_engine.py` — in `validate_recipe`'s `kind=="list"` branch (~L97-98), normalize
+    the spec before delegating to `_validate_chart`: build a plural `questions` list from
+    `recipe.get('questions') or ([recipe['question']] if recipe.get('question') else [])`,
+    mirroring `_referenced_columns`'s existing dual-field handling
+    (`src/reports/template_inference.py:568-582`). In `save_recipe` (~L539-558), normalize
+    `kind=="list"` the same way `kind=="table"` forces `type`: collapse a saved `questions` list
+    back to the singular `question` field (e.g. `saved["question"] = (saved.pop("questions", None)
+    or [None])[0]`) so `ReportBuilder._generate_lists()` can read it.
+  - `web/main.py` — `_bullet_list_names_excluded` (~L2602-2620) gains a `kind: str = "chart"`
+    parameter; recognizes `kind == "list"` (reading singular `question` or plural `questions`) in
+    addition to the legacy `kind == "chart" and type == "bullet_list"` case. Both call sites —
+    `POST /api/ask/save` (~L2718, passes `payload.kind`) and `POST /api/template/apply` (~L2915,
+    passes `p.get("kind", "chart")`) — updated to pass `kind` through.
+  - `tests/test_vis12_visual_split_shard_c.py` — bump `PRE_MIGRATION_BASELINE_COUNTS
+    ["express-template-fill"]` 21→24 and annotate `pre_migration_counts["express-template-fill"]`,
+    per the fold-in above.
+
+  **Config/schema impact:** None beyond MNT-23's — field-normalization only, no shape change to
+  `cfg['lists']` itself (still singular `question`).
 
   **Acceptance criteria**
   - The Express review panel's kind dropdown includes `"list"` as a selectable option for any row
@@ -1400,16 +1462,40 @@ Sprint exit — checked by /report + /retro:
     template token to `{{ list_<name> }}`
   - The spec-summary column shows a sensible one-line description for a list row (not blank or
     `undefined`)
+  - A `kind="list"` recipe/proposal naming a column passes `ask_engine.validate_recipe` (no longer
+    rejected by a spurious "needs ≥1 column" error caused by the question/questions mismatch); one
+    naming a hidden/PII-flagged column is rejected with the **specific** hidden/PII reason, not a
+    generic column-count error
+  - A list saved via `ask_engine.save_recipe` (Ask panel) round-trips correctly into
+    `ReportBuilder._generate_lists()` and renders non-empty bullet-point text at build time (no
+    silent empty `{{ list_<name> }}`)
+  - Before any data is downloaded (no profile available), a `kind="list"` recipe/proposal naming a
+    PII/hidden-flagged column is rejected by the cfg-only fallback gate
+    (`_bullet_list_names_excluded`) on both `POST /api/ask/save` and `POST /api/template/apply` —
+    it cannot be smuggled into `cfg['lists']` before download and rendered verbatim at build time
 
-  **Unit tests:** N/A (frontend-only; Vitest is not installed in this repo — covered by the
+  **Unit tests:** `tests/test_ask_engine.py` — extend with: (1) a `kind="list"` recipe naming a
+  normal column passes `validate_recipe` (regression pin for the question/questions fix); (2) a
+  `kind="list"` recipe naming a `pii`/`hidden`-flagged column is rejected by `validate_recipe` with
+  a reason string naming that column specifically (not a generic column-count message); (3)
+  `save_recipe(kind="list")` on a recipe with a `questions` list persists a singular `question` key
+  into `cfg['lists']`. `tests/test_ask_api.py::test_ask_save_rejects_pii_list_kind_without_data` and
+  `tests/test_template_api.py::test_apply_drops_pii_list_kind_without_data` (both new) — the
+  no-profile PII-gate regression for `kind="list"` via `/api/ask/save` and `/api/template/apply`.
+  `tests/test_vis12_visual_split_shard_c.py` — bumped frozen baseline-count constants (see fold-in
+  above); its two unrelated failures (`test_no_snapshots_directories_remain_anywhere_under_frontend_tests_e2e`,
+  `test_no_snapshots_directories_found_via_repo_wide_search`) are pre-existing, waiting on the
+  not-yet-started VIS-10 (confirmed identical on the pre-MNT-24 base commit), not a regression from
+  this card. Frontend kind-dropdown addition itself stays N/A (Vitest not installed — covered by the
   Playwright E2E below, consistent with the XTF-* convention).
 
   **E2E:** Extend the existing Express Fill Playwright spec — upload a template with a
   no-categorical-column placeholder, confirm it can be reclassified to `kind="list"` via the
   dropdown, confirm the `needs_attention` flag clears, apply, and assert the resolved template /
-  returned config contains a `lists:` entry and a `{{ list_<name> }}` placeholder. Visual:
-  impeccable audit/critique + `toHaveScreenshot` of the review panel with a list-kind row selected,
-  at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves them.
+  returned config contains a `lists:` entry and a `{{ list_<name> }}` placeholder **with non-empty
+  rendered content** (regression check for the save/build round-trip fix). Visual: impeccable
+  audit/critique + `toHaveScreenshot` of the review panel with a list-kind row selected, at all
+  three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a human approves them.
 
   **UAT:**
   1. Upload a Word template containing a placeholder for a plain list of text values (no
@@ -1417,9 +1503,13 @@ Sprint exit — checked by /report + /retro:
   2. Confirm the AI proposes something that gets flagged `needs_attention` (e.g. `table`).
   3. Change that row's kind to "list" in the dropdown and confirm the flag clears.
   4. Click Apply & Build and confirm the report builds successfully with the list rendered as
-     bullet points in the output `.docx`.
+     **actual bullet-point content** (not an empty section) in the output `.docx`.
 
-  **Verify:** `cd frontend && npx playwright test <the extended express-fill spec>`
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_engine.py
+  tests/test_ask_api.py tests/test_template_api.py -k "not snapshots_directories"
+  tests/test_vis12_visual_split_shard_c.py::test_baselines_relocated_with_same_total_png_count
+  tests/test_vis12_visual_split_shard_c.py::test_visual_spec_preserves_same_number_of_screenshot_assertions -q` ·
+  `cd frontend && npx playwright test <the extended express-fill spec>`
 
 ---
 
@@ -1657,6 +1747,86 @@ Sprint exit — checked by /report + /retro:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py -k apply -q` ·
   `cd frontend && npx playwright test <the extended express-fill spec>`
+
+---
+
+- [ ] **MNT-28 — Fix: single-column chart types silently drop extra questions/group_by instead of rejecting them (P1)**
+
+  **Created:** 2026-07-05
+
+  **Type:** Fix
+
+  Found via live manual testing of Express Template Fill (real Anthropic call, real
+  `build-report` run, not mocked). `ask_engine.py`'s `CHART_REQS` (`src/reports/ask_engine.py:62`)
+  is used both as the LLM prompt's chart-type requirement text (`_CHART_TYPES_BLOCK`) and as the
+  deterministic post-inference validator (`_validate_chart`). For six chart types that
+  `charts.py` only ever renders from `questions[0]` — `bar`, `horizontal_bar`, `pie`, `donut`,
+  `histogram`, `table` (`chart_bar`/`chart_horizontal_bar`/`chart_pie`/`chart_donut`/
+  `chart_histogram`/`chart_table`, each doing `c = q[0]` and never reading `q[1:]` or
+  `opts['group_by']`) — `CHART_REQS` only enforces a minimum column count (e.g. table: "≥1
+  categorical column"). `_validate_chart` (~L110) additionally appends `group_by` into the
+  counted columns rather than rejecting it when the chart type doesn't support one. Result: a
+  proposal like `{type: table, questions: [Satisfaction, Region], group_by: Region}` passes
+  validation cleanly (2 categorical columns ≥ 1), but `chart_table()` silently drops
+  `Region`/`group_by` and renders a flat single-column count table — while the AI-generated title
+  still says "Satisfaction by Region", producing a misleadingly-titled, factually wrong report
+  artifact with no error anywhere in the pipeline.
+
+  **Repro (live, real Anthropic call):** uploaded a `.docx` with placeholder `[table of
+  Satisfaction by Region]` through the real Express Fill flow (`POST /api/template/infer` →
+  `/api/template/apply` → `build-report` CLI) against the bundled PUX-5 sample dataset. The LLM
+  correctly proposed `{type: table, questions: [Satisfaction, Region], group_by: Region}`; it
+  passed local validation; `build-report` ran clean with no errors; the final `.docx`'s table
+  image was titled "Satisfaction by Region" but showed only a flat Satisfaction count (identical
+  numbers to the standalone bar chart), with no Region breakdown at all. The bar chart, pie
+  chart, and a `bullet_list` text-injection placeholder in the same document all rendered
+  correctly with real data — only the multi-column table case is affected.
+
+  **Files:**
+  - `src/reports/ask_engine.py` — in `_validate_chart`, for the single-column chart types (`bar`,
+    `horizontal_bar`, `pie`, `donut`, `histogram`, `table`), reject (`needs_attention`, not
+    silently pass) any proposal that sets `group_by` or supplies more than the one question the
+    renderer actually consumes, with a clear reason string (e.g. "'table' renders exactly 1
+    column; got 2 + group_by — use 'grouped_bar' or 'heatmap' for a cross-tab breakdown"). Also
+    tighten `CHART_REQS`'s requirement text for those six types (used verbatim in the LLM prompt
+    via `_CHART_TYPES_BLOCK`) to state the exact/max column count and the no-`group_by`
+    constraint — secondary mitigation only; prompt wording alone lowers the probability of the
+    malformed shape but doesn't guarantee correctness, and this product's design principles
+    explicitly favor "credible over clever" / deterministic safety over silent AI mistakes.
+
+  **Config/schema impact:** None — validation-logic tightening only, no config.yml shape change.
+
+  **Acceptance criteria**
+  - For each of `bar`, `horizontal_bar`, `pie`, `donut`, `histogram`, `table`: a proposal setting
+    `group_by` is rejected by `_validate_chart` with a reason naming the chart type and the
+    constraint (not silently passed)
+  - For each of those six types: a proposal with 2+ `questions` is rejected the same way
+  - For each of those six types: a proposal with exactly 1 question and no `group_by` still
+    passes validation unchanged (no regression to the legitimate single-column case)
+  - Chart types that legitimately consume `group_by`/multiple questions (e.g. `grouped_bar`,
+    `stacked_bar`, `heatmap`) are unaffected — still validate exactly as before
+  - This validator is shared by both call sites — Express Fill inference (`annotate_proposals` →
+    `_validate_data_proposal` → `validate_recipe` → `_validate_chart` in
+    `src/reports/template_inference.py`) and the Ask engine path — both are covered
+  - `CHART_REQS`'s requirement text for the six affected types states the exact/max column count
+    and no-`group_by` constraint (reflected in the LLM prompt)
+  - No UI change needed: `needs_attention` proposals are already correctly blocked from Apply by
+    the frontend (`Templates.jsx`'s `canApply`) — existing plumbing handles the rejection
+
+  **Unit tests:** `tests/test_ask_engine.py` — extend `test_validate_recipe_table_needs_categorical`
+  (~L221) and add cases for all six affected types × 2 failure modes (`group_by` set; 2+
+  `questions`), plus one regression-pin passing case per type (exactly 1 question, no
+  `group_by`), plus a confirmation that `grouped_bar`/`stacked_bar`/`heatmap` validation is
+  unaffected. `tests/test_template_inference.py` — extend with an `annotate_proposals` case
+  covering the Express Fill call site for at least one of the six types.
+
+  **E2E:** N/A — backend-only validation logic, no new UI surface (existing `needs_attention` UI
+  plumbing is unchanged).
+
+  **UAT:** N/A — non-UI/CLI card, relies on unit tests + PR review as the human gate.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_engine.py
+  tests/test_template_inference.py -q`
 
 ---
 

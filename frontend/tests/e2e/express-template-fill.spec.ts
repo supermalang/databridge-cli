@@ -799,3 +799,105 @@ test.describe('MNT-7 — Express infer error shows error message, not empty-plac
     // visual-review/specs/express-template-fill.visual.spec.ts (VIS-12).
   });
 });
+
+/**
+ * MNT-24 — Express review UI: expose `list` as a selectable kind (fix).
+ *
+ * Bug: a placeholder like a plain list of partner names ("liste_partenaires", no
+ * categorical column) gets AI-proposed as `kind="table"`, which fails validation
+ * ("'table' needs ≥1 categorical column") and is flagged `needs_attention`. The
+ * user has no way to manually reclassify the row because the review panel's
+ * `KINDS` dropdown (Templates.jsx) doesn't offer `list` as an option.
+ *
+ * This reproduces the exact reported scenario: infer proposes `kind="table"` for a
+ * plain-text-only placeholder → flagged. We then drive the fix: the kind dropdown
+ * must offer "list", selecting it must clear the flag (same generic re-kind
+ * behavior every other kind already gets), the spec-summary column must show a
+ * sensible non-blank description, and Apply must actually carry `kind: "list"`
+ * through to the backend (regression pin for the question/questions save-time
+ * normalization fix — the backend round-trip itself, i.e. the persisted `lists:`
+ * config entry and non-empty rendered {{ list_<name> }} content, is pinned by the
+ * extended tests/test_ask_engine.py unit tests since this harness is fully
+ * network-mocked with no real backend).
+ */
+const LIST_KIND_PROPOSALS = [
+  {
+    token_index: 0,
+    kind: 'table',
+    name: 'liste_partenaires',
+    spec: { name: 'liste_partenaires', title: 'Partner list', questions: ['PartnerName'] },
+    confidence: 0.4,
+    reason: "'table' needs ≥1 categorical column",
+    status: 'needs_attention',
+  },
+];
+
+test.describe('MNT-24 — Express review panel: reclassify a flagged row to kind="list"', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await page.route('**/api/template/infer', (r) =>
+      r.fulfill({ json: { proposals: LIST_KIND_PROPOSALS, message: null, template: INFER_TEMPLATE_REF } }));
+    await page.goto('http://localhost:51730/');
+  });
+
+  test('kind dropdown offers "list"; selecting it clears the flag, updates the spec summary, and Apply carries kind="list"', async ({ page }) => {
+    const applied: { value: any } = { value: undefined };
+    await page.route('**/api/template/apply', (r) => {
+      try { applied.value = JSON.parse(r.request().postData() || '{}'); }
+      catch { applied.value = null; }
+      return r.fulfill({ json: { ok: true, template: RESOLVED_TEMPLATE, n_written: 1 } });
+    });
+    await page.route('**/api/run/build-report', (r) =>
+      r.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: BUILD_SSE }));
+
+    // SANITY: the real SPA mounted logged-in with the active project, so any
+    // failure below is the missing MNT-24 fix — not a broken render/bad mock.
+    await expect(page.getByText('Test Project')).toBeVisible();
+
+    // 1. Upload + infer: the AI proposed `table` for a plain list of partner names
+    //    (no categorical column) — flagged needs_attention (the reported bug).
+    await page.getByTestId('express-banner').first().click();
+    await page.getByTestId('express-upload').setInputFiles({
+      name: 'report.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: Buffer.from('PK fake docx'),
+    });
+    await page.getByTestId('express-infer').click();
+
+    const row = page.getByTestId('express-row').first();
+    await expect(row).toHaveAttribute('data-status', 'needs_attention');
+    await expect(row.getByTestId('express-row-reason')).toContainText('categorical');
+
+    // 2. AC: the kind dropdown must offer "list" as a selectable option. Before the
+    //    fix, KINDS doesn't include "list" so this option does not exist and
+    //    selectOption() fails/times out — the correct red for this exact bug.
+    const kindSelect = row.getByTestId('express-row-kind');
+    await kindSelect.selectOption('list');
+    await expect(kindSelect).toHaveValue('list');
+
+    // 3. AC: reclassifying clears the flagged state — matching the existing
+    //    re-kind behavior for every other kind.
+    await expect(row).toHaveAttribute('data-status', 'ok');
+    await expect(row.getByTestId('express-row-reason')).toHaveCount(0);
+
+    // 4. AC: the spec-summary column shows a sensible, non-blank, non-"undefined"
+    //    one-line description for the list row (referencing its column).
+    const summaryText = (await row.getByTestId('express-row-kind-spec').textContent()) || '';
+    expect(summaryText.trim()).not.toBe('');
+    expect(summaryText).not.toContain('undefined');
+    expect(summaryText).toContain('PartnerName');
+
+    // 5. Apply & build enables now that no row is flagged, and succeeds.
+    const applyBtn = page.getByTestId('express-apply-build');
+    await expect(applyBtn).toBeEnabled();
+    await applyBtn.click();
+    await expect(page.getByTestId('express-success')).toBeVisible();
+
+    // 6. Regression pin: the applied payload must actually carry kind="list"
+    //    through to the backend request — not silently reverted/lost.
+    expect(applied.value, 'apply request body should have been captured').toBeTruthy();
+    const appliedRow = (applied.value.proposals || []).find((p: any) => p.name === 'liste_partenaires');
+    expect(appliedRow, 'the reclassified row must be present in the apply payload').toBeTruthy();
+    expect(appliedRow.kind).toBe('list');
+  });
+});

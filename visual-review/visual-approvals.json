@@ -34,5 +34,23 @@
     "task": "MNT-25",
     "capturedImage": "composition-bullet-list.visual.spec.ts/mnt25-composition-list-modal-desktop-linux.png",
     "at": "2026-07-06T07:47:25Z"
+  },
+  "express-template-fill.visual.spec.ts/express-list-kind-selected-mobile-linux.png": {
+    "decision": "approved",
+    "task": "MNT-24",
+    "capturedImage": "express-template-fill.visual.spec.ts/express-list-kind-selected-mobile-linux.png",
+    "at": "2026-07-05T19:43:28Z"
+  },
+  "express-template-fill.visual.spec.ts/express-list-kind-selected-tablet-linux.png": {
+    "decision": "approved",
+    "task": "MNT-24",
+    "capturedImage": "express-template-fill.visual.spec.ts/express-list-kind-selected-tablet-linux.png",
+    "at": "2026-07-05T19:43:28Z"
+  },
+  "express-template-fill.visual.spec.ts/express-list-kind-selected-desktop-linux.png": {
+    "decision": "approved",
+    "task": "MNT-24",
+    "capturedImage": "express-template-fill.visual.spec.ts/express-list-kind-selected-desktop-linux.png",
+    "at": "2026-07-05T19:43:28Z"
   }
 }
