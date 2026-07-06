@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 27 | 23 / 27 |
+| [Maintenance & hardening](#maintenance--hardening) | 27 | 24 / 27 |
 
 ---
 
@@ -1423,9 +1423,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-25 — Composition UI migration to a first-class Lists section (P2)**
+- [x] **MNT-25 — Composition UI migration to a first-class Lists section (P2)**
 
-  **Created:** 2026-07-05
+  **Created:** 2026-07-05 · **Completed:** 2026-07-06
 
   **Depends on: MNT-23.**
 
