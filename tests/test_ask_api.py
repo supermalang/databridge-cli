@@ -99,6 +99,28 @@ def test_ask_save_rejects_pii_bullet_list_without_data(monkeypatch):
     assert cfg["charts"] == []
 
 
+def test_ask_save_rejects_pii_list_kind_without_data(monkeypatch):
+    """MNT-24 follow-up: the first-class kind="list" shape (singular `question`,
+    no `type` key) hits the same no-profile gate as bullet_list and must be
+    rejected too — regression for a bypass where _bullet_list_names_excluded only
+    recognized type=="bullet_list" + plural `questions`, silently letting a
+    kind="list" recipe naming a pii:true column through before any download."""
+    saved = {}
+    cfg = {"lists": [],
+           "questions": [{"export_label": "Story", "type": "text", "pii": True}],
+           "pii": {"redact": []}}
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+    # load_processed_data left un-mocked → real FileNotFoundError (no data).
+    with TestClient(wm.app) as client:
+        resp = client.post("/api/ask/save",
+                           json={"recipe": {"name": "stories", "question": "Story"},
+                                 "kind": "list"})
+    assert resp.status_code == 400, resp.text
+    assert saved == {}, "a rejected recipe must not be persisted"
+    assert cfg["lists"] == []
+
+
 def test_ask_refine_endpoint(monkeypatch):
     cfg = {"ai": {"provider": "openai", "api_key": "sk-x"}, "questions": []}
     df = pd.DataFrame({"_id": [1, 2, 3]})

@@ -143,6 +143,8 @@ def test_visual_spec_preserves_same_number_of_screenshot_assertions(name):
     pre-migration repo state) must equal the new visual spec's count — the
     split must move assertions verbatim, not drop or duplicate them."""
     pre_migration_counts = {
+        # 8, not 7: MNT-24 added a new list-kind-row preview visual baseline
+        # after VIS-12 shipped, moved straight into the visual spec.
         "express-template-fill": 8,
         "build-options": 3,
         # 7, not the original 6: MNT-21 added a new bullet_list preview visual
@@ -173,7 +175,9 @@ def test_visual_spec_preserves_same_number_of_screenshot_assertions(name):
 # ---------------------------------------------------------------------------
 
 PRE_MIGRATION_BASELINE_COUNTS = {
-    "express-template-fill": 21,
+    # 24, not the original 21: MNT-24 added a new list-kind-row preview visual
+    # baseline (3 viewports) after VIS-12 shipped.
+    "express-template-fill": 24,
     "build-options": 9,
     # 15, not the original 12: MNT-21 added a new bullet_list preview visual
     # baseline (3 viewports) after VIS-12 shipped.
