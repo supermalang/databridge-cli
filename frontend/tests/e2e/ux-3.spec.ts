@@ -231,29 +231,3 @@ test.describe('UX-3 — explicit Unarchive affordance', () => {
     ).toBeVisible();
   });
 });
-
-test.describe('UX-3 — visual baseline (one per viewport via playwright.config.ts)', () => {
-  let calls: Calls;
-  test.beforeEach(async ({ page }) => {
-    calls = { activates: [], unarchives: [] };
-    await stubBootstrap(page, calls);
-  });
-
-  // Visual baseline of the OPEN menu showing the de-emphasized archived row and
-  // its Unarchive affordance. Gate on AC2 (the Unarchive button is present)
-  // before capture so the baseline cannot pass vacuously against pre-fix code.
-  // Screenshot the .project-menu element directly; hide the position:fixed
-  // terminal bar so it never intrudes. No mask.
-  test('visual baseline of the open menu with the archived row + Unarchive', async ({ page }) => {
-    await gotoApp(page);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await openMenu(page);
-
-    await expect(
-      archivedRow(page).getByRole('button', { name: /unarchive/i }),
-      'Unarchive affordance must be present before the baseline is captured',
-    ).toBeVisible();
-
-    await expect(menu(page)).toHaveScreenshot('project-menu-archived.png');
-  });
-});

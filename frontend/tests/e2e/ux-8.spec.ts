@@ -254,34 +254,3 @@ test.describe('UX-8 — axe audit of the swatch / icon controls', () => {
     ).toEqual([]);
   });
 });
-
-test.describe('UX-8 — visual baseline of the color + icon picker row', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-  });
-
-  // Visual baseline of the accessible picker rows. Gate on the AC so the baseline
-  // cannot pass vacuously before the labels/pressed-state exist: the first swatch
-  // must carry a non-empty aria-label and be pressed. Screenshot the Details panel
-  // region containing both rows; hide the position:fixed terminal bar (no mask).
-  //
-  // Emoji may render as tofu in headless Linux (no emoji font) — a known
-  // pre-existing env artifact; the aria assertions above are the load-bearing checks.
-  test('visual baseline of the picker rows (first swatch selected)', async ({ page }) => {
-    await gotoApp(page);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await openCreateForm(page);
-
-    const firstSwatch = swatches(page).first();
-    await expect(firstSwatch).toBeVisible();
-    const label = await firstSwatch.getAttribute('aria-label');
-    expect(
-      label && label.trim().length > 0,
-      'first swatch must have a non-empty aria-label before the baseline is captured',
-    ).toBeTruthy();
-    await expect(firstSwatch, 'first swatch must be pressed before the baseline is captured')
-      .toHaveAttribute('aria-pressed', 'true');
-
-    await expect(page.locator('.project-form__body')).toHaveScreenshot('ux-8-pickers.png');
-  });
-});

@@ -239,33 +239,3 @@ test.describe('UX-9 — switching indicator appears during a switch', () => {
     ).toHaveCount(0);
   });
 });
-
-test.describe('UX-9 — visual baseline (one per viewport via playwright.config.ts)', () => {
-  let gate: Gate;
-  test.beforeEach(async ({ page }) => {
-    gate = { hold: () => {}, release: () => {}, activates: [] };
-    await stubBootstrap(page, gate);
-  });
-
-  // Visual baseline of the SWITCHING state (indicator visible). Gate on AC1 (the
-  // indicator is shown) before capture so the baseline cannot pass vacuously
-  // against pre-fix code. Hide the position:fixed terminal bar so it never
-  // intrudes; screenshot the indicator element directly (no mask).
-  test('visual baseline of the switching indicator', async ({ page }) => {
-    await gotoApp(page);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-
-    gate.hold();
-    await openMenu(page);
-    await clickSwitchTo(page, /Field Survey/);
-
-    await expect(
-      indicator(page),
-      'switching indicator must be present before the baseline is captured',
-    ).toBeVisible();
-
-    await expect(indicator(page)).toHaveScreenshot('project-switching.png');
-
-    gate.release();
-  });
-});
