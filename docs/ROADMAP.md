@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 29 | 26 / 29 |
+| [Maintenance & hardening](#maintenance--hardening) | 29 | 27 / 29 |
 
 ---
 
@@ -1621,9 +1621,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-26 — `{{ split_by }}` template placeholder (P2)**
+- [x] **MNT-26 — `{{ split_by }}` template placeholder (P2)**
 
-  **Created:** 2026-07-05
+  **Created:** 2026-07-05 · **Completed:** 2026-07-06
 
   **Independent of MNT-23/24/25.**
 

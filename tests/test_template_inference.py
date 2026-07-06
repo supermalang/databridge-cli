@@ -2230,3 +2230,125 @@ def test_apply_template_writes_split_value_placeholder(tmp_path):
         "resolved template does not contain the literal '{{ split_value }}' "
         "placeholder for the accepted split_value proposal"
     )
+
+
+# =========================================================================== #
+# MNT-26 — split_by placeholder inference (mirrors XTF-28's split_value case)
+# =========================================================================== #
+# `{{ split_value }}` (the split dimension's VALUE) is already recognized by
+# Express Fill's inference; `{{ split_by }}` (the split dimension's NAME,
+# e.g. "Region") must be recognized the same way.
+#
+# AC: Express Fill's inference recognizes a placeholder naming the split
+#     dimension (e.g. "Split by", "Grouping") as the split_by literal kind
+#     and resolves it to canonical {{ split_by }}, warning if no split_by
+#     dimension is configured — mirroring split_value's behavior exactly.
+
+def test_infer_specs_proposes_split_by_for_grouping_token(monkeypatch):
+    """infer_specs returns at least one proposal with kind == "split_by" for
+    a token naming the split dimension itself (e.g. "[[Split by]]"), when
+    ai_cfg carries a configured split_by dimension. Mirrors
+    test_infer_specs_proposes_split_value_for_nom_token."""
+    captured_variables = {}
+
+    def _fake_get_prompt(name, variables):
+        captured_variables.update(variables or {})
+        return ([{"role": "user", "content": "x"}], {})
+
+    monkeypatch.setattr(ti.lf_client, "get_prompt", _fake_get_prompt)
+
+    def _fake_chat(*a, **k):
+        return (
+            '{"proposals": ['
+            '{"token_index": 0, "kind": "split_by", "name": "split_by", '
+            '"spec": {}, "confidence": 0.95, "reason": "labels the split dimension"}'
+            ']}'
+        )
+
+    monkeypatch.setattr(ti.lf_client, "chat", _fake_chat)
+
+    nl_tokens = [
+        ti.Token(raw="[[Split by]]", inner="Split by", delimiter="[[", kind="nl",
+                  location=ti.Location()),
+    ]
+    catalog = ask_engine.build_catalog(_profile_xtf2())
+    ai_cfg = {
+        "provider": "openai", "model": "gpt-x", "api_key": "sk-test",
+        "split_by": "Region",
+    }
+
+    out = ti.infer_specs(nl_tokens, catalog, ai_cfg)
+
+    joined_vars = " ".join(str(v) for v in captured_variables.values())
+    assert "Region" in joined_vars, (
+        f"split_by dimension 'Region' was not included in the prompt variables "
+        f"passed to get_prompt; variables={captured_variables}"
+    )
+
+    # "split_by" must be one of the valid kinds offered to the LLM (mirroring
+    # how "split_value" is already an enumerated kind) — otherwise the model
+    # is never told this is a legal choice, regardless of what a stubbed
+    # response happens to contain.
+    assert "split_by" in str(captured_variables.get("kinds", "")), (
+        "'split_by' is not among the valid kinds surfaced to the LLM in the "
+        f"prompt variables; kinds variable={captured_variables.get('kinds')!r}"
+    )
+
+    kinds = [_get(p, "kind") for p in out]
+    assert "split_by" in kinds, (
+        f"expected a 'split_by' proposal for the grouping-label token, got kinds={kinds}"
+    )
+
+
+def test_annotate_split_by_ok_when_split_by_set():
+    """A proposal with kind: split_by gets status "ok" when the config has
+    split_by set, and "needs_attention" when split_by is NOT set — mirroring
+    test_annotate_split_value_ok_when_split_by_set exactly."""
+    proposal_ok = [
+        _proposal("split_by", {}, name="split_by", confidence=_HIGH_CONF),
+    ]
+    profile_with_split_by = dict(_profile_xtf2())
+    profile_with_split_by["split_by"] = "Region"
+
+    out_ok = ti.annotate_proposals(proposal_ok, profile_with_split_by)
+    assert _get(out_ok[0], "status") == "ok", (
+        f"expected 'ok' when split_by is configured, got "
+        f"{_get(out_ok[0], 'status')!r} reason={_get(out_ok[0], 'reason')!r}"
+    )
+
+    proposal_missing = [
+        _proposal("split_by", {}, name="split_by", confidence=_HIGH_CONF),
+    ]
+    profile_without_split_by = _profile_xtf2()  # no split_by key at all
+
+    out_missing = ti.annotate_proposals(proposal_missing, profile_without_split_by)
+    assert _get(out_missing[0], "status") == "needs_attention", (
+        f"expected 'needs_attention' when split_by is NOT configured, got "
+        f"{_get(out_missing[0], 'status')!r}"
+    )
+
+
+def test_apply_template_writes_split_by_placeholder(tmp_path):
+    """An accepted split_by proposal causes apply_inference to write the
+    literal "{{ split_by }}" placeholder into the resolved .docx — mirroring
+    test_apply_template_writes_split_value_placeholder exactly."""
+    template = _docx_with_nl_placeholders(tmp_path, ["[[Split by]]"])
+    tokens = ti.extract_placeholders(template)
+    assert len(tokens) == 1
+
+    approved = [
+        _approved("split_by", {}, name="split_by", token_index=0),
+    ]
+    cfg = {"api": {}, "form": {}, "report": {"split_by": "Region"}}
+
+    _cfg_out, resolved = ti.apply_inference(approved, cfg, template)
+
+    expected = "{{ split_by }}"
+    reopened = Document(str(resolved))
+    found = any(
+        expected in "".join(r.text for r in p.runs) for p in reopened.paragraphs
+    )
+    assert found, (
+        "resolved template does not contain the literal '{{ split_by }}' "
+        "placeholder for the accepted split_by proposal"
+    )

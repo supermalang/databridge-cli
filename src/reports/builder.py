@@ -200,7 +200,7 @@ class ReportBuilder:
         if split_col:
             if split_col not in df.columns:
                 log.warning(f"split_by column '{split_col}' not found — building single report")
-                return [self._render(df, repeat_tables, suffix="", compare=compare)]
+                return [self._render(df, repeat_tables, suffix="", compare=compare, split_by=None)]
             unique_vals = sorted(df[split_col].dropna().unique())
             if split_sample and split_sample < len(unique_vals):
                 log.info(f"Split sample: limiting to first {split_sample} of {len(unique_vals)} value(s)")
@@ -211,12 +211,12 @@ class ReportBuilder:
                 safe = str(val).replace("/", "_").replace(" ", "_")
                 # Filter repeat tables to rows whose parent submission survived the split
                 filtered_repeats = _filter_repeat_tables_by_split(df, repeat_tables, split_col, val)
-                paths.append(self._render(df[df[split_col] == val], filtered_repeats, suffix=f"_{safe}", split_value=str(val), compare=compare))
+                paths.append(self._render(df[df[split_col] == val], filtered_repeats, suffix=f"_{safe}", split_value=str(val), compare=compare, split_by=split_col))
             return paths
         suffix = f"_sample{sample_size}" if sample_size else ""
-        return [self._render(df, repeat_tables, suffix=suffix, compare=compare)]
+        return [self._render(df, repeat_tables, suffix=suffix, compare=compare, split_by=None)]
 
-    def _render(self, df: "pd.DataFrame", repeat_tables: Dict, suffix: str = "", split_value: Optional[str] = None, compare: Optional[List[str]] = None) -> Path:
+    def _render(self, df: "pd.DataFrame", repeat_tables: Dict, suffix: str = "", split_value: Optional[str] = None, compare: Optional[List[str]] = None, split_by: Optional[str] = None) -> Path:
         template_path = Path(self.report_cfg.get("template","templates/report_template.docx"))
         if not template_path.exists():
             raise FileNotFoundError(f"Template not found: {template_path}\nRun generate-template or see TEMPLATE_GUIDE.md")
@@ -340,6 +340,7 @@ class ReportBuilder:
             "month":         now.strftime("%m"),
             "day":           now.strftime("%d"),
             "split_value":   split_value or "",
+            "split_by":      split_by or "",
             "provenance":    provenance,
             "logframe":      logframe,
             "traffic_light": traffic_light,
