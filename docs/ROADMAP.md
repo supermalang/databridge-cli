@@ -1702,6 +1702,20 @@ Sprint exit — checked by /report + /retro:
   multi-second backend cost (profile recompute + docx rewrite + Minio/S3 push + config write) is
   silently absorbed with zero visual feedback.
 
+  **Folded in from this card's own PR review (qa-tester + perf/ux notes, 2026-07-06):** the
+  RED-phase test author put the new `toHaveScreenshot('mnt-27-apply-loading-state.png')` assertion
+  directly in the functional spec (`frontend/tests/e2e/express-template-fill.spec.ts`) instead of
+  the visual spec, violating the VIS-12 functional/visual split convention (same class of mistake
+  MNT-24 hit) — moved into `visual-review/specs/express-template-fill.visual.spec.ts` as its own
+  `test.describe` block, and the stray `frontend/tests/e2e/express-template-fill.spec.ts-snapshots/`
+  directory it created was deleted. This also bumped `express-template-fill`'s frozen baseline
+  counts in `tests/test_vis12_visual_split_shard_c.py` (8→9 assertions, 24→27 baselines) — fixed
+  with the same comment convention already used for MNT-24/MNT-25's equivalent bumps. Also added
+  `aria-busy={applying || running}` to the Apply & Build button per a ux-review accessibility note
+  (WCAG 4.1.3 Status Messages) — closes a silent-state-transition gap this card's longer,
+  network-dependent loading window made newly worth fixing (the neighboring Infer button has the
+  same unfixed gap, left as-is — out of scope here).
+
   **Files:**
   - `web/main.py` — wrap `/api/template/infer`'s `profile_dataset(cfg, df, repeats)` call
     (~L2843) in the same `perf_cache.get_or_compute(key, _compute)` pattern already used by
@@ -1711,7 +1725,12 @@ Sprint exit — checked by /report + /retro:
   - `frontend/src/pages/Templates.jsx` — add a loading/disabled state to the "Apply & Build"
     button (~L130-151, ~L269-277) covering the `/api/template/apply` fetch itself, not just the
     subsequent `run('build-report')` call, so the user gets visible feedback for the whole
-    operation instead of an apparent hang.
+    operation instead of an apparent hang; `aria-busy={applying || running}` on the same button
+    per the fold-in above.
+  - `visual-review/specs/express-template-fill.visual.spec.ts` — the MNT-27 loading-state visual
+    assertion (moved here per the fold-in above).
+  - `tests/test_vis12_visual_split_shard_c.py` — bumped `express-template-fill`'s frozen
+    assertion/baseline counts, per the fold-in above.
 
   **Config/schema impact:** None — cache-sharing + UI-state only, no `config.yml` shape change.
 
@@ -1732,11 +1751,11 @@ Sprint exit — checked by /report + /retro:
   no cross-endpoint regression.
 
   **E2E:** N/A for the caching fix itself (backend timing, not a visible DOM assertion), but
-  extend the Express Fill Playwright spec to assert the Apply button enters a visible
-  loading/disabled state immediately on click (before the build-report terminal appears) — this
-  part IS UI-facing. Visual: impeccable audit/critique + `toHaveScreenshot` of the Apply button's
-  new loading state at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a
-  human approves them.
+  extend `frontend/tests/e2e/express-template-fill.spec.ts` to assert the Apply button
+  enters a visible loading/disabled state immediately on click (before the build-report terminal
+  appears) — this part IS UI-facing. Visual: impeccable audit/critique + `toHaveScreenshot` of the
+  Apply button's new loading state at all three viewports (mobile 390×844, tablet 820×1180,
+  desktop 1440×900); a human approves them.
 
   **UAT:**
   1. Upload a template and click Infer.
@@ -1746,7 +1765,7 @@ Sprint exit — checked by /report + /retro:
   4. Confirm the report still builds successfully afterward, same as before.
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py -k apply -q` ·
-  `cd frontend && npx playwright test <the extended express-fill spec>`
+  `cd frontend && npx playwright test tests/e2e/express-template-fill.spec.ts`
 
 ---
 
