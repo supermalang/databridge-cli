@@ -393,3 +393,51 @@ test.describe('MNT-7 — Express infer error visual baseline', () => {
     await expect(page).toHaveScreenshot('express-infer-error.png');
   });
 });
+
+// MNT-24 — reclassifying a flagged row to kind="list" clears the flag; the
+// functional assertions (dropdown option, spec summary, apply payload) live in
+// frontend/tests/e2e/express-template-fill.spec.ts — only the visual capture lives
+// here, per the VIS-12 functional/visual split convention.
+const LIST_KIND_PROPOSALS = [
+  {
+    token_index: 0,
+    kind: 'table',
+    name: 'liste_partenaires',
+    spec: { name: 'liste_partenaires', title: 'Partner list', questions: ['PartnerName'] },
+    confidence: 0.4,
+    reason: "'table' needs ≥1 categorical column",
+    status: 'needs_attention',
+  },
+];
+
+test.describe('MNT-24 — Express review panel list-kind row visual baseline', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await page.route('**/api/template/infer', (r) =>
+      r.fulfill({ json: { proposals: LIST_KIND_PROPOSALS, message: null, template: INFER_TEMPLATE_REF } }));
+    await page.goto('http://localhost:51730/');
+  });
+
+  test('visual baseline of the review panel with a list-kind row selected', async ({ page }) => {
+    await expect(page.getByText('Test Project')).toBeVisible();
+
+    await page.getByTestId('express-banner').first().click();
+    await page.getByTestId('express-upload').setInputFiles({
+      name: 'report.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: Buffer.from('PK fake docx'),
+    });
+    await page.getByTestId('express-infer').click();
+
+    const row = page.getByTestId('express-row').first();
+    await expect(row).toHaveAttribute('data-status', 'needs_attention');
+
+    const kindSelect = row.getByTestId('express-row-kind');
+    await kindSelect.selectOption('list');
+    await expect(row).toHaveAttribute('data-status', 'ok');
+
+    // Visual baseline of the review panel with a list-kind row selected, at all
+    // three viewports (mobile/tablet/desktop). A human approves the first baseline.
+    await expect(page).toHaveScreenshot('express-list-kind-selected.png');
+  });
+});

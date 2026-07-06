@@ -803,3 +803,170 @@ def test_split_value_empty_when_no_split_by(workspace_with_split_by):
         "Literal, unrendered '{{ split_value }}' tag found in the output "
         f"report. Paragraph text: {full_text!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# MNT-26 — `{{ split_by }}` template placeholder.
+#
+# `{{ split_value }}` (the split dimension's VALUE, e.g. "North") already
+# works; `{{ split_by }}` (the split dimension's NAME/label, e.g. "Region")
+# must be exposed the same way.
+#
+# AC1: when report.split_by is set and a build produces per-value reports,
+#      each rendered report's {{ split_by }} placeholder resolves to the
+#      split dimension's column name (e.g. "Region"), while {{ split_value }}
+#      continues to resolve to that report's specific value.
+# AC2: when no split_by is configured, a template containing {{ split_by }}
+#      renders as an empty string (no crash, no literal tag left behind) —
+#      same graceful-empty behavior as split_value.
+# ---------------------------------------------------------------------------
+
+def _make_split_by_template(path: Path) -> None:
+    """Minimal .docx with both ``{{ split_by }}`` and ``{{ split_value }}``
+    tags, each in its own single-run paragraph (docxtpl requires the tag
+    text to live in a single run to be recognised as one token)."""
+    doc = Document()
+    p1 = doc.add_paragraph()
+    p1.add_run("{{ split_by }}")
+    p2 = doc.add_paragraph()
+    p2.add_run("{{ split_value }}")
+    doc.save(str(path))
+
+
+@pytest.fixture
+def workspace_with_split_by_and_split_by_tag(tmp_path, monkeypatch):
+    """Same shape as workspace_with_split_by, but the template contains both
+    ``{{ split_by }}`` and ``{{ split_value }}`` tags."""
+    ws = tmp_path / "ws_split_by"
+    (ws / "data" / "processed").mkdir(parents=True)
+    (ws / "templates").mkdir()
+    (ws / "reports").mkdir()
+
+    csv_path = ws / "data" / "processed" / "mnt26_data_20260101_120000.csv"
+    pd.DataFrame({
+        "Region": ["Nairobi", "Nairobi", "Mombasa", "Mombasa"],
+        "Age": [10, 20, 30, 40],
+    }).to_csv(csv_path, index=False)
+
+    template_path = ws / "templates" / "t.docx"
+    _make_split_by_template(template_path)
+
+    cfg = {
+        "api": {
+            "url": "https://kf.kobotoolbox.org/api/v2",
+            "token": "dummy",
+            "platform": "kobo",
+        },
+        "form": {"alias": "mnt26", "uid": "x"},
+        "questions": [
+            {
+                "kobo_key": "Region",
+                "label": "Region",
+                "type": "select_one",
+                "category": "categorical",
+                "group": "",
+                "export_label": "Region",
+            },
+            {
+                "kobo_key": "Age",
+                "label": "Age",
+                "type": "integer",
+                "category": "quantitative",
+                "group": "",
+                "export_label": "Age",
+            },
+        ],
+        "filters": [],
+        "charts": [],
+        "report": {
+            "template": str(template_path),
+            "output_dir": str(ws / "reports"),
+            "title": "MNT-26 Split",
+            "period": "Q2 2026",
+            "split_by": "Region",
+        },
+        "export": {
+            "format": "csv",
+            "output_dir": str(ws / "data" / "processed"),
+        },
+    }
+
+    (ws / "config.yml").write_text(yaml.dump(cfg, allow_unicode=True))
+    monkeypatch.chdir(ws)
+    return {"ws": ws, "cfg": cfg, "out_dir": ws / "reports"}
+
+
+def test_split_by_in_render_context_when_split_by_set(
+    workspace_with_split_by_and_split_by_tag,
+):
+    """AC1: with report.split_by set to 'Region', each split's rendered
+    .docx must contain the literal column name 'Region' (from {{ split_by }})
+    alongside its own specific group value (from {{ split_value }})."""
+    cfg = workspace_with_split_by_and_split_by_tag["cfg"]
+    paths = ReportBuilder(cfg).build()
+
+    assert len(paths) == 2, (
+        f"expected one report per split value (Nairobi, Mombasa), got "
+        f"{len(paths)}: {paths}"
+    )
+
+    texts = {
+        p.name: "\n".join(para.text for para in Document(str(p)).paragraphs)
+        for p in paths
+    }
+
+    assert all("Region" in t for t in texts.values()), (
+        "Not every rendered split report contains the split dimension's "
+        "column name 'Region' — split_by is not being exposed in the "
+        f"docxtpl render context. Rendered paragraph text per file: {texts}"
+    )
+
+    nairobi_files = [name for name, t in texts.items() if "Nairobi" in t]
+    mombasa_files = [name for name, t in texts.items() if "Mombasa" in t]
+    assert nairobi_files and mombasa_files and nairobi_files != mombasa_files, (
+        "Expected the Nairobi split's report and the Mombasa split's report "
+        f"to each still carry their own distinct split_value. Got: {texts}"
+    )
+
+
+def test_split_by_empty_when_no_split_by(workspace_with_split_by_and_split_by_tag):
+    """AC2: with no report.split_by configured, the docxtpl render context
+    must still define 'split_by' as an empty string — a template containing
+    {{ split_by }} must render without a Jinja2 undefined-variable error and
+    without leaving the literal tag in the output."""
+    cfg = yaml.safe_load(
+        yaml.dump(workspace_with_split_by_and_split_by_tag["cfg"])
+    )
+    cfg["report"].pop("split_by", None)  # explicitly no split configured
+
+    captured = {}
+    original_render = DocxTemplate.render
+
+    def _capturing_render(self, context, *args, **kwargs):
+        captured["context"] = context
+        return original_render(self, context, *args, **kwargs)
+
+    with patch.object(DocxTemplate, "render", _capturing_render):
+        paths = ReportBuilder(cfg).build()
+
+    assert paths, "build() produced no report when split_by is unset"
+    assert "context" in captured, "DocxTemplate.render was never invoked by build()"
+    context = captured["context"]
+
+    assert "split_by" in context, (
+        "The docxtpl render context has no 'split_by' key at all when "
+        "split_by is unset — a template referencing {{ split_by }} has no "
+        "guaranteed, explicit default and is left to incidental Jinja2 "
+        f"undefined-variable handling. Context keys were: {sorted(context.keys())}"
+    )
+    assert context["split_by"] == "", (
+        "Expected split_by to default to the empty string '' when "
+        f"split_by is unset, got {context['split_by']!r} instead."
+    )
+
+    doc = Document(str(paths[0]))
+    full_text = "\n".join(p.text for p in doc.paragraphs)
+    assert "{{ split_by }}" not in full_text, (
+        "Literal, unrendered '{{ split_by }}' tag found in the output "
+        f"report. Paragraph text: {full_text!r}"
+    )

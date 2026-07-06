@@ -228,7 +228,7 @@ def extract_placeholders(docx_path) -> List[Token]:
 Proposal = Dict
 
 # Kinds the inference path understands.
-_KINDS = ("chart", "indicator", "summary", "table", "narrative", "metadata", "split_value")
+_KINDS = ("chart", "indicator", "summary", "table", "list", "narrative", "metadata", "split_value", "split_by")
 
 # Confidence below this is treated as low → needs_attention.
 _CONFIDENCE_THRESHOLD = 0.5
@@ -499,6 +499,23 @@ def annotate_proposals(proposals: List[Proposal], profile: Dict,
                 ann["status"] = "needs_attention"
                 ann["reason"] = (
                     "split_value placeholder but no split_by dimension is configured"
+                )
+            out.append(ann)
+            continue
+        elif kind == "split_by":
+            # MNT-26: the {{ split_by }} system placeholder (the split dimension's
+            # NAME) mirrors {{ split_value }} — only meaningful when a split
+            # dimension is configured.
+            ann["name"] = "split_by"
+            if profile.get("split_by"):
+                ann["status"] = "ok"
+                ann["reason"] = (
+                    f"maps to split_by dimension '{profile.get('split_by')}'"
+                )
+            else:
+                ann["status"] = "needs_attention"
+                ann["reason"] = (
+                    "split_by placeholder but no split_by dimension is configured"
                 )
             out.append(ann)
             continue
@@ -784,6 +801,7 @@ _KIND_SECTION = {
     "indicator": ("indicators", "ind_"),
     "summary": ("summaries", "summary_"),
     "table": ("tables", "table_"),
+    "list": ("lists", "list_"),
 }
 
 
@@ -913,12 +931,19 @@ def apply_inference(
             # filled at build-report time from the split_by dimension — no config
             # section entry, just the literal placeholder in the template.
             canonical = "{{ split_value }}"
+        elif kind == "split_by":
+            # MNT-26: {{ split_by }} is an existing builder system placeholder
+            # filled at build-report time with the split dimension's column name
+            # — no config section entry, just the literal placeholder.
+            canonical = "{{ split_by }}"
         else:
             section, prefix = _KIND_SECTION.get(kind, _KIND_SECTION["chart"])
             if kind == "chart" and spec.get("type") == "bullet_list":
-                # MNT-19: builder.py only ever populates a list_<name> context key
-                # for type == "bullet_list" (matching template_generator.py's
+                # MNT-19 back-compat: builder.py only ever populates a list_<name>
+                # context key for type == "bullet_list" (matching template_generator.py's
                 # manually-added bullet_list placeholder convention), not chart_<name>.
+                # This hidden-sub-type path stays alongside the new first-class "list"
+                # kind (MNT-23) — both shapes coexist indefinitely.
                 prefix = "list_"
             base_slug = _slugify(prop.get("name") or spec.get("name") or kind)
             final_name = _write_spec(cfg, section, spec, base_slug)

@@ -197,3 +197,32 @@ def test_template_inference_explains_bullet_list_over_table():
     assert "bullet_list" in table_bullet, (
         "table bullet must mention bullet_list as the redirect target"
     )
+
+
+def test_template_inference_schema_kind_enum_includes_list():
+    """MNT-23 AC: the AI schema's kind enum includes "list" as a first-class
+    proposable kind (alongside chart/indicator/summary/table/narrative/metadata)."""
+    from src.utils.seed_prompts import _TEMPLATE_INFERENCE_OUTPUT_SCHEMA
+
+    enum = (_TEMPLATE_INFERENCE_OUTPUT_SCHEMA["properties"]["proposals"]
+            ["items"]["properties"]["kind"]["enum"])
+    assert "list" in enum, f"kind enum must include 'list': {enum}"
+
+
+def test_template_inference_prompt_can_propose_list_directly():
+    """MNT-23 AC: the Express inference prompt can propose kind="list" directly
+    (not just steer the LLM toward kind="chart" + spec.type="bullet_list").
+    The user message must document a `list:` proposal kind, with a spec shaped
+    per the config schema (name, title, question, optional filter)."""
+    user = SEED_PROMPTS["template_inference"]["messages"][1]["content"]
+
+    assert 'kind="list"' in user, (
+        'user message must document proposing kind="list" directly'
+    )
+
+    list_bullet_match = re.search(r"-\s*list:.*?(?=\n-\s|\Z)", user, re.IGNORECASE | re.DOTALL)
+    assert list_bullet_match, "user message must contain a `list:` bullet describing the list kind"
+    list_bullet = list_bullet_match.group(0)
+    assert "question" in list_bullet.lower(), (
+        f"the list: bullet must describe a 'question' spec field: {list_bullet}"
+    )

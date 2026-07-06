@@ -180,6 +180,7 @@ class ReportBuilder:
         # appended to the rendered chart set without disturbing explicit charts.
         self.charts_cfg = self.charts_cfg + build_equity_charts(cfg)
         self.tables_cfg: List[Dict] = cfg.get("tables", [])
+        self.lists_cfg: List[Dict] = cfg.get("lists", [])
         self.strict = strict
 
     def build(self, sample_size: Optional[int] = None, split_by: Optional[str] = None, random_sample: bool = False, split_sample: Optional[int] = None, session: Optional[str] = None, period: Optional[str] = None, compare: Optional[List[str]] = None) -> List[Path]:
@@ -199,7 +200,7 @@ class ReportBuilder:
         if split_col:
             if split_col not in df.columns:
                 log.warning(f"split_by column '{split_col}' not found — building single report")
-                return [self._render(df, repeat_tables, suffix="", compare=compare)]
+                return [self._render(df, repeat_tables, suffix="", compare=compare, split_by=None)]
             unique_vals = sorted(df[split_col].dropna().unique())
             if split_sample and split_sample < len(unique_vals):
                 log.info(f"Split sample: limiting to first {split_sample} of {len(unique_vals)} value(s)")
@@ -210,12 +211,12 @@ class ReportBuilder:
                 safe = str(val).replace("/", "_").replace(" ", "_")
                 # Filter repeat tables to rows whose parent submission survived the split
                 filtered_repeats = _filter_repeat_tables_by_split(df, repeat_tables, split_col, val)
-                paths.append(self._render(df[df[split_col] == val], filtered_repeats, suffix=f"_{safe}", split_value=str(val), compare=compare))
+                paths.append(self._render(df[df[split_col] == val], filtered_repeats, suffix=f"_{safe}", split_value=str(val), compare=compare, split_by=split_col))
             return paths
         suffix = f"_sample{sample_size}" if sample_size else ""
-        return [self._render(df, repeat_tables, suffix=suffix, compare=compare)]
+        return [self._render(df, repeat_tables, suffix=suffix, compare=compare, split_by=None)]
 
-    def _render(self, df: "pd.DataFrame", repeat_tables: Dict, suffix: str = "", split_value: Optional[str] = None, compare: Optional[List[str]] = None) -> Path:
+    def _render(self, df: "pd.DataFrame", repeat_tables: Dict, suffix: str = "", split_value: Optional[str] = None, compare: Optional[List[str]] = None, split_by: Optional[str] = None) -> Path:
         template_path = Path(self.report_cfg.get("template","templates/report_template.docx"))
         if not template_path.exists():
             raise FileNotFoundError(f"Template not found: {template_path}\nRun generate-template or see TEMPLATE_GUIDE.md")
@@ -339,6 +340,7 @@ class ReportBuilder:
             "month":         now.strftime("%m"),
             "day":           now.strftime("%d"),
             "split_value":   split_value or "",
+            "split_by":      split_by or "",
             "provenance":    provenance,
             "logframe":      logframe,
             "traffic_light": traffic_light,
@@ -350,6 +352,7 @@ class ReportBuilder:
             **summaries,
             **self._generate_charts(tpl, df, repeat_tables, per_form=self._per_form),
             **self._generate_tables(tpl, df, repeat_tables),
+            **self._generate_lists(tpl, df, repeat_tables),
         }
         tpl.render(context, jinja_env=sandboxed_jinja_env())
         out_dir = Path(self.report_cfg.get("output_dir","reports"))
@@ -508,6 +511,38 @@ class ReportBuilder:
             png = generate_chart(resolved, table_df)
             width = Inches(t.get("options", {}).get("width_inches", 5.5))
             images[f"table_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
+        return images
+
+    def _generate_lists(self, tpl, df, repeat_tables: Dict):
+        """Render each cfg['lists'] recipe into a {{ list_<name> }} text context value.
+
+        A list is a text-injection render type — like the bullet_list chart type it
+        bypasses the matplotlib/InlineImage pipeline entirely, rendering the named
+        `question` column's raw row values (via build_bullet_list_text) as a plain
+        string rather than an image.
+        """
+        key_to_label = {
+            q["kobo_key"]: q.get("export_label") or q.get("label") or q["kobo_key"]
+            for q in self.cfg.get("questions", [])
+        }
+        images = {}
+        for l in self.lists_cfg:
+            name = l.get("name")
+            if not name:
+                continue
+
+            question = l.get("question")
+            resolved_question = key_to_label.get(question, question) if question not in df.columns else question
+
+            source = l.get("source")
+            list_df = _pick_df([resolved_question], df, repeat_tables, source=source)
+
+            filter_expr = l.get("filter")
+            if filter_expr:
+                list_df = apply_local_scope(list_df, {}, filter_expr=filter_expr)
+
+            images[f"list_{name}"] = build_bullet_list_text(
+                list_df, [resolved_question], l.get("options") or {})
         return images
 
     def _stats_table(self, df):

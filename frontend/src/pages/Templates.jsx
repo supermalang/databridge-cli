@@ -11,7 +11,7 @@ import { useAiStatus, AI_LOCK_TIP } from '../lib/aiStatus.js';
 import BuildOptions from '../components/BuildOptions.jsx';
 import { useConfig } from '../lib/ConfigContext.jsx';
 
-const KINDS = ['chart', 'indicator', 'summary', 'table', 'narrative', 'metadata'];
+const KINDS = ['chart', 'indicator', 'summary', 'table', 'list', 'narrative', 'metadata'];
 
 // Discoverability banner — present on the Dashboard (Home) and the Templates tab.
 // Clicking it opens the express flow. On Home it also navigates to Templates.
@@ -295,6 +295,7 @@ function summariseSpec(row) {
   if (row.kind === 'chart') return `${s.type || 'chart'} · ${(s.questions || []).join(', ') || '—'}`;
   if (row.kind === 'indicator') return `${s.stat || 'stat'}${s.question ? ` · ${s.question}` : ''}`;
   if (row.kind === 'summary') return s.prompt ? `summary · ${String(s.prompt).slice(0, 40)}` : 'summary';
+  if (row.kind === 'list') return `list · ${s.question || (s.questions || []).join(', ') || '—'}`;
   return s.type || s.stat || row.kind || '—';
 }
 

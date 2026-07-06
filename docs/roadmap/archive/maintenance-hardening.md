@@ -662,3 +662,402 @@
 
 ---
 
+- [x] **MNT-21 — Fix: bullet_list chart preview fails instead of rendering text (P1)**
+
+  **Created:** 2026-07-04 · **Started:** 2026-07-05 · **Completed:** 2026-07-05
+
+  The `/api/charts/preview` endpoint always falls through to `generate_chart`/`CHART_DISPATCH`
+  for every chart type, but `bullet_list` is text-injection only — it's special-cased in
+  `builder.py` at report-build time and was never added to `CHART_DISPATCH`. Selecting
+  `bullet_list` in the Composition chart editor and previewing it failed with a generic error
+  instead of showing the rendered bullet text. Fixed by short-circuiting `bullet_list` in
+  `preview_chart` (`web/main.py`) to mirror `builder.py`'s text-building logic, exposing the text
+  field through the frontend preview hook, and rendering text (not an `<img>`) in both the
+  row-preview modal and the live chart-editor pane. Also fixes a related empty-state bug: a
+  successful-but-empty `bullet_list` result (the chosen column has zero non-null values) rendered
+  as the idle "Preview appears here" placeholder — indistinguishable from "not configured yet" —
+  instead of an explicit "no output" empty state.
+
+  **Note:** this card's branch predates VIS-9/VIS-11/VIS-12 (the visual-review migration) by 23
+  commits. Rebased onto post-migration `develop` on 2026-07-05; its one new chart-editor visual
+  baseline (`chart-editor-modal-bullet-list.png`) was moved from the (pre-migration, now stale)
+  colocated location straight into `visual-review/specs/chart-editor.visual.spec.ts`, matching
+  VIS-12's established split contract, rather than landing in the now-functional-only
+  `frontend/tests/e2e/chart-editor.spec.ts`.
+
+  **Type:** Fix
+
+  **Files:** `web/main.py` (`preview_chart` — add a `bullet_list` short-circuit mirroring
+  `builder.py`'s text-building logic) · `frontend/src/hooks/useChartPreview.js` (expose the text
+  field) · `frontend/src/pages/Composition.jsx` (render text instead of an `<img>` for
+  `bullet_list` in both the row-preview modal and the live editor pane; add the explicit
+  empty-result branch) · `tests/test_charts_preview_api.py` (new) ·
+  `frontend/tests/e2e/chart-editor.spec.ts` (new functional empty-state test) ·
+  `visual-review/specs/chart-editor.visual.spec.ts` (new visual baseline, post-rebase)
+
+  **Config/schema impact:** None — preview-endpoint + rendering logic only; no `config.yml` or DB
+  schema change (mirrors the existing `builder.py` text-rendering path for `bullet_list`).
+
+  **Acceptance criteria**
+  - Selecting `bullet_list` as the chart type in the Composition chart editor and configuring a
+    column renders the live preview as text (bulleted lines), not a failed/broken image request
+  - The same applies to the row-level "Preview" action in the Composition chart list
+  - A `bullet_list` preview whose result is a successful-but-empty string shows an explicit
+    "no output" empty state, distinguishable from the idle "not configured yet" placeholder
+  - Non-`bullet_list` chart types are unaffected (still render an `<img>` preview) — no regression
+  - `cd frontend && npx playwright test chart-editor` passes, including the new empty-state test
+
+  **Unit tests:** `tests/test_charts_preview_api.py` (new) —
+  `test_preview_bullet_list_returns_text`, `test_preview_bullet_list_respects_top_n`,
+  `test_preview_bar_chart_still_returns_image` (regression guard). Run:
+  `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts_preview_api.py`.
+
+  **E2E:** `frontend/tests/e2e/chart-editor.spec.ts` (extend) — the empty-result guard test (no
+  screenshot, functional only); `visual-review/specs/chart-editor.visual.spec.ts` (extend) — the
+  `bullet_list` preview visual baseline at all three viewports, per VIS-12's split contract.
+
+  **UAT:** N/A (bug fix restoring correct preview behavior for an existing chart type; no new
+  product surface — PR review + the pytest/Playwright cases above are the human gate).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_charts_preview_api.py` ·
+  `cd frontend && npx playwright test chart-editor`
+
+---
+
+- [x] **MNT-22 — Fix: stale "Transform" nav-label assertions in i18n-switch.spec.ts + a11y-4.spec.ts break deterministically on current develop (P1)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  PUX-1/PUX-8 relabeled the pipeline stage previously called "Transform" to the plain-language
+  "Clean & check" (`frontend/src/locales/en.json` / `fr.json`), but two Playwright specs
+  predating that rename were never updated: `frontend/tests/e2e/i18n-switch.spec.ts`'s `NAV_EN`/
+  `NAV_FR` constants still assert the literal tab labels `'Transform'`/`'Transformer'`, and
+  `frontend/tests/e2e/a11y-4.spec.ts`'s `gotoValidate()` helper clicks
+  `.tabs-bar .tab { hasText: 'Transform' }`. Since no tab named "Transform" renders anywhere in
+  the current app, both fail deterministically — reproduced on a clean `develop` checkout,
+  confirmed unrelated to any other in-flight work. This is a real, pre-existing bug (not a
+  flake), discovered while investigating unrelated `/ship-task` failures on VIS-11/VIS-12: the
+  batch pipeline's review agents correctly reported these tests failing, but the root cause is
+  this stale-label mismatch, not a defect in VIS-11/VIS-12's own spec-split diffs. Every other
+  file that mentions "Transform" (`client-cache.spec.ts`, `perf-3-skeleton.spec.ts`,
+  `sample-data-path.spec.ts` — all navigate via the stable `[data-tab="transform"]` attribute;
+  `i18n-subtabs.spec.ts` — navigates via the stage id, not the label; `pux-1.spec.ts` —
+  intentionally asserts the bare jargon word is *absent*; `i18n-guard-navlabels.spec.ts` — a
+  fully self-contained fixture test with its own synthetic locale bundles, unrelated to the real
+  app's actual labels) was individually checked and confirmed **not** affected by this bug.
+
+  **Type:** Fix
+
+  **Files:** `frontend/tests/e2e/i18n-switch.spec.ts` (`NAV_EN`/`NAV_FR` constants ~line 49-50,
+  plus the stale "Transform" mentions in the doc comment ~lines 11, 41, 48) ·
+  `frontend/tests/e2e/a11y-4.spec.ts` (`gotoValidate()` helper ~line 169-173, switch the click
+  target from `hasText: 'Transform'` to the stable `[data-tab="transform"]` attribute, matching
+  the convention already used by `client-cache.spec.ts`/`perf-3-skeleton.spec.ts`)
+
+  **Config/schema impact:** None — test-file content fix only, no application code changes.
+
+  **Acceptance criteria**
+  - `i18n-switch.spec.ts`'s `NAV_EN`/`NAV_FR` assert the current labels (`'Clean & check'`/
+    `'Nettoyer et vérifier'`, alongside the unchanged `'Deliver'`/`'Diffuser'`), not the stale
+    `'Transform'`/`'Transformer'`
+  - `a11y-4.spec.ts`'s `gotoValidate()` navigates via `[data-tab="transform"]` (the stable
+    attribute), not the visible label text
+  - `cd frontend && npx playwright test i18n-switch a11y-4` passes at all three viewports with
+    zero failures (confirmed: 27/27 passing after the fix)
+  - `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch a11y-4`
+    passes with zero failures (confirmed: 135/135 passing after the fix)
+  - No other file's behavior changes — the audit of every other "Transform"-mentioning file
+    confirmed none of them needed a fix
+
+  **Unit tests:** N/A (frontend-only test-file content fix; Vitest is not installed — correctness
+  is exactly what the Playwright specs below assert, per the XTF-7 precedent).
+
+  **E2E:** `frontend/tests/e2e/i18n-switch.spec.ts` + `frontend/tests/e2e/a11y-4.spec.ts` — both
+  green at all three viewports after the fix; no new spec or baseline (these are pre-existing
+  specs whose *assertions* were fixed, not their captured pixels — no visual regression).
+
+  **UAT:** N/A (test-content fix restoring pre-existing, already-approved specs to a passing
+  state; no product UI or behavior changed — PR review + the green Playwright run above are the
+  human gate).
+
+  **Verify:** `cd frontend && npx playwright test i18n-switch a11y-4` ·
+  `cd frontend && npx playwright test i18n-coverage i18n-remaining i18n-subtabs i18n-switch a11y-4`
+
+---
+
+- [x] **MNT-20 — Prompt guidance: tell the LLM when to use `bullet_list` instead of `table` (Express Fill inference) (P1)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  MNT-19 made `bullet_list` a technically valid, proposable AI-inference type — confirmed at the
+  code level (`ask_engine._CHART_TYPES_BLOCK` genuinely includes it). But the LLM never picks it:
+  `template_inference.py`'s `_KINDS` tuple (`"chart", "indicator", "summary", "table", "narrative",
+  "metadata", "split_value"`) is presented to the LLM as the primary, flat list of top-level
+  choices — `bullet_list` isn't one of them, it's only reachable two steps deep
+  (`kind="chart"` → `spec.type="bullet_list"` from a separate "chart types" list). The prompt's
+  per-kind guidance (`seed_prompts.py`'s `_TEMPLATE_INFERENCE`, `table` bullet at line 980) never
+  mentions this path or redirects the LLM to it when a table's "≥1 categorical column"
+  requirement can't be met — so a French list-style placeholder (e.g. `actions_prioritaires`)
+  with no categorical column keeps getting proposed as `table` (which then fails validation)
+  instead of `bullet_list`, confirmed live by re-running Infer after MNT-19 merged.
+
+  **Type:** Fix
+
+  **Files:** `src/utils/seed_prompts.py` (`_TEMPLATE_INFERENCE` system message ~lines 953-963 and
+  the user message's `table` bullet ~line 980) · `tests/test_seed_prompts.py` (new test)
+
+  **Config/schema impact:** None — prompt text only; `_TEMPLATE_INFERENCE_SPEC_SCHEMA`'s `type`
+  field already accepts any string (no enum constraint to update).
+
+  **Acceptance criteria**
+  - `_TEMPLATE_INFERENCE`'s system message explicitly states that `bullet_list` is not a real
+    chart/graph and should be preferred over `table` when there's no categorical column
+  - `_TEMPLATE_INFERENCE`'s user message's `table` bullet explicitly redirects to
+    `kind="chart"` + `type="bullet_list"` when there's no categorical column
+  - No change to the JSON output schema — this is prompt-text-only
+  - `test_no_leftover_single_brace_format_slots` (existing) stays green — no stray `{var}`
+    introduced
+
+  **Unit tests:** `tests/test_seed_prompts.py` (new) —
+  `test_template_inference_explains_bullet_list_over_table`: asserts the `_TEMPLATE_INFERENCE`
+  system message mentions `bullet_list` in the context of not being a real chart, and the user
+  message's table description redirects to `bullet_list` when there's no categorical column.
+
+  **E2E:** N/A (no UI surface — prompt text consumed only by an LLM call).
+
+  **UAT:** N/A (backend prompt-text-only change; behavior against a live LLM is exploratory/
+  non-deterministic and not gated by a fixed human checklist — validated by the unit test above
+  and PR review).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_seed_prompts.py -k bullet_list` ·
+  Optional manual smoke-check after merge (not gated, since LLM behavior is non-deterministic):
+  (1) run `push-prompts --force` to push the updated prompt to Langfuse (required — Langfuse
+  already holds a prior copy and always wins over the seed once populated); (2) clear the
+  on-disk prompt cache (`rm -rf ~/.cache/databridge/prompts`, or wait out its 1-hour TTL — a
+  backend process restart does NOT clear this disk-based cache); (3) re-run Infer on a template
+  with a list-style placeholder with no categorical column and confirm it now proposes
+  `kind="chart"`, `type="bullet_list"` instead of `table`.
+
+---
+
+- [x] **MNT-19 — Add `bullet_list` as a proposable AI-inference type (stop over-defaulting free-text/list placeholders to `table`) (P2)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  Express Template Fill's AI inference has no way to propose `bullet_list` (a first-class render
+  type since XTF-27 — "1 column to list as bullet points", `Composition.jsx:40`) because
+  `ask_engine.py`'s `CHART_REQS` (the dict shared by both `/api/ask` and Template Inference's
+  `validate_recipe()`) has no `bullet_list` entry at all. When a placeholder's name/content is
+  really a free-text list (e.g. French names like `actions_prioritaires`,
+  `interventions_manquantes`, `risques_doublons` — "priority actions", "missing interventions",
+  "duplicate risks") and the underlying data has no categorical column, the LLM has nowhere
+  correct to route it: narrative-slot routing in `annotate_proposals`
+  (`_NARRATIVE_SLOT_KEYWORDS`, `template_inference.py:239-243`) only covers a fixed keyword set
+  (findings, overview, next steps, recommendations, observations, etc.), and the LLM-facing prompt
+  description of "narrative" (`seed_prompts.py:981-983`) similarly only mentions "recommendations,
+  observations, an executive summary" — neither matches these names, so the model falls back to
+  `table`, the generic catch-all, which then permanently fails `table`'s "≥1 categorical column"
+  requirement (`ask_engine.py` `CHART_REQS["table"]`) and gets stuck on a `needs_attention`
+  warning the user has to manually reassign every time.
+
+  Adding `bullet_list` to `CHART_REQS` alone is not sufficient: `apply_inference`
+  (`template_inference.py`, `_KIND_SECTION` + the canonical-placeholder construction around lines
+  777-778 and 912-915) always writes back `{{ chart_<name> }}` for `kind == "chart"` regardless
+  of `spec["type"]`, but `builder.py` (~line 450-451) only ever populates a `list_<name>` context
+  key for `type == "bullet_list"` — so an approved `bullet_list` proposal would silently never
+  render unless the placeholder-naming logic is also taught the `bullet_list` → `list_<name>`
+  mapping already used for manually-added bullet_list placeholders
+  (`template_generator.py:31-32,137,226`).
+
+  **Scope grew during Review** (security-audit, 3 passes): `bullet_list` renders raw, unaggregated
+  per-row values of a column (unlike every other proposable type, which renders aggregates), so
+  making it AI-proposable turned a pre-existing gap — `/api/ask/save` and `/api/template/apply`
+  persisted a client/LLM-supplied chart spec with no server-side re-validation against
+  `is_pii`/`is_effective_hidden` — into a full raw-data exfiltration path for a PII-flagged column
+  not separately listed in `cfg.pii.redact`. Closed with a PII/hidden-column gate at both
+  persistence endpoints (not just the propose paths), the CLI's `cmd_infer_template`, and a
+  negative-`top_n` cap bypass. The resulting synchronous profile recompute on every Save/Apply
+  click then tripped `perf-review` (`PERF: BLOCKED`) — fixed by routing both endpoints through the
+  existing `perf_cache` mechanism `/api/profile` already uses, empirically verified to cache-hit
+  correctly and to bust on a `cfg` (PII-flag) change.
+
+  **Type:** Fix
+
+  **Files:** `src/reports/ask_engine.py` (`CHART_REQS["bullet_list"]`; `_validate_chart`'s
+  bullet_list branch gates on `excluded_column_names(cfg)`; `validate_recipe`/`_execute_item`/
+  `ask()`/`refine_item()` thread an optional `cfg` param) · `src/reports/template_inference.py`
+  (`_KIND_SECTION` / canonical-placeholder construction ~lines 777-778, 912-915 route
+  `bullet_list` to the `list_<name>` prefix; `annotate_proposals`/`_validate_data_proposal` thread
+  `cfg`) · `src/reports/charts.py` (`build_bullet_list_text` gains `opts.get("top_n", 50)` capped
+  via `max(0, top_n)`) · `src/reports/builder.py` (passes `resolved.get("options")` through) ·
+  `src/data/make.py` (`cmd_infer_template` passes `cfg` into `annotate_proposals`) ·
+  `web/main.py` (`_bullet_list_names_excluded` helper; `api_ask_save` validates via
+  `ask_engine.validate_recipe(..., cfg)` before persisting, routed through the existing
+  `perf_cache` under the same `"profile"` key `/api/profile` uses; `api_template_apply`
+  re-validates via `ti.annotate_proposals(candidates, prof, cfg)` server-side instead of trusting
+  client-echoed `status`, same cache treatment) · `tests/test_ask_engine.py`,
+  `tests/test_template_inference.py`, `tests/test_ask_api.py`, `tests/test_template_api.py`,
+  `tests/test_xtf27_bullet_list.py` (new tests) · `docs/reference/prompts.md` (checked — no
+  proposable-type enumeration exists there to update)
+
+  **Config/schema impact:** None — `bullet_list` the render type already exists and is unchanged
+  (XTF-27); this only changes what the AI recipe validator/prompt can propose, how that
+  proposal's placeholder is named when applied, and adds a server-side PII/hidden-column
+  re-validation gate at persistence time.
+
+  **Acceptance criteria**
+  - `CHART_REQS` in `ask_engine.py` includes a `"bullet_list"` entry with requirement "≥1 column"
+  - `validate_recipe()` accepts a `bullet_list` recipe with ≥1 column and rejects one with 0
+    columns, using the same requirement-string format as other types (e.g. "'bullet_list' needs
+    ≥1 column")
+  - The AI type-list prompt block includes `bullet_list` alongside the other proposable types, so
+    both `/api/ask` and Express Template Fill's inference can propose it
+  - Given a placeholder whose underlying data has no categorical column but does have at least
+    one usable column, Template Inference's batched call can propose `bullet_list` instead of
+    being forced toward the always-failing `table`
+  - A `bullet_list` proposal approved via Express Template Fill's `apply_inference` writes
+    `{{ list_<name> }}` into the resolved template (not `{{ chart_<name> }}`), matching
+    `builder.py`'s `list_<name>` context key — the same convention `template_generator.py` already
+    uses for a manually-added bullet_list placeholder
+  - A `bullet_list` recipe naming a column flagged `is_pii`/effectively hidden is rejected — at
+    `/api/ask` and `/api/template/infer` (propose time) AND at `/api/ask/save` and
+    `/api/template/apply` (persistence time, independent of any client-supplied `status`), and at
+    the CLI's `infer-template`/`apply-template` path
+  - A negative `top_n` on a `bullet_list` no longer bypasses its row cap (`max(0, top_n)`)
+  - `api_ask_save`/`api_template_apply`'s new profile-loading work is served from the existing
+    `perf_cache` (same key `/api/profile` uses) rather than recomputing on every request, and the
+    cache correctly busts when `cfg` changes (e.g. a column's `pii:` flag flips)
+  - No regression to existing chart/indicator/summary/table/narrative/metadata routing,
+    validation, or placeholder-naming — all existing `ask_engine`/`template_inference` tests
+    remain green
+
+  **Unit tests:** `tests/test_ask_engine.py` — `test_validate_recipe_bullet_list_needs_one_column`,
+  `test_validate_recipe_bullet_list_rejects_pii_column`,
+  `test_validate_recipe_bullet_list_rejects_hidden_column`,
+  `test_validate_recipe_bullet_list_allows_safe_column_with_cfg`.
+  `tests/test_template_inference.py` — `test_annotate_bullet_list_proposal_validates_ok`,
+  `test_apply_inference_bullet_list_uses_list_prefix`.
+  `tests/test_ask_api.py` — `test_ask_save_rejects_pii_bullet_list_with_data`,
+  `test_ask_save_rejects_pii_bullet_list_without_data`.
+  `tests/test_template_api.py` — `test_apply_revalidates_and_drops_flipped_pii_bullet_list`,
+  `test_apply_drops_pii_bullet_list_without_data`.
+  `tests/test_xtf27_bullet_list.py` — `test_bullet_list_negative_top_n_still_caps`.
+
+  **E2E:** N/A (no app UI surface changed — Composition.jsx's manual `bullet_list` option already
+  exists per XTF-27; this card only changes what the AI can *propose* during inference, how that
+  proposal is named when applied, and server-side validation/caching, none of it UI).
+
+  **UAT:** N/A (backend/AI-inference + API logic; PR review + the unit tests above are the human
+  gate).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_ask_engine.py tests/test_template_inference.py tests/test_ask_api.py tests/test_template_api.py tests/test_xtf27_bullet_list.py -k bullet_list`
+
+---
+
+- [x] **MNT-18 — Add `{{ year }}` / `{{ month }}` / `{{ day }}` date-component placeholders (P2)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  The report builder only exposes one composed timestamp, `{{ generated_at }}`
+  (`"%d/%m/%Y %H:%M"`, `src/reports/builder.py` `_render()` line 336), with no way for a Word
+  template author to pull just the year, month, or day separately — useful for custom report
+  footers, filenames typed into the template body, or period-style headers that don't match
+  `generated_at`'s fixed format. Add three new placeholders derived from the same
+  `datetime.today()` call already used for `generated_at`, so all date-derived values in one
+  render stay consistent with each other.
+
+  **Type:** Feature
+
+  **Files:** `src/reports/builder.py` (`_render()`, add `year`/`month`/`day` to `context` near
+  line 336, reusing the same `datetime.today()` instance already computing `generated_at` rather
+  than calling it again) · `docs/reference/templates.md` (add three new rows immediately after
+  `{{ generated_at }}` at line 10, in the same bare-placeholder block — not the annotated
+  `{{ split_value }}`/`{{ data_quality }}` block further down) · `tests/test_builder.py` (new
+  tests)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - `{{ year }}` renders as a 4-digit year (e.g. "2026")
+  - `{{ month }}` renders as a zero-padded 2-digit month (e.g. "07")
+  - `{{ day }}` renders as a zero-padded 2-digit day (e.g. "04")
+  - All three, plus the existing `{{ generated_at }}`, are derived from the same single
+    `datetime.today()` call within one render — no risk of the date rolling over between them
+  - `docs/reference/templates.md` documents all three new placeholders in the existing bare
+    (undecorated) placeholder block, alongside `{{ generated_at }}`
+  - No change to `{{ generated_at }}`'s existing format or any other existing placeholder
+
+  **Unit tests:** `tests/test_builder.py` (new) — (1)
+  `test_year_month_day_placeholders_present`: patch the module-level `datetime` import in
+  `src.reports.builder` (via `unittest.mock.patch`, the mocking idiom already used elsewhere in
+  this file — no new dependency such as freezegun) so `datetime.today()` returns a fixed date,
+  build a report, and assert the rendered docx contains the correctly formatted year/month/day
+  for that date. (2) `test_date_placeholders_consistent_with_generated_at`: with the same patched
+  `datetime.today()`, assert `year`/`month`/`day` and `generated_at` are all consistent with the
+  single frozen instant (not independently re-evaluated).
+
+  **E2E:** N/A (no app UI surface — new docxtpl placeholders consumed in an externally-authored
+  Word template, exercised via `build-report`; verified by the pytest cases above and the Verify
+  command).
+
+  **UAT:** N/A (backend/template-rendering feature, no UI surface; PR review + the pytest cases
+  above are the human gate).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -k "year_month_day or date_placeholders"`
+
+---
+
+- [x] **MNT-17 — Fix: `{{ split_value }}` documented (and relied on by Express Fill) but missing from the render context (P0)**
+
+  **Created:** 2026-07-04 · **Completed:** 2026-07-04
+
+  `docs/reference/templates.md:20` documents `{{ split_value }}` as available "when --split-by
+  is set, the current group's value", and `frontend/src/pages/Composition.jsx:1648` advertises
+  it to users as an available token. The archived `XTF-28` card goes further: Express Template
+  Fill actively **writes** the literal `{{ split_value }}` placeholder into resolved templates,
+  assuming `build-report` fills it in. But `src/reports/builder.py`'s `_render()` never adds
+  `split_value` to the docxtpl `context` dict (lines 332-348) — it's only forwarded into
+  `generate_narrative()` (line 318) for the AI narrative text, never exposed as its own template
+  placeholder. Any template built on this documented/advertised promise silently breaks: a
+  Jinja2 undefined value (or error) instead of the actual split value. P0 because this already
+  affects a shipped feature (Express Fill's split_value token), not a hypothetical gap.
+
+  **Type:** Fix
+
+  **Files:** `src/reports/builder.py` (`_render()`, add `"split_value": split_value or ""`
+  right after `generated_at` at line 336, inside the context dict spanning lines 332-348) ·
+  `tests/test_builder.py` (new tests)
+
+  **Config/schema impact:** None.
+
+  **Acceptance criteria**
+  - When `report.split_by` is set and a Word template contains `{{ split_value }}`, the rendered
+    .docx contains the actual group value (e.g. "Nairobi"), matching what's already used
+    internally for the AI narrative
+  - When `report.split_by` is NOT set (no split), a template containing `{{ split_value }}`
+    renders without error (empty string, not a Jinja2 `UndefinedError` or a literal
+    `{{ split_value }}` left in the output)
+  - `docs/reference/templates.md`'s existing claim about `{{ split_value }}` (line 20) becomes
+    accurate — no doc change needed, the code now matches it
+  - Express Fill templates that already embed `{{ split_value }}` (per `XTF-28`) now render
+    correctly with no template changes required
+  - No regression to the AI narrative's existing use of `split_value`
+
+  **Unit tests:** `tests/test_builder.py` (new) — (1)
+  `test_split_value_in_render_context_when_split_by_set`: build a report with `split_by` set to
+  a column with 2+ unique values, and assert the rendered docx for each split output contains
+  the correct `split_value` for that group. (2) `test_split_value_empty_when_no_split_by`: build
+  a report with no `split_by`, assert a template containing `{{ split_value }}` renders without
+  raising and produces an empty string, not an undefined-variable error.
+
+  **E2E:** N/A (no app UI surface — `split_value` is a docxtpl/Jinja2 template placeholder
+  consumed inside an externally-authored Word template, exercised via `build-report`; verified
+  by the pytest cases above and the Verify command).
+
+  **UAT:** N/A (backend/template-rendering fix, no UI surface; PR review + the pytest cases
+  above are the human gate).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder.py -k split_value`
+
+---
+
