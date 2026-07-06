@@ -727,7 +727,7 @@ Sprint exit — checked by /report + /retro:
 
 - [ ] **VIS-10 — Split Tier 1 specs into functional + visual, Shard A: Accessibility + project-ribbon UX (15 files) (P2)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Started:** 2026-07-06
 
   First of three mechanical-transformation shards splitting the 41 Tier 1 spec files that mix
   functional AC tests and screenshot assertions in one file (per VIS-9's now-proven contract).
