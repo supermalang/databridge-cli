@@ -854,31 +854,43 @@ Sprint exit — checked by /report + /retro:
 
 - [ ] **VIS-8 — Fix: uncap hardcoded worker count to stop full-suite instability (P2)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Started:** 2026-07-05
 
   Both `frontend/playwright.config.ts` (line 30) and `frontend/playwright.storybook.config.ts`
   (line 21) hardcode a fixed worker count of 4, contradicting VIS-3's own in-file rationale
   ("Serialize to one worker so specs that pass in isolation also pass in the full suite...
   applies BOTH in CI and locally") and confirmed unstable this session: 25/69 failures at 4
-  workers vs 0/69 at 1 worker on an identical spec file under full-suite load. Not urgent enough
+  workers vs 0/69 at 1 worker on an identical spec file under full-suite load. The hardcoded 4
+  is drift that silently broke VIS-3's frozen contract (`vis-3-worker-cap.spec.ts` requires the
+  resolved `workers` value to be a number in [1,2] under both CI and local). Not urgent enough
   to block other work — captured here to fix later, at low priority, independent of the
   visual-review migration.
 
   **Type:** Fix
 
-  **Files:** `frontend/playwright.config.ts` (line ~30, worker count → `process.env.CI ? 1 : '50%'`;
-  revise the stale comment above it, lines ~23-29, which currently argues for a flat single-worker
-  cap in both CI and local) · `frontend/playwright.storybook.config.ts` (line ~21, same change;
-  note in a comment that this config screenshots a static `http-server`-served Storybook build,
-  not the shared Vite dev server, so the original contention argument doesn't apply to it the
-  same way)
+  **Amendment (2026-07-06):** the original proposal set the local branch to
+  `process.env.CI ? 1 : '50%'`. That is withdrawn — `'50%'` (≥4 workers on most machines) can
+  never satisfy VIS-3's frozen [1,2] numeric assertion and would reintroduce the shared-dev-server
+  crashes VIS-3 fixed, contrary to VIS-8's own 0/69-at-1-worker evidence. The fix is a flat
+  `workers: 1` (proven clean, honors VIS-3). Storybook-only local parallelism (its static
+  `http-server` build is not constrained by VIS-3) is a possible future follow-up, out of scope
+  here.
+
+  **Files:** `frontend/playwright.config.ts` (line ~30, worker count → flat `1`; revise the stale
+  comment above it, lines ~23-29, which currently argues for a single-worker cap in both CI and
+  local — bring the comment in line with the actual value) · `frontend/playwright.storybook.config.ts`
+  (line ~21, same change to flat `1`; note in a comment that this config screenshots a static
+  `http-server`-served Storybook build, not the shared Vite dev server, so the contention
+  argument is weaker here — capped at 1 for consistency, could be relaxed later)
 
   **Config/schema impact:** None — test harness config only.
 
   **Acceptance criteria**
-  - Worker count is `process.env.CI ? 1 : '50%'` in both configs, replacing the flat value of 4
-  - CI (`process.env.CI` truthy) still runs single-worker, deterministic (VIS-3's guarantee
-    unchanged)
+  - Worker count is a flat `workers: 1` in both configs, replacing the hardcoded value of 4
+    (supersedes the earlier `process.env.CI ? 1 : '50%'` proposal, which conflicted with VIS-3's
+    frozen test)
+  - The resolved worker value is `1` under both CI (`process.env.CI` truthy) and local, keeping
+    the run single-worker / deterministic and satisfying VIS-3's [1,2] contract
   - Locally, `cd frontend && npm run test:e2e` (full suite, all 3 viewports) completes with
     **zero crash-class failures** (page-crash / target-closed / worker-timeout) across 3
     consecutive full runs
@@ -886,12 +898,14 @@ Sprint exit — checked by /report + /retro:
     viewports as part of the full suite
   - No change to `fullyParallel`, `retries`, `expect.toHaveScreenshot`, or `webServer`
 
-  **Unit tests:** N/A — Playwright harness config change, no isolable application logic (same
-  posture as VIS-3).
+  **Unit tests:** `tests/test_vis8_worker_count.py` — static config-contract assertions that both
+  configs declare `workers: 1` and that `fullyParallel` / `retries` / `toHaveScreenshot` /
+  `webServer` are unchanged (same static-config posture as `test_vis11_*`).
 
   **E2E:** Validated by the harness itself — `cd frontend && npm run test:e2e` and
   `npm run test:visual:storybook`, each run 3 consecutive times, zero crash-class failures. No
-  new spec or baseline.
+  new spec or baseline. VIS-3's frozen `vis-3-worker-cap.spec.ts` also re-passes once `workers`
+  is `1`.
 
   **UAT:** N/A (test-infra/CI change, no user-facing surface — PR review + 3 green local/CI runs
   are the human gate, same posture as VIS-3).
