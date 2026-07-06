@@ -75,6 +75,10 @@ function ExpressFlow({ onClose }) {
   const [message, setMessage] = useState(null);   // friendly precondition message
   const [rows, setRows] = useState(null);          // null = not inferred yet
   const [applied, setApplied] = useState(false);
+  // True from the instant Apply & build is clicked until the chained build-report
+  // run starts streaming — covers the /api/template/apply fetch itself so the
+  // button shows a loading/disabled state instead of a silent multi-second gap.
+  const [applying, setApplying] = useState(false);
   const [resolved, setResolved] = useState(null);
   // The infer endpoint persists the upload and returns a resolvable ref; we carry
   // that into apply so a freshly-uploaded .docx survives the round-trip (XTF-6).
@@ -125,11 +129,12 @@ function ExpressFlow({ onClose }) {
   const dropRow = (key) => setRows(rs => rs.filter(r => r._key !== key));
 
   const flagged = (rows || []).some(r => r.status === 'needs_attention');
-  const canApply = rows && rows.length > 0 && !flagged && !applied && !running;
+  const canApply = rows && rows.length > 0 && !flagged && !applied && !running && !applying;
 
   const applyAndBuild = async (buildOpts = {}) => {
     if (!canApply) return;
     const proposals = rows.map(({ _key, ...p }) => p);  // strip the local key
+    setApplying(true); setError(null);
     try {
       const r = await fetch('/api/template/apply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -147,6 +152,8 @@ function ExpressFlow({ onClose }) {
       await run('build-report', buildOpts);
     } catch (err) {
       setError(err.message || t('templates.networkError'));
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -271,9 +278,10 @@ function ExpressFlow({ onClose }) {
                 data-testid="express-apply-build"
                 onClick={() => applyAndBuild(buildOpts)}
                 disabled={!canApply}
+                aria-busy={applying || running}
                 title={flagged ? t('templates.resolveFirst') : ''}
               >
-                {running ? t('templates.building') : t('templates.applyBuild')}
+                {running ? t('templates.building') : applying ? t('templates.applying') : t('templates.applyBuild')}
               </button>
             </div>
 

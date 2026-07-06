@@ -901,3 +901,73 @@ test.describe('MNT-24 — Express review panel: reclassify a flagged row to kind
     expect(appliedRow.kind).toBe('list');
   });
 });
+
+/**
+ * MNT-27 — Apply & build must show a visible loading/disabled state for the
+ * WHOLE operation, starting the instant it's clicked — covering the
+ * /api/template/apply fetch itself, not just the subsequent run('build-report').
+ *
+ * Bug: today the button's label only switches to "building…" once `running`
+ * becomes true (i.e. AFTER /api/template/apply has already resolved and
+ * run('build-report') has started); the button also stays enabled the whole
+ * time. So while /api/template/apply is in flight there is a silent, unexplained
+ * pause with no visual feedback at all.
+ *
+ * The apply response is held open (a controllable gate) so the in-flight window
+ * is directly observable, mirroring the project-switch "gate" pattern used in
+ * ux-9.spec.ts.
+ */
+test.describe('MNT-27 — Apply & build shows a loading state while apply is in flight', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await stubExpress(page);
+    await page.goto('http://localhost:51730/');
+  });
+
+  test('clicking Apply & build immediately shows a visible loading/disabled state before the build starts', async ({ page }) => {
+    // Hold /api/template/apply in flight so the pre-build window is observable.
+    // Registered AFTER stubExpress (in beforeEach) so — last-registered-first —
+    // this override wins over the instant beforeEach stub.
+    let releaseApply: () => void = () => {};
+    const applyHeld = new Promise<void>((resolve) => { releaseApply = resolve; });
+    await page.route('**/api/template/apply', async (r) => {
+      await applyHeld;
+      return r.fulfill({ json: { ok: true, template: RESOLVED_TEMPLATE, n_written: 3 } });
+    });
+
+    // SANITY: the real SPA mounted logged-in with the active project, so any
+    // failure below is the missing MNT-27 loading state — not a broken render.
+    await expect(page.getByText('Test Project')).toBeVisible();
+
+    await page.getByTestId('express-banner').first().click();
+    await page.getByTestId('express-upload').setInputFiles({
+      name: 'report.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: Buffer.from('PK fake docx'),
+    });
+    await page.getByTestId('express-infer').click();
+
+    // Resolve the flagged row so Apply & build enables.
+    const flagged = page.locator('[data-testid="express-row"][data-status="needs_attention"]');
+    await flagged.getByTestId('express-row-drop').click();
+
+    const applyBtn = page.getByTestId('express-apply-build');
+    await expect(applyBtn).toBeEnabled();
+
+    await applyBtn.click();
+
+    // AC: "The Apply & Build button shows a visible loading/disabled state from
+    // the moment it's clicked until the build-report run starts streaming logs —
+    // no silent multi-second gap with no feedback." The apply fetch is still
+    // held open here (before the build-report run has even started), so this
+    // must already be true — the correct red while the bug is present, since
+    // today the button stays enabled with its label unchanged for the whole
+    // apply fetch.
+    await expect(applyBtn).toBeDisabled();
+
+    // Release the held apply response; the chained build-report run then starts
+    // and the flow reaches its normal success state.
+    releaseApply();
+    await expect(page.getByTestId('express-success')).toBeVisible();
+  });
+});
