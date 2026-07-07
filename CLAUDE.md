@@ -84,7 +84,7 @@ PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_flatten.py   # single fi
 **Visual / E2E (Playwright).** UI cards are exercised at three viewports — mobile (390×844),
 tablet (820×1180), desktop (1440×900). Tier 1 is split into two configs: a **functional** suite
 (AC assertions, no pixel diffs) at `frontend/playwright.config.ts` with specs under
-`frontend/tests`/`e2e` (functional specs only, VIS-10-12), and a dedicated **visual** suite
+`frontend/tests/e2e` (functional specs only, VIS-10-12), and a dedicated **visual** suite
 (`toHaveScreenshot` only) at `visual-review/playwright.visual.config.ts` with specs + baselines
 under `visual-review/specs/` and `visual-review/baselines/*-snapshots/*.png` (tracked).
 
@@ -404,7 +404,7 @@ layer. Its skill tree is gitignored — re-install with `npx impeccable skills i
 ### Visual testing (VIS-4)
 Three tiers, all opt-in-by-default disabled features layered on the VIS-1 Playwright harness, now
 consolidated under the `visual-review/` root (VIS-9-14):
-**Tier 1** — full-app E2E, split into a functional suite (`frontend/tests`/`e2e`,
+**Tier 1** — full-app E2E, split into a functional suite (`frontend/tests/e2e`,
 `frontend/playwright.config.ts`, AC assertions only) and a dedicated visual suite
 (`visual-review/specs/`, `visual-review/playwright.visual.config.ts`, `toHaveScreenshot` only) —
 baselines at `visual-review/baselines/*-snapshots/*.png` — the default, always-on harness (see
