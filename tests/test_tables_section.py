@@ -1,5 +1,9 @@
 """Tests for the tables report section + table/indicator AI suggesters."""
+import io
+
 import pandas as pd
+from docx import Document
+from docxtpl import DocxTemplate, InlineImage
 
 from src.reports.builder import ReportBuilder
 from src.reports.ai_table_suggester import suggest_tables
@@ -9,27 +13,24 @@ from src.reports.ai_indicator_suggester import suggest_indicators
 # ── _generate_tables ───────────────────────────────────────────────────────────
 
 def test_generate_tables_produces_table_keys(monkeypatch):
-    """Each cfg['tables'] entry yields a table_<name> context key, rendered via the
-    chart engine with type forced to 'table'."""
+    """MNT-30 native-table contract: each cfg['tables'] entry yields a
+    table_<name> context key that resolves to a native Word table, NOT a
+    matplotlib PNG / InlineImage — and generate_chart is NOT invoked for a
+    table recipe (the opposite of the old chart-engine path)."""
     import src.reports.builder as builder
 
-    captured = {}
+    # Spy: record any generate_chart call. Under the native-table contract this
+    # must never fire for a `tables:` recipe (the opposite of the old PNG path).
+    calls = []
 
-    def fake_generate_chart(recipe, df):
-        captured["recipe"] = recipe
-        # Return a real existing file so InlineImage can be constructed.
-        from src.reports.charts import CHART_DIR
-        CHART_DIR.mkdir(parents=True, exist_ok=True)
-        p = CHART_DIR / "fake_table.png"
-        # 1x1 PNG bytes
-        p.write_bytes(
-            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
-            b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00"
-            b"\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    def spy_generate_chart(recipe, df):  # pragma: no cover - must not run
+        calls.append(recipe)
+        raise AssertionError(
+            "generate_chart was invoked for a table recipe — native tables must "
+            "not route through the chart/PNG engine."
         )
-        return p
 
-    monkeypatch.setattr(builder, "generate_chart", fake_generate_chart)
+    monkeypatch.setattr(builder, "generate_chart", spy_generate_chart)
 
     cfg = {
         "questions": [{"kobo_key": "region", "export_label": "Region", "category": "categorical"}],
@@ -39,13 +40,36 @@ def test_generate_tables_produces_table_keys(monkeypatch):
 
     rb = ReportBuilder(cfg)
 
-    class _FakeTpl:  # InlineImage only stores the tpl reference
-        pass
+    # A real DocxTemplate so any native-table machinery (subdoc / marker) is
+    # built against a genuine docx part — no faking of the docxtpl internals.
+    buf = io.BytesIO()
+    doc = Document()
+    doc.add_paragraph("{{ table_region_breakdown }}")
+    doc.save(buf)
+    buf.seek(0)
+    tpl = DocxTemplate(buf)
 
-    images = rb._generate_tables(_FakeTpl(), df, {})
-    assert "table_region_breakdown" in images
-    # Type was forced to "table" regardless of what the recipe specified.
-    assert captured["recipe"]["type"] == "table"
+    tables = rb._generate_tables(tpl, df, {})
+
+    assert "table_region_breakdown" in tables
+    value = tables["table_region_breakdown"]
+
+    # Native table, not a flattened image: the context value must NOT be an
+    # InlineImage (the removed PNG path) nor a PNG file path.
+    assert not isinstance(value, InlineImage), (
+        "table_region_breakdown maps to an InlineImage — the table PNG render "
+        "path is exactly what MNT-30 removed; it must render as a native table."
+    )
+    assert not (isinstance(value, str) and value.lower().endswith(".png")), (
+        f"table_region_breakdown maps to a PNG path ({value!r}); a table recipe "
+        "must render as a native Word table, not an image."
+    )
+
+    # generate_chart must not have been called for the table recipe.
+    assert calls == [], (
+        "generate_chart was called for a table recipe; native tables must not "
+        "emit a chart/PNG."
+    )
 
 
 def test_generate_tables_empty_when_no_tables():

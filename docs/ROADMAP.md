@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 30 | 28 / 30 |
+| [Maintenance & hardening](#maintenance--hardening) | 30 | 29 / 30 |
 
 ---
 
@@ -1904,9 +1904,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-30 — Fix: report tables render as PNG images instead of native Word tables (P1)**
+- [x] **MNT-30 — Fix: report tables render as PNG images instead of native Word tables (P1)**
 
-  **Created:** 2026-07-07
+  **Created:** 2026-07-07 · **Started:** 2026-07-07 · **Completed:** 2026-07-07
 
   **Type:** Fix
 
