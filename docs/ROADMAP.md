@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 31 | 30 / 31 |
+| [Maintenance & hardening](#maintenance--hardening) | 31 | 31 / 31 |
 
 ---
 
@@ -1976,9 +1976,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-31 — Fix: `/api/reports` does N+1 S3 `head_object` calls instead of reusing `list_objects_v2`'s `LastModified` (P2)**
+- [x] **MNT-31 — Fix: `/api/reports` does N+1 S3 `head_object` calls instead of reusing `list_objects_v2`'s `LastModified` (P2)**
 
-  **Created:** 2026-07-07
+  **Created:** 2026-07-07 · **Completed:** 2026-07-07
 
   **Type:** Fix
 

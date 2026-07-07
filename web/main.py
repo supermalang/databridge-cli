@@ -2017,14 +2017,24 @@ async def list_reports(request: Request):
     except Exception:
         store = org_id = project_id = None
 
+    # Resolve every report's durable modified time from ONE listing (S3 backends
+    # read Size/LastModified straight off list_objects_v2 — no per-file
+    # head_object round trips). Falls back to local mtime per-file below.
+    meta = {}
+    if store is not None:
+        try:
+            meta = store.list_with_metadata(
+                storage_key(org_id, project_id, "reports", ""))
+        except Exception:
+            meta = {}
+
     def _modified(f):
         if store is not None:
-            try:
-                return store.last_modified(storage_key(org_id, project_id, "reports", f.name))
-            except KeyError:
-                pass
-            except Exception:
-                pass
+            entry = meta.get(storage_key(org_id, project_id, "reports", f.name))
+            if entry is not None:
+                _size, lm = entry
+                if lm is not None:
+                    return lm
         return datetime.fromtimestamp(f.stat().st_mtime)
 
     files = []

@@ -26,6 +26,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 
 import web.main as wm
@@ -34,6 +35,7 @@ from web.db import session as dbs, repository as repo
 from web.storage import factory
 from web.storage.base import Storage, storage_key
 from web.storage.local import LocalStorage
+from web.storage.s3 import S3Storage
 
 
 # --------------------------------------------------------------------------- #
@@ -492,3 +494,222 @@ def test_delete_one_report_durable(
     assert remaining == [keep], (
         f"single-file delete should remove only {target!r}'s storage object; "
         f"durable storage now lists {remaining!r}")
+
+
+# =========================================================================== #
+# MNT-31 — /api/reports must resolve modified times via ONE list_objects_v2
+# call instead of N per-file head_object calls on the S3/Minio backend.
+# =========================================================================== #
+#
+# AC recap:
+#   1. On S3/Minio, resolving modified times for all of a project's report
+#      files makes ZERO head_object calls and exactly ONE paginated
+#      list_objects_v2 call, regardless of report count (N >= 2).
+#   2. Storage.list_with_metadata(prefix) exists on the ABC with a default
+#      implementation (built from list() + last_modified()) that a subclass
+#      NOT overriding it still satisfies correctly — verified against the
+#      existing _SpyStorage double.
+#   3. S3Storage.list_with_metadata(prefix) returns modified times matching
+#      the LastModified values from list_objects_v2, with no head_object call.
+#   4. /api/reports's returned JSON ({name, size_kb, modified} per file) is
+#      byte-for-byte unchanged from before this fix.
+#   5. Local (non-S3) storage mode's /api/reports behavior is unchanged
+#      (regression pin).
+# --------------------------------------------------------------------------- #
+
+
+class _CountingFakeS3:
+    """A boto3-S3-client stand-in that records head_object / paginator calls
+    and serves LastModified + Size straight off list_objects_v2's Contents —
+    exactly what a real bucket listing provides, with no per-key round trip.
+    """
+
+    def __init__(self, objects):
+        # objects: {key: (size:int, last_modified:datetime)}
+        self.objects = dict(objects)
+        self.head_object_calls = []
+        self.paginate_calls = []
+
+    def head_object(self, Bucket, Key):
+        # AC 1/3: list_with_metadata must NEVER reach this method.
+        self.head_object_calls.append((Bucket, Key))
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
+        size, lm = self.objects[Key]
+        return {"LastModified": lm, "ContentLength": size}
+
+    def get_paginator(self, op):
+        assert op == "list_objects_v2"
+        client = self
+
+        class _Page:
+            def paginate(self, Bucket, Prefix):
+                client.paginate_calls.append((Bucket, Prefix))
+                keys = sorted(k for k in client.objects if k.startswith(Prefix))
+                contents = [
+                    {
+                        "Key": k,
+                        "Size": client.objects[k][0],
+                        "LastModified": client.objects[k][1],
+                    }
+                    for k in keys
+                ]
+                yield {"Contents": contents} if contents else {}
+
+        return _Page()
+
+
+def test_s3_list_with_metadata_single_list_call_zero_head_object():
+    """AC 1 + 3: S3Storage.list_with_metadata(prefix) with N=3 objects issues
+    exactly one paginated list_objects_v2 call and zero head_object calls, and
+    the returned modified times match each object's LastModified.
+    """
+    prefix = "orgs/o1/projects/p1/reports/"
+    lm_a = datetime(2026, 6, 15, 9, 30, tzinfo=timezone.utc)
+    lm_b = datetime(2026, 6, 16, 10, 0, tzinfo=timezone.utc)
+    lm_c = datetime(2026, 6, 17, 11, 45, tzinfo=timezone.utc)
+    fake = _CountingFakeS3({
+        prefix + "a.docx": (111, lm_a),
+        prefix + "b.docx": (222, lm_b),
+        prefix + "c.docx": (333, lm_c),
+    })
+    store = S3Storage(fake, "bucket")
+
+    result = store.list_with_metadata(prefix)
+
+    # Exactly one paginated list_objects_v2 call, regardless of N objects.
+    assert len(fake.paginate_calls) == 1, (
+        f"expected exactly one list_objects_v2 call, got {len(fake.paginate_calls)}: "
+        f"{fake.paginate_calls}")
+    # Zero head_object calls — the whole point of the fix.
+    assert fake.head_object_calls == [], (
+        f"list_with_metadata must not call head_object; got {fake.head_object_calls}")
+
+    # Returned modified times match LastModified from the listing.
+    assert set(result.keys()) == {prefix + "a.docx", prefix + "b.docx", prefix + "c.docx"}
+    for key, expected_lm in (
+        (prefix + "a.docx", lm_a), (prefix + "b.docx", lm_b), (prefix + "c.docx", lm_c)
+    ):
+        _size, got_lm = result[key]
+        got_epoch = got_lm.timestamp() if isinstance(got_lm, datetime) else float(got_lm)
+        assert abs(got_epoch - expected_lm.timestamp()) < 1, (
+            f"list_with_metadata()[{key!r}] modified {got_lm!r} does not match "
+            f"list_objects_v2 LastModified {expected_lm!r}")
+
+
+def test_storage_abc_default_list_with_metadata_via_spy():
+    """AC 2: Storage.list_with_metadata(prefix) exists on the ABC with a
+    default implementation, built from list() + last_modified(), that a
+    subclass NOT overriding it (the existing _SpyStorage double) still
+    satisfies correctly.
+    """
+    assert hasattr(Storage, "list_with_metadata"), (
+        "Storage ABC is missing a list_with_metadata(prefix) method")
+
+    class _PlainSpyStorage(LocalStorage):
+        """Mirrors _SpyStorage but deliberately does NOT override
+        list_with_metadata, to exercise the ABC's default fallback."""
+
+        def __init__(self, base_dir):
+            super().__init__(base_dir)
+            self._stamps = {}
+
+        def stamp(self, key, when):
+            self.put_bytes(key, b"PK")
+            self._stamps[key] = when
+
+        def last_modified(self, key):
+            if key not in self._stamps:
+                raise KeyError(key)
+            return self._stamps[key]
+
+    tmp_dir = pytest_tmp_dir()
+    store = _PlainSpyStorage(tmp_dir)
+    prefix = "orgs/o1/projects/p1/reports/"
+    when_a = datetime(2026, 6, 15, 9, 30)
+    when_b = datetime(2026, 6, 16, 10, 0)
+    store.stamp(prefix + "a.docx", when_a)
+    store.stamp(prefix + "b.docx", when_b)
+
+    result = store.list_with_metadata(prefix)
+
+    assert set(result.keys()) == {prefix + "a.docx", prefix + "b.docx"}
+    size_a, lm_a = result[prefix + "a.docx"]
+    size_b, lm_b = result[prefix + "b.docx"]
+    assert lm_a == when_a
+    assert lm_b == when_b
+
+
+def pytest_tmp_dir():
+    """Small helper: a fresh tmp directory without needing the tmp_path
+    fixture threaded through a nested class-definition test body."""
+    import tempfile
+    return tempfile.mkdtemp(prefix="mnt31-storage-")
+
+
+def test_list_reports_response_unchanged_with_s3_metadata_backend(
+    reports_dir, client, dev_active_project, dev_org_project_ids, monkeypatch
+):
+    """AC 4: /api/reports's returned JSON ({name, size_kb, modified} per file)
+    is byte-for-byte unchanged when the storage backend resolves modified
+    times via list_with_metadata (the new N+1-free path) instead of the old
+    per-file last_modified() loop, and the S3 head_object endpoint is never
+    invoked to serve this request.
+    """
+    org_id, project_id = dev_org_project_ids
+    name = "kobo_report_20260615.docx"
+    _seed_docx(reports_dir, name)
+
+    local_when = datetime(2026, 6, 19, 12, 7)
+    os.utime(reports_dir / name, (local_when.timestamp(), local_when.timestamp()))
+
+    storage_when = datetime(2026, 6, 15, 9, 30, tzinfo=timezone.utc)
+    key = storage_key(org_id, project_id, "reports", name)
+    fake = _CountingFakeS3({key: (2, storage_when)})
+    store = S3Storage(fake, "bucket")
+    monkeypatch.setattr(factory, "_storage", store, raising=False)
+
+    try:
+        resp = client.get("/api/reports")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        files = {f["name"]: f for f in body["files"]}
+        assert name in files, files
+
+        entry = files[name]
+        assert set(entry.keys()) == {"name", "size_kb", "modified"}, (
+            "response shape for /api/reports must remain "
+            "{name, size_kb, modified} per file")
+        assert entry["modified"] == storage_when.strftime("%Y-%m-%d %H:%M"), (
+            "the S3-backed listing's modified time must come from the "
+            "list_objects_v2-sourced metadata, matching the pre-fix value "
+            "that last_modified() used to return")
+
+        # The performance point of the fix: resolving this request's modified
+        # times must not have issued any head_object call.
+        assert fake.head_object_calls == [], (
+            "/api/reports issued head_object call(s) while resolving modified "
+            f"times on the S3 backend: {fake.head_object_calls}")
+    finally:
+        factory.reset_storage()
+
+
+def test_list_reports_local_backend_unchanged(reports_dir, client, dev_active_project):
+    """AC 5: local (non-S3) storage mode's /api/reports behavior is
+    unchanged — no active storage backend override, plain local mtime is
+    used and the response shape is the familiar {name, size_kb, modified}.
+    """
+    name = "local_regression_20260601.docx"
+    _seed_docx(reports_dir, name)
+
+    local_when = datetime(2026, 6, 1, 8, 15)
+    os.utime(reports_dir / name, (local_when.timestamp(), local_when.timestamp()))
+
+    resp = client.get("/api/reports")
+    assert resp.status_code == 200, resp.text
+    files = {f["name"]: f for f in resp.json()["files"]}
+    assert name in files, files
+
+    entry = files[name]
+    assert set(entry.keys()) == {"name", "size_kb", "modified"}
+    assert entry["modified"] == local_when.strftime("%Y-%m-%d %H:%M")
