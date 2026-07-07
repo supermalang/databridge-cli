@@ -31,8 +31,25 @@ const config = {
   // resolving frontend deps (e.g. react/jsx-runtime) fails. Point root back at
   // frontend/, where the actual app + its node_modules live, now that this config
   // is relocated out of frontend/.storybook/ (VIS-13).
+  //
+  // Root alone isn't enough: Vite/Rolldown resolve a bare import by walking up
+  // from the *importing file's* own directory looking for node_modules, not from
+  // `root`. Story files under ./stories/ (this dir) live outside frontend/, so
+  // that walk never reaches frontend/node_modules and "react"/"react/jsx-runtime"
+  // fail to resolve. Explicit aliases fix it regardless of the story file's location.
   async viteFinal(viteConfig) {
-    viteConfig.root = resolve(__dirname, '../../frontend');
+    const frontendRoot = resolve(__dirname, '../../frontend');
+    viteConfig.root = frontendRoot;
+    viteConfig.resolve = {
+      ...viteConfig.resolve,
+      alias: {
+        ...(viteConfig.resolve?.alias || {}),
+        react: resolve(frontendRoot, 'node_modules/react'),
+        'react-dom': resolve(frontendRoot, 'node_modules/react-dom'),
+        'react/jsx-runtime': resolve(frontendRoot, 'node_modules/react/jsx-runtime'),
+        'react/jsx-dev-runtime': resolve(frontendRoot, 'node_modules/react/jsx-dev-runtime'),
+      },
+    };
     return viteConfig;
   },
 };
