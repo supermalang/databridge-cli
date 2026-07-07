@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 30 | 29 / 30 |
+| [Maintenance & hardening](#maintenance--hardening) | 31 | 30 / 31 |
 
 ---
 
@@ -1973,6 +1973,72 @@ Sprint exit — checked by /report + /retro:
   not an image).
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_native_tables.py -q`
+
+---
+
+- [ ] **MNT-31 — Fix: `/api/reports` does N+1 S3 `head_object` calls instead of reusing `list_objects_v2`'s `LastModified` (P2)**
+
+  **Created:** 2026-07-07
+
+  **Type:** Fix
+
+  Found via a read-only performance investigation of the Reports tab's cold-load time (no user
+  report — the tab works correctly, it's just slow to paint on an S3/Minio-backed project).
+  `S3Storage.list()` (`web/storage/s3.py:61-67`) already retrieves each object's `LastModified`
+  from the `list_objects_v2` paginator response, but discards it and returns only keys.
+  `/api/reports` (`web/main.py:1972-2007`) then calls `store.last_modified(key)` once per report
+  file (`~L1994`), each doing a **separate** `head_object()` request (`web/storage/s3.py:47-59`)
+  — N extra network round trips for data the list call already had. On the local storage backend
+  this doesn't happen at all (`LocalStorage` reads `f.stat().st_mtime` directly); this is purely
+  an S3/Minio-backend inefficiency.
+
+  **Files:**
+  - `web/storage/base.py` — add `list_with_metadata(prefix)` to the `Storage` ABC with a default,
+    concrete implementation (`{key: (size, last_modified) for key ...}` built by looping the
+    existing `list()` + `last_modified()`), so any backend that doesn't override it keeps today's
+    behavior unchanged.
+  - `web/storage/s3.py` — override `list_with_metadata(prefix)`: read `Size`/`LastModified`
+    directly off each `list_objects_v2` page's `Contents` entries (same paginator `list()`
+    already uses), with zero additional `head_object` calls.
+  - `web/main.py` — `/api/reports` (~L1972-2007): replace the per-file `store.last_modified(key)`
+    loop with one `store.list_with_metadata(prefix)` call, then look up each local report file's
+    modified time from the returned dict (falling back to local `stat()` exactly as today when
+    the key is missing or storage is unavailable).
+
+  **Config/schema impact:** None — internal `Storage` interface addition + endpoint internals
+  only; `/api/reports`'s response shape and values are unchanged.
+
+  **Acceptance criteria**
+  - On the S3/Minio backend, resolving modified times for all of a project's report files makes
+    **zero** `head_object` calls and exactly **one** paginated `list_objects_v2` call, regardless
+    of report count (verified against a mocked/stubbed S3 client with N ≥ 2 objects)
+  - `Storage.list_with_metadata(prefix)` exists on the ABC with a default implementation (built
+    from `list()` + `last_modified()`) that a subclass not overriding it still satisfies
+    correctly — verified against the existing `_SpyStorage` test double in
+    `tests/test_reports_api.py`
+  - `S3Storage.list_with_metadata(prefix)` returns modified times that match the `LastModified`
+    values from the `list_objects_v2` response, with no `head_object` call
+  - `/api/reports`'s returned JSON (`{name, size_kb, modified}` per file) is byte-for-byte
+    unchanged from before this fix — a performance-only change with no visible behavior
+    difference
+  - Local (non-S3) storage mode's `/api/reports` behavior is unchanged (regression-pinned)
+
+  **Unit tests:** `tests/test_reports_api.py` (extend) — mock the boto3 S3 client so
+  `list_objects_v2` returns N ≥ 2 objects each with a `LastModified`/`Size`; assert
+  `S3Storage.list_with_metadata` issues exactly one paginated call and zero `head_object` calls,
+  and that the returned dict's modified times match the response; add a base-ABC-level case using
+  `_SpyStorage` confirming a subclass that does NOT override `list_with_metadata` still returns
+  correct data via the default fallback; extend the existing local-storage `/api/reports` test as
+  a regression pin (response unchanged).
+
+  **E2E:** N/A (reason: backend-only performance fix — `/api/reports`'s response shape and the
+  rendered Reports page are unchanged; verified entirely by the pytest above, per the non-UI
+  convention).
+
+  **UAT:** N/A (reason: non-UI/CLI card — the Verify command + unit tests + PR review are the
+  human gate; no visible behavior changes to manually check).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_reports_api.py -q`
 
 ---
 
