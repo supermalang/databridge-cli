@@ -225,6 +225,107 @@ def test_validate_recipe_table_needs_categorical():
     assert not ok2 and "categorical" in reason2
 
 
+# --------------------------------------------------------------------------- #
+# MNT-28 -- single-column chart types must reject group_by / 2+ questions
+# --------------------------------------------------------------------------- #
+#
+# bar / horizontal_bar / pie / donut / histogram / table are rendered by
+# charts.py from questions[0] only (c = q[0]); anything else -- a group_by, or
+# a second+ question -- is silently dropped by the renderer today. The
+# validator must reject those shapes instead of silently passing them, while
+# still accepting the legitimate single-column case unchanged.
+_SINGLE_COLUMN_TYPES = ["bar", "horizontal_bar", "pie", "donut", "histogram", "table"]
+
+# One column per type that satisfies today's minimum requirement on its own
+# (categorical for bar/horizontal_bar/pie/donut/table; quantitative for
+# histogram), so the ONLY thing under test is the group_by / extra-question
+# rejection -- not the base column-count/role requirement.
+_BASE_QUESTION = {
+    "bar": "Region",
+    "horizontal_bar": "Region",
+    "pie": "Region",
+    "donut": "Region",
+    "histogram": "Age",
+    "table": "Region",
+}
+
+
+def test_single_column_types_reject_group_by():
+    """AC: for each of bar/horizontal_bar/pie/donut/histogram/table, a proposal
+    setting group_by is rejected with a reason naming the chart type and the
+    constraint -- not silently passed."""
+    for ctype in _SINGLE_COLUMN_TYPES:
+        recipe = {
+            "type": ctype,
+            "questions": [_BASE_QUESTION[ctype]],
+            "group_by": "Region",
+        }
+        ok, reason = validate_recipe(recipe, _profile_fixture())
+        assert not ok, f"{ctype}: group_by must be rejected, got ok=True reason={reason!r}"
+        assert ctype in reason, f"{ctype}: reason must name the chart type, got {reason!r}"
+        assert "group_by" in reason, (
+            f"{ctype}: reason must name the group_by constraint, got {reason!r}"
+        )
+
+
+def test_single_column_types_reject_two_or_more_questions():
+    """AC: for each of the six types, a proposal with 2+ questions is rejected
+    the same way (reason naming the chart type and the constraint)."""
+    for ctype in _SINGLE_COLUMN_TYPES:
+        recipe = {"type": ctype, "questions": ["Region", "Age"]}
+        ok, reason = validate_recipe(recipe, _profile_fixture())
+        assert not ok, f"{ctype}: 2+ questions must be rejected, got ok=True reason={reason!r}"
+        assert ctype in reason, f"{ctype}: reason must name the chart type, got {reason!r}"
+
+
+def test_single_column_types_accept_exactly_one_question_no_group_by():
+    """AC: for each of the six types, exactly 1 question and no group_by still
+    passes validation unchanged -- no regression to the legitimate single-column
+    case."""
+    for ctype in _SINGLE_COLUMN_TYPES:
+        recipe = {"type": ctype, "questions": [_BASE_QUESTION[ctype]]}
+        ok, reason = validate_recipe(recipe, _profile_fixture())
+        assert ok, f"{ctype}: single question with no group_by must still validate, got reason={reason!r}"
+        assert reason == ""
+
+
+def test_multi_column_types_unaffected_by_group_by_and_extra_questions():
+    """AC: chart types that legitimately consume group_by/multiple questions
+    (grouped_bar, stacked_bar, heatmap) are unaffected -- still validate exactly
+    as before. All three need >=2 categorical columns; Region+Age won't satisfy
+    that (Age is quantitative), matching pre-existing behavior, while
+    Region+group_by=Region (2 categorical columns counted) validates ok exactly
+    as it did before this fix."""
+    for ctype in ["grouped_bar", "stacked_bar", "heatmap"]:
+        ok, reason = validate_recipe(
+            {"type": ctype, "questions": ["Region"], "group_by": "Region"}, _profile_fixture()
+        )
+        assert ok, f"{ctype}: group_by must still count toward the categorical requirement, got reason={reason!r}"
+        assert reason == ""
+
+        ok2, reason2 = validate_recipe(
+            {"type": ctype, "questions": ["Region", "Age"]}, _profile_fixture()
+        )
+        assert not ok2, f"{ctype}: Region+Age (only 1 categorical) must still fail as before"
+        assert "categorical" in reason2
+
+
+def test_chart_reqs_text_states_exact_column_count_and_no_group_by():
+    """AC: CHART_REQS's requirement text for the six affected types states the
+    exact/max column count and the no-group_by constraint (this text is used
+    verbatim in the LLM prompt via _CHART_TYPES_BLOCK)."""
+    for ctype in _SINGLE_COLUMN_TYPES:
+        _check, requirement = ask_engine.CHART_REQS[ctype]
+        assert "1" in requirement, (
+            f"{ctype}: requirement text must state the exact/max column count, got {requirement!r}"
+        )
+        assert "group_by" in requirement.lower() or "group by" in requirement.lower(), (
+            f"{ctype}: requirement text must state the no-group_by constraint, got {requirement!r}"
+        )
+        # Must be reflected verbatim in the LLM prompt block.
+        assert requirement in ask_engine._CHART_TYPES_BLOCK
+
+
 def test_validate_recipe_bullet_list_needs_one_column():
     """MNT-19 AC: CHART_REQS includes a "bullet_list" entry requiring >=1 column
     (unlike 'table', it must NOT require a categorical column -- the whole point

@@ -60,21 +60,28 @@ def build_catalog(profile: Dict[str, Dict], cfg: Optional[Dict] = None) -> Dict:
 
 # type -> (check(n_cat, n_quant, n_date) -> bool, human requirement)
 CHART_REQS = {
-    "bar":            (lambda c, q, d: c >= 1, "≥1 categorical column"),
-    "horizontal_bar": (lambda c, q, d: c >= 1, "≥1 categorical column"),
-    "pie":            (lambda c, q, d: c >= 1, "≥1 categorical column"),
-    "donut":          (lambda c, q, d: c >= 1, "≥1 categorical column"),
+    "bar":            (lambda c, q, d: c >= 1, "exactly 1 categorical column, no group_by"),
+    "horizontal_bar": (lambda c, q, d: c >= 1, "exactly 1 categorical column, no group_by"),
+    "pie":            (lambda c, q, d: c >= 1, "exactly 1 categorical column, no group_by"),
+    "donut":          (lambda c, q, d: c >= 1, "exactly 1 categorical column, no group_by"),
     "line":           (lambda c, q, d: d >= 1, "≥1 date column"),
     "area":           (lambda c, q, d: d >= 1, "≥1 date column"),
-    "histogram":      (lambda c, q, d: q >= 1, "≥1 quantitative column"),
+    "histogram":      (lambda c, q, d: q >= 1, "exactly 1 quantitative column, no group_by"),
     "scatter":        (lambda c, q, d: q >= 2, "≥2 quantitative columns"),
     "box_plot":       (lambda c, q, d: c >= 1 and q >= 1, "1 categorical + 1 quantitative"),
     "grouped_bar":    (lambda c, q, d: c >= 2, "≥2 categorical columns"),
     "stacked_bar":    (lambda c, q, d: c >= 2, "≥2 categorical columns"),
     "heatmap":        (lambda c, q, d: c >= 2, "≥2 categorical columns"),
-    "table":          (lambda c, q, d: c >= 1, "≥1 categorical column"),
+    "table":          (lambda c, q, d: c >= 1, "exactly 1 categorical column, no group_by"),
     "bullet_list":    (lambda c, q, d: c + q + d >= 1, "≥1 column"),
 }
+
+# Chart types whose renderer (src/reports/charts.py) consumes only questions[0]
+# and never reads questions[1:] or opts['group_by']; a group_by or extra
+# question is silently dropped, so _validate_chart must reject those shapes.
+_SINGLE_COLUMN_CHART_TYPES = frozenset(
+    {"bar", "horizontal_bar", "pie", "donut", "histogram", "table"}
+)
 
 
 def validate_recipe(recipe: Dict, profile: Dict[str, Dict],
@@ -112,6 +119,22 @@ def _validate_chart(recipe: Dict, profile: Dict[str, Dict],
     ctype = recipe.get("type")
     if ctype not in CHART_REQS:
         return False, f"unsupported chart type '{ctype}'"
+    # These chart types are rendered by charts.py from questions[0] only
+    # (c = q[0]); a group_by or any extra question is silently dropped by the
+    # renderer, so reject those shapes here rather than passing them through to
+    # a misleadingly-titled, factually wrong artifact (MNT-28).
+    if ctype in _SINGLE_COLUMN_CHART_TYPES:
+        questions = list(recipe.get("questions") or [])
+        if recipe.get("group_by"):
+            return False, (
+                f"'{ctype}' renders exactly 1 column; got a group_by — use "
+                f"'grouped_bar' or 'heatmap' for a cross-tab breakdown"
+            )
+        if len(questions) > 1:
+            return False, (
+                f"'{ctype}' renders exactly 1 column; got {len(questions)} "
+                f"questions — use 'grouped_bar' or 'heatmap' for a cross-tab breakdown"
+            )
     source = recipe.get("source") or "main"
     tp = profile.get(source)
     if tp is None:

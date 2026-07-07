@@ -1783,9 +1783,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-28 — Fix: single-column chart types silently drop extra questions/group_by instead of rejecting them (P1)**
+- [x] **MNT-28 — Fix: single-column chart types silently drop extra questions/group_by instead of rejecting them (P1)**
 
-  **Created:** 2026-07-05
+  **Created:** 2026-07-05 · **Completed:** 2026-07-07
 
   **Type:** Fix
 
