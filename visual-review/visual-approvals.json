@@ -70,5 +70,41 @@
     "task": "MNT-27",
     "capturedImage": "express-template-fill.visual.spec.ts/mnt-27-apply-loading-state-desktop-linux.png",
     "at": "2026-07-06T17:09:00Z"
+  },
+  "example.visual.spec.ts/button-primary-mobile-linux.png": {
+    "decision": "approved",
+    "task": "VIS-13",
+    "capturedImage": "example.visual.spec.ts/button-primary-mobile-linux.png",
+    "at": "2026-07-07T03:13:39Z"
+  },
+  "example.visual.spec.ts/button-primary-tablet-linux.png": {
+    "decision": "approved",
+    "task": "VIS-13",
+    "capturedImage": "example.visual.spec.ts/button-primary-tablet-linux.png",
+    "at": "2026-07-07T03:13:39Z"
+  },
+  "example.visual.spec.ts/button-primary-desktop-linux.png": {
+    "decision": "approved",
+    "task": "VIS-13",
+    "capturedImage": "example.visual.spec.ts/button-primary-desktop-linux.png",
+    "at": "2026-07-07T03:13:39Z"
+  },
+  "example.visual.spec.ts/button-disabled-mobile-linux.png": {
+    "decision": "approved",
+    "task": "VIS-13",
+    "capturedImage": "example.visual.spec.ts/button-disabled-mobile-linux.png",
+    "at": "2026-07-07T03:13:39Z"
+  },
+  "example.visual.spec.ts/button-disabled-tablet-linux.png": {
+    "decision": "approved",
+    "task": "VIS-13",
+    "capturedImage": "example.visual.spec.ts/button-disabled-tablet-linux.png",
+    "at": "2026-07-07T03:13:39Z"
+  },
+  "example.visual.spec.ts/button-disabled-desktop-linux.png": {
+    "decision": "approved",
+    "task": "VIS-13",
+    "capturedImage": "example.visual.spec.ts/button-disabled-desktop-linux.png",
+    "at": "2026-07-07T03:13:39Z"
   }
 }
