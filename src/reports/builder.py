@@ -424,6 +424,11 @@ class ReportBuilder:
         )
 
         now = datetime.today()
+        # Native-table sentinels (tables: recipes AND MNT-33 `table`-type charts)
+        # accumulate here across _generate_charts + _generate_tables, then get
+        # swapped by _insert_native_tables after render. Reset once per build so
+        # a split_by iteration never inherits the previous slice's tables.
+        self._pending_tables = {}
         context = {
             "report_title":  self.report_cfg.get("title", "Report"),
             "period":        self.report_cfg.get("period", datetime.today().strftime("%B %Y")),
@@ -550,6 +555,22 @@ class ReportBuilder:
                     chart_df, resolved_questions, resolved.get("options") or {})
                 continue
 
+            # MNT-33: the legacy `table` CHART TYPE renders as a NATIVE Word table,
+            # not a flattened PNG — the same w:tbl path the tables: section uses
+            # (MNT-30). A PNG table is unsearchable, non-editable, and inaccessible.
+            # Route it through the shared native-table sentinel: fill the chart's
+            # own {{ chart_<name> }} placeholder with a sentinel that
+            # _insert_native_tables swaps for a real table after tpl.render. This
+            # bridges legacy `charts: [{type: table}]` configs with no migration.
+            if resolved.get("type") == "table":
+                display_df = _table_display_frame(
+                    chart_df, resolved_questions, resolved.get("options") or {})
+                self._pending_tables = getattr(self, "_pending_tables", None) or {}
+                sentinel = f"@@DBNATIVE_TABLE::chart::{name}::@@"
+                self._pending_tables[sentinel] = display_df
+                images[f"chart_{name}"] = sentinel
+                continue
+
             png = generate_chart(resolved, chart_df, language=_language, palette=get_palette(self.cfg))
             width = Inches(c.get("options", {}).get("width_inches", 5.5))
             images[f"chart_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
@@ -574,8 +595,10 @@ class ReportBuilder:
             q["kobo_key"]: q.get("export_label") or q.get("label") or q["kobo_key"]
             for q in self.cfg.get("questions", [])
         }
-        # Pending (sentinel → display frame) swaps applied after render.
-        self._pending_tables = {}
+        # Pending (sentinel → display frame) swaps applied after render. Preserve
+        # any sentinels already registered by _generate_charts (MNT-33 table-type
+        # charts run first in the context dict) rather than wiping them.
+        self._pending_tables = getattr(self, "_pending_tables", None) or {}
         sentinels = {}
         for t in self.tables_cfg:
             name = t.get("name")
