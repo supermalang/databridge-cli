@@ -6,12 +6,22 @@ name: databridge-dev
 # job ensures the `databridge` bucket exists. Data persists in named volumes across rebuilds.
 #
 # MEMORY BUDGET — sized for an 8 GB VM running ONE project at a time:
-#   app   5120m  (the IDE lives here: VS Code Server + Pylance + Node + Claude + Playwright)
+#   app   3072m  (the IDE lives here: VS Code Server + Pylance + Node + Claude + Playwright)
 #   db     512m
 #   minio  384m
-#   ----------- persistent total ~6016m, leaving ~1.7g for the host + Docker daemon overhead.
+#   ----------- persistent total ~3968m, leaving ~3.7g for the host + Docker daemon overhead.
 # NOTE: `free -h` INSIDE the container reports the HOST's memory, not this cap. The real
 # ceiling is the cgroup limit — check with `cat /sys/fs/cgroup/memory.max`.
+#
+# CPU BUDGET — sized for a 4-core host, capping ALL compose services to 2 cores combined so
+# at least 2 cores stay free for the host OS + other projects/containers running alongside
+# this one. `cpus:` is a soft cgroup quota (throttles, doesn't pin to specific cores) — check
+# the live quota with `cat /sys/fs/cgroup/cpu.max`.
+#   app          1.5
+#   db           0.25
+#   minio        0.15
+#   createbucket 0.1
+#   ----------- total 2.0, leaving 2 cores free.
 
 services:
   app:
@@ -21,9 +31,10 @@ services:
     command: sleep infinity
     hostname: xayma
     # mem_limit is the hard ceiling (OOM-kills past it); mem_reservation is the soft floor.
-    # 5 GB so the extension host (node + Pylance + Claude + Playwright) doesn't hit the cap.
-    mem_limit: 5120m
+    # 3 GB so the extension host (node + Pylance + Claude + Playwright) doesn't hit the cap.
+    mem_limit: 3072m
     mem_reservation: 2048m
+    cpus: 1.5
     volumes:
       - ..:/workspaces/databridge-cli:cached
       - npm-global:/home/vscode/.npm-global
@@ -55,6 +66,7 @@ services:
     image: postgres:16
     mem_limit: 512m
     mem_reservation: 256m
+    cpus: 0.25
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: dev
@@ -73,6 +85,7 @@ services:
     image: minio/minio
     mem_limit: 384m
     mem_reservation: 128m
+    cpus: 0.15
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minio
@@ -86,6 +99,7 @@ services:
   createbucket:
     image: minio/mc
     mem_limit: 64m
+    cpus: 0.1
     depends_on:
       minio:
         condition: service_started
