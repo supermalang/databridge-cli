@@ -820,3 +820,178 @@ def test_apply_dedupes_existing_synthesized_view(monkeypatch, client, tmp_path):
     views = written.get("views") or []
     matching = [v for v in views if v.get("name") == "auto_health_facilities__commune"]
     assert len(matching) == 1, f"synthesized view not persisted exactly once: {views}"
+
+
+# --------------------------------------------------------------------------- #
+# MNT-27 — Apply right after Infer must be a profile cache HIT, not a second
+# full recompute. /api/template/infer currently calls profile_dataset(...)
+# directly, bypassing the shared perf-cache keyed via _cache_key(request, cfg,
+# "profile") that /api/profile and /api/template/apply already share. Because
+# infer never populates that cache key, apply's own cache-or-compute lookup is
+# guaranteed to miss right after an infer, so profile_dataset runs a SECOND
+# time for the same data/config. These tests spy on the endpoint's use of
+# profile_dataset (web.main.profile_dataset) across a real infer -> apply pair
+# and assert the total call count.
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def _mnt27_data_session(monkeypatch, tmp_path):
+    """A stable, non-empty DATA_DIR so `_cache_key` fingerprints a real
+    data-session (an empty/missing DATA_DIR makes `_cache_key` return None,
+    which would make caching a no-op and this test vacuous)."""
+    data_dir = tmp_path / "data_processed"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "test_data.csv").write_text("id\n1\n2\n3\n", encoding="utf-8")
+    monkeypatch.setattr(wm, "DATA_DIR", data_dir)
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(wm, "TEMPLATES_DIR", templates_dir)
+    return data_dir
+
+
+def test_apply_after_infer_does_not_recompute_profile(
+    monkeypatch, api_client, tmp_path, dev_active_project, _mnt27_data_session
+):
+    """AC (MNT-27): "Clicking Apply & Build immediately after a successful Infer
+    no longer triggers a second full profile recompute — apply's profile cache
+    lookup is a hit (verified via a cache-hit/call-count assertion on
+    profile_dataset / the endpoint's _compute)."
+
+    Only the LLM/inference seam and profile_dataset itself are mocked (profile_
+    dataset is spied so we can count calls without depending on its internals);
+    the real infer -> apply endpoints, the real perf_cache, and the real active
+    project resolution are exercised.
+    """
+    import src.reports.template_inference as ti
+
+    cfg = _ai_cfg()
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "load_processed_data", lambda *a, **k: (_df(), {}))
+    monkeypatch.setattr(wm, "_require", lambda *a, **k: None)  # RBAC not under test
+    monkeypatch.setattr(wm.ask_engine, "build_catalog", lambda *a, **k: {})
+
+    calls = {"n": 0}
+
+    def _counting_profile_dataset(*a, **k):
+        calls["n"] += 1
+        return {"main": {"name": "main", "columns": []}}
+
+    monkeypatch.setattr(wm, "profile_dataset", _counting_profile_dataset)
+
+    monkeypatch.setattr(ti, "extract_placeholders", lambda *a, **k: [object(), object()])
+    monkeypatch.setattr(ti, "resolve_sources", lambda *a, **k: None)
+    proposal = {"token_index": 0, "kind": "chart", "name": "by_region",
+                "spec": {"name": "by_region", "type": "bar", "questions": ["Region"]},
+                "confidence": 0.9, "reason": "", "status": "ok"}
+    monkeypatch.setattr(ti, "infer_specs", lambda *a, **k: [dict(proposal)])
+    monkeypatch.setattr(ti, "annotate_proposals", lambda props, *a, **k: props)
+    monkeypatch.setattr(
+        ti, "apply_inference",
+        lambda approved, cfg_in, template_path: (cfg_in, str(tmp_path / "report.resolved.docx")),
+    )
+
+    infer_resp = api_client.post("/api/template/infer", json={"template": "report.docx"})
+    assert infer_resp.status_code == 200, infer_resp.text
+    assert calls["n"] == 1, "infer itself should compute the profile exactly once"
+
+    apply_resp = api_client.post(
+        "/api/template/apply",
+        json={"proposals": infer_resp.json()["proposals"], "template": "report.docx"},
+    )
+    assert apply_resp.status_code == 200, apply_resp.text
+
+    assert calls["n"] == 1, (
+        f"profile_dataset was invoked {calls['n']} times across infer+apply; "
+        "Apply run right after Infer must reuse the cached profile (a cache HIT), "
+        "not trigger a second full recompute"
+    )
+
+
+def test_profile_endpoint_still_cache_hit_for_existing_callers(
+    monkeypatch, api_client, dev_active_project, _mnt27_data_session
+):
+    """Regression guard (AC): "/api/profile's own caching behavior" must remain a
+    hit for repeated calls — the infer-side cache-sharing fix must not disturb
+    /api/profile's existing cache-or-compute path."""
+    cfg = {"questions": [{"export_label": "Region", "category": "categorical"}]}
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "load_processed_data", lambda *a, **k: (_df(), {}))
+
+    calls = {"n": 0}
+
+    def _counting_profile_dataset(*a, **k):
+        calls["n"] += 1
+        return {"main": {"name": "main", "columns": []}}
+
+    monkeypatch.setattr(wm, "profile_dataset", _counting_profile_dataset)
+
+    first = api_client.get("/api/profile")
+    second = api_client.get("/api/profile")
+    assert first.status_code == 200 and second.status_code == 200
+    assert calls["n"] == 1, "a second /api/profile call must be served from cache, not recomputed"
+
+
+def test_apply_after_infer_still_drops_needs_attention_pii_bullet_list(
+    monkeypatch, api_client, tmp_path, dev_active_project, _mnt27_data_session
+):
+    """Regression guard (AC): "No regression to the existing re-validation
+    behavior (needs_attention rows are still correctly re-flagged server-side
+    using the now cache-shared profile)."
+
+    Runs a REAL infer (populating/using the shared profile) immediately followed
+    by a REAL apply that re-validates a client-echoed 'approved' bullet_list
+    naming a PII column; it must still be dropped (n_written == 0), exactly like
+    the pre-existing (uncached) apply-only regression test above.
+    """
+    import src.reports.template_inference as ti
+
+    cfg = {"charts": [], "views": [],
+           "questions": [{"export_label": "Region", "category": "categorical"},
+                         {"export_label": "Story", "type": "text", "pii": True}],
+           "pii": {"redact": []},
+           "ai": {"provider": "openai", "api_key": "sk-x"}}
+    saved = {}
+    monkeypatch.setattr(wm, "load_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(wm, "write_config", lambda c, p: saved.update({"cfg": c}))
+    monkeypatch.setattr(wm, "_require", lambda *a, **k: None)
+    monkeypatch.setattr(
+        wm, "load_processed_data",
+        lambda *a, **k: (pd.DataFrame({"_id": [1, 2, 3], "Region": ["N", "E", "E"],
+                                       "Story": ["s1", "s2", "s3"]}), {}),
+    )
+
+    monkeypatch.setattr(ti, "extract_placeholders", lambda *a, **k: [object()])
+    monkeypatch.setattr(ti, "resolve_sources", lambda *a, **k: None)
+    proposal = {"token_index": 0, "kind": "chart", "name": "by_region",
+                "spec": {"name": "by_region", "type": "bar", "questions": ["Region"]},
+                "confidence": 0.9, "reason": "", "status": "ok"}
+    monkeypatch.setattr(ti, "infer_specs", lambda *a, **k: [dict(proposal)])
+    # annotate_proposals runs FOR REAL both in infer and in apply's re-validation —
+    # only the LLM seam (infer_specs) is mocked — so the PII gate is genuinely exercised.
+
+    resolved = str(tmp_path / "report.resolved.docx")
+
+    def _apply(approved_props, cfg_in, template_path):
+        for p in approved_props:
+            cfg_in.setdefault("charts", []).append(p["spec"])
+        return cfg_in, resolved
+
+    monkeypatch.setattr(ti, "apply_inference", _apply)
+
+    infer_resp = api_client.post("/api/template/infer", json={"template": "report.docx"})
+    assert infer_resp.status_code == 200, infer_resp.text
+
+    # Client claims 'approved' on a fabricated PII bullet_list naming the redacted
+    # Story column, alongside the legitimately-inferred proposal.
+    approved = list(infer_resp.json()["proposals"]) + [
+        {"token_index": 1, "kind": "chart", "name": "stories",
+         "spec": {"name": "stories", "type": "bullet_list", "questions": ["Story"]},
+         "status": "approved"},
+    ]
+    apply_resp = api_client.post(
+        "/api/template/apply", json={"proposals": approved, "template": "report.docx"}
+    )
+    assert apply_resp.status_code == 200, apply_resp.text
+    written = saved.get("cfg") or cfg
+    chart_names = [c.get("name") for c in (written.get("charts") or [])]
+    assert "stories" not in chart_names, \
+        "a PII bullet_list must still be dropped after the profile-cache-sharing fix"

@@ -732,6 +732,7 @@
       "allRowsGood": "Toutes les lignes sont correctes.",
       "resolveFirst": "Résolvez d'abord les lignes signalées",
       "building": "Génération…",
+      "applying": "Application…",
       "applyBuild": "Appliquer et générer",
       "appliedCount": "✓ {{count}} espace(s) réservé(s) appliqué(s)",
       "resolvedSuffix": " · résolu {{name}}",

@@ -732,6 +732,7 @@
       "allRowsGood": "All rows look good.",
       "resolveFirst": "Resolve the flagged rows first",
       "building": "Building…",
+      "applying": "Applying…",
       "applyBuild": "Apply & build",
       "appliedCount": "✓ Applied {{count}} placeholder(s)",
       "resolvedSuffix": " · resolved {{name}}",
