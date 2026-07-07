@@ -77,7 +77,7 @@ Sprint exit — checked by /report + /retro:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 14 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 12 | 10 / 12 |
+| [Visual / E2E harness](#visual--e2e-harness) | 12 | 11 / 12 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
@@ -791,9 +791,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **VIS-13 — Relocate Tier 2 Storybook config + stories + specs into visual-review/storybook/ (P2)**
+- [x] **VIS-13 — Relocate Tier 2 Storybook config + stories + specs into visual-review/storybook/ (P2)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Completed:** 2026-07-07
 
   Tier 2's one existing spec (`example.visual.spec.ts`) is already visual-only (no functional AC
   mixed in), so this card is a relocation, not a functional/visual split. Moves the Storybook
