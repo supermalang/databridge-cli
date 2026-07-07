@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 33 | 31 / 33 |
+| [Maintenance & hardening](#maintenance--hardening) | 33 | 32 / 33 |
 
 ---
 
@@ -2105,9 +2105,9 @@ Sprint exit — checked by /report + /retro:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py tests/test_lists_section.py -q`
 
-- [ ] **MNT-33 — Fix: the `table` chart type still renders tabular data as a PNG image instead of a native Word table (P1)**
+- [x] **MNT-33 — Fix: the `table` chart type still renders tabular data as a PNG image instead of a native Word table (P1)**
 
-  **Created:** 2026-07-07
+  **Created:** 2026-07-07 · **Completed:** 2026-07-07
 
   **Type:** Fix
 
