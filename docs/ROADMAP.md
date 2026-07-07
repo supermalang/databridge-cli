@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 31 | 31 / 31 |
+| [Maintenance & hardening](#maintenance--hardening) | 33 | 31 / 33 |
 
 ---
 
@@ -2040,6 +2040,134 @@ Sprint exit — checked by /report + /retro:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_reports_api.py -q`
 
+
+- [ ] **MNT-32 — Fix: Express-inferred `list` on repeat-group data is wrongly flagged `needs_attention` and dropped (`list` excluded from repeat-source auto-resolution) (P1)**
+
+  **Created:** 2026-07-07
+
+  **Type:** Fix
+
+  Reported: in the Express path a placeholder was inferred as a `list`, the user kept the `list`
+  kind, yet the built report showed a table PNG. Root cause (reproduced): `_DATA_KINDS` in
+  `src/reports/template_inference.py` (~L582) is `("chart", "indicator", "summary", "table")` —
+  it **excludes `"list"`**. `_autoresolve_repeat_source` (~L415) bails immediately for any kind
+  not in that tuple, so a `list` spec whose column lives in a repeat-group base table (the
+  natural case — a list of village/member names) never gets its `source` stamped.
+  `annotate_proposals` (~L541) then validates it against the `main` table only, the column isn't
+  there, and it is flagged `needs_attention` (`reason: "column '<x>' not found in 'main'"`). The
+  Express review UI blocks "Apply & Build" while any row is `needs_attention`, so the user must
+  drop or re-kind the list — the identical column validates clean as a `table` — funnelling a
+  repeat-group list onto the table path (and, pre-MNT-30, into a PNG). Reproduced
+  deterministically: identical `Village` column in a repeat table → `list` = `needs_attention`,
+  `table` = `ok, source=hh_members`.
+
+  **Files:**
+  - `src/reports/template_inference.py` — add `"list"` to `_DATA_KINDS` (~L582) so
+    `_autoresolve_repeat_source` stamps the repeat-group `source` for list specs exactly as it
+    already does for `table`/`chart`/`summary`. Confirm `_referenced_columns` reads a list spec's
+    column whether stored as `question` (singular) or `questions` (plural).
+  - `src/reports/builder.py` — (verify) `_generate_lists` reads `l.get("question")` (singular);
+    ensure an auto-resolved list spec carries the key `_generate_lists` reads (normalize on write
+    if needed) so a repeat-group list actually renders its rows as text, not empty.
+
+  **Acceptance criteria**
+  - A `list` proposal whose only referenced column lives in a single repeat-group base table (not
+    in `main`) is auto-resolved: `annotate_proposals` returns `status: "ok"` with the repeat table
+    stamped onto `spec["source"]` — matching the behavior of an identical `table` proposal
+  - When multiple repeat tables hold the column, the `list` proposal resolves to the largest by
+    row count with `status: "review"` and a note listing alternatives — identical to the `table`
+    kind's multi-table behavior
+  - A `list` proposal whose column is genuinely absent from every table still flags
+    `needs_attention` (no false-positive resolution)
+  - After `apply_inference`, the resolved list spec lands in `cfg["lists"]` (never `cfg["charts"]`
+    or `cfg["tables"]`) and a build renders `{{ list_<name> }}` as a text run (a `w:t`, no
+    `InlineImage`/embedded PNG) containing the repeat-group row values
+  - The `main`-table list case (column already in `main`) is unchanged (regression-pinned)
+
+  **Unit tests:** `tests/test_template_inference.py` (extend) — add a repeat-group profile
+  (`main` + an `hh_members`-style base table holding the list column) and assert: (a) a `list`
+  proposal on the repeat-only column returns `status: "ok"` with `spec["source"]` stamped to the
+  repeat table; (b) the identical `table` and `list` proposals now resolve the same source; (c) a
+  multi-repeat-table column yields `status: "review"`; (d) a truly-absent column still flags
+  `needs_attention`. Plus `tests/test_lists_section.py` (extend) — after `apply_inference` of a
+  resolved repeat-group list, assert the entry is written to `cfg["lists"]` and `_generate_lists`
+  produces non-empty text for it (no PNG/InlineImage).
+
+  **E2E:** N/A (reason: backend inference + validation fix — no UI/JSX change; the Express review
+  UI already renders whatever `annotate_proposals` returns. Verified entirely by the pytest above,
+  per the non-UI convention.)
+
+  **UAT:** N/A (reason: non-UI/CLI card — the Verify command + unit tests + PR review are the human
+  gate.)
+
+  **Config impact:** none (no schema/config-shape change; a `list` recipe may now carry an
+  auto-stamped `source:` exactly as `table` recipes already do).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py tests/test_lists_section.py -q`
+
+- [ ] **MNT-33 — Fix: the `table` chart type still renders tabular data as a PNG image instead of a native Word table (P1)**
+
+  **Created:** 2026-07-07
+
+  **Type:** Fix
+
+  MNT-30 made the dedicated `tables:` config section render a native `w:tbl`, but the old `table`
+  **chart type** was left in place: `chart_table` is still registered in `CHART_DISPATCH`
+  (`src/reports/charts.py` ~L795), still offered in the frontend `CHART_TYPES` list
+  (`frontend/src/pages/Composition.jsx` ~L23), and any `charts:` entry with `type: table` still
+  flows through `_generate_charts` → `generate_chart` → matplotlib PNG → `InlineImage`
+  (`src/reports/builder.py` ~L553-555). This violates the project rule (established by MNT-30)
+  that tabular output must be a native, selectable/editable/accessible python-docx table — a PNG
+  table is unsearchable, non-editable, and invisible to screen readers — and leaves a second,
+  UI-exposed way to produce exactly the image tables MNT-30 set out to eliminate.
+
+  **Files:**
+  - `src/reports/builder.py` — in `_generate_charts`, when a resolved chart's `type == "table"`,
+    route it to the native table path (build the display frame + emit a `{{ table_<name> }}`
+    sentinel via the same mechanism `_generate_tables`/`_insert_native_tables` use) instead of
+    `generate_chart` + `InlineImage`. Bridges legacy `charts: [{type: table}]` configs to native
+    output with no config migration required.
+  - `frontend/src/pages/Composition.jsx` — remove `'table'` from the chart-type `CHART_TYPES`
+    list (~L23) and its helper entries (~L40, ~L114) so new tables are added via the Tables
+    section, not the chart dropdown. Existing `type: table` charts still load and now render
+    native.
+  - `src/reports/charts.py` — keep `chart_table`/`CHART_DISPATCH["table"]` for the Tables-section
+    live preview the editor reuses (`/api/charts/preview` with `type: "table"`), OR redirect that
+    preview too; decide in implementation. Do not break the Tables-section preview.
+
+  **Acceptance criteria**
+  - A `charts:` config entry with `type: table` renders in the built `.docx` as a native
+    python-docx table (`document.tables` gains a `w:tbl`) with borders and NO `InlineImage`/
+    embedded PNG for it — identical output to the equivalent `tables:` recipe
+  - Real chart types (bar/pie/line/histogram/etc.) still render as `InlineImage` PNGs (no chart
+    regression — python-docx has no chart API, explicitly out of scope)
+  - The Composition chart-type dropdown no longer offers `table`; the Tables section remains the
+    way to add a native table
+  - Loading a legacy config that contains a `type: table` chart does not error and produces a
+    native table (backward-compatible, no migration step required of the user)
+  - The Tables-section live preview (`/api/charts/preview`) still renders
+
+  **Unit tests:** `tests/test_builder_tables*.py` / `tests/test_lists_section.py`-adjacent (new
+  or extend) — build a report from a `charts:` config with a single `type: table` entry; assert
+  the rendered doc contains a native `w:tbl` (via `document.tables`) for it and zero
+  `InlineImage`/embedded-PNG parts attributable to that entry; assert a sibling `type: bar` chart
+  in the same config still renders an `InlineImage` (regression guard). Frontend:
+  `frontend/tests/` (Vitest) assert `CHART_TYPES` excludes `'table'`.
+
+  **E2E:** N/A (reason: the only UI change is removing one option from a dropdown, verified by the
+  Vitest assertion on `CHART_TYPES`; the docx-output change is backend, verified by pytest. No new
+  screen or visual surface. If review deems the dropdown change needs a visual baseline, promote to
+  a real E2E at that point.)
+
+  **UAT:** N/A (reason: non-UI/CLI card — Verify command + unit tests + PR review are the human
+  gate.)
+
+  **Config impact:** `charts: [{type: table}]` entries now render native (output-quality change,
+  no schema change). `table` is no longer selectable as a chart type in the UI; the `tables:`
+  section is the supported path for tabular output.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder_tables*.py -q` and
+  `cd frontend && npm run test`
 ---
 
 ## Backlog — parked (out of scope for now)
