@@ -579,7 +579,7 @@ def annotate_proposals(proposals: List[Proposal], profile: Dict,
 # specs, leaving only genuinely ambiguous/unknown columns flagged.
 
 # Data kinds whose columns map onto profile tables.
-_DATA_KINDS = ("chart", "indicator", "summary", "table")
+_DATA_KINDS = ("chart", "indicator", "summary", "table", "list")
 
 
 def _referenced_columns(spec: Dict) -> List[str]:
