@@ -1765,19 +1765,11 @@ Sprint exit — checked by /report + /retro:
   no cross-endpoint regression.
 
   **E2E:** N/A for the caching fix itself (backend timing, not a visible DOM assertion), but
-<<<<<<< Updated upstream
   extend `frontend/tests/e2e/express-template-fill.spec.ts` to assert the Apply button
   enters a visible loading/disabled state immediately on click (before the build-report terminal
   appears) — this part IS UI-facing. Visual: impeccable audit/critique + `toHaveScreenshot` of the
   Apply button's new loading state at all three viewports (mobile 390×844, tablet 820×1180,
   desktop 1440×900); a human approves them.
-=======
-  extend `frontend/tests/e2e/express-template-fill.spec.ts` to assert the Apply button enters a
-  visible loading/disabled state immediately on click (before the build-report terminal appears)
-  — this part IS UI-facing. Visual: impeccable audit/critique + `toHaveScreenshot` of the Apply
-  button's new loading state at all three viewports (mobile 390×844, tablet 820×1180, desktop
-  1440×900); a human approves them.
->>>>>>> Stashed changes
 
   **UAT:**
   1. Upload a template and click Infer.
