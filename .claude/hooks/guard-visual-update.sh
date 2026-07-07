@@ -2,11 +2,11 @@
 # guard-visual-update.sh — deny agent self-approval of Playwright visual baselines (MNT-16, VIS-7).
 #
 # Wire as PreToolUse(Bash) in settings.json. Regenerating the screenshot baselines under
-# frontend/tests/e2e/*-snapshots/ (Tier 1 app-driven), frontend/tests/storybook/*-snapshots/
-# (Tier 2), or visual-review/baselines/ (Tier 1 dedicated config, VIS-9) is a HUMAN-approval
-# step: a person runs the update, reviews the diff, and commits the PNGs. An agent must never
-# re-baseline a failing visual test via Bash instead of fixing the regression — that silently
-# defeats the visual gate.
+# visual-review/baselines/ (Tier 1 dedicated visual config, VIS-9) or
+# visual-review/storybook/baselines/ (Tier 2 Storybook, VIS-13) is a HUMAN-approval step: a
+# person runs the update, reviews the diff, and commits the PNGs. An agent must never re-baseline
+# a failing visual test via Bash instead of fixing the regression — that silently defeats the
+# visual gate.
 #
 # Blocks (with any leading cd/path/npx prefix and any extra flags):
 #   - npm run test:e2e:update

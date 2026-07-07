@@ -16,11 +16,11 @@ dispatches it). Never re-baselines; never edits `visual-approvals.json` or the r
 
 ## What it reports
 
-For every baseline PNG under `frontend/tests/e2e/**-snapshots/`, `frontend/tests/storybook/**-snapshots/`,
-or (from VIS-9) `visual-review/baselines/**/` that differs from `develop` (committed or
-uncommitted), look it up in `visual-review/visual-approvals.json` by its id — path relative to
-`frontend/tests/` for the first two locations, path relative to `visual-review/baselines/` for
-the third (POSIX separators either way) — and classify:
+For every baseline PNG under `visual-review/baselines/**/` (Tier 1 dedicated visual suite, VIS-9)
+or `visual-review/storybook/baselines/**/` (Tier 2 Storybook, VIS-13) that differs from `develop`
+(committed or uncommitted), look it up in `visual-review/visual-approvals.json` by its id — path
+relative to `visual-review/baselines/` or `visual-review/storybook/baselines/` respectively
+(POSIX separators) — and classify:
 
 - **approved** — ledger entry with `decision: "approved"`
 - **rejected** — ledger entry with `decision: "rejected"`

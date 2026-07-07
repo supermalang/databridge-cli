@@ -1,17 +1,21 @@
 name: Visual
 
-# Runs the Playwright visual harness (VIS-1): every UI change is screenshotted at
-# mobile/tablet/desktop and diffed against the committed baselines.
+# Runs the Playwright visual harness at mobile/tablet/desktop, diffed against the committed
+# baselines. Tier 1 is split into a functional suite (frontend/playwright.config.ts, no pixel
+# assertions) and a dedicated visual suite (visual-review/playwright.visual.config.ts); Tier 2
+# is the Storybook component-isolation visual suite (visual-review/playwright.storybook.config.ts).
+# See CLAUDE.md "Tests -> Visual / E2E" for the full layout (VIS-9-14).
 on:
   pull_request:
     branches: [main, develop]
     paths:
       - 'frontend/**'
+      - 'visual-review/**'
       - '.github/workflows/visual.yml'
 
 jobs:
   visual:
-    name: Playwright visual baselines (mobile/tablet/desktop)
+    name: Playwright functional + visual + Storybook visual (mobile/tablet/desktop)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -27,12 +31,20 @@ jobs:
         run: npm ci
       - name: Install Chromium (+ OS deps)
         run: npx playwright install --with-deps chromium
-      - name: Run visual tests
+      - name: Run Tier 1 functional suite
         run: npm run test:e2e
+      - name: Run Tier 1 visual suite
+        run: npm run test:visual
+      - name: Build Storybook
+        run: npm run storybook:build
+      - name: Run Tier 2 Storybook visual suite
+        run: npm run test:visual:storybook
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: frontend/playwright-report/
+          path: |
+            frontend/playwright-report/
+            visual-review/results/
           retention-days: 14
