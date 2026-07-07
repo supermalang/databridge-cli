@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 29 | 28 / 29 |
+| [Maintenance & hardening](#maintenance--hardening) | 30 | 28 / 30 |
 
 ---
 
@@ -1901,6 +1901,75 @@ Sprint exit — checked by /report + /retro:
   **UAT:** N/A — non-UI/CLI card, relies on the Verify command + PR review as the human gate.
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_vis12_visual_split_shard_c.py -k chart-editor -q`
+
+---
+
+- [ ] **MNT-30 — Fix: report tables render as PNG images instead of native Word tables (P1)**
+
+  **Created:** 2026-07-07
+
+  **Type:** Fix
+
+  Report table output currently renders as a flattened image, not editable Word content.
+  `src/reports/builder.py::_generate_tables` (~L463-487) forces every `{{ table_<name> }}`
+  placeholder to `type: "table"` and emits it as a docxtpl `InlineImage` PNG produced by the
+  `table` chart type (`chart_table` in `src/reports/charts.py`, `CHART_DISPATCH`). This violates
+  the project rule that tabular output must be a native python-docx table (selectable, editable,
+  accessible text) — a PNG table is unsearchable, non-editable, and inaccessible to screen
+  readers. Charts (bar/pie/line/etc.) stay as image renders — python-docx has no chart API, so
+  that is expected and explicitly out of scope.
+
+  **Approach:** render each `tables:` recipe into a docxtpl subdoc — `sub = tpl.new_subdoc();
+  tbl = sub.add_table(...)` — styled `Table Grid` when that style exists in the template, else
+  borders applied manually via `OxmlElement('w:tblBorders')` (`add_table()` adds none by
+  default); one header row + one row per record via `tbl.add_row().cells`; substitute the subdoc
+  at `{{ table_<name> }}`. This preserves the existing placeholder contract and `generate-template`
+  output (no template-syntax change). Alternatives considered: template-side `{% for %}` table
+  loops, or post-render docx walking — subdoc is the least invasive.
+
+  **Files:**
+  - `src/reports/builder.py` — `_generate_tables` (~L463-487): build a native table subdoc per
+    recipe instead of forcing `type: "table"` + `InlineImage`; keep source/filter/aggregate/
+    `join_parent` resolution unchanged.
+  - `src/reports/charts.py` — `chart_table` / `CHART_DISPATCH` (~L795): retained for an explicit
+    `charts:` entry of type `table` (a user-chosen chart), but no longer the path for
+    `{{ table_<name> }}` recipes; confirm whether `chart_table` becomes dead and remove only if so.
+  - `src/reports/template_generator.py` — confirm `{{ table_<name> }}` placeholder emission is a
+    single unbroken run and valid for subdoc substitution.
+
+  **Config/schema impact:** None — output-rendering change only; the `tables:` recipe shape is
+  unchanged.
+
+  **Acceptance criteria**
+  - A report built from a `tables:` recipe renders `{{ table_<name> }}` as a native Word table:
+    the output `.docx` contains a `w:tbl` element for that placeholder (visible in python-docx
+    `document.tables`) and NO embedded image for it
+  - The table has one header row (field/column labels) plus one row per record, populated as text
+    cells (not drawn as a figure)
+  - The table has visible borders — the `Table Grid` style when present in the template, otherwise
+    a manually-applied `w:tblBorders` element
+  - No regression to charts: a `bar` (or other) chart in the same report is still inserted as an
+    `InlineImage` PNG
+  - No regression to table data resolution: source selection, per-table filter/sample,
+    aggregation, and `join_parent` behave exactly as before (same rows/columns, now as native
+    cells)
+
+  **Unit tests:** `tests/test_native_tables.py` (new) — build a report whose config has one
+  `tables:` recipe and one `bar` chart, render to a temp `.docx`, then assert with python-docx:
+  (a) `len(document.tables) >= 1` and the recipe table has a header row + one row per record;
+  (b) the recipe placeholder resolves to a `w:tbl`, not an inline image; (c) borders are present
+  (`Table Grid` style or a `w:tblBorders` element); (d) the chart placeholder is still an
+  InlineImage/embedded PNG (no chart regression). Extend `tests/test_builder.py` instead if a
+  shared fixture fits better.
+
+  **E2E:** N/A (reason: no UI surface — this changes CLI/back-end `.docx` generation only; the
+  rendered document content is asserted by the pytest above, per the non-UI convention).
+
+  **UAT:** N/A (reason: non-UI/CLI card — the Verify command + unit tests + PR review are the
+  human gate; a reviewer opens a built report and confirms the table is selectable/editable text,
+  not an image).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_native_tables.py -q`
 
 ---
 
