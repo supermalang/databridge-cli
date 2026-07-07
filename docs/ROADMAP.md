@@ -1933,7 +1933,8 @@ Sprint exit — checked by /report + /retro:
     `join_parent` resolution unchanged.
   - `src/reports/charts.py` — `chart_table` / `CHART_DISPATCH` (~L795): retained for an explicit
     `charts:` entry of type `table` (a user-chosen chart), but no longer the path for
-    `{{ table_<name> }}` recipes; confirm whether `chart_table` becomes dead and remove only if so.
+    `{{ table_<name> }}` recipes. Do NOT delete `CHART_DISPATCH["table"]` — `table` stays a
+    user-selectable chart type; only remove `chart_table` itself if it proves genuinely dead.
   - `src/reports/template_generator.py` — confirm `{{ table_<name> }}` placeholder emission is a
     single unbroken run and valid for subdoc substitution.
 
@@ -1959,8 +1960,10 @@ Sprint exit — checked by /report + /retro:
   (a) `len(document.tables) >= 1` and the recipe table has a header row + one row per record;
   (b) the recipe placeholder resolves to a `w:tbl`, not an inline image; (c) borders are present
   (`Table Grid` style or a `w:tblBorders` element); (d) the chart placeholder is still an
-  InlineImage/embedded PNG (no chart regression). Extend `tests/test_builder.py` instead if a
-  shared fixture fits better.
+  InlineImage/embedded PNG (no chart regression); (e) borders are covered **both ways** — render
+  once against a template that defines the `Table Grid` style and once against one that does not,
+  asserting a bordered table in each so the manual-`w:tblBorders` fallback path is exercised.
+  Extend `tests/test_builder.py` instead if a shared fixture fits better.
 
   **E2E:** N/A (reason: no UI surface — this changes CLI/back-end `.docx` generation only; the
   rendered document content is asserted by the pytest above, per the non-UI convention).
