@@ -387,6 +387,33 @@ def test_annotate_flags_scatter_with_one_quantitative():
 
 
 # --------------------------------------------------------------------------- #
+# annotate_proposals — MNT-28: single-column chart type + group_by/2+ questions
+# --------------------------------------------------------------------------- #
+def test_annotate_flags_table_with_group_by_and_extra_question():
+    """AC: this validator is shared by both call sites -- Express Fill inference
+    (annotate_proposals -> _validate_data_proposal -> validate_recipe ->
+    _validate_chart) must also reject a 'table' proposal that sets group_by
+    and/or supplies 2+ questions, exactly like the direct ask_engine.validate_recipe
+    call. Reproduces the live bug: a '[table of Satisfaction by Region]'
+    placeholder inferred as {type: table, questions: [Region, Age], group_by:
+    Region} must be flagged needs_attention, not silently passed through to a
+    misleadingly-titled, factually wrong table render."""
+    proposals = [
+        _proposal("chart", {"name": "satisfaction_by_region", "title": "Satisfaction by Region",
+                            "type": "table", "questions": ["Region", "Age"],
+                            "group_by": "Region"},
+                  name="satisfaction_by_region", confidence=_HIGH_CONF),
+    ]
+    out = ti.annotate_proposals(proposals, _profile_xtf2())
+    assert _get(out[0], "status") == "needs_attention", (
+        "a table proposal with group_by + 2 questions must not silently pass "
+        "Express Fill validation"
+    )
+    reason = _get(out[0], "reason")
+    assert "table" in reason, reason
+
+
+# --------------------------------------------------------------------------- #
 # annotate_proposals — valid proposals pass
 # --------------------------------------------------------------------------- #
 def test_annotate_passes_valid_bar_indicator_summary():
