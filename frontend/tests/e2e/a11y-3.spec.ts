@@ -201,12 +201,6 @@ test.describe('A11Y-3 — Sources YAML textarea has a programmatic label', () =>
     // Even with the field empty (placeholder would be showing), the accessible name holds.
     await expectLabeled(yamlBox, 'Sources YAML textarea after clear');
   });
-
-  test('visual baseline: labeled Sources YAML field', async ({ page }) => {
-    const card = page.locator('.src-card');
-    await expect(card.locator('textarea')).toBeVisible();
-    await expect(card).toHaveScreenshot('a11y3-sources-yaml-field.png');
-  });
 });
 
 // ---------------------------------------------------------------------------------------
@@ -245,12 +239,6 @@ test.describe('A11Y-3 — Questions per-row export-label inputs are labeled + ro
   test('axe: no label / aria-input-field-name violations on the Questions table', async ({ page }) => {
     await expect(page.locator('input.q-export-input').first()).toBeVisible();
     await expectNoLabelViolations(page, '.q-table', 'Questions table has labelling violations');
-  });
-
-  test('visual baseline: labeled Questions export-label rows', async ({ page }) => {
-    const table = page.locator('table.q-table, .q-table').first();
-    await expect(table).toBeVisible();
-    await expect(table).toHaveScreenshot('a11y3-questions-export-rows.png');
   });
 });
 

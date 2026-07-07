@@ -208,26 +208,3 @@ test.describe('UX-6 — inline validation for the required project name', () => 
     await expect(page.locator('.project-form')).toBeVisible();
   });
 });
-
-test.describe('UX-6 — visual baseline of the invalid (empty-name) create form', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-  });
-
-  // Visual baseline of the create form in its INVALID state: empty name, inline
-  // error shown, submit disabled. Gate on the AC so the baseline cannot pass
-  // vacuously before the inline error exists. Screenshot the form element; hide
-  // the position:fixed terminal bar (no mask).
-  test('visual baseline of the empty-name create form (error shown, submit disabled)', async ({ page }) => {
-    await gotoApp(page);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await openCreateForm(page);
-
-    await expect(nameError(page), 'inline error must be shown before the baseline is captured')
-      .toBeVisible();
-    await expect(submitBtn(page), 'submit must be disabled before the baseline is captured')
-      .toBeDisabled();
-
-    await expect(page.locator('.project-form')).toHaveScreenshot('ux-6-empty-name-invalid.png');
-  });
-});

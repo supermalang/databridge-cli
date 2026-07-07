@@ -161,27 +161,3 @@ test.describe('UX-4 — unsaved-changes guard on the project form', () => {
     await expect(nameField(page)).toHaveValue('Global Health (edited)');
   });
 });
-
-test.describe('UX-4 — visual baseline of the unsaved-changes dialog (one per viewport)', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-  });
-
-  // Visual baseline of the confirmation dialog. Gate on the AC (dialog visible +
-  // warns of unsaved changes) so it cannot pass vacuously before the guard exists.
-  // Screenshot the dialog element directly; hide the position:fixed terminal bar.
-  test('visual baseline of the unsaved-changes confirmation dialog', async ({ page }) => {
-    await gotoApp(page);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await openProjectForm(page);
-
-    await nameField(page).fill('Global Health (edited)');
-    await backBtn(page).click();
-
-    const d = dialog(page);
-    await expect(d, 'the confirmation dialog must be visible before the baseline is captured')
-      .toBeVisible();
-    await expect(d).toContainText(/unsaved|discard/i);
-    await expect(d).toHaveScreenshot('ux-4-unsaved-changes-dialog.png');
-  });
-});

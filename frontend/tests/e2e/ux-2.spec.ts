@@ -258,32 +258,3 @@ test.describe('UX-2 — Escape closes the menu and returns focus to the trigger'
       'Escape must not activate/switch any project').toEqual([]);
   });
 });
-
-test.describe('UX-2 — visual baseline (one per viewport via playwright.config.ts)', () => {
-  let activations: Activations;
-  test.beforeEach(async ({ page }) => {
-    activations = { ids: [] };
-    await stubBootstrap(page, activations);
-  });
-
-  // Visual baseline of the OPEN menu with the first item keyboard-focused. Gate
-  // on the AC (aria-expanded true) so the baseline cannot pass vacuously against
-  // the pre-fix mouse-only menu. Screenshot the .project-menu element directly;
-  // hide the position:fixed terminal bar so it never intrudes.
-  test('visual baseline of the keyboard-opened menu (first item focused)', async ({ page }) => {
-    await gotoApp(page);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-
-    await switcher(page).focus();
-    await page.keyboard.press('Enter');
-    await expect(menu(page)).toBeVisible();
-    expect(await switcher(page).getAttribute('aria-expanded'),
-      'menu must be open (aria-expanded true) before the baseline is captured').toBe('true');
-
-    await page.keyboard.press('ArrowDown');
-    await expect(page.locator('.project-menu__item').first(),
-      'first menu item must be focused before the baseline is captured').toBeFocused();
-
-    await expect(menu(page)).toHaveScreenshot('project-menu-keyboard.png');
-  });
-});

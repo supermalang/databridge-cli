@@ -197,16 +197,6 @@ test.describe('A11Y-1 — Sources platform cards: keyboard operable', () => {
       ).toBe(true);
     }
   });
-
-  // Visual baseline of the keyboard-focused platform card (one assertion → one
-  // baseline per viewport via playwright.config.ts; a human approves them).
-  test('visual baseline of the focused platform card', async ({ page }) => {
-    await gotoSourcesConnection(page);
-    const kobo = platformCard(page, /Kobo/);
-    const reached = await tabUntilFocused(page, kobo);
-    expect(reached).toBe(true);
-    await expect(kobo).toHaveScreenshot('platform-card-focused.png');
-  });
 });
 
 test.describe('A11Y-1 — Home stage cards: real buttons, keyboard operable', () => {
@@ -262,17 +252,6 @@ test.describe('A11Y-1 — Home stage cards: real buttons, keyboard operable', ()
     // Navigation happened: the Extract tab is active and the connection surface rendered.
     await expect(page.locator('.tabs-bar .tab.active', { hasText: /extract/i })).toBeVisible();
     await expect(page.locator('.platform-card').first()).toBeVisible();
-  });
-
-  // Visual baseline of the Home stage cards (one assertion → one baseline per viewport).
-  // Gate the screenshot on the AC (cards are real <button>s) so this does not pass
-  // vacuously on current code by auto-writing a baseline of the pre-fix <div> markup —
-  // the baseline must capture the corrected button markup, approved by a human.
-  test('visual baseline of the Home stage cards', async ({ page }) => {
-    await gotoHome(page);
-    await expect(page.locator('button.home-card').first(),
-      'stage cards must be <button>s before the baseline is captured').toBeVisible();
-    await expect(page.locator('.home-cards')).toHaveScreenshot('home-stage-cards.png');
   });
 });
 

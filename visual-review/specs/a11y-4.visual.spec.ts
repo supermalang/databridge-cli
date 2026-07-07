@@ -1,6 +1,23 @@
 import { test, expect, Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+/**
+ * A11Y-4 — visual baselines (VIS-10, Shard A).
+ *
+ * Extracted verbatim from frontend/tests/e2e/a11y-4.spec.ts: the two screenshot
+ * assertions — the Reports download control, and the Validate icon-button row —
+ * each captured after the same crash-resilient boot + axe audit the functional
+ * tests use. The functional/axe tests remain in the e2e file.
+ *
+ * NETWORK-MOCKED end-to-end: the Vite dev server serves the real SPA; every
+ * /api/** is intercepted with page.route(), so no FastAPI backend is required.
+ *
+ * DUPLICATED SETUP: the memory-pressure launch flags / timeout, the crash-recovery
+ * helpers (isInfraFlake, bootWithRecovery, auditPageWithRecovery), the bootstrap
+ * /api stubs + constants, and the Reports/Validate navigation helpers are copied
+ * verbatim from the e2e file — the two visual tests reference all of them.
+ */
+
 // A11Y-7: this spec boots the full keep-alive SPA and then runs the axe-core
 // engine (a heavy in-page evaluate) on the Reports / Validate surfaces. Under
 // `--repeat-each` the parallel viewport workers contend for memory in a
@@ -77,27 +94,6 @@ async function auditPageWithRecovery(
   }
 }
 
-/**
- * A11Y-4 — Valid interactive semantics & icon-button names (P1/P2).
- *
- * NETWORK-MOCKED end-to-end. The Vite dev server (playwright.config.ts → webServer)
- * serves the real SPA; every `/api/**` call is intercepted with `page.route()`, so
- * NO FastAPI backend is required.
- *
- * Acceptance criteria encoded here (all derived from the card, not the impl):
- *   1. The report download is a SINGLE `<a download href=…>` styled like a button —
- *      no `<button>` nested inside an `<a>` (no nested-interactive pair).
- *   2. The download link has an accessible name describing the action/target
- *      (e.g. "Download <report name>").
- *   3. Every icon-only button on Validate has an `aria-label` (a non-empty
- *      accessible name) — the Flag-as-PII and Hide-column buttons (~140–153).
- *   4. A Playwright axe audit reports zero `nested-interactive` and zero
- *      `button-name` violations on the Reports and Validate surfaces.
- *
- * The visual screenshot baselines for this card live in the sibling visual-only
- * spec visual-review/specs/a11y-4.visual.spec.ts (VIS-10, Shard A).
- */
-
 const ACTIVE_PROJECT = {
   id: 'proj-1',
   name: 'Test Project',
@@ -173,15 +169,7 @@ async function gotoValidate(page: Page) {
 }
 
 test.describe('A11Y-4 — Reports download: single styled <a download>', () => {
-  // AC#1 + AC#2: the download is a single <a download href> styled like a button —
-  // no <button> nested inside an <a> — with an accessible name describing the
-  // action/target ("Download <report name>") and a real href that downloads.
-  //
-  // NOTE on coverage: axe's `nested-interactive` rule does NOT reliably flag a
-  // plain `<a href><button>…</button></a>` pair (it targets ARIA-role nesting), so
-  // the STRUCTURAL assertions below — not axe — are the load-bearing guard for the
-  // nested-interactive defect. The axe audit (next test) backstops button-name.
-  test('download resolves as a single link with a descriptive name and no nested <button>', async ({ page }) => {
+  test('visual baseline of the Reports download control', async ({ page }) => {
     // Establish (or re-establish, after a renderer crash) the Reports surface.
     const openReports = async (p: Page) => {
       await stubBootstrap(p);
@@ -193,38 +181,16 @@ test.describe('A11Y-4 — Reports download: single styled <a download>', () => {
       await expect(p.getByText(REPORT_NAME)).toBeVisible();
     };
     page = await bootWithRecovery(page, openReports);
-
-    // AC#2: the download control is a LINK whose accessible name describes the
-    // action + target (e.g. "Download annual_report.docx").
-    const downloadLink = page.getByRole('link', { name: new RegExp(`download.*${REPORT_NAME}`, 'i') });
-    await expect(downloadLink).toBeVisible();
-
-    // AC#2: it is a real <a download href=…> (single element, downloads the file).
-    await expect(downloadLink).toHaveAttribute('href', /.+/);
-    await expect(downloadLink).toHaveAttribute('download', /.*/);
-
-    // AC#1: NO nested-interactive — the anchor has no <button> descendant.
-    await expect(downloadLink.locator('button')).toHaveCount(0);
-
-    // AC#1 (defensive): no <a> on the surface wraps a <button> (no nested pair).
-    await expect(page.locator('.page a button')).toHaveCount(0);
-
-    // AC#4: a Playwright axe audit reports no nested-interactive and no button-name
-    // violations on the Reports surface. Scoped to `.page` so the always-present
-    // global terminal bar (out of scope for this card) does not confound the result.
-    // (Bundled with the structural checks above so this test is red on the current
-    // nested-`<a><button>` markup — axe alone does not reliably flag that pair.)
-    // Recovers from a "Target crashed" renderer death under memory pressure (A11Y-7).
     page = await auditPageWithRecovery(page, openReports);
+
+    // Visual baseline of the download control (3 viewports). Human approves.
+    await expect(page.getByRole('link', { name: new RegExp(`download.*${REPORT_NAME}`, 'i') }))
+      .toHaveScreenshot('reports-download-control.png');
   });
 });
 
 test.describe('A11Y-4 — Validate icon buttons: accessible names', () => {
-  // AC#3: every icon-only button has an aria-label (a non-empty accessible name);
-  // specifically the Validate Flag-as-PII and Hide-column icon buttons (~140–153).
-  // The `title` may remain as a tooltip but must no longer be the ONLY name — so
-  // we assert the aria-label attribute itself is present and non-empty.
-  test('each icon-only button has a non-empty aria-label', async ({ page }) => {
+  test('visual baseline of the Validate icon-button row', async ({ page }) => {
     // Establish (or re-establish, after a renderer crash) the Validate surface
     // and wait for the finding row to be VISIBLE — the row only mounts once both
     // /api/validate and /api/questions have resolved and the finding's group node
@@ -239,25 +205,9 @@ test.describe('A11Y-4 — Validate icon buttons: accessible names', () => {
       await expect(p.locator('.validate-finding__column', { hasText: 'Age' })).toBeVisible();
     };
     page = await bootWithRecovery(page, openValidate);
-
-    // The two icon-only action buttons in the finding row.
-    const iconBtns = page.locator('.validate-finding__actions button');
-    await expect(iconBtns).toHaveCount(2);
-
-    // AC#3: each icon-only button carries a non-empty aria-label.
-    const count = await iconBtns.count();
-    for (let i = 0; i < count; i++) {
-      const label = await iconBtns.nth(i).getAttribute('aria-label');
-      expect((label || '').trim().length).toBeGreaterThan(0);
-    }
-
-    // AC#3: each is also resolvable by role + accessible name (Flag PII / Hide column).
-    await expect(page.getByRole('button', { name: /flag.*pii/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /hide.*column/i })).toBeVisible();
-
-    // AC#4: axe audit on the Validate surface — zero nested-interactive and
-    // button-name violations. Scoped to `.page` (excludes the global terminal bar).
-    // Recovers from a "Target crashed" renderer death under memory pressure (A11Y-7).
     page = await auditPageWithRecovery(page, openValidate);
+
+    // Visual baseline of the icon-button row (3 viewports). Human approves.
+    await expect(page.locator('.validate-finding__actions').first()).toHaveScreenshot('validate-icon-buttons.png');
   });
 });

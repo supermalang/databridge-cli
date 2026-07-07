@@ -1,18 +1,13 @@
 import { test, expect, Page } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 
 /**
- * A11Y-8 — Home-card subtext contrast + ProjectForm picker focus ring.
+ * A11Y-8 — visual baselines (VIS-10, Shard A).
  *
- * Two deferred WCAG 2.1 AA gaps:
- *
- *   AC1 — `.home-card__sub` pill buttons must pass WCAG 4.5:1 color-contrast.
- *     An axe `color-contrast` audit on the Home page reports no violation on the
- *     stage-card subtext pills.
- *
- *   AC2 — `.pf-swatch` (color picker) and `.pf-icon` (emoji picker) in the
- *     ProjectForm must show the app's teal `:focus-visible` ring on keyboard focus.
- *     Mouse behavior is unchanged.
+ * Extracted verbatim from frontend/tests/e2e/a11y-8.spec.ts: the two screenshot
+ * assertions — the Home stage cards, and the ProjectForm (create mode) — plus the
+ * minimal duplicated setup they need (the bootstrap /api stubs, the Home
+ * navigation helper, and the create-form opener). The functional axe / focus-ring
+ * tests remain in the e2e file.
  *
  * NETWORK-MOCKED end-to-end: Vite serves the real SPA; every /api/** call is
  * intercepted with page.route(), so no FastAPI backend is required.
@@ -76,29 +71,12 @@ async function openCreateForm(page: Page) {
 // AC1 — .home-card__sub contrast
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('A11Y-8 — home-card subtext contrast', () => {
-  test('axe color-contrast: no violation on .home-card__sub pills', async ({ page }) => {
-    // hasData:true → app is in "data loaded" mode: no first-run dimming, all stage
-    // cards render at full opacity. This is the production-representative state where
-    // contrast actually matters.
-    await stubBootstrap(page, { hasData: true });
+  test('visual baseline — Home stage cards at all viewports', async ({ page }) => {
+    await stubBootstrap(page);
     await gotoHome(page);
-
-    // Confirm the stage cards rendered (precondition — a vacuous pass on an empty
-    // page would hide a real missing-element bug).
     await expect(page.locator('.home-card').first()).toBeVisible();
-
-    const results = await new AxeBuilder({ page })
-      .include('.home-cards')
-      .withRules(['color-contrast'])
-      .analyze();
-
-    expect(
-      results.violations,
-      `axe color-contrast violations: ${JSON.stringify(results.violations.map((v) => ({
-        id: v.id,
-        nodes: v.nodes.map((n) => n.html),
-      })))}`,
-    ).toEqual([]);
+    await page.addStyleTag({ content: '.bottom-term { display: none !important; }' });
+    await expect(page.locator('.page:visible')).toHaveScreenshot('a11y-8-home.png');
   });
 });
 
@@ -106,57 +84,12 @@ test.describe('A11Y-8 — home-card subtext contrast', () => {
 // AC2 — .pf-swatch / .pf-icon focus-visible ring
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('A11Y-8 — ProjectForm picker focus-visible ring', () => {
-  test('keyboard-focused .pf-swatch shows a non-none, non-zero outline', async ({ page }) => {
+  test('visual baseline — ProjectForm (create mode) at all viewports', async ({ page }) => {
     await stubBootstrap(page);
     await gotoHome(page);
     await openCreateForm(page);
-
-    const swatch = page.locator('.project-form .pf-swatches .pf-swatch').first();
-    await expect(swatch).toBeVisible();
-
-    // Press Tab once to establish keyboard-navigation context in the browser so
-    // :focus-visible is honoured when we then programmatically focus the swatch.
-    await page.keyboard.press('Tab');
-    await swatch.focus();
-
-    const outlineStyle = await swatch.evaluate((el) =>
-      window.getComputedStyle(el, null).getPropertyValue('outline-style'));
-    const outlineWidth = await swatch.evaluate((el) =>
-      window.getComputedStyle(el, null).getPropertyValue('outline-width'));
-
-    expect(
-      outlineStyle,
-      '.pf-swatch outline-style must not be "none" when keyboard-focused',
-    ).not.toBe('none');
-    expect(
-      parseFloat(outlineWidth),
-      '.pf-swatch outline-width must be > 0 when keyboard-focused',
-    ).toBeGreaterThan(0);
-  });
-
-  test('keyboard-focused .pf-icon shows a non-none, non-zero outline', async ({ page }) => {
-    await stubBootstrap(page);
-    await gotoHome(page);
-    await openCreateForm(page);
-
-    const icon = page.locator('.project-form .pf-icons .pf-icon').first();
-    await expect(icon).toBeVisible();
-
-    await page.keyboard.press('Tab');
-    await icon.focus();
-
-    const outlineStyle = await icon.evaluate((el) =>
-      window.getComputedStyle(el, null).getPropertyValue('outline-style'));
-    const outlineWidth = await icon.evaluate((el) =>
-      window.getComputedStyle(el, null).getPropertyValue('outline-width'));
-
-    expect(
-      outlineStyle,
-      '.pf-icon outline-style must not be "none" when keyboard-focused',
-    ).not.toBe('none');
-    expect(
-      parseFloat(outlineWidth),
-      '.pf-icon outline-width must be > 0 when keyboard-focused',
-    ).toBeGreaterThan(0);
+    await expect(page.locator('.project-form')).toBeVisible();
+    await page.addStyleTag({ content: '.bottom-term { display: none !important; }' });
+    await expect(page.locator('.page:visible')).toHaveScreenshot('a11y-8-project-form.png');
   });
 });

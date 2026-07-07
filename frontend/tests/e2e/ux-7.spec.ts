@@ -155,25 +155,3 @@ test.describe('UX-7 — read-only email is explained on the Profile page', () =>
     await expect(helper).toHaveText(/sign-in provider|managed by/i);
   });
 });
-
-test.describe('UX-7 — visual baseline (one per viewport via playwright.config.ts)', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-  });
-
-  // Visual baseline of the email field + its helper text. Gate on AC2 (the helper
-  // text is visible) before capture so the baseline cannot pass vacuously against
-  // pre-fix code. Hide the position:fixed terminal bar so it never intrudes;
-  // screenshot the email field group directly (no mask).
-  test('visual baseline of the read-only email field with helper text', async ({ page }) => {
-    await openProfile(page);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-
-    await expect(
-      emailGroup(page).getByText(/sign-in provider|managed by/i),
-      'helper text must be present before the baseline is captured',
-    ).toBeVisible();
-
-    await expect(emailGroup(page)).toHaveScreenshot('profile-email-readonly.png');
-  });
-});
