@@ -81,20 +81,24 @@ PYTHONPATH=. MPLBACKEND=Agg python -m pytest -q            # full suite
 PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_flatten.py   # single file
 ```
 
-**Visual / E2E (Playwright).** UI cards are screenshot-tested at three viewports — mobile
-(390×844), tablet (820×1180), desktop (1440×900) — defined as projects in
-`frontend/playwright.config.ts`. Baselines live next to each spec under
-`frontend/tests/e2e/<spec>-snapshots/*.png` (tracked) and one is produced per viewport.
+**Visual / E2E (Playwright).** UI cards are exercised at three viewports — mobile (390×844),
+tablet (820×1180), desktop (1440×900). Tier 1 is split into two configs: a **functional** suite
+(AC assertions, no pixel diffs) at `frontend/playwright.config.ts` with specs under
+`frontend/tests`/`e2e` (functional specs only, VIS-10-12), and a dedicated **visual** suite
+(`toHaveScreenshot` only) at `visual-review/playwright.visual.config.ts` with specs + baselines
+under `visual-review/specs/` and `visual-review/baselines/*-snapshots/*.png` (tracked).
 
 ```bash
-cd frontend && npm run test:e2e          # run visual suite vs committed baselines (3 viewports)
-cd frontend && npm run test:e2e:update   # regenerate baselines (human approves the diff)
-cd frontend && npm run test:e2e:report   # open the last HTML report
+cd frontend && npm run test:e2e            # functional suite (frontend/playwright.config.ts)
+cd frontend && npm run test:e2e:report     # open the last functional HTML report
+cd frontend && npm run test:visual         # visual suite vs committed baselines (3 viewports)
+cd frontend && npm run test:visual:update  # regenerate baselines (human approves the diff)
+cd frontend && npm run test:visual:report  # open the last visual HTML report
 ```
 
 App-driven specs boot Vite via the `webServer` block in the config; fixture/smoke specs use
-`page.setContent` and need no server. CI runs the suite on PRs touching `frontend/**`
-(`.github/workflows/visual.yml`).
+`page.setContent` and need no server. CI runs both suites on PRs touching `frontend/**` or
+`visual-review/**` (`.github/workflows/visual.yml`).
 
 This is Tier 1 of the opt-in-by-default-off visual testing system — see
 [*Development workflow → Visual testing (VIS-4)*](#visual-testing-vis-4) for Tier 2 (Storybook
@@ -398,16 +402,20 @@ prompts, internals, CHANGELOG). Triggered by `remind-docs.sh` or run manually.
 layer. Its skill tree is gitignored — re-install with `npx impeccable skills install`.
 
 ### Visual testing (VIS-4)
-Three tiers, all opt-in-by-default disabled features layered on the VIS-1 Playwright harness:
-**Tier 1** — full-app E2E + `toHaveScreenshot` baselines, `frontend/tests/e2e/`
-(`frontend/playwright.config.ts`) — the default, always-on harness (see *Tests → Visual / E2E*).
-**Tier 2** — Storybook component-isolation baselines, `frontend/.storybook/` +
-`frontend/tests/storybook/` (`frontend/playwright.storybook.config.ts`); run
+Three tiers, all opt-in-by-default disabled features layered on the VIS-1 Playwright harness, now
+consolidated under the `visual-review/` root (VIS-9-14):
+**Tier 1** — full-app E2E, split into a functional suite (`frontend/tests`/`e2e`,
+`frontend/playwright.config.ts`, AC assertions only) and a dedicated visual suite
+(`visual-review/specs/`, `visual-review/playwright.visual.config.ts`, `toHaveScreenshot` only) —
+baselines at `visual-review/baselines/*-snapshots/*.png` — the default, always-on harness (see
+*Tests → Visual / E2E*).
+**Tier 2** — Storybook component-isolation baselines, `visual-review/storybook/` +
+`visual-review/playwright.storybook.config.ts`; run
 `cd frontend && npm run storybook:build && npm run test:visual:storybook`.
-**Tier 3** — a local human review app (`frontend/scripts/visual-review-app/`, `node
-frontend/scripts/visual-review-app/server.mjs` → `http://localhost:4444`) for clicking
-Approve/Reject on changed baselines from either tier; approvals/rejections are recorded in
-`visual-approvals.json` (repo root). `/visual-review` reads that ledger (read-only) and reports
+**Tier 3** — a local human review app (`visual-review/review-app/`, `node
+visual-review/review-app/server.mjs` → `http://localhost:4444`) for clicking Approve/Reject on
+changed baselines from either tier; approvals/rejections are recorded in
+`visual-review/visual-approvals.json`. `/visual-review` reads that ledger (read-only) and reports
 `approved`/`rejected`/`pending` per baseline; `roadmap-verifier`'s visual DoD check requires
 `clear` for a card's own baselines, not just "PNG exists on disk". `guard-visual-update.sh`
 blocks agents from self-approving via `--update-snapshots`/`-u` through the Bash tool — only a
