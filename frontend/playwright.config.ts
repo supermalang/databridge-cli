@@ -21,15 +21,15 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   // The three viewport projects (mobile/tablet/desktop) all drive ONE shared Vite
-  // dev server (see webServer below). In CI we serialize to a single worker so the
-  // suite is deterministic and never overwhelms that server (VIS-3's guarantee).
-  // Locally we allow Playwright to scale to 50% of the CPUs: a flat single-worker
-  // cap made the full suite needlessly slow, while a flat 4 caused headless-chromium
-  // workers to crash mid-test (`Page crashed` / `Target ... closed`) under shared-
-  // server contention. `'50%'` lets Playwright right-size parallelism to the host
-  // (fewer workers on constrained dev containers, more on capable machines) without
-  // the crash-class instability of an unconditional high fixed count (VIS-8).
-  workers: process.env.CI ? 1 : '50%',
+  // dev server (see webServer below). Letting Playwright fan out to its default
+  // (~half the CPUs) worker count overwhelms that single server: headless-chromium
+  // workers crash mid-test with `Page crashed` / `Target ... closed` rather than
+  // clean assertion diffs. Serialize to a single worker so specs that pass in
+  // isolation also pass in the full suite. This applies BOTH in CI and locally —
+  // this dev container shares the same single-server contention (VIS-3). A prior
+  // hardcoded `workers: 4` regressed this and produced 25/69 crash-class failures
+  // vs 0/69 at 1 worker (VIS-8).
+  workers: 1,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['list']] : 'list',
   // Small tolerance absorbs sub-pixel font/antialiasing noise without hiding real regressions.
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
