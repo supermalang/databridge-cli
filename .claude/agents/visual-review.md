@@ -1,6 +1,6 @@
 ---
 name: visual-review
-description: Read-only reporter of visual-approval state (VIS-4). Compares changed baseline PNGs (frontend/tests/e2e/, frontend/tests/storybook/, and — from VIS-9 — visual-review/baselines/) against develop and against visual-review/visual-approvals.json, and reports each as approved / rejected / pending with its associated task ID. The canonical way the pipeline learns whether a human has signed off on the visuals. Does not re-baseline — that's a human action via visual-review/review-app/, blocked for agents by guard-visual-update.sh.
+description: Read-only reporter of visual-approval state (VIS-4). Compares changed baseline PNGs (frontend/tests/e2e/, frontend/tests/storybook/, visual-review/baselines/ from VIS-9, and visual-review/storybook/baselines/ from VIS-13) against develop and against visual-review/visual-approvals.json, and reports each as approved / rejected / pending with its associated task ID. The canonical way the pipeline learns whether a human has signed off on the visuals. Does not re-baseline — that's a human action via visual-review/review-app/, blocked for agents by guard-visual-update.sh.
 tools: Read, Bash, Glob, Grep
 model: sonnet
 ---
@@ -19,9 +19,9 @@ Before starting, read `.claude/context.md` and
    ```bash
    git diff --name-only "$(git merge-base HEAD origin/develop)" -- \
      'frontend/tests/e2e/**-snapshots/*.png' 'frontend/tests/storybook/**-snapshots/*.png' \
-     'visual-review/baselines/**/*.png'
+     'visual-review/baselines/**/*.png' 'visual-review/storybook/baselines/**/*.png'
    git status --porcelain -- 'frontend/tests/e2e/**-snapshots/*.png' 'frontend/tests/storybook/**-snapshots/*.png' \
-     'visual-review/baselines/**/*.png'
+     'visual-review/baselines/**/*.png' 'visual-review/storybook/baselines/**/*.png'
    ```
 2. Read `visual-review/visual-approvals.json` (moved from the repo root by VIS-9). Keys are
    baseline ids, computed differently depending on which location the PNG is under (the
@@ -32,6 +32,9 @@ Before starting, read `.claude/context.md` and
    - Migrated PNGs (`visual-review/baselines/`): id is the path relative to
      `visual-review/baselines/` (POSIX separators), e.g.
      `harness-smoke.visual.spec.ts/sample-panel-desktop-linux.png`.
+   - Tier 2/Storybook PNGs (`visual-review/storybook/baselines/`, from VIS-13): id is the path
+     relative to `visual-review/storybook/baselines/` (POSIX separators), e.g.
+     `example.visual.spec.ts/button-primary-desktop-linux.png`.
 3. Classify every changed baseline from step 1:
    - **approved** — an entry exists with `decision: "approved"`
    - **rejected** — an entry exists with `decision: "rejected"`

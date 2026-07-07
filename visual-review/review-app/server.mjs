@@ -17,11 +17,22 @@ import { findDiffs, approve, reject } from './lib.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.CLAUDE_PROJECT_DIR || join(HERE, '..', '..');
 const PORT = Number(process.env.PORT || 4444);
-// Covers Tier 1 (visual-review/baselines) and, from VIS-13, Tier 2 (visual-review/storybook/baselines)
-// baselines, and the shared Playwright output dir both configs write "-actual.png"/"-diff.png" to.
+// Tier 1 (visual-review/baselines) and, from VIS-13, Tier 2/Storybook (visual-review/storybook/baselines)
+// are scanned as two independent baseline/output pairs and merged for the diffs endpoint — each tier
+// writes its "-actual.png"/"-diff.png" candidates to its own Playwright output dir.
 const baselinesDir = join(ROOT, process.env.VISUAL_BASELINES_DIR || 'visual-review/baselines');
 const outputDir = join(ROOT, process.env.VISUAL_OUTPUT_DIR || 'visual-review/results/output');
+const sbBaselinesDir = join(ROOT, process.env.VISUAL_STORYBOOK_BASELINES_DIR || 'visual-review/storybook/baselines');
+const sbOutputDir = join(ROOT, process.env.VISUAL_STORYBOOK_OUTPUT_DIR || 'visual-review/results/storybook/output');
 const approvalsFile = join(ROOT, process.env.VISUAL_APPROVALS || 'visual-review/visual-approvals.json');
+const TIERS = [
+  { baselinesDir, outputDir },
+  { baselinesDir: sbBaselinesDir, outputDir: sbOutputDir },
+];
+
+function findAllDiffs() {
+  return TIERS.flatMap((t) => findDiffs(t));
+}
 
 function currentTask() {
   const f = join(ROOT, '.claude/.active-task.json');
@@ -48,8 +59,8 @@ function readJsonBody(req) {
 // same string prefix (e.g. "visual-review/baselines-tmp") would pass a bare startsWith() check.
 function safeImg(p) {
   const abs = join(ROOT, p);
-  return (abs.startsWith(baselinesDir + '/') || abs.startsWith(outputDir + '/')) && abs.endsWith('.png') && existsSync(abs)
-    ? abs : null;
+  const inKnownDir = TIERS.some((t) => abs.startsWith(t.baselinesDir + '/') || abs.startsWith(t.outputDir + '/'));
+  return inKnownDir && abs.endsWith('.png') && existsSync(abs) ? abs : null;
 }
 
 function toRelUrl(p) {
@@ -67,7 +78,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/diffs') {
-    const diffs = findDiffs({ outputDir, baselinesDir }).map((d) => ({
+    const diffs = findAllDiffs().map((d) => ({
       id: d.id,
       name: d.name,
       baseline: toRelUrl(d.baseline),
@@ -86,7 +97,7 @@ const server = createServer(async (req, res) => {
     const body = await readJsonBody(req);
     const at = new Date().toISOString();
     const task = body.task || currentTask();
-    const entry = findDiffs({ outputDir, baselinesDir }).find((d) => d.id === body.id);
+    const entry = findAllDiffs().find((d) => d.id === body.id);
     if (!entry) return send(res, 404, { error: 'unknown baseline id' });
     const result = url.pathname.endsWith('approve')
       ? approve({ id: entry.id, task, actualPath: entry.actual, baselinePath: entry.baseline, approvalsFile, at })
@@ -99,7 +110,9 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Visual review app -> http://localhost:${PORT}`);
-  console.log(`  baselines:  ${baselinesDir}`);
-  console.log(`  candidates: ${outputDir}`);
-  console.log(`  approvals:  ${approvalsFile}`);
+  console.log(`  Tier 1 baselines:  ${baselinesDir}`);
+  console.log(`  Tier 1 candidates: ${outputDir}`);
+  console.log(`  Tier 2 baselines:  ${sbBaselinesDir}`);
+  console.log(`  Tier 2 candidates: ${sbOutputDir}`);
+  console.log(`  approvals:         ${approvalsFile}`);
 });
