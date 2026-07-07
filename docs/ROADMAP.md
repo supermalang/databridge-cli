@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 30 | 28 / 30 |
+| [Maintenance & hardening](#maintenance--hardening) | 30 | 29 / 30 |
 
 ---
 
@@ -1783,9 +1783,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-28 — Fix: single-column chart types silently drop extra questions/group_by instead of rejecting them (P1)**
+- [x] **MNT-28 — Fix: single-column chart types silently drop extra questions/group_by instead of rejecting them (P1)**
 
-  **Created:** 2026-07-05
+  **Created:** 2026-07-05 · **Completed:** 2026-07-07
 
   **Type:** Fix
 
