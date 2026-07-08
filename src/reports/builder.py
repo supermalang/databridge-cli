@@ -86,6 +86,99 @@ def sandboxed_jinja_env() -> SandboxedEnvironment:
     return SandboxedEnvironment()
 
 
+def _table_display_frame(df, questions, opts) -> "pd.DataFrame":
+    """Shape a resolved DataFrame into the table's display frame.
+
+    Mirrors the legacy `table` chart breakdown: a value-count of the first
+    question column into ``<label> | Count | Percent`` (top-N), so the rows and
+    columns are identical to before — now destined for native cells rather than
+    a PNG. If no question column resolves, the frame is passed through as-is.
+    """
+    from src.reports.charts import _top, _t  # local import: avoid a cycle at module load
+
+    cols = [q for q in (questions or []) if q in df.columns]
+    if not cols:
+        return df
+    c = cols[0]
+    top_n = opts.get("top_n", 15) if isinstance(opts, dict) else 15
+    counts = _top(df[c].dropna(), top_n).reset_index()
+    count_col = _t(opts, "Count")
+    pct_col = _t(opts, "Percent")
+    counts.columns = [c, count_col]
+    total = counts[count_col].sum()
+    counts[pct_col] = (
+        (counts[count_col] / total * 100).round(1).astype(str) + "%"
+        if total
+        else "0%"
+    )
+    return counts
+
+
+def _apply_manual_table_borders(table) -> None:
+    """Add a single, thin, black grid to a table via a direct ``w:tblBorders``
+    element — ``add_table()`` (and a style-less template) leaves a table with no
+    borders, so this is the fallback when no ``Table Grid`` style is available."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tblPr = table._tbl.tblPr
+    borders = OxmlElement("w:tblBorders")
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        el = OxmlElement(f"w:{edge}")
+        el.set(qn("w:val"), "single")
+        el.set(qn("w:sz"), "4")
+        el.set(qn("w:space"), "0")
+        el.set(qn("w:color"), "000000")
+        borders.append(el)
+    tblPr.append(borders)
+
+
+def _insert_table_before_paragraph(doc, paragraph, display_df) -> None:
+    """Build a native ``w:tbl`` for ``display_df`` and insert it into ``doc``
+    immediately before ``paragraph``.
+
+    One header row (column labels) + one row per record, populated as text
+    cells. Styled ``Table Grid`` when the document defines that style, else a
+    manual ``w:tblBorders`` grid is applied so borders are always visible
+    (``add_table()`` adds none by default).
+    """
+    cols = [str(c) for c in display_df.columns]
+    n_cols = max(len(cols), 1)
+
+    # Build the table at the end of the document, then move it before the target
+    # paragraph (python-docx exposes no direct "insert table at position" API).
+    table = doc.add_table(rows=1, cols=n_cols)
+
+    # Prefer the document's 'Table Grid' style for borders; fall back to manual.
+    styled = False
+    try:
+        style_names = {s.name for s in doc.styles}
+    except Exception:
+        style_names = set()
+    if "Table Grid" in style_names:
+        try:
+            table.style = "Table Grid"
+            styled = True
+        except Exception:
+            styled = False
+    if not styled:
+        _apply_manual_table_borders(table)
+
+    # Header row.
+    header_cells = table.rows[0].cells
+    for i, label in enumerate(cols):
+        header_cells[i].text = label
+
+    # One row per record.
+    for _, record in display_df.iterrows():
+        row_cells = table.add_row().cells
+        for i, col in enumerate(display_df.columns):
+            row_cells[i].text = "" if pd.isna(record[col]) else str(record[col])
+
+    # Move the freshly-appended table to just before the placeholder paragraph.
+    paragraph._element.addprevious(table._tbl)
+
+
 def _pick_df(
     questions: List[str],
     main_df: "pd.DataFrame",
@@ -331,6 +424,11 @@ class ReportBuilder:
         )
 
         now = datetime.today()
+        # Native-table sentinels (tables: recipes AND MNT-33 `table`-type charts)
+        # accumulate here across _generate_charts + _generate_tables, then get
+        # swapped by _insert_native_tables after render. Reset once per build so
+        # a split_by iteration never inherits the previous slice's tables.
+        self._pending_tables = {}
         context = {
             "report_title":  self.report_cfg.get("title", "Report"),
             "period":        self.report_cfg.get("period", datetime.today().strftime("%B %Y")),
@@ -355,6 +453,8 @@ class ReportBuilder:
             **self._generate_lists(tpl, df, repeat_tables),
         }
         tpl.render(context, jinja_env=sandboxed_jinja_env())
+        # Swap {{ table_<name> }} sentinels for native python-docx tables.
+        self._insert_native_tables(tpl)
         out_dir = Path(self.report_cfg.get("output_dir","reports"))
         out_dir.mkdir(parents=True, exist_ok=True)
         alias = self.cfg.get("form",{}).get("alias","form")
@@ -455,23 +555,51 @@ class ReportBuilder:
                     chart_df, resolved_questions, resolved.get("options") or {})
                 continue
 
+            # MNT-33: the legacy `table` CHART TYPE renders as a NATIVE Word table,
+            # not a flattened PNG — the same w:tbl path the tables: section uses
+            # (MNT-30). A PNG table is unsearchable, non-editable, and inaccessible.
+            # Route it through the shared native-table sentinel: fill the chart's
+            # own {{ chart_<name> }} placeholder with a sentinel that
+            # _insert_native_tables swaps for a real table after tpl.render. This
+            # bridges legacy `charts: [{type: table}]` configs with no migration.
+            if resolved.get("type") == "table":
+                display_df = _table_display_frame(
+                    chart_df, resolved_questions, resolved.get("options") or {})
+                self._pending_tables = getattr(self, "_pending_tables", None) or {}
+                sentinel = f"@@DBNATIVE_TABLE::chart::{name}::@@"
+                self._pending_tables[sentinel] = display_df
+                images[f"chart_{name}"] = sentinel
+                continue
+
             png = generate_chart(resolved, chart_df, language=_language, palette=get_palette(self.cfg))
             width = Inches(c.get("options", {}).get("width_inches", 5.5))
             images[f"chart_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
         return images
 
     def _generate_tables(self, tpl, df, repeat_tables: Dict):
-        """Render each cfg['tables'] recipe via the `table` chart type → {{ table_<name> }}.
+        """Resolve each cfg['tables'] recipe into a NATIVE python-docx table.
 
-        A table is a chart-like recipe: same source/filter/aggregate handling as a chart,
-        but its type is forced to "table" so it renders as a PNG table image.
+        A table shares a chart's source/filter/aggregate handling, but instead of
+        a flattened PNG it becomes a real ``w:tbl`` — selectable, editable,
+        accessible text with visible borders. Charts (bar/pie/line/…) stay as
+        InlineImage PNGs; only tables are native.
+
+        The ``{{ table_<name> }}`` placeholder is rendered by docxtpl to a unique
+        text sentinel; ``_insert_native_tables`` (run after ``tpl.render``) then
+        swaps each sentinel paragraph for the built native table. This keeps the
+        existing plain ``{{ }}`` placeholder contract intact (docxtpl only unwraps
+        the enclosing paragraph for the ``{{p }}`` subdoc syntax, which
+        ``generate-template`` does not emit).
         """
-        CHART_DIR.mkdir(parents=True, exist_ok=True)
         key_to_label = {
             q["kobo_key"]: q.get("export_label") or q.get("label") or q["kobo_key"]
             for q in self.cfg.get("questions", [])
         }
-        images = {}
+        # Pending (sentinel → display frame) swaps applied after render. Preserve
+        # any sentinels already registered by _generate_charts (MNT-33 table-type
+        # charts run first in the context dict) rather than wiping them.
+        self._pending_tables = getattr(self, "_pending_tables", None) or {}
+        sentinels = {}
         for t in self.tables_cfg:
             name = t.get("name")
             if not name:
@@ -482,9 +610,6 @@ class ReportBuilder:
                 key_to_label.get(q, q) if q not in df.columns else q
                 for q in t.get("questions", [])
             ]
-
-            # Force the table chart type — a table IS a chart rendered as a PNG table.
-            resolved = {**t, "questions": resolved_questions, "type": "table"}
 
             # 1. Select explicit source or auto-pick.
             source = t.get("source")
@@ -508,10 +633,44 @@ class ReportBuilder:
             if agg_spec and source and source != "main":
                 table_df = aggregate_repeat(table_df, agg_spec)
 
-            png = generate_chart(resolved, table_df)
-            width = Inches(t.get("options", {}).get("width_inches", 5.5))
-            images[f"table_{name}"] = InlineImage(tpl, str(png), width=width) if png and png.exists() else ""
-        return images
+            # 4. Shape into the display frame (header labels + one row per record),
+            #    matching the legacy `table` chart's count/percent breakdown so the
+            #    resolved rows/columns are unchanged — now as native cells.
+            display_df = _table_display_frame(table_df, resolved_questions, t.get("options") or {})
+            sentinel = f"@@DBNATIVE_TABLE::{name}::@@"
+            self._pending_tables[sentinel] = display_df
+            sentinels[f"table_{name}"] = sentinel
+        return sentinels
+
+    def _insert_native_tables(self, tpl) -> None:
+        """Replace each rendered table sentinel with a native ``w:tbl``.
+
+        Walks the rendered document (body + table cells) for the paragraph whose
+        text holds a sentinel emitted by ``_generate_tables`` and swaps that whole
+        paragraph for a bordered python-docx table built from the display frame.
+        """
+        pending = getattr(self, "_pending_tables", None)
+        if not pending:
+            return
+        doc = tpl.docx
+
+        def _walk(paragraphs, get_tables):
+            for para in list(paragraphs):
+                text = para.text
+                for sentinel, display_df in pending.items():
+                    if sentinel in text:
+                        _insert_table_before_paragraph(doc, para, display_df)
+                        # Drop the placeholder paragraph entirely.
+                        para._element.getparent().remove(para._element)
+                        break
+
+        # Body-level paragraphs.
+        _walk(doc.paragraphs, None)
+        # Paragraphs nested inside existing table cells.
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    _walk(cell.paragraphs, None)
 
     def _generate_lists(self, tpl, df, repeat_tables: Dict):
         """Render each cfg['lists'] recipe into a {{ list_<name> }} text context value.

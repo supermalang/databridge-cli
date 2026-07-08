@@ -100,14 +100,6 @@ test.describe('A11Y-8 — home-card subtext contrast', () => {
       })))}`,
     ).toEqual([]);
   });
-
-  test('visual baseline — Home stage cards at all viewports', async ({ page }) => {
-    await stubBootstrap(page);
-    await gotoHome(page);
-    await expect(page.locator('.home-card').first()).toBeVisible();
-    await page.addStyleTag({ content: '.bottom-term { display: none !important; }' });
-    await expect(page.locator('.page:visible')).toHaveScreenshot('a11y-8-home.png');
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,14 +158,5 @@ test.describe('A11Y-8 — ProjectForm picker focus-visible ring', () => {
       parseFloat(outlineWidth),
       '.pf-icon outline-width must be > 0 when keyboard-focused',
     ).toBeGreaterThan(0);
-  });
-
-  test('visual baseline — ProjectForm (create mode) at all viewports', async ({ page }) => {
-    await stubBootstrap(page);
-    await gotoHome(page);
-    await openCreateForm(page);
-    await expect(page.locator('.project-form')).toBeVisible();
-    await page.addStyleTag({ content: '.bottom-term { display: none !important; }' });
-    await expect(page.locator('.page:visible')).toHaveScreenshot('a11y-8-project-form.png');
   });
 });

@@ -123,10 +123,6 @@ test.describe('A11Y-5 — Composition modal field errors are programmatically li
       'an aria-describedby target of the Name input must contain the "required" error text',
     ).toBeTruthy();
 
-    // Visual baseline of the modal in its invalid (error-shown) state (3 viewports
-    // via playwright.config.ts). The implementer produces the baselines for approval.
-    await expect(page).toHaveScreenshot('composition-modal-invalid.png');
-
     // AC: correcting the field clears the invalid state. aria-invalid is removed or
     // "false", and the describedby no longer points at a (now-gone) error element.
     await nameInput.fill('satisfaction_overview');

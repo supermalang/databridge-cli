@@ -441,3 +441,52 @@ test.describe('MNT-24 — Express review panel list-kind row visual baseline', (
     await expect(page).toHaveScreenshot('express-list-kind-selected.png');
   });
 });
+
+// MNT-27 — Apply & build must show a visible loading/disabled state for the whole
+// operation, starting the instant it's clicked. The functional assertions
+// (button disables, success state reached) live in
+// frontend/tests/e2e/express-template-fill.spec.ts — only the visual capture
+// lives here, per the VIS-12 functional/visual split convention.
+test.describe('MNT-27 — Apply & build loading-state visual baseline', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubBootstrap(page);
+    await stubExpress(page);
+    await page.goto('http://localhost:51730/');
+  });
+
+  test('visual baseline of the review panel while apply is in flight (loading state)', async ({ page }) => {
+    let releaseApply: () => void = () => {};
+    const applyHeld = new Promise<void>((resolve) => { releaseApply = resolve; });
+    await page.route('**/api/template/apply', async (r) => {
+      await applyHeld;
+      return r.fulfill({ json: { ok: true, template: RESOLVED_TEMPLATE, n_written: 3 } });
+    });
+
+    await expect(page.getByText('Test Project')).toBeVisible();
+
+    await page.getByTestId('express-banner').first().click();
+    await page.getByTestId('express-upload').setInputFiles({
+      name: 'report.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: Buffer.from('PK fake docx'),
+    });
+    await page.getByTestId('express-infer').click();
+
+    const flagged = page.locator('[data-testid="express-row"][data-status="needs_attention"]');
+    await flagged.getByTestId('express-row-drop').click();
+
+    const applyBtn = page.getByTestId('express-apply-build');
+    await expect(applyBtn).toBeEnabled();
+    await applyBtn.click();
+    await expect(applyBtn).toBeDisabled();
+
+    // Visual baseline of the loading state (one baseline per viewport —
+    // mobile/tablet/desktop). A human approves the first baseline.
+    await expect(page.getByTestId('express-review-panel')).toHaveScreenshot(
+      'mnt-27-apply-loading-state.png'
+    );
+
+    releaseApply();
+    await expect(page.getByTestId('express-success')).toBeVisible();
+  });
+});

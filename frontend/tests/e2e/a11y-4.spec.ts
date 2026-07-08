@@ -94,8 +94,8 @@ async function auditPageWithRecovery(
  *   4. A Playwright axe audit reports zero `nested-interactive` and zero
  *      `button-name` violations on the Reports and Validate surfaces.
  *
- * Plus `toHaveScreenshot` baselines (3 viewports via playwright.config.ts) of the
- * Reports download control and the Validate icon-button row; a human approves them.
+ * The visual screenshot baselines for this card live in the sibling visual-only
+ * spec visual-review/specs/a11y-4.visual.spec.ts (VIS-10, Shard A).
  */
 
 const ACTIVE_PROJECT = {
@@ -216,10 +216,6 @@ test.describe('A11Y-4 — Reports download: single styled <a download>', () => {
     // nested-`<a><button>` markup — axe alone does not reliably flag that pair.)
     // Recovers from a "Target crashed" renderer death under memory pressure (A11Y-7).
     page = await auditPageWithRecovery(page, openReports);
-
-    // Visual baseline of the download control (3 viewports). Human approves.
-    await expect(page.getByRole('link', { name: new RegExp(`download.*${REPORT_NAME}`, 'i') }))
-      .toHaveScreenshot('reports-download-control.png');
   });
 });
 
@@ -263,8 +259,5 @@ test.describe('A11Y-4 — Validate icon buttons: accessible names', () => {
     // button-name violations. Scoped to `.page` (excludes the global terminal bar).
     // Recovers from a "Target crashed" renderer death under memory pressure (A11Y-7).
     page = await auditPageWithRecovery(page, openValidate);
-
-    // Visual baseline of the icon-button row (3 viewports). Human approves.
-    await expect(page.locator('.validate-finding__actions').first()).toHaveScreenshot('validate-icon-buttons.png');
   });
 });

@@ -173,31 +173,3 @@ test.describe('UX-5 — the current user row carries a "you" tag', () => {
     ).toHaveCount(0);
   });
 });
-
-test.describe('UX-5 — visual baseline (one per viewport via playwright.config.ts)', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-    await bootApp(page);
-    await openMembersPanel(page);
-  });
-
-  // Baseline of the Members panel showing all three rows with human identifiers
-  // and the "you" tag on the current user. Gate on the ACs first so the baseline
-  // cannot pass vacuously against the pre-fix UUID rendering. Screenshot the
-  // members table element directly; hide the position:fixed terminal bar.
-  test('members panel baseline (human identifiers + you tag)', async ({ page }) => {
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-
-    const table = page.locator('.members-table');
-    await expect(table).toBeVisible();
-    // Pre-conditions: no UUID visible, and the "you" tag is present.
-    const tableText = (await table.innerText()).trim();
-    expect(UUID_RE.test(tableText), 'baseline must be captured with no UUID labels').toBe(false);
-    await expect(
-      memberRows(page).filter({ hasText: ME.email }).getByText(/\byou\b/i),
-      'baseline must be captured with the "you" tag present',
-    ).toBeVisible();
-
-    await expect(table).toHaveScreenshot('ux-5-members-panel.png');
-  });
-});

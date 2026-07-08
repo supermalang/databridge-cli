@@ -24,10 +24,12 @@ export default defineConfig({
   // dev server (see webServer below). Letting Playwright fan out to its default
   // (~half the CPUs) worker count overwhelms that single server: headless-chromium
   // workers crash mid-test with `Page crashed` / `Target ... closed` rather than
-  // clean assertion diffs. Serialize to one worker so specs that pass in isolation
-  // also pass in the full suite. This applies BOTH in CI and locally — this dev
-  // container shares the same single-server contention (VIS-3).
-  workers: 4,
+  // clean assertion diffs. Serialize to a single worker so specs that pass in
+  // isolation also pass in the full suite. This applies BOTH in CI and locally —
+  // this dev container shares the same single-server contention (VIS-3). A prior
+  // hardcoded `workers: 4` regressed this and produced 25/69 crash-class failures
+  // vs 0/69 at 1 worker (VIS-8).
+  workers: 1,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['list']] : 'list',
   // Small tolerance absorbs sub-pixel font/antialiasing noise without hiding real regressions.
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },

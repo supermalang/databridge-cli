@@ -77,11 +77,11 @@ Sprint exit — checked by /report + /retro:
 | [Product UX — non-expert self-serve](#product-ux--non-expert-self-serve) | 14 | 14 / 14 |
 | [M&E capabilities](#me-capabilities) | 7 | 7 / 7 |
 | [Express Template Fill](#express-template-fill) | 28 | 28 / 28 |
-| [Visual / E2E harness](#visual--e2e-harness) | 12 | 8 / 12 |
+| [Visual / E2E harness](#visual--e2e-harness) | 12 | 11 / 12 |
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 29 | 27 / 29 |
+| [Maintenance & hardening](#maintenance--hardening) | 33 | 32 / 33 |
 
 ---
 
@@ -663,33 +663,45 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **VIS-8 — Fix: uncap hardcoded worker count to stop full-suite instability (P2)**
+- [x] **VIS-8 — Fix: uncap hardcoded worker count to stop full-suite instability (P2)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Started:** 2026-07-05 · **Completed:** 2026-07-06
 
   Both `frontend/playwright.config.ts` (line 30) and `frontend/playwright.storybook.config.ts`
   (line 21) hardcode a fixed worker count of 4, contradicting VIS-3's own in-file rationale
   ("Serialize to one worker so specs that pass in isolation also pass in the full suite...
   applies BOTH in CI and locally") and confirmed unstable this session: 25/69 failures at 4
-  workers vs 0/69 at 1 worker on an identical spec file under full-suite load. Not urgent enough
+  workers vs 0/69 at 1 worker on an identical spec file under full-suite load. The hardcoded 4
+  is drift that silently broke VIS-3's frozen contract (`vis-3-worker-cap.spec.ts` requires the
+  resolved `workers` value to be a number in [1,2] under both CI and local). Not urgent enough
   to block other work — captured here to fix later, at low priority, independent of the
   visual-review migration.
 
   **Type:** Fix
 
-  **Files:** `frontend/playwright.config.ts` (line ~30, worker count → `process.env.CI ? 1 : '50%'`;
-  revise the stale comment above it, lines ~23-29, which currently argues for a flat single-worker
-  cap in both CI and local) · `frontend/playwright.storybook.config.ts` (line ~21, same change;
-  note in a comment that this config screenshots a static `http-server`-served Storybook build,
-  not the shared Vite dev server, so the original contention argument doesn't apply to it the
-  same way)
+  **Amendment (2026-07-06):** the original proposal set the local branch to
+  `process.env.CI ? 1 : '50%'`. That is withdrawn — `'50%'` (≥4 workers on most machines) can
+  never satisfy VIS-3's frozen [1,2] numeric assertion and would reintroduce the shared-dev-server
+  crashes VIS-3 fixed, contrary to VIS-8's own 0/69-at-1-worker evidence. The fix is a flat
+  `workers: 1` (proven clean, honors VIS-3). Storybook-only local parallelism (its static
+  `http-server` build is not constrained by VIS-3) is a possible future follow-up, out of scope
+  here.
+
+  **Files:** `frontend/playwright.config.ts` (line ~30, worker count → flat `1`; revise the stale
+  comment above it, lines ~23-29, which currently argues for a single-worker cap in both CI and
+  local — bring the comment in line with the actual value) · `frontend/playwright.storybook.config.ts`
+  (line ~21, same change to flat `1`; note in a comment that this config screenshots a static
+  `http-server`-served Storybook build, not the shared Vite dev server, so the contention
+  argument is weaker here — capped at 1 for consistency, could be relaxed later)
 
   **Config/schema impact:** None — test harness config only.
 
   **Acceptance criteria**
-  - Worker count is `process.env.CI ? 1 : '50%'` in both configs, replacing the flat value of 4
-  - CI (`process.env.CI` truthy) still runs single-worker, deterministic (VIS-3's guarantee
-    unchanged)
+  - Worker count is a flat `workers: 1` in both configs, replacing the hardcoded value of 4
+    (supersedes the earlier `process.env.CI ? 1 : '50%'` proposal, which conflicted with VIS-3's
+    frozen test)
+  - The resolved worker value is `1` under both CI (`process.env.CI` truthy) and local, keeping
+    the run single-worker / deterministic and satisfying VIS-3's [1,2] contract
   - Locally, `cd frontend && npm run test:e2e` (full suite, all 3 viewports) completes with
     **zero crash-class failures** (page-crash / target-closed / worker-timeout) across 3
     consecutive full runs
@@ -697,12 +709,14 @@ Sprint exit — checked by /report + /retro:
     viewports as part of the full suite
   - No change to `fullyParallel`, `retries`, `expect.toHaveScreenshot`, or `webServer`
 
-  **Unit tests:** N/A — Playwright harness config change, no isolable application logic (same
-  posture as VIS-3).
+  **Unit tests:** `tests/test_vis8_worker_count.py` — static config-contract assertions that both
+  configs declare `workers: 1` and that `fullyParallel` / `retries` / `toHaveScreenshot` /
+  `webServer` are unchanged (same static-config posture as `test_vis11_*`).
 
   **E2E:** Validated by the harness itself — `cd frontend && npm run test:e2e` and
   `npm run test:visual:storybook`, each run 3 consecutive times, zero crash-class failures. No
-  new spec or baseline.
+  new spec or baseline. VIS-3's frozen `vis-3-worker-cap.spec.ts` also re-passes once `workers`
+  is `1`.
 
   **UAT:** N/A (test-infra/CI change, no user-facing surface — PR review + 3 green local/CI runs
   are the human gate, same posture as VIS-3).
@@ -711,9 +725,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **VIS-10 — Split Tier 1 specs into functional + visual, Shard A: Accessibility + project-ribbon UX (15 files) (P2)**
+- [x] **VIS-10 — Split Tier 1 specs into functional + visual, Shard A: Accessibility + project-ribbon UX (15 files) (P2)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Started:** 2026-07-06 · **Completed:** 2026-07-07
 
   First of three mechanical-transformation shards splitting the 41 Tier 1 spec files that mix
   functional AC tests and screenshot assertions in one file (per VIS-9's now-proven contract).
@@ -777,9 +791,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **VIS-13 — Relocate Tier 2 Storybook config + stories + specs into visual-review/storybook/ (P2)**
+- [x] **VIS-13 — Relocate Tier 2 Storybook config + stories + specs into visual-review/storybook/ (P2)**
 
-  **Created:** 2026-07-04
+  **Created:** 2026-07-04 · **Completed:** 2026-07-07
 
   Tier 2's one existing spec (`example.visual.spec.ts`) is already visual-only (no functional AC
   mixed in), so this card is a relocation, not a functional/visual split. Moves the Storybook
@@ -1680,9 +1694,9 @@ Sprint exit — checked by /report + /retro:
 
 ---
 
-- [ ] **MNT-27 — Fix: Express "Apply & Build" feels like a silent hang (redundant uncached profile recompute + no loading state) (P2)**
+- [x] **MNT-27 — Fix: Express "Apply & Build" feels like a silent hang (redundant uncached profile recompute + no loading state) (P2)**
 
-  **Created:** 2026-07-05
+  **Created:** 2026-07-05 · **Started:** 2026-07-06 · **Completed:** 2026-07-07
 
   **Type:** Fix
 
@@ -1702,6 +1716,20 @@ Sprint exit — checked by /report + /retro:
   multi-second backend cost (profile recompute + docx rewrite + Minio/S3 push + config write) is
   silently absorbed with zero visual feedback.
 
+  **Folded in from this card's own PR review (qa-tester + perf/ux notes, 2026-07-06):** the
+  RED-phase test author put the new `toHaveScreenshot('mnt-27-apply-loading-state.png')` assertion
+  directly in the functional spec (`frontend/tests/e2e/express-template-fill.spec.ts`) instead of
+  the visual spec, violating the VIS-12 functional/visual split convention (same class of mistake
+  MNT-24 hit) — moved into `visual-review/specs/express-template-fill.visual.spec.ts` as its own
+  `test.describe` block, and the stray `frontend/tests/e2e/express-template-fill.spec.ts-snapshots/`
+  directory it created was deleted. This also bumped `express-template-fill`'s frozen baseline
+  counts in `tests/test_vis12_visual_split_shard_c.py` (8→9 assertions, 24→27 baselines) — fixed
+  with the same comment convention already used for MNT-24/MNT-25's equivalent bumps. Also added
+  `aria-busy={applying || running}` to the Apply & Build button per a ux-review accessibility note
+  (WCAG 4.1.3 Status Messages) — closes a silent-state-transition gap this card's longer,
+  network-dependent loading window made newly worth fixing (the neighboring Infer button has the
+  same unfixed gap, left as-is — out of scope here).
+
   **Files:**
   - `web/main.py` — wrap `/api/template/infer`'s `profile_dataset(cfg, df, repeats)` call
     (~L2843) in the same `perf_cache.get_or_compute(key, _compute)` pattern already used by
@@ -1711,7 +1739,12 @@ Sprint exit — checked by /report + /retro:
   - `frontend/src/pages/Templates.jsx` — add a loading/disabled state to the "Apply & Build"
     button (~L130-151, ~L269-277) covering the `/api/template/apply` fetch itself, not just the
     subsequent `run('build-report')` call, so the user gets visible feedback for the whole
-    operation instead of an apparent hang.
+    operation instead of an apparent hang; `aria-busy={applying || running}` on the same button
+    per the fold-in above.
+  - `visual-review/specs/express-template-fill.visual.spec.ts` — the MNT-27 loading-state visual
+    assertion (moved here per the fold-in above).
+  - `tests/test_vis12_visual_split_shard_c.py` — bumped `express-template-fill`'s frozen
+    assertion/baseline counts, per the fold-in above.
 
   **Config/schema impact:** None — cache-sharing + UI-state only, no `config.yml` shape change.
 
@@ -1732,11 +1765,11 @@ Sprint exit — checked by /report + /retro:
   no cross-endpoint regression.
 
   **E2E:** N/A for the caching fix itself (backend timing, not a visible DOM assertion), but
-  extend the Express Fill Playwright spec to assert the Apply button enters a visible
-  loading/disabled state immediately on click (before the build-report terminal appears) — this
-  part IS UI-facing. Visual: impeccable audit/critique + `toHaveScreenshot` of the Apply button's
-  new loading state at all three viewports (mobile 390×844, tablet 820×1180, desktop 1440×900); a
-  human approves them.
+  extend `frontend/tests/e2e/express-template-fill.spec.ts` to assert the Apply button
+  enters a visible loading/disabled state immediately on click (before the build-report terminal
+  appears) — this part IS UI-facing. Visual: impeccable audit/critique + `toHaveScreenshot` of the
+  Apply button's new loading state at all three viewports (mobile 390×844, tablet 820×1180,
+  desktop 1440×900); a human approves them.
 
   **UAT:**
   1. Upload a template and click Infer.
@@ -1746,13 +1779,13 @@ Sprint exit — checked by /report + /retro:
   4. Confirm the report still builds successfully afterward, same as before.
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_api.py -k apply -q` ·
-  `cd frontend && npx playwright test <the extended express-fill spec>`
+  `cd frontend && npx playwright test tests/e2e/express-template-fill.spec.ts`
 
 ---
 
-- [ ] **MNT-28 — Fix: single-column chart types silently drop extra questions/group_by instead of rejecting them (P1)**
+- [x] **MNT-28 — Fix: single-column chart types silently drop extra questions/group_by instead of rejecting them (P1)**
 
-  **Created:** 2026-07-05
+  **Created:** 2026-07-05 · **Completed:** 2026-07-07
 
   **Type:** Fix
 
@@ -1869,6 +1902,272 @@ Sprint exit — checked by /report + /retro:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_vis12_visual_split_shard_c.py -k chart-editor -q`
 
+---
+
+- [x] **MNT-30 — Fix: report tables render as PNG images instead of native Word tables (P1)**
+
+  **Created:** 2026-07-07 · **Started:** 2026-07-07 · **Completed:** 2026-07-07
+
+  **Type:** Fix
+
+  Report table output currently renders as a flattened image, not editable Word content.
+  `src/reports/builder.py::_generate_tables` (~L463-487) forces every `{{ table_<name> }}`
+  placeholder to `type: "table"` and emits it as a docxtpl `InlineImage` PNG produced by the
+  `table` chart type (`chart_table` in `src/reports/charts.py`, `CHART_DISPATCH`). This violates
+  the project rule that tabular output must be a native python-docx table (selectable, editable,
+  accessible text) — a PNG table is unsearchable, non-editable, and inaccessible to screen
+  readers. Charts (bar/pie/line/etc.) stay as image renders — python-docx has no chart API, so
+  that is expected and explicitly out of scope.
+
+  **Approach:** render each `tables:` recipe into a docxtpl subdoc — `sub = tpl.new_subdoc();
+  tbl = sub.add_table(...)` — styled `Table Grid` when that style exists in the template, else
+  borders applied manually via `OxmlElement('w:tblBorders')` (`add_table()` adds none by
+  default); one header row + one row per record via `tbl.add_row().cells`; substitute the subdoc
+  at `{{ table_<name> }}`. This preserves the existing placeholder contract and `generate-template`
+  output (no template-syntax change). Alternatives considered: template-side `{% for %}` table
+  loops, or post-render docx walking — subdoc is the least invasive.
+
+  **Files:**
+  - `src/reports/builder.py` — `_generate_tables` (~L463-487): build a native table subdoc per
+    recipe instead of forcing `type: "table"` + `InlineImage`; keep source/filter/aggregate/
+    `join_parent` resolution unchanged.
+  - `src/reports/charts.py` — `chart_table` / `CHART_DISPATCH` (~L795): retained for an explicit
+    `charts:` entry of type `table` (a user-chosen chart), but no longer the path for
+    `{{ table_<name> }}` recipes. Do NOT delete `CHART_DISPATCH["table"]` — `table` stays a
+    user-selectable chart type; only remove `chart_table` itself if it proves genuinely dead.
+  - `src/reports/template_generator.py` — confirm `{{ table_<name> }}` placeholder emission is a
+    single unbroken run and valid for subdoc substitution.
+
+  **Config/schema impact:** None — output-rendering change only; the `tables:` recipe shape is
+  unchanged.
+
+  **Acceptance criteria**
+  - A report built from a `tables:` recipe renders `{{ table_<name> }}` as a native Word table:
+    the output `.docx` contains a `w:tbl` element for that placeholder (visible in python-docx
+    `document.tables`) and NO embedded image for it
+  - The table has one header row (field/column labels) plus one row per record, populated as text
+    cells (not drawn as a figure)
+  - The table has visible borders — the `Table Grid` style when present in the template, otherwise
+    a manually-applied `w:tblBorders` element
+  - No regression to charts: a `bar` (or other) chart in the same report is still inserted as an
+    `InlineImage` PNG
+  - No regression to table data resolution: source selection, per-table filter/sample,
+    aggregation, and `join_parent` behave exactly as before (same rows/columns, now as native
+    cells)
+
+  **Unit tests:** `tests/test_native_tables.py` (new) — build a report whose config has one
+  `tables:` recipe and one `bar` chart, render to a temp `.docx`, then assert with python-docx:
+  (a) `len(document.tables) >= 1` and the recipe table has a header row + one row per record;
+  (b) the recipe placeholder resolves to a `w:tbl`, not an inline image; (c) borders are present
+  (`Table Grid` style or a `w:tblBorders` element); (d) the chart placeholder is still an
+  InlineImage/embedded PNG (no chart regression); (e) borders are covered **both ways** — render
+  once against a template that defines the `Table Grid` style and once against one that does not,
+  asserting a bordered table in each so the manual-`w:tblBorders` fallback path is exercised.
+  Extend `tests/test_builder.py` instead if a shared fixture fits better.
+
+  **E2E:** N/A (reason: no UI surface — this changes CLI/back-end `.docx` generation only; the
+  rendered document content is asserted by the pytest above, per the non-UI convention).
+
+  **UAT:** N/A (reason: non-UI/CLI card — the Verify command + unit tests + PR review are the
+  human gate; a reviewer opens a built report and confirms the table is selectable/editable text,
+  not an image).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_native_tables.py -q`
+
+---
+
+- [x] **MNT-31 — Fix: `/api/reports` does N+1 S3 `head_object` calls instead of reusing `list_objects_v2`'s `LastModified` (P2)**
+
+  **Created:** 2026-07-07 · **Completed:** 2026-07-07
+
+  **Type:** Fix
+
+  Found via a read-only performance investigation of the Reports tab's cold-load time (no user
+  report — the tab works correctly, it's just slow to paint on an S3/Minio-backed project).
+  `S3Storage.list()` (`web/storage/s3.py:61-67`) already retrieves each object's `LastModified`
+  from the `list_objects_v2` paginator response, but discards it and returns only keys.
+  `/api/reports` (`web/main.py:1972-2007`) then calls `store.last_modified(key)` once per report
+  file (`~L1994`), each doing a **separate** `head_object()` request (`web/storage/s3.py:47-59`)
+  — N extra network round trips for data the list call already had. On the local storage backend
+  this doesn't happen at all (`LocalStorage` reads `f.stat().st_mtime` directly); this is purely
+  an S3/Minio-backend inefficiency.
+
+  **Files:**
+  - `web/storage/base.py` — add `list_with_metadata(prefix)` to the `Storage` ABC with a default,
+    concrete implementation (`{key: (size, last_modified) for key ...}` built by looping the
+    existing `list()` + `last_modified()`), so any backend that doesn't override it keeps today's
+    behavior unchanged.
+  - `web/storage/s3.py` — override `list_with_metadata(prefix)`: read `Size`/`LastModified`
+    directly off each `list_objects_v2` page's `Contents` entries (same paginator `list()`
+    already uses), with zero additional `head_object` calls.
+  - `web/main.py` — `/api/reports` (~L1972-2007): replace the per-file `store.last_modified(key)`
+    loop with one `store.list_with_metadata(prefix)` call, then look up each local report file's
+    modified time from the returned dict (falling back to local `stat()` exactly as today when
+    the key is missing or storage is unavailable).
+
+  **Config/schema impact:** None — internal `Storage` interface addition + endpoint internals
+  only; `/api/reports`'s response shape and values are unchanged.
+
+  **Acceptance criteria**
+  - On the S3/Minio backend, resolving modified times for all of a project's report files makes
+    **zero** `head_object` calls and exactly **one** paginated `list_objects_v2` call, regardless
+    of report count (verified against a mocked/stubbed S3 client with N ≥ 2 objects)
+  - `Storage.list_with_metadata(prefix)` exists on the ABC with a default implementation (built
+    from `list()` + `last_modified()`) that a subclass not overriding it still satisfies
+    correctly — verified against the existing `_SpyStorage` test double in
+    `tests/test_reports_api.py`
+  - `S3Storage.list_with_metadata(prefix)` returns modified times that match the `LastModified`
+    values from the `list_objects_v2` response, with no `head_object` call
+  - `/api/reports`'s returned JSON (`{name, size_kb, modified}` per file) is byte-for-byte
+    unchanged from before this fix — a performance-only change with no visible behavior
+    difference
+  - Local (non-S3) storage mode's `/api/reports` behavior is unchanged (regression-pinned)
+
+  **Unit tests:** `tests/test_reports_api.py` (extend) — mock the boto3 S3 client so
+  `list_objects_v2` returns N ≥ 2 objects each with a `LastModified`/`Size`; assert
+  `S3Storage.list_with_metadata` issues exactly one paginated call and zero `head_object` calls,
+  and that the returned dict's modified times match the response; add a base-ABC-level case using
+  `_SpyStorage` confirming a subclass that does NOT override `list_with_metadata` still returns
+  correct data via the default fallback; extend the existing local-storage `/api/reports` test as
+  a regression pin (response unchanged).
+
+  **E2E:** N/A (reason: backend-only performance fix — `/api/reports`'s response shape and the
+  rendered Reports page are unchanged; verified entirely by the pytest above, per the non-UI
+  convention).
+
+  **UAT:** N/A (reason: non-UI/CLI card — the Verify command + unit tests + PR review are the
+  human gate; no visible behavior changes to manually check).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_reports_api.py -q`
+
+
+- [x] **MNT-32 — Fix: Express-inferred `list` on repeat-group data is wrongly flagged `needs_attention` and dropped (`list` excluded from repeat-source auto-resolution) (P1)**
+
+  **Created:** 2026-07-07 · **Completed:** 2026-07-07
+
+  **Type:** Fix
+
+  Reported: in the Express path a placeholder was inferred as a `list`, the user kept the `list`
+  kind, yet the built report showed a table PNG. Root cause (reproduced): `_DATA_KINDS` in
+  `src/reports/template_inference.py` (~L582) is `("chart", "indicator", "summary", "table")` —
+  it **excludes `"list"`**. `_autoresolve_repeat_source` (~L415) bails immediately for any kind
+  not in that tuple, so a `list` spec whose column lives in a repeat-group base table (the
+  natural case — a list of village/member names) never gets its `source` stamped.
+  `annotate_proposals` (~L541) then validates it against the `main` table only, the column isn't
+  there, and it is flagged `needs_attention` (`reason: "column '<x>' not found in 'main'"`). The
+  Express review UI blocks "Apply & Build" while any row is `needs_attention`, so the user must
+  drop or re-kind the list — the identical column validates clean as a `table` — funnelling a
+  repeat-group list onto the table path (and, pre-MNT-30, into a PNG). Reproduced
+  deterministically: identical `Village` column in a repeat table → `list` = `needs_attention`,
+  `table` = `ok, source=hh_members`.
+
+  **Files:**
+  - `src/reports/template_inference.py` — add `"list"` to `_DATA_KINDS` (~L582) so
+    `_autoresolve_repeat_source` stamps the repeat-group `source` for list specs exactly as it
+    already does for `table`/`chart`/`summary`. Confirm `_referenced_columns` reads a list spec's
+    column whether stored as `question` (singular) or `questions` (plural).
+  - `src/reports/builder.py` — (verify) `_generate_lists` reads `l.get("question")` (singular);
+    ensure an auto-resolved list spec carries the key `_generate_lists` reads (normalize on write
+    if needed) so a repeat-group list actually renders its rows as text, not empty.
+
+  **Acceptance criteria**
+  - A `list` proposal whose only referenced column lives in a single repeat-group base table (not
+    in `main`) is auto-resolved: `annotate_proposals` returns `status: "ok"` with the repeat table
+    stamped onto `spec["source"]` — matching the behavior of an identical `table` proposal
+  - When multiple repeat tables hold the column, the `list` proposal resolves to the largest by
+    row count with `status: "review"` and a note listing alternatives — identical to the `table`
+    kind's multi-table behavior
+  - A `list` proposal whose column is genuinely absent from every table still flags
+    `needs_attention` (no false-positive resolution)
+  - After `apply_inference`, the resolved list spec lands in `cfg["lists"]` (never `cfg["charts"]`
+    or `cfg["tables"]`) and a build renders `{{ list_<name> }}` as a text run (a `w:t`, no
+    `InlineImage`/embedded PNG) containing the repeat-group row values
+  - The `main`-table list case (column already in `main`) is unchanged (regression-pinned)
+
+  **Unit tests:** `tests/test_template_inference.py` (extend) — add a repeat-group profile
+  (`main` + an `hh_members`-style base table holding the list column) and assert: (a) a `list`
+  proposal on the repeat-only column returns `status: "ok"` with `spec["source"]` stamped to the
+  repeat table; (b) the identical `table` and `list` proposals now resolve the same source; (c) a
+  multi-repeat-table column yields `status: "review"`; (d) a truly-absent column still flags
+  `needs_attention`. Plus `tests/test_lists_section.py` (extend) — after `apply_inference` of a
+  resolved repeat-group list, assert the entry is written to `cfg["lists"]` and `_generate_lists`
+  produces non-empty text for it (no PNG/InlineImage).
+
+  **E2E:** N/A (reason: backend inference + validation fix — no UI/JSX change; the Express review
+  UI already renders whatever `annotate_proposals` returns. Verified entirely by the pytest above,
+  per the non-UI convention.)
+
+  **UAT:** N/A (reason: non-UI/CLI card — the Verify command + unit tests + PR review are the human
+  gate.)
+
+  **Config impact:** none (no schema/config-shape change; a `list` recipe may now carry an
+  auto-stamped `source:` exactly as `table` recipes already do).
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py tests/test_lists_section.py -q`
+
+- [x] **MNT-33 — Fix: the `table` chart type still renders tabular data as a PNG image instead of a native Word table (P1)**
+
+  **Created:** 2026-07-07 · **Completed:** 2026-07-07
+
+  **Type:** Fix
+
+  MNT-30 made the dedicated `tables:` config section render a native `w:tbl`, but the old `table`
+  **chart type** was left in place: `chart_table` is still registered in `CHART_DISPATCH`
+  (`src/reports/charts.py` ~L795), still offered in the frontend `CHART_TYPES` list
+  (`frontend/src/pages/Composition.jsx` ~L23), and any `charts:` entry with `type: table` still
+  flows through `_generate_charts` → `generate_chart` → matplotlib PNG → `InlineImage`
+  (`src/reports/builder.py` ~L553-555). This violates the project rule (established by MNT-30)
+  that tabular output must be a native, selectable/editable/accessible python-docx table — a PNG
+  table is unsearchable, non-editable, and invisible to screen readers — and leaves a second,
+  UI-exposed way to produce exactly the image tables MNT-30 set out to eliminate.
+
+  **Files:**
+  - `src/reports/builder.py` — in `_generate_charts`, when a resolved chart's `type == "table"`,
+    route it to the native table path (build the display frame + emit a `{{ table_<name> }}`
+    sentinel via the same mechanism `_generate_tables`/`_insert_native_tables` use) instead of
+    `generate_chart` + `InlineImage`. Bridges legacy `charts: [{type: table}]` configs to native
+    output with no config migration required.
+  - `frontend/src/pages/Composition.jsx` — remove `'table'` from the chart-type `CHART_TYPES`
+    list (~L23) and its helper entries (~L40, ~L114) so new tables are added via the Tables
+    section, not the chart dropdown. Existing `type: table` charts still load and now render
+    native.
+  - `src/reports/charts.py` — keep `chart_table`/`CHART_DISPATCH["table"]` for the Tables-section
+    live preview the editor reuses (`/api/charts/preview` with `type: "table"`), OR redirect that
+    preview too; decide in implementation. Do not break the Tables-section preview.
+
+  **Acceptance criteria**
+  - A `charts:` config entry with `type: table` renders in the built `.docx` as a native
+    python-docx table (`document.tables` gains a `w:tbl`) with borders and NO `InlineImage`/
+    embedded PNG for it — identical output to the equivalent `tables:` recipe
+  - Real chart types (bar/pie/line/histogram/etc.) still render as `InlineImage` PNGs (no chart
+    regression — python-docx has no chart API, explicitly out of scope)
+  - The Composition chart-type dropdown no longer offers `table`; the Tables section remains the
+    way to add a native table
+  - Loading a legacy config that contains a `type: table` chart does not error and produces a
+    native table (backward-compatible, no migration step required of the user)
+  - The Tables-section live preview (`/api/charts/preview`) still renders
+
+  **Unit tests:** `tests/test_builder_tables*.py` / `tests/test_lists_section.py`-adjacent (new
+  or extend) — build a report from a `charts:` config with a single `type: table` entry; assert
+  the rendered doc contains a native `w:tbl` (via `document.tables`) for it and zero
+  `InlineImage`/embedded-PNG parts attributable to that entry; assert a sibling `type: bar` chart
+  in the same config still renders an `InlineImage` (regression guard). Frontend:
+  `frontend/tests/` (Vitest) assert `CHART_TYPES` excludes `'table'`.
+
+  **E2E:** N/A (reason: the only UI change is removing one option from a dropdown, verified by the
+  Vitest assertion on `CHART_TYPES`; the docx-output change is backend, verified by pytest. No new
+  screen or visual surface. If review deems the dropdown change needs a visual baseline, promote to
+  a real E2E at that point.)
+
+  **UAT:** N/A (reason: non-UI/CLI card — Verify command + unit tests + PR review are the human
+  gate.)
+
+  **Config impact:** `charts: [{type: table}]` entries now render native (output-quality change,
+  no schema change). `table` is no longer selectable as a chart type in the UI; the `tables:`
+  section is the supported path for tabular output.
+
+  **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_builder_tables*.py -q` and
+  `cd frontend && npm run test`
 ---
 
 ## Backlog — parked (out of scope for now)

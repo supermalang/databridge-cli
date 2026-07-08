@@ -387,6 +387,33 @@ def test_annotate_flags_scatter_with_one_quantitative():
 
 
 # --------------------------------------------------------------------------- #
+# annotate_proposals — MNT-28: single-column chart type + group_by/2+ questions
+# --------------------------------------------------------------------------- #
+def test_annotate_flags_table_with_group_by_and_extra_question():
+    """AC: this validator is shared by both call sites -- Express Fill inference
+    (annotate_proposals -> _validate_data_proposal -> validate_recipe ->
+    _validate_chart) must also reject a 'table' proposal that sets group_by
+    and/or supplies 2+ questions, exactly like the direct ask_engine.validate_recipe
+    call. Reproduces the live bug: a '[table of Satisfaction by Region]'
+    placeholder inferred as {type: table, questions: [Region, Age], group_by:
+    Region} must be flagged needs_attention, not silently passed through to a
+    misleadingly-titled, factually wrong table render."""
+    proposals = [
+        _proposal("chart", {"name": "satisfaction_by_region", "title": "Satisfaction by Region",
+                            "type": "table", "questions": ["Region", "Age"],
+                            "group_by": "Region"},
+                  name="satisfaction_by_region", confidence=_HIGH_CONF),
+    ]
+    out = ti.annotate_proposals(proposals, _profile_xtf2())
+    assert _get(out[0], "status") == "needs_attention", (
+        "a table proposal with group_by + 2 questions must not silently pass "
+        "Express Fill validation"
+    )
+    reason = _get(out[0], "reason")
+    assert "table" in reason, reason
+
+
+# --------------------------------------------------------------------------- #
 # annotate_proposals — valid proposals pass
 # --------------------------------------------------------------------------- #
 def test_annotate_passes_valid_bar_indicator_summary():
@@ -2351,4 +2378,281 @@ def test_apply_template_writes_split_by_placeholder(tmp_path):
     assert found, (
         "resolved template does not contain the literal '{{ split_by }}' "
         "placeholder for the accepted split_by proposal"
+    )
+
+
+# =========================================================================== #
+# MNT-32 — Express-inferred `list` on repeat-group data is auto-resolved
+# =========================================================================== #
+# Bug: `_DATA_KINDS` in template_inference excludes "list", so
+# `_autoresolve_repeat_source` bails for a `list` proposal whose column lives in
+# a repeat-group base table. `annotate_proposals` then validates the list against
+# `main` only, the column isn't there, and it is flagged `needs_attention` and
+# dropped — even though the IDENTICAL column validates clean as a `table`.
+#
+# Fix (derived strictly from the MNT-32 Acceptance criteria): a `list` proposal
+# must auto-resolve its repeat-group `source` EXACTLY like a `table` proposal:
+#   * column absent from `main`, present in exactly ONE repeat table
+#       -> status "ok", spec["source"] stamped to that repeat table.
+#   * column present in MULTIPLE repeat tables
+#       -> status "review", spec["source"] = largest by rows, note lists alts.
+#   * column absent from every table
+#       -> status remains "needs_attention" (no false-positive resolution).
+#   * column already in `main`
+#       -> unchanged (regression-pinned).
+#
+# These call `annotate_proposals` directly, mirroring the XTF-26 tests but with
+# kind="list". Expected RED until "list" is added to `_DATA_KINDS`.
+# =========================================================================== #
+
+
+def _profile_mnt32_single_repeat():
+    """Profile: ``main`` has Region; a single ``hh_members`` repeat table holds
+    ``Village`` (the natural list case -- a list of village/member names)."""
+    return {
+        "main": {
+            "name": "main", "rows": 10,
+            "columns": [
+                {"name": "_id", "role": "linkage", "distinct": 10, "missing_pct": 0.0},
+                {"name": "Region", "role": "categorical", "distinct": 2,
+                 "missing_pct": 0.0,
+                 "top_values": [{"value": "N", "count": 6},
+                                {"value": "S", "count": 4}]},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "hh_members": {
+            "name": "hh_members", "rows": 30,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 10,
+                 "missing_pct": 0.0},
+                {"name": "_root_id", "role": "linkage", "distinct": 10,
+                 "missing_pct": 0.0},
+                {"name": "Village", "role": "qualitative", "distinct": 12,
+                 "missing_pct": 0.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+    }
+
+
+def _profile_mnt32_two_repeats_same_column():
+    """Profile: ``main`` has no user columns; two repeat tables (``hh_members``
+    with 30 rows, ``visitors`` with 6 rows) both carry ``Village``. The largest
+    (``hh_members``) must win with status "review"."""
+    return {
+        "main": {
+            "name": "main", "rows": 5,
+            "columns": [
+                {"name": "_id", "role": "linkage", "distinct": 5, "missing_pct": 0.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "hh_members": {
+            "name": "hh_members", "rows": 30,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 5,
+                 "missing_pct": 0.0},
+                {"name": "Village", "role": "qualitative", "distinct": 12,
+                 "missing_pct": 0.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+        "visitors": {
+            "name": "visitors", "rows": 6,
+            "columns": [
+                {"name": "_parent_index", "role": "linkage", "distinct": 5,
+                 "missing_pct": 0.0},
+                {"name": "Village", "role": "qualitative", "distinct": 4,
+                 "missing_pct": 0.0},
+            ],
+            "correlations": [], "duplicates": None,
+        },
+    }
+
+
+# --------------------------------------------------------------------------- #
+# AC1: a `list` proposal whose only referenced column lives in a single
+#      repeat-group base table (not in `main`) is auto-resolved:
+#      status "ok" with the repeat table stamped onto spec["source"].
+# --------------------------------------------------------------------------- #
+def test_annotate_list_autoresolves_single_repeat_source():
+    """MNT-32 AC1: a `list` proposal on a repeat-only column must resolve to
+    status "ok" with spec["source"] stamped to the repeat table -- not be dropped
+    as needs_attention. ``Village`` lives only in the ``hh_members`` repeat table.
+    """
+    profile = _profile_mnt32_single_repeat()
+    proposals = [
+        _proposal_xtf26(
+            "list",
+            {"name": "villages", "title": "Villages", "question": "Village"},
+            name="villages",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "ok", (
+        f"Expected 'ok' for a list on a single-repeat-table column but got "
+        f"'{_get(out[0], 'status')}'; reason: {_get(out[0], 'reason')!r}. "
+        "A list must auto-resolve its repeat-group source exactly like a table."
+    )
+    assert _get(out[0], "spec").get("source") == "hh_members", (
+        f"Expected source 'hh_members' stamped onto the list spec, got "
+        f"{_get(out[0], 'spec').get('source')!r}"
+    )
+
+
+def test_annotate_list_autoresolves_repeat_source_from_questions_plural():
+    """MNT-32 (Files note): `_referenced_columns` must read a list spec's column
+    whether it is stored as ``question`` (singular) or ``questions`` (plural). A
+    list spec that carries only ``questions: ["Village"]`` must resolve the same
+    repeat-group source as the singular form."""
+    profile = _profile_mnt32_single_repeat()
+    proposals = [
+        _proposal_xtf26(
+            "list",
+            {"name": "villages", "title": "Villages", "questions": ["Village"]},
+            name="villages",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "ok", (
+        f"Expected 'ok' for a list spec using the plural 'questions' key, got "
+        f"'{_get(out[0], 'status')}'; reason: {_get(out[0], 'reason')!r}"
+    )
+    assert _get(out[0], "spec").get("source") == "hh_members", (
+        f"Expected source 'hh_members', got "
+        f"{_get(out[0], 'spec').get('source')!r}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# AC (matches the table kind): the IDENTICAL `table` and `list` proposals on the
+#      same repeat-only column resolve to the same source and status.
+# --------------------------------------------------------------------------- #
+def test_annotate_list_and_table_resolve_identically():
+    """MNT-32 AC: the identical column validates clean as a `table` and must now
+    validate identically as a `list` -- same status "ok", same stamped source.
+    This is the crux of the bug (the user was funnelled onto the table path
+    because only `table` auto-resolved the repeat source)."""
+    profile = _profile_mnt32_single_repeat()
+
+    table_out = ti.annotate_proposals(
+        [_proposal_xtf26(
+            "table",
+            {"name": "villages", "title": "Villages", "questions": ["Village"]},
+            name="villages")],
+        profile,
+    )
+    list_out = ti.annotate_proposals(
+        [_proposal_xtf26(
+            "list",
+            {"name": "villages", "title": "Villages", "question": "Village"},
+            name="villages")],
+        profile,
+    )
+
+    assert _get(table_out[0], "status") == "ok", (
+        f"precondition: the table proposal should validate ok, got "
+        f"{_get(table_out[0], 'status')!r} reason={_get(table_out[0], 'reason')!r}"
+    )
+    assert _get(list_out[0], "status") == _get(table_out[0], "status"), (
+        f"list status {_get(list_out[0], 'status')!r} must match table status "
+        f"{_get(table_out[0], 'status')!r}"
+    )
+    assert _get(list_out[0], "spec").get("source") == _get(table_out[0], "spec").get("source"), (
+        f"list source {_get(list_out[0], 'spec').get('source')!r} must match "
+        f"table source {_get(table_out[0], 'spec').get('source')!r}"
+    )
+    assert _get(list_out[0], "spec").get("source") == "hh_members"
+
+
+# --------------------------------------------------------------------------- #
+# AC2: multiple repeat tables hold the column -> status "review", source = the
+#      largest by row count, note listing the alternatives (like the table kind).
+# --------------------------------------------------------------------------- #
+def test_annotate_list_multi_repeat_resolves_to_largest_with_review():
+    """MNT-32 AC2: when multiple repeat tables hold the list column, the `list`
+    proposal must resolve to the largest by rows with status "review" and a note
+    listing the alternative table names -- identical to the table kind's
+    multi-table behavior. ``Village`` is in ``hh_members`` (30) and ``visitors``
+    (6); ``hh_members`` must win."""
+    profile = _profile_mnt32_two_repeats_same_column()
+    proposals = [
+        _proposal_xtf26(
+            "list",
+            {"name": "villages", "title": "Villages", "question": "Village"},
+            name="villages",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "review", (
+        f"Expected 'review' for an ambiguous multi-repeat list column, got "
+        f"'{_get(out[0], 'status')}'; reason: {_get(out[0], 'reason')!r}"
+    )
+    assert _get(out[0], "spec").get("source") == "hh_members", (
+        f"Expected source 'hh_members' (most rows=30), got "
+        f"{_get(out[0], 'spec').get('source')!r}"
+    )
+    note = _get(out[0], "reason") or ""
+    assert "hh_members" in note and "visitors" in note, (
+        f"Expected the note to mention both 'hh_members' and 'visitors', got: {note!r}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# AC3: column genuinely absent from every table -> still needs_attention.
+# --------------------------------------------------------------------------- #
+def test_annotate_list_keeps_needs_attention_when_column_nowhere():
+    """MNT-32 AC3: a `list` proposal whose column is absent from `main` and every
+    repeat table must still flag `needs_attention` -- the fix must not swallow a
+    genuine miss (no false-positive resolution)."""
+    profile = _profile_mnt32_single_repeat()
+    proposals = [
+        _proposal_xtf26(
+            "list",
+            {"name": "ghost", "title": "Ghost", "question": "NotAColumn"},
+            name="ghost",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "needs_attention", (
+        f"Expected 'needs_attention' for a truly-absent list column, got "
+        f"'{_get(out[0], 'status')}'; reason: {_get(out[0], 'reason')!r}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# AC5 (regression): the `main`-table list case (column already in main) is
+#      unchanged -- status "ok", source stays "main" (never stamped to a repeat).
+# --------------------------------------------------------------------------- #
+def test_annotate_list_on_main_column_unchanged():
+    """MNT-32 AC5: a `list` whose column already lives in `main` must remain
+    status "ok" and must NOT be re-sourced to a repeat table (regression pin)."""
+    profile = _profile_mnt32_single_repeat()
+    proposals = [
+        _proposal_xtf26(
+            "list",
+            {"name": "regions", "title": "Regions", "question": "Region"},
+            name="regions",
+        ),
+    ]
+
+    out = ti.annotate_proposals(proposals, profile)
+
+    assert _get(out[0], "status") == "ok", (
+        f"Expected 'ok' for a list on a main-table column, got "
+        f"'{_get(out[0], 'status')}'; reason: {_get(out[0], 'reason')!r}"
+    )
+    source = _get(out[0], "spec").get("source")
+    assert source in (None, "main"), (
+        f"A main-table list must not be re-sourced to a repeat table; got "
+        f"source={source!r}"
     )

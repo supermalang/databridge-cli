@@ -22,21 +22,13 @@ frontend/.vite/
 # Dev manager state (PIDs + logs from scripts/dev.sh start)
 .dev/
 
-# Playwright visual harness: ignore transient run output; KEEP committed baselines
-# (frontend/tests/{e2e,storybook}/**/*-snapshots/*.png are intentionally tracked).
-frontend/playwright-report/
-frontend/playwright-report-storybook/
-frontend/blob-report/
-frontend/test-results/
-frontend/.playwright/
-
-# Storybook (Tier 2 visual baselines, VIS-4): static build is regenerable, never commit it.
-frontend/storybook-static/
-
 # Tier 1 dedicated visual harness (VIS-9): ignore transient run output/review scratch;
 # KEEP committed baselines under visual-review/baselines/.
 visual-review/results/
 visual-review/uat/
+
+# Storybook (Tier 2 visual baselines, VIS-4/VIS-13): static build is regenerable, never commit it.
+visual-review/storybook/static/
 
 # Claude Code: track shared config (settings, skills/roadmap, hooks, agents); ignore local + vendored
 .claude/settings.local.json

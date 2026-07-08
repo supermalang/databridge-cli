@@ -4,7 +4,7 @@ No web.db import — keys are built from plain string IDs so storage stays decou
 from the data model."""
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
 CATEGORIES = ("raw", "processed", "charts", "reports", "templates")
 
@@ -41,6 +41,24 @@ class Storage(ABC):
         prefix (not path segments), so callers should pass a trailing '/' (e.g.
         'orgs/o/projects/p/') to avoid matching sibling keys like '.../p2/...'."""
         ...
+
+    def list_with_metadata(
+        self, prefix: str
+    ) -> Dict[str, Tuple[Optional[int], datetime]]:
+        """Return {key: (size, last_modified)} for every key under `prefix`.
+
+        Default implementation loops the existing `list()` + `last_modified()`
+        so any backend that doesn't override it keeps today's behavior. Backends
+        whose listing already carries size/mtime (e.g. S3's `list_objects_v2`)
+        should override this to avoid a per-key round trip. `size` is `None` when
+        the base interface can't provide it without an extra fetch."""
+        result: Dict[str, Tuple[Optional[int], datetime]] = {}
+        for key in self.list(prefix):
+            try:
+                result[key] = (None, self.last_modified(key))
+            except KeyError:
+                continue
+        return result
 
     @abstractmethod
     def exists(self, key: str) -> bool: ...

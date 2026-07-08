@@ -180,16 +180,6 @@ test.describe('A11Y-2 — primary tab nav: ARIA roles + roving keyboard nav', ()
        'aria-allowed-attr', 'aria-roles', 'tabindex'].includes(v.id));
     expect(tabViolations, JSON.stringify(tabViolations, null, 2)).toEqual([]);
   });
-
-  test('visual baseline: primary tablist with the second tab active', async ({ page }) => {
-    const tablist = page.locator('.tabs-bar');
-    const tabs = tablist.getByRole('tab');
-    await tabs.nth(0).focus();
-    await page.keyboard.press('Home');
-    await page.keyboard.press('ArrowRight');
-    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
-    await expect(tablist).toHaveScreenshot('a11y-primary-tablist-second-active.png');
-  });
 });
 
 // ---------------------------------------------------------------------------------------
@@ -275,16 +265,5 @@ test.describe('A11Y-2 — ProjectForm tabs: ARIA roles + roving keyboard nav', (
       ['aria-required-children', 'aria-required-parent', 'aria-valid-attr-value',
        'aria-allowed-attr', 'aria-roles', 'tabindex'].includes(v.id));
     expect(tabViolations, JSON.stringify(tabViolations, null, 2)).toEqual([]);
-  });
-
-  test('visual baseline: ProjectForm tablist with the second tab active', async ({ page }) => {
-    const tablist = page.locator('.project-form__tabs');
-    await expect(tablist).toHaveAttribute('role', 'tablist');
-    const tabs = tablist.getByRole('tab');
-    await tabs.nth(0).focus();
-    await page.keyboard.press('Home');
-    await page.keyboard.press('ArrowRight');
-    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
-    await expect(tablist).toHaveScreenshot('a11y-projectform-tablist-second-active.png');
   });
 });

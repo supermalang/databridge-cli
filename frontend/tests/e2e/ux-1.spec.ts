@@ -212,31 +212,3 @@ test.describe('UX-1 — graceful fallback for projects with no color/icon', () =
     await expect(menuRow(page, /Global Health/)).toBeVisible();
   });
 });
-
-test.describe('UX-1 — visual baselines (one per viewport via playwright.config.ts)', () => {
-  test.beforeEach(async ({ page }) => {
-    await stubBootstrap(page);
-  });
-
-  // Visual baseline of the switcher avatar (emoji + color). Gate on the AC so this
-  // does not pass vacuously by baselining the pre-fix two-letter avatar — the
-  // baseline must capture the emoji avatar, approved by a human.
-  test('visual baseline of the switcher avatar', async ({ page }) => {
-    await gotoApp(page);
-    await expect(avatar(page), 'avatar must show the emoji before the baseline is captured')
-      .toContainText('🌍');
-    await expect(switcher(page)).toHaveScreenshot('project-switcher-avatar.png');
-  });
-
-  // Visual baseline of the open project menu (rows with icon/color). Screenshot the
-  // menu element directly so the position:fixed terminal bar never intrudes.
-  test('visual baseline of the open project menu', async ({ page }) => {
-    await gotoApp(page);
-    await page.addStyleTag({ content: '.bottom-term{display:none!important}' });
-    await switcher(page).click();
-    await expect(menu(page)).toBeVisible();
-    await expect(menuRow(page, /Global Health/),
-      'the menu row must show the emoji before the baseline is captured').toContainText('🌍');
-    await expect(menu(page)).toHaveScreenshot('project-menu-icons.png');
-  });
-});

@@ -1,7 +1,7 @@
 """S3/Minio-backed Storage via a boto3 client. get_* map missing keys to KeyError."""
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import Dict, Optional, Tuple, List
 
 from botocore.exceptions import ClientError
 
@@ -65,6 +65,23 @@ class S3Storage(Storage):
             for obj in page.get("Contents", []):
                 keys.append(obj["Key"])
         return sorted(keys)
+
+    def list_with_metadata(
+        self, prefix: str
+    ) -> Dict[str, Tuple[Optional[int], datetime]]:
+        """Read Size/LastModified straight off each list_objects_v2 page's
+        Contents — the same paginator list() uses — with zero head_object calls.
+        LastModified is normalized to a naive local datetime exactly as
+        last_modified() does, so rendered "modified" strings match."""
+        result: Dict[str, Tuple[Optional[int], datetime]] = {}
+        for page in self.client.get_paginator("list_objects_v2").paginate(
+                Bucket=self.bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                lm = obj["LastModified"]
+                if lm.tzinfo is not None:
+                    lm = datetime.fromtimestamp(lm.timestamp())
+                result[obj["Key"]] = (obj.get("Size"), lm)
+        return result
 
     def exists(self, key: str) -> bool:
         try:

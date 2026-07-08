@@ -2017,14 +2017,24 @@ async def list_reports(request: Request):
     except Exception:
         store = org_id = project_id = None
 
+    # Resolve every report's durable modified time from ONE listing (S3 backends
+    # read Size/LastModified straight off list_objects_v2 — no per-file
+    # head_object round trips). Falls back to local mtime per-file below.
+    meta = {}
+    if store is not None:
+        try:
+            meta = store.list_with_metadata(
+                storage_key(org_id, project_id, "reports", ""))
+        except Exception:
+            meta = {}
+
     def _modified(f):
         if store is not None:
-            try:
-                return store.last_modified(storage_key(org_id, project_id, "reports", f.name))
-            except KeyError:
-                pass
-            except Exception:
-                pass
+            entry = meta.get(storage_key(org_id, project_id, "reports", f.name))
+            if entry is not None:
+                _size, lm = entry
+                if lm is not None:
+                    return lm
         return datetime.fromtimestamp(f.stat().st_mtime)
 
     files = []
@@ -2851,7 +2861,18 @@ async def api_template_infer(request: Request):
         if not nl_tokens:
             return {"proposals": [], "message": "No placeholders found in the template.",
                     "template": ref}
-        prof = profile_dataset(cfg, df, repeats)
+        # Route the profile through the shared perf-cache under the SAME (org,
+        # project, cfg, data-session) key /api/profile and /api/template/apply use,
+        # so a subsequent Apply (chained right after this Infer) is a cache hit
+        # instead of a redundant, event-loop-blocking CSV/parquet read + per-column
+        # EDA recompute (MNT-27). Cache is skipped (key is None) when there's no
+        # active project or no data session to fingerprint.
+        def _compute_profile():
+            return {"profiles": list(profile_dataset(cfg, df, repeats or {}).values())}
+
+        key = _cache_key(request, cfg, "profile")
+        result = _compute_profile() if key is None else perf_cache.get_or_compute(key, _compute_profile)
+        prof = {p["name"]: p for p in result["profiles"]}
         catalog = ask_engine.build_catalog(prof, cfg)
         proposals = ti.infer_specs(nl_tokens, catalog, ai_cfg)
         # Deterministic auto-modeling: resolve each data proposal's `source`
