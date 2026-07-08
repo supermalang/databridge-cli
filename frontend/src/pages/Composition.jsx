@@ -20,7 +20,7 @@ import AiThinking from '../components/AiThinking.jsx';
 const CHART_TYPES = [
   'bar', 'horizontal_bar', 'stacked_bar', 'grouped_bar', 'pie', 'donut',
   'line', 'area', 'histogram', 'scatter', 'box_plot', 'heatmap', 'treemap',
-  'waterfall', 'funnel', 'table', 'bullet_chart', 'likert', 'scorecard',
+  'waterfall', 'funnel', 'bullet_chart', 'likert', 'scorecard',
   'pyramid', 'dot_map', 'period_bar', 'period_line',
 ];
 
@@ -37,7 +37,6 @@ const CHART_REQS = {
   histogram: '1 numeric column', scatter: '2 numeric columns',
   box_plot: '1 categorical + 1 numeric column', heatmap: '2 categorical columns',
   treemap: '1 categorical column', waterfall: '1 categorical column', funnel: '1 categorical column',
-  table: '1+ columns to tabulate',
   bullet_chart: '1 numeric column (set options.target)',
   likert: '1 categorical column (a rating scale)', scorecard: '1+ columns (any type)',
   pyramid: '2 columns: age_group + gender', dot_map: '2 columns: lat + lon',
@@ -111,7 +110,7 @@ function chartTone(type) {
   if (['line', 'area', 'scatter'].includes(type))             return 'rose';
   if (['pie', 'donut', 'treemap', 'heatmap'].includes(type))  return 'violet';
   if (['pyramid', 'likert'].includes(type))                    return 'warm';
-  if (['scorecard', 'bullet_chart', 'table'].includes(type))  return 'green';
+  if (['scorecard', 'bullet_chart'].includes(type))  return 'green';
   return 'accent';
 }
 

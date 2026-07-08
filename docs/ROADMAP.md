@@ -2105,9 +2105,9 @@ Sprint exit — checked by /report + /retro:
 
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_template_inference.py tests/test_lists_section.py -q`
 
-- [ ] **MNT-33 — Fix: the `table` chart type still renders tabular data as a PNG image instead of a native Word table (P1)**
+- [x] **MNT-33 — Fix: the `table` chart type still renders tabular data as a PNG image instead of a native Word table (P1)**
 
-  **Created:** 2026-07-07
+  **Created:** 2026-07-07 · **Completed:** 2026-07-07
 
   **Type:** Fix
 
