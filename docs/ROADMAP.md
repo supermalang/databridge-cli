@@ -81,7 +81,7 @@ Sprint exit — checked by /report + /retro:
 | [Internationalization (i18n)](#internationalization-i18n) | 5 | 5 / 5 |
 | [Project output language](#project-output-language) | 3 | 3 / 3 |
 | [Performance](#performance) | 4 | 4 / 4 |
-| [Maintenance & hardening](#maintenance--hardening) | 33 | 31 / 33 |
+| [Maintenance & hardening](#maintenance--hardening) | 33 | 32 / 33 |
 
 ---
 
@@ -2041,9 +2041,9 @@ Sprint exit — checked by /report + /retro:
   **Verify:** `PYTHONPATH=. MPLBACKEND=Agg python -m pytest tests/test_reports_api.py -q`
 
 
-- [ ] **MNT-32 — Fix: Express-inferred `list` on repeat-group data is wrongly flagged `needs_attention` and dropped (`list` excluded from repeat-source auto-resolution) (P1)**
+- [x] **MNT-32 — Fix: Express-inferred `list` on repeat-group data is wrongly flagged `needs_attention` and dropped (`list` excluded from repeat-source auto-resolution) (P1)**
 
-  **Created:** 2026-07-07
+  **Created:** 2026-07-07 · **Completed:** 2026-07-07
 
   **Type:** Fix
 
